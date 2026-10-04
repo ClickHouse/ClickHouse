@@ -139,6 +139,8 @@ CREATE TABLE time_decay_aggregate_state_reattach
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id;
+INSERT INTO time_decay_aggregate_state_reattach
+SELECT 1, exponentialTimeDecayedSumState(10)(toFloat64(1), toFloat64(0));
 DETACH TABLE time_decay_aggregate_state_reattach;
 
 CREATE TABLE time_decay_simple_aggregate_reattach
@@ -185,6 +187,24 @@ ATTACH TABLE time_decay_feature_gate;
 ATTACH TABLE time_decay_aggregate_state_reattach;
 ATTACH TABLE time_decay_simple_aggregate_reattach;
 ATTACH TABLE time_decay_mv_reattach;
+
+-- Reconstructed aggregate states remain attachable for recovery, but executing
+-- the experimental aggregate through generic state finalizers stays gated.
+SELECT finalizeAggregation(value)
+FROM time_decay_aggregate_state_reattach; -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+
+SET allow_deprecated_error_prone_window_functions = 1;
+SELECT runningAccumulate(value)
+FROM time_decay_aggregate_state_reattach; -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SET allow_deprecated_error_prone_window_functions = 0;
+
+-- Internal casts must apply the same gate to AggregateFunction state types,
+-- including names wrapped in aggregate combinators.
+SELECT _CAST(value, 'AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)')
+FROM time_decay_aggregate_state_reattach; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT _CAST(value, 'AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)')
+FROM time_decay_aggregate_state_reattach; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT 'aggregate metadata attach preserved';
 SELECT 'simple aggregate metadata attach preserved';
 SELECT 'materialized view short attach preserved';

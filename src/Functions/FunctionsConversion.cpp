@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -57,6 +58,25 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 
 namespace detail
 {
+
+static bool containsExperimentalTimeDecayTypeOrState(const DataTypePtr & type)
+{
+    if (containsExponentialTimeDecaying(type))
+        return true;
+
+    bool found = false;
+    auto check = [&](const IDataType & nested_type)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&nested_type);
+            aggregate_type
+            && AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(aggregate_type->getFunctionName()))
+            found = true;
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return found;
+}
 
 /// When assembling the result of a Variant/Dynamic-to-column conversion, the result column must have
 /// the exact type of the converted columns it is filled from, otherwise `insertFrom` fails the column
@@ -406,14 +426,17 @@ namespace detail
 
 ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const
 {
-    if (!settings.allow_experimental_time_decay_aggregate_functions
-        && (containsExponentialTimeDecaying(getArgumentTypes()[0])
-            || containsExponentialTimeDecaying(getResultType())))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Type {} is experimental and disabled by default. Enable it with setting "
-            "allow_experimental_time_decay_aggregate_functions",
-            containsExponentialTimeDecaying(getResultType()) ? getResultType()->getName() : getArgumentTypes()[0]->getName());
+    if (!settings.allow_experimental_time_decay_aggregate_functions)
+    {
+        const bool result_is_experimental = containsExperimentalTimeDecayTypeOrState(getResultType());
+        const bool argument_is_experimental = containsExperimentalTimeDecayTypeOrState(getArgumentTypes()[0]);
+        if (result_is_experimental || argument_is_experimental)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type {} is experimental and disabled by default. Enable it with setting "
+                "allow_experimental_time_decay_aggregate_functions",
+                result_is_experimental ? getResultType()->getName() : getArgumentTypes()[0]->getName());
+    }
 
     try
     {

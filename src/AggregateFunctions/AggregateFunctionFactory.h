@@ -134,6 +134,11 @@ public:
     /// combinator suffixes, has an execution-availability check.
     bool hasExecutionAvailabilityCheck(const String & name) const;
 
+    /// Apply the execution-availability check registered for this aggregate
+    /// function, looking through aggregate combinator suffixes. This is used
+    /// when an already-reconstructed AggregateFunction state is executed.
+    void checkExecutionAvailability(const String & name, const Settings * settings) const;
+
     /// True when this aggregate name has a dedicated legacy window implementation.
     bool hasWindowCreator(const String & name) const;
 
