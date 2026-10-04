@@ -64,16 +64,13 @@ size_t replaceJoinInputWithEmptySource(QueryPlan::Node & join_node, size_t side,
     if (typeid_cast<const ReadNothingStep *>(side_node->step.get()))
         return 0;
 
-    /// A `JoinStepLogicalLookup` drives physical join building and carries StorageJoin/dictionary validation, so it
-    /// is never detached, also when filter push-down or a runtime-filter build has wrapped it in single-child steps.
+    /// A `JoinStepLogicalLookup` drives physical join building and carries StorageJoin/dictionary validation, so it is never detached.
     for (const auto * node = side_node; node; node = node->children.size() == 1 ? node->children.front() : nullptr)
     {
         if (typeid_cast<const JoinStepLogicalLookup *>(node->step.get()))
             return 0;
     }
 
-    /// An emptied input would change the totals row the join builds from its inputs' totals, or strand the other half
-    /// of a shared subplan.
     if (carriesMoreThanRows(*side_node))
         return 0;
 
