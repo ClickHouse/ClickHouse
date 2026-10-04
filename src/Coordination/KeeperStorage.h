@@ -178,6 +178,9 @@ public:
     /// Get all active sessions
     SessionAndTimeout getActiveSessions() const;
 
+    /// Extend expiry time for sessions that are still active.
+    void touchSessions(const std::vector<int64_t> & session_ids);
+
     KeeperDigest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 
     /// Introspection function used for 4-letter commands and asynchronous metrics.
