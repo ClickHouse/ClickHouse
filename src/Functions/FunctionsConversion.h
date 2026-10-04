@@ -1087,7 +1087,8 @@ struct ConvertImplGenericToString
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
-                serialization->serializeText(col_from, row, write_buffer, format_settings);
+                if (!null_map || !null_map->getData()[row])
+                    serialization->serializeText(col_from, row, write_buffer, format_settings);
                 write_helper.finishRow();
             }
 
