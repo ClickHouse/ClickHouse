@@ -93,6 +93,7 @@ struct QueryPlanOptimizationSettings
     bool enable_group_by_top_k_optimization;
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
+    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap

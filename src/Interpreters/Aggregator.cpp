@@ -1169,21 +1169,27 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    if (params.top_k && method.top_k_heap.shouldFreeze())
+    if (params.top_k && !method.top_k_heap.frozen)
     {
-        method.top_k_heap.freeze();
-        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-    }
-
-    const bool top_k = params.top_k && !method.top_k_heap.frozen;
-
-    if (top_k)
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
-            params.top_k->observation_rows);
+            params.top_k->observation_rows,
+            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr);
+
+        /// Before the freeze check, which must judge the heap against the latest shared boundary.
+        method.top_k_heap.exchangeSharedBoundary();
+
+        if (method.top_k_heap.shouldFreeze())
+        {
+            method.top_k_heap.freeze();
+            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+        }
+    }
+
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -1232,7 +1238,11 @@ void Aggregator::executeImpl(
     };
 
     if (top_k)
+    {
         dispatch.template operator()<true>();
+        /// Publish this block's tightenings now: this may be the thread's last block.
+        method.top_k_heap.exchangeSharedBoundary();
+    }
     else
         dispatch.template operator()<false>();
 }
@@ -1467,7 +1477,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
     if constexpr (top_k)
     {
-        if (method.top_k_heap.size() >= params.top_k->k)
+        if (method.top_k_heap.hasBoundary())
             skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
     }
 
@@ -1491,7 +1501,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         if constexpr (top_k)
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.size() >= params.top_k->k
+                            : (method.top_k_heap.hasBoundary()
                                && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
             {
                 ++top_k_rows_skipped;
@@ -1680,7 +1690,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k->k)
+                if (method.top_k_heap.hasBoundary())
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
@@ -1701,7 +1711,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1797,7 +1807,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (top_k)
         {
             destroyed_states.clear();
-            if (method.top_k_heap.size() >= params.top_k->k)
+            if (method.top_k_heap.hasBoundary())
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
@@ -1823,7 +1833,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (skip_bitmap
                     ? static_cast<bool>(skip_bitmap[i])
-                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;
