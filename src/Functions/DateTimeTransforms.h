@@ -961,6 +961,17 @@ struct ToStartOfInterval;
 
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
 
+/// The whole seconds of a `DateTime64` value `t` in the scale given by `scale_multiplier`, rounded towards negative
+/// infinity. The division rounds towards zero, which would move a value before the epoch with a fractional part to
+/// the next second, and the start of its interval could then be later than the value itself.
+inline Int64 wholeSecondsRoundedDown(Int64 t, Int64 scale_multiplier)
+{
+    Int64 whole = t / scale_multiplier;
+    if (t % scale_multiplier < 0)
+        --whole;
+    return whole;
+}
+
 /// Implementation shared by the subsecond ToStartOfInterval specializations (millisecond, microsecond, nanosecond).
 /// t is the time in the scale given by scale_multiplier, num_units is the interval length in the interval unit,
 /// unit_scale is the scale of the interval unit (1000 for millisecond and so on). The result is in the unit scale.
@@ -1128,7 +1139,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
     }
     static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
+        return time_zone.toStartOfSecondInterval(wholeSecondsRoundedDown(t, scale_multiplier), seconds);
     }
 };
 
@@ -1149,7 +1160,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
     }
     static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
+        return time_zone.toStartOfMinuteInterval(wholeSecondsRoundedDown(t, scale_multiplier), minutes);
     }
 };
 
@@ -1170,7 +1181,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     }
     static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
+        return time_zone.toStartOfHourInterval(wholeSecondsRoundedDown(t, scale_multiplier), hours);
     }
 };
 
@@ -1191,7 +1202,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     }
     static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
+        return time_zone.toStartOfDayInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), days);
     }
 };
 
@@ -1213,7 +1224,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), weeks);
         Int64 days = 0;
         if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -1238,19 +1249,33 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     }
     static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        const Int64 scaled_time = t / scale_multiplier;
+        /// With an origin, `t` is the non-negative offset from it.
+        const Int64 scaled_time = wholeSecondsRoundedDown(t, scale_multiplier);
         if (!origin.has_value())
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
 
-        const Int64 scaled_origin = origin.value() / scale_multiplier;
-        const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
-        Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
-        const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
-        months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
-        months_to_add += years * 12;
+        /// Round the origin down as well: otherwise a fractional origin before the epoch is moved to the next second,
+        /// possibly to the next day, and the bucket starts computed below would not match the ones of the origin.
+        const Int64 scaled_origin = wholeSecondsRoundedDown(origin.value(), scale_multiplier);
+        /// The number of calendar months between the origin and the argument. The bucket starting that many months
+        /// after the origin is in the same month as the argument, and every later bucket is in a later month, so the
+        /// bucket of the argument is either the last one not exceeding this number of months, or the one before it,
+        /// when the bucket start is later in the month than the argument (by the day of month, which `addMonths`
+        /// can clip to the end of a shorter month, or by the time of day).
+        const Int64 months_to_add = (time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin)) * 12
+            + time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
         Int64 month_multiplier = (months_to_add / months) * months;
 
-        return (time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin));
+        /// The bucket start is checked exactly, so a bucket boundary is rounded to itself.
+        /// `offset` is in whole seconds and `t` is non-negative, so `offset > scaled_time` is the same as
+        /// `offset * scale_multiplier > t`, but cannot overflow near the top of the `DateTime64` range.
+        Int64 offset = time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin);
+        while (month_multiplier >= months && offset > scaled_time)
+        {
+            month_multiplier -= months;
+            offset = time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin);
+        }
+        return offset;
     }
 };
 
@@ -1272,7 +1297,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), quarters);
         Int64 months = 0;
         if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -1298,7 +1323,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), years);
         Int64 months = 0;
         if (common::mulOverflow(years, static_cast<Int64>(12), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
