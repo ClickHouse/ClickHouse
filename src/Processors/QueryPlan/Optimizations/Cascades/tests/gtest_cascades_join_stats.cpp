@@ -1,10 +1,31 @@
 #include <gtest/gtest.h>
 
 #include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Core/Joins.h>
 #include <algorithm>
+#include <utility>
 
 using namespace DB;
+
+TEST(CascadesJoinStats, JoinKeyNdvMinRespectsPreservedSide)
+{
+    const auto update_join_key_ndvs = [](JoinKind kind, JoinStrictness strictness, UInt64 left_ndv, UInt64 right_ndv)
+    {
+        ColumnStats left_stats{.num_distinct_values = left_ndv};
+        ColumnStats right_stats{.num_distinct_values = right_ndv};
+        QueryPlanOptimizations::updateJoinKeyDistinctCounts(left_stats, right_stats, kind, strictness);
+        return std::pair{left_stats.num_distinct_values, right_stats.num_distinct_values};
+    };
+
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Inner, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{40, 40}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Left, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Right, JoinStrictness::All, 40, 100), (std::pair<UInt64, UInt64>{40, 100}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Full, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Left, JoinStrictness::Anti, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Left, JoinStrictness::Semi, 100, 40), (std::pair<UInt64, UInt64>{40, 40}));
+    EXPECT_EQ(update_join_key_ndvs(JoinKind::Right, JoinStrictness::Semi, 40, 100), (std::pair<UInt64, UInt64>{40, 40}));
+}
 
 /// `clampJoinRowCount` adjusts an inner-join-style estimate to the semantics of the join kind and
 /// strictness. `base` is the multiplicative inner estimate; `left`/`right` are the input counts.

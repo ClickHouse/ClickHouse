@@ -9,7 +9,6 @@ SET materialize_statistics_on_insert = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 

@@ -9,6 +9,16 @@
 namespace DB
 {
 
+class ExpressionActions;
+
+/// The type of the argument of every JSON index function of an index expression, by position in the
+/// index sample block. Only positions whose index column is a function over a `JSON` column are
+/// present, which is what the matchers below can match a subcolumn against.
+using JSONIndexArgumentTypes = std::unordered_map<size_t, DataTypePtr>;
+
+/// Collect the argument types of the JSON index functions of an index expression.
+JSONIndexArgumentTypes collectJSONIndexArgumentTypes(const ExpressionActions & index_expression);
+
 /// Information extracted from a column name that references a JSON subcolumn
 /// matched against a JSONAllPaths(...) index column.
 struct JSONSubcolumnIndexInfo
@@ -29,16 +39,19 @@ struct JSONSubcolumnIndexInfo
 /// Returns nullopt if:
 ///   - No matching index column is found in the header
 ///   - The subcolumn is a sub-object access (^ prefix) or a combined literal+sub-object access (@ prefix)
+///   - The subcolumn reaches inside a declared typed path of the `JSON` type (see the implementation)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const JSONIndexArgumentTypes & json_argument_types);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const JSONIndexArgumentTypes & json_argument_types);
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 
@@ -48,13 +61,15 @@ class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const JSONIndexArgumentTypes & json_argument_types);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const JSONIndexArgumentTypes & json_argument_types);
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:
