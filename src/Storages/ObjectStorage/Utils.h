@@ -29,6 +29,13 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
+/// A change data feed is requested by either bound; -1 is the unset value of both.
+bool deltaLakeChangeDataFeedSettingsSet(const Settings & settings);
+
+/// A change data feed read is served by a delta-kernel iterator that never asks the initiator for a
+/// read task, so it cannot be divided between nodes; a bound left set on a non-Delta read is not one.
+bool isDeltaLakeChangeDataFeedRead(const StorageObjectStorageConfiguration & configuration, const Settings & settings);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
