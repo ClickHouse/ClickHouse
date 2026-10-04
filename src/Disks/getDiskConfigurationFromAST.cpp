@@ -118,8 +118,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected a list of key=value arguments");
 
         auto function_args = function_args_expr->children;
-        if (function_args.empty())
-            throwBadConfiguration("expected a non-empty list of key=value arguments");
+        if (function_args.size() < 2)
+            throwBadConfiguration("expected key=value arguments");
 
         auto * key_identifier = function_args[0]->as<ASTIdentifier>();
         if (!key_identifier)
