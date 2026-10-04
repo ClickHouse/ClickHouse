@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <optional>
 #include <set>
 #include <thread>
@@ -899,6 +900,58 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesEveryInput)
     }
 }
 
+TEST(DistinctSetFilterConstants, PreservesHeaderConstants)
+{
+    const DataTypes types{
+        std::make_shared<DataTypeString>(),
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+    for (const auto & type : types)
+    {
+        auto value_column = type->createColumn();
+        const Field value = isArray(type) ? Field(Array{Field(String(4096, 'x'))}) : Field(String(4096, 'x'));
+        value_column->insert(value);
+        const ColumnPtr constant = ColumnConst::create(std::move(value_column), 0);
+        const Block header = {
+            ColumnWithTypeAndName(constant, type, "payload"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+
+        for (const bool prepare : {false, true})
+        {
+            for (const Names & keys : {Names{}, Names{"k"}})
+            {
+                SCOPED_TRACE(::testing::Message() << type->getName() << ", prepare=" << prepare << ", keys=" << keys.size());
+                DistinctSetFilter filter(header, keys, SizeLimits{});
+                const auto & constant_data = assert_cast<const ColumnConst &>(*constant).getDataColumn();
+                auto check_constant = [&](const Chunk & chunk)
+                {
+                    const auto * output = typeid_cast<const ColumnConst *>(chunk.getColumns()[0].get());
+                    ASSERT_NE(output, nullptr);
+                    EXPECT_EQ(output->size(), chunk.getNumRows());
+                    EXPECT_EQ(&output->getDataColumn(), &constant_data);
+                    EXPECT_EQ((*output)[0], value);
+                };
+
+                const Columns inputs{makeColumn({1, 2, 3}), makeColumn({2, 3, 4}), makeColumn({1, 2, 3})};
+                const std::array<size_t, 3> expected_rows{3, 1, 0};
+                for (size_t i = 0; i < inputs.size(); ++i)
+                {
+                    Chunk input({constant->cloneResized(3), inputs[i]}, 3);
+                    if (prepare)
+                    {
+                        filter.prepareForInsert(input);
+                        check_constant(input);
+                    }
+                    auto output = filter.filter(std::move(input));
+                    ASSERT_EQ(output.getNumRows(), expected_rows[i]);
+                    if (output.hasRows())
+                        check_constant(output);
+                }
+                EXPECT_EQ(filter.getTotalRowCount(), 4);
+            }
+        }
+    }
+}
+
 TEST(DistinctSetFilterGrowth, RetainedStringsGrowWithSpareTableCapacity)
 {
     const DataTypes types{
@@ -999,6 +1052,184 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
                 EXPECT_GE(estimate, filter.getTotalByteCount() - before);
                 EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), 0);
             }
+        }
+    }
+}
+
+TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
+{
+    const auto u8 = std::make_shared<DataTypeUInt8>();
+    const auto u16 = std::make_shared<DataTypeUInt16>();
+    const auto u32 = std::make_shared<DataTypeUInt32>();
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+    const std::vector<DataTypes> key_types{
+        {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
+        {std::make_shared<DataTypeNullable>(u8), u64},
+        {std::make_shared<DataTypeFixedString>(3), u64},
+        {std::make_shared<DataTypeLowCardinality>(u64), u64},
+        {std::make_shared<DataTypeArray>(u64)}};
+
+    for (const auto & types : key_types)
+    {
+        for (const size_t rows : {0, 1, 256})
+        {
+            Columns columns;
+            ColumnRawPtrs key_columns;
+            for (const auto & type : types)
+            {
+                auto column = type->createColumn();
+                column->insertManyDefaults(rows);
+                key_columns.push_back(column.get());
+                columns.emplace_back(std::move(column));
+            }
+            Sizes key_sizes;
+            SetVariants set;
+            set.init(SetVariants::chooseMethod(key_columns, key_sizes));
+            SCOPED_TRACE(::testing::Message() << "method=" << static_cast<int>(set.type) << ", rows=" << rows);
+
+            auto check = [&]<typename Method>(const Method &)
+            {
+                typename Method::State state(key_columns, key_sizes, {});
+                size_t actual_bytes = 0;
+                if constexpr (requires { state.prepared_keys; })
+                {
+                    /// An empty array uses shared static padding without allocating a batch buffer.
+                    if (!state.prepared_keys.empty())
+                        actual_bytes = state.prepared_keys.allocated_bytes();
+                }
+                EXPECT_EQ(set.estimatePreparedKeysMemory(rows, key_sizes), actual_bytes);
+            };
+            switch (set.type)
+            {
+                case SetVariants::Type::EMPTY:
+                    FAIL() << "Set method was not initialized";
+#define M(NAME) case SetVariants::Type::NAME: check(*set.NAME); break;
+                APPLY_FOR_SET_VARIANTS(M)
+#undef M
+            }
+        }
+    }
+}
+
+TEST(DistinctSetFilterInsertion, CheckedPrefixPreservesKeysAndPayloads)
+{
+    const auto u8 = std::make_shared<DataTypeUInt8>();
+    const auto u16 = std::make_shared<DataTypeUInt16>();
+    const auto u32 = std::make_shared<DataTypeUInt32>();
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+    const std::vector<DataTypes> key_types{
+        {u8}, {u16}, {u32}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64, u64},
+        {std::make_shared<DataTypeNullable>(u64)}, {std::make_shared<DataTypeNullable>(u64), u64},
+        {std::make_shared<DataTypeString>()},
+        {std::make_shared<DataTypeFixedString>(64)}, {std::make_shared<DataTypeLowCardinality>(u64)},
+        {std::make_shared<DataTypeArray>(u64)}};
+
+    for (const auto & types : key_types)
+    {
+        for (const size_t allowed_keys : {0, 2, 3})
+        {
+            Block header;
+            Columns columns;
+            Names keys;
+            for (size_t pos = 0; pos < types.size(); ++pos)
+            {
+                const auto & type = types[pos];
+                keys.push_back("k" + std::to_string(pos));
+                header.insert(ColumnWithTypeAndName(type, keys.back()));
+                auto column = type->createColumn();
+                for (const UInt64 value : {1, 1, 2, 2, 3, 3})
+                {
+                    if (isString(type) || isFixedString(type))
+                        column->insert(Field(std::to_string(value)));
+                    else if (isArray(type))
+                        column->insert(Field(Array{Field(value)}));
+                    else if (type->isNullable() && value == 1)
+                        column->insertDefault();
+                    else
+                        column->insert(Field(value));
+                }
+                columns.emplace_back(std::move(column));
+            }
+            header.insert(ColumnWithTypeAndName(u64, "payload"));
+            auto payload = ColumnUInt64::create(6);
+            iota(payload->getData().data(), 6, UInt64{0});
+            columns.emplace_back(std::move(payload));
+            Chunk input(std::move(columns), 6);
+            DistinctSetFilter filter(header, keys, SizeLimits{});
+            filter.prepareForInsert(input);
+            SCOPED_TRACE(::testing::Message() << input.dumpStructure() << ", allowed_keys=" << allowed_keys);
+            size_t checks = 0;
+            auto result = filter.filterWithInsertionCheck(input.clone(), [&](size_t) { return checks++ < allowed_keys; });
+            EXPECT_EQ(result.processed_rows, allowed_keys * 2);
+            ASSERT_EQ(result.chunk.getNumRows(), allowed_keys);
+            for (size_t row = 0; row < allowed_keys; ++row)
+                EXPECT_EQ((*result.chunk.getColumns().back())[row], Field(UInt64(row * 2)));
+
+            /// The rejected suffix must still be eligible for insertion, including dictionary indices
+            /// that were not consumed by checked insertion.
+            if (result.processed_rows < input.getNumRows())
+            {
+                Columns suffix;
+                for (const auto & column : input.getColumns())
+                    suffix.push_back(column->cut(result.processed_rows, 6 - result.processed_rows));
+                auto tail = filter.filter(Chunk(std::move(suffix), 6 - result.processed_rows));
+                ASSERT_EQ(tail.getNumRows(), 3 - allowed_keys);
+                for (size_t row = 0; row < tail.getNumRows(); ++row)
+                    EXPECT_EQ((*tail.getColumns().back())[row], Field(UInt64((row + allowed_keys) * 2)));
+            }
+
+            auto duplicates = filter.filterWithInsertionCheck(input.clone(), [&](size_t)
+            {
+                ADD_FAILURE() << "Existing keys must not request insertion memory";
+                return false;
+            });
+            EXPECT_EQ(duplicates.processed_rows, 6);
+            EXPECT_EQ(duplicates.chunk.getNumRows(), 0);
+        }
+    }
+}
+
+TEST(DistinctSetFilterInsertion, CheckedStringGrowthUsesCurrentRow)
+{
+    const auto type = std::make_shared<DataTypeString>();
+    Block header{ColumnWithTypeAndName(type, "k")};
+    auto column = ColumnString::create();
+    column->insert(Field(String(4 << 20, 'x')));
+    column->insert(Field("y"));
+    Chunk input(Columns{std::move(column)}, 2);
+    DistinctSetFilter filter(header, Names{}, SizeLimits{});
+    filter.prepareForInsert(input);
+    std::vector<size_t> estimates;
+    auto result = filter.filterWithInsertionCheck(std::move(input), [&](size_t growth)
+    {
+        estimates.push_back(growth);
+        return true;
+    });
+    ASSERT_EQ(estimates.size(), 2);
+    EXPECT_GE(estimates[0], 4 << 20);
+    EXPECT_LT(estimates[1], 1 << 20);
+    EXPECT_EQ(result.processed_rows, 2);
+    EXPECT_EQ(result.chunk.getNumRows(), 2);
+}
+
+TEST(DistinctSetFilterInsertion, CheckedPrefixRespectsSizeLimits)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+    for (const auto mode : {OverflowMode::THROW, OverflowMode::BREAK})
+    {
+        DistinctSetFilter filter(header, {}, SizeLimits(/*max_rows=*/ 2, /*max_bytes=*/ 0, mode));
+        Chunk input({makeColumn({1, 2, 3, 4})}, 4);
+        filter.prepareForInsert(input);
+        size_t checks = 0;
+        const auto can_insert = [&](size_t) { return checks++ < 3; };
+        if (mode == OverflowMode::THROW)
+            EXPECT_THROW(filter.filterWithInsertionCheck(std::move(input), can_insert), Exception);
+        else
+        {
+            auto result = filter.filterWithInsertionCheck(std::move(input), can_insert);
+            EXPECT_EQ(result.processed_rows, 3);
+            EXPECT_EQ(result.chunk.getNumRows(), 3);
+            EXPECT_TRUE(filter.isLimitReached());
         }
     }
 }

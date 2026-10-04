@@ -1,0 +1,9 @@
+t_json_flattened: accepted truncated blocks 0
+0
+12	18	6	51
+t_json_array_flattened: accepted truncated blocks 0
+0
+12	12	2
+t_dynamic_flattened: accepted truncated blocks 0
+0
+12	6	27	str8
