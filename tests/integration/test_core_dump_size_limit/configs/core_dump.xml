@@ -1,5 +1,0 @@
-<clickhouse>
-    <core_dump>
-        <size_limit>1073741824</size_limit>
-    </core_dump>
-</clickhouse>

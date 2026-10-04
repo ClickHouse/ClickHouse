@@ -3762,7 +3762,7 @@ def test_hiding_credentials(rabbitmq_cluster, db, unique):
     instance.query("SYSTEM FLUSH LOGS")
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {db}.{table_name}%'")
     assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
-    assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message
+    assert "rabbitmq_address = \\'[HIDDEN]\\'" in  message
 
 
 def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique):
