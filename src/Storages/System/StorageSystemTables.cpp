@@ -40,6 +40,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageProxy.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Common/StringUtils.h>
@@ -448,6 +449,8 @@ protected:
                         const auto * alias = table.second->as<StorageAlias>();
                         const bool can_expose_metadata
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
+                        const bool can_expose_declared_definition
+                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -500,7 +503,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_metadata && temp_db
+                            ASTPtr ast = can_expose_declared_definition && temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -625,6 +628,8 @@ protected:
                 const auto * alias = table ? table->as<StorageAlias>() : nullptr;
                 const bool can_expose_metadata
                     = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+                const bool can_expose_declared_definition
+                    = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
 
                 TableLockHolder lock;
 
@@ -735,7 +740,7 @@ protected:
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = can_expose_metadata
+                    auto rendered = can_expose_declared_definition
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
@@ -755,46 +760,28 @@ protected:
                 if (columns_mask[src_index++])
                     fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
-                ASTPtr expression_ptr;
-                if (columns_mask[src_index++])
+                auto insert_expression_or_default = [&](const ASTPtr & expression_ptr)
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (expression_ptr)
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
-                }
+                };
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getPartitionKeyAST() : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getSortingKey().expression_list_ast : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getPrimaryKey().expression_list_ast : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getSamplingKeyAST() : nullptr);
+
+                if (columns_mask[src_index++])
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getUniqueKeyAST() : nullptr);
 
                 if (columns_mask[src_index++])
                     fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
@@ -869,7 +856,7 @@ protected:
                     ++res_index;
                 }
 
-                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+                auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip);
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)

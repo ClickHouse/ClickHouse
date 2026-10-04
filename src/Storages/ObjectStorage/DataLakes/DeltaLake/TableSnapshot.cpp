@@ -140,10 +140,10 @@ public:
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
