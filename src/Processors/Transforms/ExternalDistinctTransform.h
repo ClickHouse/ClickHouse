@@ -2,9 +2,11 @@
 
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/Sources/ExternalMergeSource.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/logger_useful.h>
 
@@ -14,9 +16,7 @@
 namespace DB
 {
 
-class BufferingFromFileSource;
 class BufferingToFileSink;
-class DistinctSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
 /// spill threshold or projected growth and spill workspace exceed the remaining threshold budget.
@@ -32,11 +32,14 @@ class DistinctSortedTransform;
 /// the estimate or no tail remains.
 /// `DistinctSortedTransform` merges the runs and the unique in-memory tail, removing duplicate keys
 /// and keys emitted before spilling. Runs are ordered by key and then by the already-emitted flag
-/// descending, placing suppression rows first in each equal-key range. Ordinary runs follow in arrival
-/// order, preserving the first payload among equal keys through input-index ties.
+/// descending, placing suppression rows first. `ExternalMergeSource` bounds simultaneous file readers
+/// by merging files in groups with matching layouts. It selects the smallest compressed files within
+/// each group; the final merge combines both groups and the in-memory tail to apply suppression.
 ///
-/// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
-/// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
+/// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to ordinary rows
+/// and constant zeros to suppression rows so both layouts support the same comparator. Comparing these
+/// after the emitted flag retains the earliest ordinary row independently of merge order.
+/// `MergeSortingTransform` restores arrival order after deduplication and can itself spill.
 /// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
 class ExternalDistinctTransform final : public IProcessor
 {
@@ -51,7 +54,8 @@ public:
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
         size_t preferred_block_bytes_,
-        bool preserve_input_order_);
+        bool preserve_input_order_,
+        size_t max_external_merge_fan_in_);
 
     ~ExternalDistinctTransform() override;
 
@@ -70,6 +74,7 @@ private:
         }
 
         DistinctSetFilter set;
+
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
         bool input_finished = false;
     };
@@ -77,18 +82,6 @@ private:
     struct ExtractingSuppression
     {
         std::unique_ptr<DistinctSetFilter::KeyExtractor> keys;
-    };
-
-    struct PreparedMerge
-    {
-        std::shared_ptr<DistinctSortedTransform> merger;
-        Processors order_restoration;
-    };
-
-    struct MergeRegistration
-    {
-        std::shared_ptr<DistinctSortedTransform> merger;
-        InputPort & input;
     };
 
     /// Exhausting the merger and handing off its last chunk completes the producer, not the file.
@@ -103,8 +96,6 @@ private:
     {
         RunWriteProgress progress;
         std::shared_ptr<BufferingToFileSink> sink;
-        std::shared_ptr<BufferingFromFileSource> source;
-        std::optional<PreparedMerge> initial_merge;
     };
 
     struct ConnectingSuppressionRun
@@ -119,7 +110,7 @@ private:
         OutputPort & output;
         std::unique_ptr<DistinctSetFilter::KeyExtractor> keys;
         InputPort & completion;
-        OutputPort & readiness;
+        std::shared_ptr<BufferingToFileSink> sink;
     };
 
     struct SortingUnit
@@ -146,6 +137,8 @@ private:
     {
         RunWriteProgress progress;
         OutputPort & output;
+        InputPort & completion;
+        std::shared_ptr<BufferingToFileSink> sink;
     };
 
     struct PreparingTail
@@ -165,12 +158,12 @@ private:
         OutputPort & output;
         CollectingInput remaining;
         InputPort & completion;
-        OutputPort & readiness;
+        std::shared_ptr<BufferingToFileSink> sink;
     };
 
-    struct ConnectingTail
+    struct ConnectingMerge
     {
-        std::shared_ptr<MergeSorterSource> source;
+        Pipe pipe;
     };
 
     struct Merging
@@ -196,16 +189,13 @@ private:
         PreparingTail,
         ConnectingTailRun,
         WritingTailRun,
-        ConnectingTail,
+        ConnectingMerge,
         Merging,
         Finishing>;
 
     Status prepareInput();
     Status prepareCollectingInput(CollectingInput & collecting);
-    Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
-    Status prepareSuppressionWrite(WritingSuppressionRun & writing);
-    Status prepareInputWrite(WritingInputRun & writing);
-    Status prepareTailWrite(WritingTailRun & writing);
+    Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output, InputPort & completion);
     Status prepareMergedOutput(Merging & merging);
     Status prepareFinish();
     Status finish();
@@ -222,14 +212,22 @@ private:
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
     size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
+    /// Estimates the reader of a temporary file that is still to be written, whose blocks hold
+    /// `block_rows` rows.
+    size_t estimateNewFileReadMemory(size_t block_rows) const;
+    size_t maxRowsInIntermediateMergeBlock() const;
+    /// Returns the temporary-file memory of merging `num_files` files whose reader estimates sum to
+    /// `files_read_memory`, the largest being `max_read_memory`: the readers open at a time under the fan-in
+    /// limit, plus the writer of intermediate merges when the limit requires them.
+    size_t estimateMergeFileMemory(size_t num_files, size_t files_read_memory, size_t max_read_memory) const;
     size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
 
     PreparedRun prepareRun(
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
-    PreparedMerge prepareMerge();
-    void connectMerge(PreparedMerge & prepared, Processors & processors);
-    OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
+    Pipe createMergePipe(Chunks tail);
+    void connectRun(PreparedRun & prepared, Processors & processors);
+
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
@@ -242,25 +240,31 @@ private:
     const size_t max_block_size_rows;
     const size_t preferred_block_bytes;
     const bool preserve_input_order;
+    const size_t max_external_merge_fan_in;
+
     /// Created at the first spill from the representation selected by the initialized set.
     std::optional<DistinctSpillLayout> spill_layout;
 
-    /// Tracks connected merge inputs until tail attachment or early termination closes registration.
-    std::optional<MergeRegistration> merge_registration;
+    ExternalMergeSource::Runs suppression_runs;
+    ExternalMergeSource::Runs ordinary_runs;
     size_t temporary_files_num = 0;
-    /// Run output sizes estimate the memory needed to read all files concurrently during merging.
+    /// Reader memory of the run files, estimated from each run's output blocks, summed over all files and
+    /// at its largest. `estimateMergeFileMemory` derives the memory of merging the files from both.
     size_t estimated_file_read_memory = 0;
+    size_t max_file_read_memory = 0;
     /// Largest average row width observed before or after deduplication, including the emitted flag.
     size_t max_average_row_bytes = 0;
 
     /// Counts accepted input rows and provides the next arrival number.
     UInt64 consumed_rows = 0;
+
     /// Counts rows admitted to the result, before the pending output is pushed to its port.
     size_t result_rows = 0;
 
     /// Unprocessed input, including a partially hashed chunk's suffix, remains here until suppression
     /// extraction finishes.
     Chunk input_chunk;
+
     /// Both hashing and merging produce results here, independently of spill-writing progress.
     Chunk output_chunk;
 

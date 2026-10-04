@@ -26,6 +26,8 @@ namespace DB
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, "Tracked query memory threshold that triggers external `DISTINCT`. See the corresponding query setting in `Settings`.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0., "Fraction of available memory used to derive the external `DISTINCT` trigger. See the corresponding query setting in `Settings`.", 0) \
     \
+    DECLARE(UInt64, max_external_merge_fan_in, 0, "Maximum simultaneous temporary-file inputs for external sorting and `DISTINCT` merges. Zero means unlimited, preserving the behavior of plans that omit this setting.", 0) \
+    \
     DECLARE(UInt64, max_rows_to_sort, 0, "If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
@@ -35,7 +37,7 @@ namespace DB
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
-    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
+    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum free disk space, in bytes, to keep while writing temporary data for external sorting, `full_sorting_merge` joins, aggregation, and `DISTINCT`.", 0) \
     \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, "Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.", 0) \
     DECLARE(Bool, aggregation_in_order_memory_bound_merging, true, "Enable memory bound merging strategy when in-order is applied.", 0) \

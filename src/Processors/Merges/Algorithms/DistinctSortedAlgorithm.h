@@ -9,17 +9,21 @@
 namespace DB
 {
 
-/// Merges external `DISTINCT` runs. The sort description contains the distinct keys without collators,
-/// followed by the already-emitted flag descending. Each input contains only ordinary rows or only
-/// suppression rows. Suppression inputs need only the sort columns; ordinary inputs also provide every
-/// output column by name. Ordinary chunks are unique under the key sort order; suppression chunks may
-/// contain sort-equal keys.
-/// Equal ordinary keys retain the first row in source order. Suppression keys are never emitted.
+/// Merges sorted external `DISTINCT` runs and removes duplicate keys. Suppression rows identify keys
+/// already emitted before spilling; they suppress matching ordinary rows and are never emitted.
+/// The sort description contains the distinct keys without collators, followed by the already-emitted
+/// flag descending and an optional arrival number ascending. Key equality excludes the flag and
+/// arrival number. When arrival numbers are present, equal ordinary keys retain the earliest row
+/// independently of source order. Otherwise, any representative can survive.
+/// Each input contains only ordinary rows or only suppression rows. Suppression inputs need only the
+/// sort columns; ordinary inputs also provide every output column by name. Ordinary chunks are unique
+/// under the key sort order; suppression chunks may contain sort-equal keys.
 class DistinctSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     DistinctSortedAlgorithm(
-        SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_, size_t max_block_size_rows_);
+        SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_,
+        size_t num_key_columns_, size_t max_block_size_rows_);
 
     const char * getName() const override { return "DistinctSortedAlgorithm"; }
     void addInput(SharedHeader header);
@@ -29,8 +33,10 @@ public:
     MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
+
     /// Copies the boundary key before its input is replaced or forwarded to the output.
     void saveLastKey();
+
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
 

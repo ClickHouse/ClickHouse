@@ -743,7 +743,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*max_bytes_in_block_before_external_sort_*/0,
         /*max_bytes_in_query_before_external_sort_*/0,
         /*tmp_data_*/nullptr,
-        /*min_free_disk_space_*/0));
+        /*min_free_disk_space_*/0,
+        /*max_external_merge_fan_in_=*/max_files_to_merge));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

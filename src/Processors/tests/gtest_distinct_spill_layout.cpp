@@ -35,7 +35,7 @@ TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
                 ? layout.prepareSuppressionChunk(std::move(columns))
                 : layout.prepareInputChunk(Chunk(std::move(columns), keys.size()), /*first_arrival_number=*/ 0);
             const auto & header = suppression ? layout.getSuppressionRunHeader() : layout.getInputRunHeader();
-            const size_t flag_pos = header->getPositionByName(layout.getRunSortDescription().back().column_name);
+            const size_t flag_pos = header->getPositionByName(layout.getRunSortDescription()[layout.getKeySortDescription().size()].column_name);
             const ColumnPtr initial_flag = chunk.getColumns()[flag_pos];
             EXPECT_EQ(initial_flag->size(), keys.size());
 
@@ -96,11 +96,27 @@ TEST(DistinctSpillLayout, SuppressionContainsOnlyRetainedKeys)
             EXPECT_EQ(representation, generic ? DistinctKeyRepresentation::Hash128 : DistinctKeyRepresentation::Columns);
             const DistinctSpillLayout layout(header, {0}, representation, preserve_input_order);
             auto ordinary = layout.prepareInputChunk(input.clone(), 10);
+            if (preserve_input_order)
+            {
+                const auto & arrival_name = layout.getArrivalNumberSortDescription().front().column_name;
+                const auto & arrivals = ordinary.getColumns()[layout.getInputRunHeader()->getPositionByName(arrival_name)];
+                for (size_t row = 0; row < ordinary.getNumRows(); ++row)
+                    EXPECT_EQ(arrivals->getUInt(row), 10 + row);
+            }
+            EXPECT_EQ(layout.getRunSortDescription().size(), layout.getKeySortDescription().size() + 1 + preserve_input_order);
+            EXPECT_EQ(layout.getMergedHeader()->columns(), header->columns() + preserve_input_order);
+            EXPECT_EQ(layout.preservesInputOrder(), preserve_input_order);
+            Columns merged_columns;
+            for (const auto & column : *layout.getMergedHeader())
+                merged_columns.push_back(ordinary.getColumns()[layout.getInputRunHeader()->getPositionByName(column.name)]);
+            auto restored = layout.restoreOutputChunk(Chunk(std::move(merged_columns), ordinary.getNumRows()));
+            EXPECT_EQ(restored.getNumColumns(), header->columns());
+            EXPECT_EQ(restored.getNumRows(), ordinary.getNumRows());
             auto emitted = filter.filter(std::move(input));
             ASSERT_EQ(emitted.getNumRows(), 2);
             auto extractor = std::move(filter).extractKeys();
             auto suppression = layout.prepareSuppressionChunk(extractor->next(10, 0));
-            ASSERT_EQ(suppression.getNumColumns(), 2);
+            ASSERT_EQ(suppression.getNumColumns(), 2 + preserve_input_order);
             ASSERT_EQ(suppression.getNumRows(), 2);
             EXPECT_LT(suppression.allocatedBytes(), payload_size);
             EXPECT_FALSE(layout.getSuppressionRunHeader()->has("payload"));

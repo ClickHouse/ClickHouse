@@ -9,15 +9,18 @@ namespace DB
 {
 
 DistinctSortedAlgorithm::DistinctSortedAlgorithm(
-    SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_, size_t max_block_size_rows_)
+    SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_,
+    size_t num_key_columns_, size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
     , description(std::move(description_))
-    , num_key_columns(description.size() - 1)
+    , num_key_columns(num_key_columns_)
     , max_block_size_rows(max_block_size_rows_)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
-    chassert(description.size() >= 2);
-    chassert(description.back().direction == -1);
+    chassert(num_key_columns > 0);
+    chassert(description.size() == num_key_columns + 1 || description.size() == num_key_columns + 2);
+    chassert(description[num_key_columns].direction == -1);
+    chassert(description.size() == num_key_columns + 1 || description.back().direction == 1);
     for (auto & header : input_headers)
         addInput(std::move(header));
 }

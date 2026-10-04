@@ -6,6 +6,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -57,6 +58,12 @@ size_t estimateRunReadMemory(size_t max_block_bytes, size_t buffer_size)
     return 4 * max_block_bytes + 2 * buffer_size + DBMS_DEFAULT_BUFFER_SIZE;
 }
 
+size_t estimateRunWriteBuffersMemory(size_t buffer_size)
+{
+    /// A temporary-file writer holds file, compression-input, and compression-output buffers.
+    return 3 * buffer_size;
+}
+
 }
 
 ExternalDistinctTransform::ExternalDistinctTransform(
@@ -69,7 +76,8 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     size_t min_free_disk_space_,
     size_t max_block_size_rows_,
     size_t preferred_block_bytes_,
-    bool preserve_input_order_)
+    bool preserve_input_order_,
+    size_t max_external_merge_fan_in_)
     : IProcessor({header_}, {header_})
     , state(std::in_place_type<Hashing>, *header_, columns_, set_size_limits_)
     , limit_hint(limit_hint_)
@@ -80,6 +88,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_bytes(preferred_block_bytes_)
     , preserve_input_order(preserve_input_order_)
+    , max_external_merge_fan_in(max_external_merge_fan_in_)
 {
 }
 
@@ -117,14 +126,11 @@ IProcessor::Status ExternalDistinctTransform::prepare()
             return Status::Ready;
         else if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>
             || std::is_same_v<Phase, ConnectingInputRun> || std::is_same_v<Phase, ConnectingTailRun>
-            || std::is_same_v<Phase, ConnectingTail>)
+            || std::is_same_v<Phase, ConnectingMerge>)
             return Status::UpdatePipeline;
-        else if constexpr (std::is_same_v<Phase, WritingSuppressionRun>)
-            return prepareSuppressionWrite(phase);
-        else if constexpr (std::is_same_v<Phase, WritingInputRun>)
-            return prepareInputWrite(phase);
-        else if constexpr (std::is_same_v<Phase, WritingTailRun>)
-            return prepareTailWrite(phase);
+        else if constexpr (std::is_same_v<Phase, WritingSuppressionRun>
+            || std::is_same_v<Phase, WritingInputRun> || std::is_same_v<Phase, WritingTailRun>)
+            return prepareRunWrite(phase.progress, phase.output, phase.completion);
         else if constexpr (std::is_same_v<Phase, Merging>)
             return prepareMergedOutput(phase);
         else if constexpr (std::is_same_v<Phase, Finishing>)
@@ -177,7 +183,8 @@ IProcessor::Status ExternalDistinctTransform::prepareCollectingInput(CollectingI
     return status;
 }
 
-IProcessor::Status ExternalDistinctTransform::prepareRunWrite(RunWriteProgress & progress, OutputPort & output)
+IProcessor::Status ExternalDistinctTransform::prepareRunWrite(
+    RunWriteProgress & progress, OutputPort & output, InputPort & completion)
 {
     if (!output.isFinished())
     {
@@ -195,61 +202,19 @@ IProcessor::Status ExternalDistinctTransform::prepareRunWrite(RunWriteProgress &
 
     chassert(!progress.merger);
     chassert(!progress.chunk);
-    return Status::Finished;
-}
-
-IProcessor::Status ExternalDistinctTransform::prepareSuppressionWrite(WritingSuppressionRun & writing)
-{
-    auto status = prepareRunWrite(writing.progress, writing.output);
-    if (status != Status::Finished)
-        return status;
-
-    if (writing.completion.hasData())
+    if (completion.hasData())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data on the external DISTINCT run completion port");
 
-    if (!writing.completion.isFinished())
+    /// A finished file joins the merge inputs in `updatePipeline`. Waiting for it also lets the writer of
+    /// a tail prefix release its compression buffers and final output block before the remaining tail
+    /// is budgeted.
+    if (!completion.isFinished())
     {
-        writing.completion.setNeeded();
+        completion.setNeeded();
         return Status::NeedData;
     }
 
-    writing.readiness.finish();
-    auto keys = std::move(writing.keys);
-    state.emplace<ExtractingSuppression>(std::move(keys));
-    return Status::Ready;
-}
-
-IProcessor::Status ExternalDistinctTransform::prepareInputWrite(WritingInputRun & writing)
-{
-    auto status = prepareRunWrite(writing.progress, writing.output);
-    if (status != Status::Finished)
-        return status;
-
-    auto & collecting = state.emplace<CollectingInput>();
-    /// Producer completion is sufficient here; the file reader waits for the sink independently.
-    return prepareCollectingInput(collecting);
-}
-
-IProcessor::Status ExternalDistinctTransform::prepareTailWrite(WritingTailRun & writing)
-{
-    auto status = prepareRunWrite(writing.progress, writing.output);
-    if (status != Status::Finished)
-        return status;
-
-    chassert(!writing.completion.hasData());
-    if (!writing.completion.isFinished())
-    {
-        writing.completion.setNeeded();
-        return Status::NeedData;
-    }
-
-    /// The file must finish before budgeting the remaining tail, so its writer has released the
-    /// compression buffers and the prefix's final output block. Readers stay idle until final input
-    /// registration closes.
-    writing.readiness.finish();
-    auto remaining = std::move(writing.remaining);
-    state.emplace<PreparingTail>(std::move(remaining));
-    return Status::Ready;
+    return Status::UpdatePipeline;
 }
 
 IProcessor::Status ExternalDistinctTransform::prepareMergedOutput(Merging & merging)
@@ -291,13 +256,6 @@ IProcessor::Status ExternalDistinctTransform::prepareFinish()
 
 IProcessor::Status ExternalDistinctTransform::finish()
 {
-    if (merge_registration)
-    {
-        /// An idle merger must leave registration before it can observe its closed output.
-        merge_registration->merger->setHaveAllInputs();
-        merge_registration.reset();
-    }
-
     for (auto & input : inputs)
         input.close();
     for (auto & output : outputs)
@@ -378,7 +336,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// Writing a temporary file can hold uncompressed input, compressed output, and a file buffer
     /// at the same time. The estimate allows three configured buffer sizes; oversized values and codec
     /// overhead can exceed it.
-    const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
+    const size_t write_buffers_bytes = estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
 
     /// A filtered output copy can remain pending while suppression keys are extracted. The original
     /// input can still be shared upstream, so this output copy needs an additional `input_bytes`.
@@ -450,7 +408,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     consumed_rows += processed_rows;
     result_rows += output_chunk.getNumRows();
 
-    /// A hint or a size limit in the 'break' overflow mode retains this final result chunk.
+    /// A hint or a size limit in the `break` overflow mode retains this final result chunk.
     if ((limit_hint && result_rows >= limit_hint) || hashing.set.isLimitReached())
     {
         state.emplace<Finishing>();
@@ -532,8 +490,9 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
 
         auto chunk = spill_layout->prepareSuppressionChunk(std::move(key_columns));
         Block block = spill_layout->getSuppressionRunHeader()->cloneWithColumns(chunk.detachColumns());
-        /// Stable sorting preserves binary representatives of sort-equivalent keys. The flag is
-        /// constant within this chunk, so key order also satisfies the run order.
+
+        /// Stable sorting preserves binary representatives of sort-equivalent keys. The emitted flag
+        /// and optional arrival number are constant within this chunk, so key order satisfies run order.
         sortBlock(block, spill_layout->getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
         const auto rows = block.rows();
         Chunk sorted(block.detachColumns(), rows);
@@ -708,19 +667,15 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
 
     /// Reserving the run's space also preserves the configured amount of free disk space.
     TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, bytes + min_free_disk_space);
+
     /// The final merge applies the hint after suppression, which can remove keys from ordinary runs.
     auto merger = std::make_unique<MergeSorter>(
         run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode, preferred_block_bytes);
     auto sink = std::make_shared<BufferingToFileSink>(run_header, std::move(tmp_stream), log);
-    auto source = std::make_shared<BufferingFromFileSource>(run_header, sink->getHolder(), log);
     PreparedRun run{
         .progress = {std::move(merger), {}},
         .sink = std::move(sink),
-        .source = std::move(source),
-        .initial_merge = {},
     };
-    if (!merge_registration)
-        run.initial_merge = prepareMerge();
 
     return run;
 }
@@ -729,6 +684,7 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
 {
     chassert(progress.merger);
     chassert(!progress.chunk);
+
     /// Reads can consume only duplicates and return zero rows. Skip those chunks while retaining
     /// cancellation checks between reads, and finish writing only when the merger is exhausted.
     while (!isCancelled())
@@ -748,8 +704,9 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
         }
     }
 
-    estimated_file_read_memory += estimateRunReadMemory(
-        progress.max_block_bytes, tmp_data->getSettings().buffer_size);
+    const size_t read_memory = estimateRunReadMemory(progress.max_block_bytes, tmp_data->getSettings().buffer_size);
+    estimated_file_read_memory += read_memory;
+    max_file_read_memory = std::max(max_file_read_memory, read_memory);
     progress.merger.reset();
 }
 
@@ -768,8 +725,40 @@ size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t all
     const size_t output_memory = 4 * max_average_row_bytes * block_rows;
 
     /// The temporary writer also needs file, compression-input, and compression-output buffers.
-    const size_t write_buffers_memory = 3 * tmp_data->getSettings().buffer_size;
+    const size_t write_buffers_memory = estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
     return flag_columns_memory + output_memory + write_buffers_memory;
+}
+
+size_t ExternalDistinctTransform::estimateNewFileReadMemory(size_t block_rows) const
+{
+    /// Its blocks hold `block_rows` rows of the largest observed average row width, with twice that size
+    /// allowed for column capacity rounding.
+    return estimateRunReadMemory(2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
+}
+
+size_t ExternalDistinctTransform::maxRowsInIntermediateMergeBlock() const
+{
+    /// Intermediate merges write their files under the runs' byte target, sized for the widest observed
+    /// average row.
+    return MergeSorter::calculateMaxMergedBlockSize(max_block_size_rows, preferred_block_bytes, 1, max_average_row_bytes);
+}
+
+size_t ExternalDistinctTransform::estimateMergeFileMemory(size_t num_files, size_t files_read_memory, size_t max_read_memory) const
+{
+    /// The final merge reads every file at once unless there are more files than the fan-in limit.
+    if (!ExternalMergeSource::needsIntermediateMerges(num_files, max_external_merge_fan_in))
+        return files_read_memory;
+
+    /// Otherwise intermediate merges reduce the files first, and at most the limit are read at a time,
+    /// runs or intermediate outputs. The open readers are bounded both by the limit times the largest
+    /// reader and by all runs plus the limit times an output reader. An intermediate merge also needs its
+    /// writer's buffers; its output blocks are no larger than those of the final merge, which the caller
+    /// budgets.
+    const size_t intermediate_read_memory = estimateNewFileReadMemory(maxRowsInIntermediateMergeBlock());
+    const size_t open_files_memory = std::min(
+        max_external_merge_fan_in * std::max(max_read_memory, intermediate_read_memory),
+        files_read_memory + max_external_merge_fan_in * intermediate_read_memory);
+    return open_files_memory + estimateRunWriteBuffersMemory(tmp_data->getSettings().buffer_size);
 }
 
 size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & collecting) const
@@ -777,6 +766,9 @@ size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & 
     const auto & chunks = collecting.sorted_chunks;
     if (chunks.empty())
         return 0;
+
+    /// Every written run is registered for the merge before the tail is budgeted.
+    chassert(temporary_files_num == suppression_runs.size() + ordinary_runs.size());
 
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
 
@@ -787,12 +779,15 @@ size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & 
 
     /// `MergeSorter` expands the emitted-row flags before merging. Allow capacity rounding for
     /// these byte columns while the original tail chunks remain alive.
-    const size_t merge_memory = estimated_file_read_memory + output_memory + 2 * collecting.sorted_rows;
+    const size_t tail_flags_memory = 2 * collecting.sorted_rows;
+    const size_t merge_memory = estimateMergeFileMemory(temporary_files_num, estimated_file_read_memory, max_file_read_memory)
+        + output_memory + tail_flags_memory;
     if (query_memory + merge_memory <= max_bytes_before_external_distinct)
         return 0;
 
-    /// Equal keys keep their first input row. Spilling a prefix preserves that precedence when
-    /// the new file is registered before the retained suffix; arbitrary subsets would not.
+    /// Whole chunks are spilled in arrival order. Spilled and retained rows meet again in the final merge,
+    /// where the run comparison, including arrival numbers when input order must be preserved, picks
+    /// the row that represents equal keys.
     size_t prefix_bytes = 0;
     size_t prefix_rows = 0;
     for (size_t prefix = 0; prefix < chunks.size(); ++prefix)
@@ -805,11 +800,15 @@ size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & 
         /// rounding, to budget that replacement.
         const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
             max_block_size_rows, preferred_block_bytes, prefix_rows, prefix_bytes + prefix_rows);
-        const size_t new_reader_memory = estimateRunReadMemory(
-            2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
+        const size_t new_reader_memory = estimateNewFileReadMemory(block_rows);
+
+        /// The spilled prefix becomes another file of the merge.
+        const size_t merge_memory_with_prefix = estimateMergeFileMemory(
+                temporary_files_num + 1, estimated_file_read_memory + new_reader_memory,
+                std::max(max_file_read_memory, new_reader_memory))
+            + output_memory + tail_flags_memory;
         const size_t released_bytes = prefix_bytes + 2 * prefix_rows;
-        if (query_memory + merge_memory + new_reader_memory
-            <= max_bytes_before_external_distinct + released_bytes)
+        if (query_memory + merge_memory_with_prefix <= max_bytes_before_external_distinct + released_bytes)
             return prefix + 1;
     }
 
@@ -842,10 +841,11 @@ void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
 
         LOG_TRACE(log, "Spilling a DISTINCT tail prefix before merging "
             "(chunks: {}, bytes: {}, remaining chunks: {}, remaining bytes: {}, "
-            "estimated file-reader memory: {}, query memory: {}, spill threshold: {})",
+            "estimated temporary-file memory: {}, query memory: {}, spill threshold: {})",
             prefix_size, formatReadableSizeWithBinarySuffix(prefix_bytes), chunks.size(),
             formatReadableSizeWithBinarySuffix(tail.collecting.sorted_bytes),
-            formatReadableSizeWithBinarySuffix(estimated_file_read_memory),
+            formatReadableSizeWithBinarySuffix(
+                estimateMergeFileMemory(temporary_files_num, estimated_file_read_memory, max_file_read_memory)),
             formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
             formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
@@ -863,12 +863,8 @@ void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
         "(temporary runs: {}, in-memory chunks: {}, restore input order: {})",
         temporary_files_num, tail.collecting.sorted_chunks.size(), spill_layout->preservesInputOrder());
 
-    /// Register the final input even when the tail is empty, then close merge-input registration.
-    /// The tail is merged into unique chunks under the same contract as ordinary disk runs.
-    auto source = std::make_shared<MergeSorterSource>(
-        spill_layout->getInputRunHeader(), std::move(tail.collecting.sorted_chunks), spill_layout->getKeySortDescription(),
-        max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks, preferred_block_bytes);
-    state.emplace<ConnectingTail>(std::move(source));
+    auto pipe = createMergePipe(std::move(tail.collecting.sorted_chunks));
+    state.emplace<ConnectingMerge>(std::move(pipe));
 }
 
 void ExternalDistinctTransform::consumeMerged(Merging & merging)
@@ -889,15 +885,51 @@ void ExternalDistinctTransform::consumeMerged(Merging & merging)
         state.emplace<Finishing>();
 }
 
-ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge()
+Pipe ExternalDistinctTransform::createMergePipe(Chunks tail)
 {
     const auto & merged_header = spill_layout->getMergedHeader();
 
-    /// The merger cannot consume its inputs until the final in-memory tail has been registered.
-    PreparedMerge prepared;
-    prepared.merger = std::make_shared<DistinctSortedTransform>(
-        SharedHeaders{}, merged_header, spill_layout->getRunSortDescription(),
-        max_block_size_rows, /*have_all_inputs=*/ false);
+    auto ordinary_header = spill_layout->getInputRunHeader();
+    SourcePtr tail_source;
+    if (!tail.empty())
+        tail_source = std::make_shared<MergeSorterSource>(
+            ordinary_header, std::move(tail), spill_layout->getKeySortDescription(),
+            max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks, preferred_block_bytes);
+
+    const auto description = spill_layout->getRunSortDescription();
+    const auto num_key_columns = spill_layout->getKeySortDescription().size();
+    const auto block_size = max_block_size_rows;
+
+    /// Intermediate files use the runs' byte target, so their readers fit the budget of
+    /// `selectTailSpillPrefix`.
+    const auto intermediate_block_size = maxRowsInIntermediateMergeBlock();
+    auto suppression_merge = [header = spill_layout->getSuppressionRunHeader(), description, intermediate_block_size]
+        (const SharedHeaders & headers) -> ProcessorPtr
+    {
+        return std::make_shared<MergingSortedTransform>(
+            header, headers.size(), description, intermediate_block_size, /*max_block_size_bytes=*/ 0,
+            /*max_dynamic_subcolumns=*/ std::nullopt, SortingQueueStrategy::Batch);
+    };
+    auto ordinary_merge = [ordinary_header, description, num_key_columns, intermediate_block_size]
+        (const SharedHeaders & headers) -> ProcessorPtr
+    {
+
+        /// Ordinary intermediate chunks must be unique on the comparison keys. Retain fingerprints,
+        /// the emitted flag, and arrival numbers when present so later passes can compare their rows.
+        /// Keys already emitted before spilling are suppressed when both groups enter the final merge.
+        return std::make_shared<DistinctSortedTransform>(
+            headers, ordinary_header, description, num_key_columns, intermediate_block_size);
+    };
+    auto final_merge = [merged_header, description, num_key_columns, block_size](const SharedHeaders & headers) -> ProcessorPtr
+    {
+        return std::make_shared<DistinctSortedTransform>(headers, merged_header, description, num_key_columns, block_size);
+    };
+    std::vector<ExternalMergeSource::Group> groups;
+    groups.emplace_back(std::move(suppression_runs), std::move(suppression_merge));
+    groups.emplace_back(std::move(ordinary_runs), std::move(ordinary_merge));
+    Pipe pipe(std::make_shared<ExternalMergeSource>(
+        merged_header, std::move(groups), std::move(tail_source), std::move(final_merge), max_external_merge_fan_in,
+        tmp_data, min_free_disk_space, log));
 
     if (spill_layout->preservesInputOrder())
     {
@@ -908,12 +940,12 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
         /// Rows admitted during hashing already form the result's prefix and reduce the remaining hint.
         chassert(!limit_hint || result_rows < limit_hint);
         const UInt64 remaining_limit_hint = limit_hint ? limit_hint - result_rows : 0;
-        prepared.order_restoration.emplace_back(
+        pipe.addTransform(
             std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, remaining_limit_hint));
 
         /// Remerge at the run-size threshold before considering another spill. The sorter stops
         /// remerging when it cannot halve retained memory, avoiding repeated unproductive merges.
-        prepared.order_restoration.emplace_back(std::make_shared<MergeSortingTransform>(
+        pipe.addTransform(std::make_shared<MergeSortingTransform>(
             merged_header,
             arrival_number_description,
             max_block_size_rows,
@@ -925,101 +957,87 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
             minBytesInRun(),
             max_bytes_before_external_distinct,
             tmp_data,
-            min_free_disk_space));
+            min_free_disk_space,
+            max_external_merge_fan_in));
     }
 
-    return prepared;
+    return pipe;
 }
 
-void ExternalDistinctTransform::connectMerge(PreparedMerge & prepared, Processors & processors)
+void ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
 {
-    chassert(!merge_registration);
-    auto * output = &prepared.merger->getOutputs().front();
-    processors.emplace_back(prepared.merger);
-    for (const auto & processor : prepared.order_restoration)
-    {
-        connect(*output, processor->getInputs().front());
-        output = &processor->getOutputs().front();
-        processors.emplace_back(processor);
-    }
-
-    inputs.emplace_back(*spill_layout->getMergedHeader(), this);
-    connect(*output, inputs.back());
-    merge_registration.emplace(std::move(prepared.merger), inputs.back());
-}
-
-OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
-{
-    if (prepared.initial_merge)
-        connectMerge(*prepared.initial_merge, processors);
-
-    chassert(merge_registration);
-    auto & merger = *merge_registration->merger;
-    merger.addInput(prepared.source->getPort().getHeader());
-    connect(prepared.source->getPort(), merger.getInputs().back());
     outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
-    processors.emplace_back(prepared.source);
+    inputs.emplace_back(Block(), this);
+    connect(prepared.sink->getCompletionPort(), inputs.back());
     processors.emplace_back(prepared.sink);
-    return outputs.back();
 }
 
 IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
 {
     Processors processors;
-    std::visit([this, &processors]<typename Phase>(Phase & phase)
+    Processors finished;
+    std::visit([this, &processors, &finished]<typename Phase>(Phase & phase)
     {
-        if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun> || std::is_same_v<Phase, ConnectingTailRun>)
+        if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>)
         {
             auto run = std::move(phase.run);
-            auto & output = connectRun(run, processors);
-
-            /// Suppression extraction waits for file finalization before preparing another run;
-            /// a tail prefix waits before budgeting the suffix. Both relay the reader's completion
-            /// dependency only after that wait finishes.
-            inputs.emplace_back(Block(), this);
-            auto & completion = inputs.back();
-            connect(run.sink->getCompletionPort(), completion);
-            outputs.emplace_back(Block(), this);
-            auto & readiness = outputs.back();
-            connect(readiness, run.source->getCompletionPort());
-            if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>)
-            {
-                auto keys = std::move(phase.keys);
-                state.emplace<WritingSuppressionRun>(std::move(run.progress), output, std::move(keys), completion, readiness);
-            }
-            else
-            {
-                auto remaining = std::move(phase.remaining);
-                state.emplace<WritingTailRun>(std::move(run.progress), output, std::move(remaining), completion, readiness);
-            }
+            auto keys = std::move(phase.keys);
+            connectRun(run, processors);
+            state.emplace<WritingSuppressionRun>(
+                std::move(run.progress), outputs.back(), std::move(keys), inputs.back(), std::move(run.sink));
         }
         else if constexpr (std::is_same_v<Phase, ConnectingInputRun>)
         {
             auto run = std::move(phase.run);
-            auto & output = connectRun(run, processors);
-            /// Ordinary input resumes after handoff; the reader waits directly for file completion.
-            connect(run.sink->getCompletionPort(), run.source->getCompletionPort());
-            state.emplace<WritingInputRun>(std::move(run.progress), output);
+            connectRun(run, processors);
+            state.emplace<WritingInputRun>(std::move(run.progress), outputs.back(), inputs.back(), std::move(run.sink));
         }
-        else if constexpr (std::is_same_v<Phase, ConnectingTail>)
+        else if constexpr (std::is_same_v<Phase, ConnectingTailRun>)
         {
-            chassert(merge_registration);
-            auto source = std::move(phase.source);
-            auto & merger = *merge_registration->merger;
-            merger.addInput(*spill_layout->getInputRunHeader());
-            connect(source->getPort(), merger.getInputs().back());
-            merger.setHaveAllInputs();
-            auto & input = merge_registration->input;
-            merge_registration.reset();
-            processors.emplace_back(std::move(source));
-            state.emplace<Merging>(input, Chunk{});
+            auto run = std::move(phase.run);
+            auto remaining = std::move(phase.remaining);
+            connectRun(run, processors);
+            state.emplace<WritingTailRun>(
+                std::move(run.progress), outputs.back(), std::move(remaining), inputs.back(), std::move(run.sink));
+        }
+        else if constexpr (std::is_same_v<Phase, WritingSuppressionRun> || std::is_same_v<Phase, WritingInputRun>
+            || std::is_same_v<Phase, WritingTailRun>)
+        {
+            /// A tail prefix holds ordinary input rows, so its file joins the ordinary runs.
+            auto & runs = std::is_same_v<Phase, WritingSuppressionRun> ? suppression_runs : ordinary_runs;
+            runs.emplace_back(phase.sink->releaseFile());
+            disconnect(outputs.back(), phase.sink->getPort());
+            disconnect(phase.sink->getCompletionPort(), inputs.back());
+            outputs.pop_back();
+            inputs.pop_back();
+            finished.emplace_back(std::move(phase.sink));
+            if constexpr (std::is_same_v<Phase, WritingSuppressionRun>)
+            {
+                auto keys = std::move(phase.keys);
+                state.emplace<ExtractingSuppression>(std::move(keys));
+            }
+            else if constexpr (std::is_same_v<Phase, WritingInputRun>)
+                state.emplace<CollectingInput>();
+            else
+            {
+                /// Budget the remaining tail again now that the prefix's writer has released its buffers.
+                auto remaining = std::move(phase.remaining);
+                state.emplace<PreparingTail>(std::move(remaining));
+            }
+        }
+        else if constexpr (std::is_same_v<Phase, ConnectingMerge>)
+        {
+            inputs.emplace_back(phase.pipe.getHeader(), this);
+            connect(*phase.pipe.getOutputPort(0), inputs.back());
+            processors = Pipe::detachProcessors(std::move(phase.pipe));
+            state.emplace<Merging>(inputs.back(), Chunk{});
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "External DISTINCT has no pipeline update in state {}", state.index());
     }, state);
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = std::move(finished)};
 }
 
 }

@@ -225,7 +225,7 @@ TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     for (const String name : {"Distinct", "PreDistinct"})
-        EXPECT_THROW(registry.checkVersionReadable(name, 2), Exception);
+        EXPECT_THROW(registry.checkVersionReadable(name, 3), Exception);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
