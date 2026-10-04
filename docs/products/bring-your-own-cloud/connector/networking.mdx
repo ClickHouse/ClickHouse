@@ -1,0 +1,84 @@
+---
+title: 'Private connectivity with AWS PrivateLink'
+sidebarTitle: 'PrivateLink'
+slug: /products/bring-your-own-cloud/connector/networking
+description: 'Keep traffic from inside your VPC to the connector endpoint and the enrollment endpoint on interface endpoints instead of the public internet'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'PrivateLink', 'VPC endpoint', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+The ClickHouse Connector reaches ClickHouse Cloud over two hostnames: your connector endpoint, `<subdomain>.<connector-domain>`, and your enrollment endpoint, `<subdomain>.enroll.<connector-domain>`. By default both resolve to public addresses and the connector reaches them through your VPC's internet egress. Each hostname is also published as an AWS PrivateLink endpoint service. You create one interface endpoint per service in your VPC and, once ClickHouse has accepted the connections, enable private DNS. The same hostnames then resolve to addresses inside the VPC and traffic from inside it stays on the AWS network.
+
+TLS and mutual TLS still terminate on the ClickHouse side, and the client certificate, HMAC signing, and WebSocket channels in [architecture](/products/bring-your-own-cloud/connector/architecture#connections) are unchanged. Every connection stays outbound. On Kubernetes the NetworkPolicy egress CIDRs do change; see [verify](#verify).
+
+Only those two hostnames go private. Everything else still needs internet egress or its own VPC endpoint: `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time, the registry your nodes pull ClickHouse images from, and the AWS APIs listed under [prerequisites](#prerequisites).
+
+<Image img="/images/cloud/reference/byoc-connector-privatelink.svg" size="lg" alt="Connector API over AWS PrivateLink" />
+
+## Prerequisites {#prerequisites}
+
+The endpoint services accept connections only from AWS accounts ClickHouse has allowlisted. During [registration](/products/bring-your-own-cloud/connector/onboarding#registration), give your account team the ID of every AWS account that will host a connector. An endpoint created from any other account fails, and the service names are not discoverable from an account that is not allowlisted yet: a Terraform plan from such an account fails at the service lookup. The service names look like `com.amazonaws.vpce.<region>.vpce-svc-<id>`; your account team sends the pair for your region with your connector endpoint and enrollment token.
+
+Your VPC needs DNS support and DNS hostnames enabled. The Terraform roots that create a VPC enable them, and `existing-vpc` refuses a VPC without them. Each endpoint needs one private subnet in every availability zone its service serves.
+
+When the VPC has no internet egress, the cluster also needs endpoints for the AWS services it reaches: Amazon ECR (`ecr.api` and `ecr.dkr`), STS, EC2, CloudWatch Logs, SSM (`ssm`, `ssmmessages`, `ec2messages`), SQS, KMS, and Elastic Load Balancing, plus S3 through a gateway endpoint. The `production` Terraform root creates all of them. The interface endpoints come from its `interface_endpoints` variable, where you add any other AWS API your cluster reaches, and the S3 gateway endpoint is always created. In a VPC you build yourself, create the same set.
+
+## Create the endpoints {#create-the-endpoints}
+
+Every Terraform root (`production`, `minimal`, `existing-vpc`, and `existing-eks`) creates the two connector endpoints when you set `connector_privatelink` with the two service names from your account team. Leave `private_dns` off for the first apply:
+
+```hcl
+connector_privatelink = {
+  api_service_name    = "com.amazonaws.vpce.<region>.vpce-svc-<id>"
+  enroll_service_name = "com.amazonaws.vpce.<region>.vpce-svc-<id>"
+  private_dns         = false
+}
+```
+
+The root checks the names before it plans: both must match that pattern, name the root's region, and differ from each other. It then creates one interface endpoint per service, with a network interface in the first private subnet of every availability zone the service serves, behind a security group named `<cluster_name>-connector-privatelink` that allows TCP 443 from every CIDR block of the VPC. `production` and `minimal` use the private subnets they create; `existing-vpc` and `existing-eks` read the zones of the private subnets you pass and every CIDR block associated with your VPC.
+
+The first apply creates the endpoints, which stay `pendingAcceptance` until ClickHouse accepts the connection requests from your allowlisted account. A service that requires acceptance refuses private DNS before that, so the root leaves it off until you ask for it. Once both endpoints show `available`, set `private_dns = true` and apply again. From then on the connector hostnames resolve to the endpoints from inside the VPC. If an endpoint stays pending, contact your account team with the endpoint ID.
+
+After the first apply the `clicklink` output carries a `connector_privatelink` object with `api_endpoint_id`, `enroll_endpoint_id`, `api_dns_name`, and `enroll_dns_name` (`vpce-<id>-<suffix>.vpce-svc-<id>.<region>.vpce.amazonaws.com`). With `private_dns` off the hostnames keep resolving to public addresses; point them at those names in your own DNS. The object is `null` when the variable is unset and `schema` stays `1`. `clicklink clctl init --from-terraform` reads it; see [verify](#verify).
+
+### Without the Terraform roots {#without-the-terraform-roots}
+
+The module `aws/modules/connector-privatelink` in the release archive creates the same resources on its own from a VPC ID, its CIDR blocks, a list of private subnets with their availability zones, and the two service names.
+
+In the AWS console, open VPC, then Endpoints, then Create endpoint. Choose "Endpoint services that use NLBs and GWLBs", paste the API service name, and click Verify service. Select your VPC, one private subnet in each availability zone the service lists, and a security group that allows TCP 443 from your cluster nodes. Leave "Private DNS names" off and create the endpoint. Repeat with the enrollment service name. After ClickHouse has accepted both connections, modify each endpoint and enable its private DNS name.
+
+## Verify {#verify}
+
+From a node or a pod in the cluster, resolve both hostnames. With private DNS active each returns addresses in the endpoint subnets:
+
+```bash
+dig +short <subdomain>.<connector-domain>
+dig +short <subdomain>.enroll.<connector-domain>
+```
+
+Then enroll as in [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll). `init --enroll` redeems the token and gets the certificate signed over the enrollment endpoint; every later request goes to the API endpoint. When `--from-terraform` reads outputs that carry `connector_privatelink`, `init` resolves both hostnames before it redeems the token:
+
+- On a VM (`--target systemd`) the host it runs on is the connector. A hostname that does not resolve, or resolves to an address outside RFC 1918, `100.64.0.0/10`, or an IPv6 unique local range, stops the enrollment, because the enrollment and every later request would leave the VPC. Run `init` from inside the VPC once the connections are accepted and private DNS is on, or pass `--skip-privatelink-check` to enroll over the internet.
+- On Kubernetes (`--target helm`) the pods resolve through the cluster's resolver, not the workstation, so `init` prints what the workstation resolves and continues. The enrollment call itself still comes from the workstation: `init --enroll` redeems the token and has the certificate signed from the machine it runs on, so a workstation outside the VPC reaches the enrollment hostname over the internet. To keep enrollment private too, run `init` from inside the VPC, or take it out of band with `--handoff <bundle-file>` plus `--no-auto-sign` and then `init --signed-cert` (see [air-gapped and mirrored installs](/products/bring-your-own-cloud/connector/onboarding#air-gapped-and-mirrored-installs)); `--no-auto-sign` alone moves only the signing.
+
+The check runs with `--enroll` and `--handoff`; `--signed-cert` is not checked.
+
+```bash
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
+  --from-terraform clicklink-outputs.json --egress-cidrs <private-subnet-cidrs>
+```
+
+On Kubernetes, pass the CIDRs of the private subnets the endpoint network interfaces sit in as `--egress-cidrs`. The chart's NetworkPolicy allows egress only to the CIDRs you list, and on the private path the connector hostnames resolve into those subnets.
+
+A connector enrolled before the endpoints existed keeps its configuration; the hostnames now resolve to the endpoints. On Kubernetes, add the private subnet CIDRs to `allowEgressCIDRs` and run `helm upgrade` (see [configuration](/products/bring-your-own-cloud/connector/configuration#network-policy)) or the NetworkPolicy blocks the new addresses. Every heartbeat reports the address the connector reaches the API on and whether it is private, so your account team can confirm which path a connector uses.
+
+## Limits {#limits}
+
+Your interface endpoints must be in the region that hosts your connector endpoint; cross-region PrivateLink is not offered yet.
+
+With only one endpoint, the other hostname keeps resolving to its public address and that traffic leaves through your internet egress.
