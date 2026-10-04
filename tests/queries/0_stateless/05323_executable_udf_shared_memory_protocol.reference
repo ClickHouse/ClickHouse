@@ -1,0 +1,70 @@
+--- requests and responses
+Key 1
+Key 0
+Key 1
+Key 2
+Key 1
+Key 2
+Key 3
+Key 0
+Key 1
+Key 2
+Key 3
+--- a function without arguments is still called
+42
+42
+42
+42
+1
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+42
+--- the region grows for the input and at the command's request
+200
+200
+200
+200
+0
+1
+2
+--- a binary format round-trips
+#1=plain
+#2=<null>
+#3=with\0embedded\0nuls
+#4=with\nnewline
+#5=
+#7=again
+--- too few and too many rows
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+0
+Key 0
+Key 1
+Key 2
+1
+1
+--- input or result that does not fit
+error: CANNOT_WRITE_AFTER_END_OF_BUFFER UDF_EXECUTION_FAILED
+error: CANNOT_WRITE_AFTER_END_OF_BUFFER UDF_EXECUTION_FAILED
+1
+1
+1
+--- the command reports an error
+error: UDF_EXECUTION_FAILED UDF_EXECUTION_FAILED
+error: UDF_EXECUTION_FAILED UDF_EXECUTION_FAILED
+error: UDF_EXECUTION_FAILED UDF_EXECUTION_FAILED
+error: UDF_EXECUTION_FAILED UDF_EXECUTION_FAILED
+1
+1
+1
+--- the command answers with an offset out of the region
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+1
+--- the command dies without answering
+error: ATTEMPT_TO_READ_AFTER_EOF UDF_EXECUTION_FAILED
+error: ATTEMPT_TO_READ_AFTER_EOF UDF_EXECUTION_FAILED
+error: ATTEMPT_TO_READ_AFTER_EOF UDF_EXECUTION_FAILED
+error: ATTEMPT_TO_READ_AFTER_EOF UDF_EXECUTION_FAILED
+0
+Key 1
+0

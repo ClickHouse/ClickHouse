@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OSThreadNiceValue.h>
@@ -36,6 +37,11 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
     extern const Event MemoryWorkerRun;
     extern const Event MemoryWorkerRunElapsedMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTrackingUnmeasured;
 }
 
 namespace DB
@@ -1011,10 +1017,19 @@ void MemoryWorker::updateResidentMemoryThread()
             /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
             /// anyway, so that the metric stays a snapshot of the plain counter that is at most
             /// one tick old in both modes.
+            ///
+            /// The measurement does not see every byte the trackers are charged for: the pages of a
+            /// shared-memory file the server maps (the regions of executable UDFs) are `shmem`, which
+            /// is neither in jemalloc's resident size, nor in a sanitizer's allocator statistic, nor
+            /// in the `anon`/`rss` figures read from the cgroup. Those charges are counted in
+            /// `MemoryTrackingUnmeasured` and added on top, so that a correction does not wipe them
+            /// out of the tracker that `max_server_memory_usage` is enforced against.
+            const Int64 unmeasured = CurrentMetrics::get(CurrentMetrics::MemoryTrackingUnmeasured);
+            const Int64 corrected_amount = memory_usage.allocated + unmeasured;
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
-                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
+                MemoryTracker::updateAllocated(corrected_amount, /*log_change=*/true);
             else if (correct_tracker)
-                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
+                MemoryTracker::updateAllocated(corrected_amount, /*log_change=*/false);
             else
                 MemoryTracker::updateUncorrected();
 
@@ -1048,7 +1063,13 @@ void MemoryWorker::updateResidentMemoryThread()
                         /// are excluded. Under load `tracked` can be orders of magnitude smaller
                         /// than the actual RSS, which makes `(tracked + available) * ratio` compute
                         /// a hard limit close to current RSS and reject every subsequent allocation.
-                        Int64 used = std::max<Int64>(0, memory_usage.resident);
+                        ///
+                        /// `resident` does not include the shared-memory pages counted in
+                        /// `MemoryTrackingUnmeasured` (see above), while `available` does treat them
+                        /// as taken, and the tracker is charged for them. Add them here, so that
+                        /// `used + available` still covers all the memory we could own, and the
+                        /// `used + safety_margin` floor below stays above the tracker.
+                        Int64 used = std::max<Int64>(0, memory_usage.resident) + std::max<Int64>(0, unmeasured);
                         /// `used + available` is the upper bound of memory we could potentially own:
                         /// what we already use plus what is still free in our cgroup (or on the host).
                         /// Scaling by `ratio < 1` leaves headroom for other processes on the host.

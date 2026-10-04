@@ -1,0 +1,16 @@
+Key 1
+error: UNKNOWN_FUNCTION
+error: UNKNOWN_FUNCTION
+bad_chunk_header	Failed	chunk header
+bad_huge	Failed	past Int64
+bad_int64_max	Failed	Int64 max in pages
+bad_max_lt_size	Failed	max size below size
+bad_max_size_default_no_shm	Failed	max size without shm
+bad_max_size_no_shm	Failed	max size without shm
+bad_no_size	Failed	no size
+bad_size_no_shm	Failed	size without shm
+bad_zero_size	Failed	no size
+bad_size_no_shm	Failed	0	0	0
+shm_grow	Success	1	16	1048576
+shm_ok	Success	1	1048576	1048576
+shm_pool	Success	1	1048576	1048576
