@@ -3446,8 +3446,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
         /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
-        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
-        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        /// that here would buy nothing.
         ///
         /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
         /// is already committed and a unilateral drop would diverge this replica - which is why
