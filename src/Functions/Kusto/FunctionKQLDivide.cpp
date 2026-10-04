@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -45,6 +46,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
@@ -64,13 +66,15 @@ private:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 2 arguments", getName());
 
-        const auto * value_interval = typeid_cast<const DataTypeInterval *>(removeNullable(arguments[0].type).get());
-        const auto * divisor_interval = typeid_cast<const DataTypeInterval *>(removeNullable(arguments[1].type).get());
+        const DataTypePtr value_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const DataTypePtr divisor_type = removeLowCardinalityAndNullable(arguments[1].type);
+
+        const auto * value_interval = typeid_cast<const DataTypeInterval *>(value_type.get());
+        const auto * divisor_interval = typeid_cast<const DataTypeInterval *>(divisor_type.get());
         if (value_interval && divisor_interval)
             return divideIntervals(arguments, value_interval->getKind(), divisor_interval->getKind());
 
-        const bool both_integral
-            = isInteger(removeNullable(arguments[0].type)) && isInteger(removeNullable(arguments[1].type));
+        const bool both_integral = isInteger(value_type) && isInteger(divisor_type);
         return FunctionFactory::instance().get(both_integral ? "intDiv" : "divide", getContext())->build(arguments);
     }
 
@@ -82,10 +86,11 @@ private:
     {
         KQLPlanBuilder plan(getContext());
 
+        /// `LowCardinality(Nullable(T))` reports itself as not nullable, so strip the wrapper first.
         const auto retyped_as_ticks = [](const DataTypePtr & original) -> DataTypePtr
         {
             const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-            return original->isNullable() ? makeNullable(ticks) : ticks;
+            return removeLowCardinality(original)->isNullable() ? makeNullable(ticks) : ticks;
         };
 
         size_t value_slot = plan.argument(retyped_as_ticks(arguments[0].type));
