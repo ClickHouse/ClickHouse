@@ -135,7 +135,7 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
 
     std::string output;
     char buf[4096];
-    ssize_t n = 0;
+    ssize_t n;
     while ((n = read(pipefd[0], buf, sizeof(buf))) > 0)
         output.append(buf, static_cast<size_t>(n));
     (void)close(pipefd[0]);
@@ -444,7 +444,7 @@ bool manageClickHouseUser(
             const std::string_view needle = "]]>";
             const std::string_view replacement = "]]]]><![CDATA[>";
             size_t pos = 0;
-            size_t found = 0;
+            size_t found;
             while ((found = src.find(needle, pos)) != std::string_view::npos)
             {
                 escaped_password.append(src, pos, found - pos);
@@ -763,7 +763,7 @@ bool initClickHouseDB(
 
 } // anonymous namespace
 
-int mainEntryClickHouseDockerInit(int argc, char ** argv);
+
 int mainEntryClickHouseDockerInit(int argc, char ** argv)
 {
     g_clickhouse_binary = (argc > 0 && argv[0][0] != '\0') ? argv[0] : "clickhouse";
@@ -815,8 +815,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
                "  CLICKHOUSE_INIT_TIMEOUT             Max retries for server readiness (default: 1000)\n"
                "  CLICKHOUSE_WATCHDOG_ENABLE          Enable watchdog (default: 0)\n"
                "\nEnvironment variables (keeper mode):\n"
-               "  KEEPER_CONFIG                       Path to keeper config file "
-               "(default: the first existing of /etc/clickhouse-keeper/keeper_config.{xml,yaml,yml})\n"
+               "  KEEPER_CONFIG                       Path to keeper config file\n"
                "  CLICKHOUSE_DATA_DIR                 Data directory (default: /var/lib/clickhouse)\n"
                "  LOG_DIR                             Log directory (default: /var/log/clickhouse-keeper)\n";
         return 0;
@@ -879,8 +878,8 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
     /// --- Resolve identity ---
     uid_t current_uid = getuid();
-    uid_t run_uid = 0;
-    gid_t run_gid = 0;
+    uid_t run_uid;
+    gid_t run_gid;
     bool do_chown = true;
 
     if (getEnv("CLICKHOUSE_RUN_AS_ROOT") == "1" || getEnv("CLICKHOUSE_DO_NOT_CHOWN") == "1")
@@ -936,23 +935,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// --- Keeper mode ---
     if (keeper_mode)
     {
-        /// A path set explicitly with `KEEPER_CONFIG` is used as is. Otherwise, the configuration file can be
-        /// written in any of the supported formats, the same as the default one looked up by `clickhouse-keeper`.
-        std::string keeper_config = getEnv("KEEPER_CONFIG");
-        if (keeper_config.empty())
-        {
-            keeper_config = "/etc/clickhouse-keeper/keeper_config.xml";
-            for (const char * extension : {".xml", ".yaml", ".yml"})
-            {
-                std::string candidate = std::string("/etc/clickhouse-keeper/keeper_config") + extension;
-                std::error_code exists_ec;
-                if (fs::exists(candidate, exists_ec))
-                {
-                    keeper_config = candidate;
-                    break;
-                }
-            }
-        }
+        std::string keeper_config = getEnv("KEEPER_CONFIG", "/etc/clickhouse-keeper/keeper_config.xml");
         std::string data_dir = getEnv("CLICKHOUSE_DATA_DIR", "/var/lib/clickhouse");
         std::string log_dir = getEnv("LOG_DIR", "/var/log/clickhouse-keeper");
 
@@ -1051,10 +1034,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// As PID 1, signals without a handler are silently dropped by the kernel.
     {
         struct sigaction sa{};
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_handler = shutdownHandler;
-#pragma clang diagnostic pop
         sigemptyset(&sa.sa_mask);
         sa.sa_flags = SA_RESTART;
         sigaction(SIGTERM, &sa, nullptr);

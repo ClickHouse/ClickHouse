@@ -76,9 +76,6 @@ public:
     auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
     bool operator==(const MergeTreePartInfo & rhs) const { return toTuple() == rhs.toTuple(); }
 
-    /// Agrees with `operator==`, for use as a hash-table key.
-    UInt64 hash() const;
-
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
     Int64 getDataVersion() const { return mutation ? mutation : min_block; }
@@ -184,13 +181,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name{};
-
-    /// True if the directory name carried a "_tryN" suffix that was stripped before parsing.
-    /// Such directories are leftover copies created by failed detach renames: they are valid
-    /// enough to be listed and dropped, but must not be considered as candidates for ATTACH,
-    /// because their on-disk name is not a parsable part name.
-    bool has_try_suffix{};
+    bool valid_name;
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
@@ -221,8 +212,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "broken-from-backup",
     });
 
-    inline static const std::string TRY_N_SUFFIX = "_try";
-
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
@@ -235,15 +224,5 @@ private:
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
-
-}
-
-namespace std
-{
-
-template <> struct hash<DB::MergeTreePartInfo>
-{
-    size_t operator()(const DB::MergeTreePartInfo & part) const { return part.hash(); }
-};
 
 }

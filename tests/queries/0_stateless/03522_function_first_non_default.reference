@@ -68,18 +68,3 @@ hello	hello	Nullable(String)
 1	0	42	1	1
 \N	0	42	0	0
 \N	\N	42	\N	\N
-0	0	0	0	0	0
-0
-1
-2
-z
-
-v
-z
-
-v
-0
-1
-2
-0
-0

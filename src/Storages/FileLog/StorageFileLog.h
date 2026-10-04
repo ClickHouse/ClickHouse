@@ -77,8 +77,6 @@ public:
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
         std::optional<std::ifstream> reader = std::nullopt;
-        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
-        bool open_failed = false;
     };
 
     struct FileMeta
@@ -133,10 +131,6 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
-    const LoggerPtr & getLog() const { return log; }
-
-    void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
-
 private:
     friend class ReadFromStorageFileLog;
 
@@ -174,12 +168,6 @@ private:
 
     std::mutex file_infos_mutex;
 
-    /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
-    std::atomic<bool> has_files_to_reopen = false;
-
-    /// Set by a stream that stopped after skipping broken records before the end of its files.
-    std::atomic<bool> read_more_after_skipped_records = false;
-
     struct TaskContext
     {
         BackgroundSchedulePoolTaskHolder holder;
@@ -196,9 +184,6 @@ private:
 
     void loadMetaFiles(bool attach);
 
-    /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
-    bool isTrackedByDirectoryEvents(const String & file_name) const;
-
     void threadFunc();
 
     size_t getPollMaxBatchSize() const;
@@ -209,17 +194,6 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     bool updateFileInfos();
-
-    /// Apply a "file `file_name` now refers to a regular file with `inode`" event
-    /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
-    /// If the name was previously tracked with a different inode (delete+recreate
-    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
-    /// stale on-disk meta file, guarded by filename ownership: we only drop the
-    /// stale entry if it still claims this `file_name`, so that a rename pair
-    /// re-assigning the old inode to a different filename earlier in the batch
-    /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
-    /// and pushes the name into `file_names` exactly once.
-    void onFileAppeared(const String & file_name, UInt64 inode);
 
     size_t getTableDependentCount() const;
 
@@ -240,8 +214,5 @@ private:
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
-
-/// Resolves a relative `path` against `user_files_path`, unless it is already inside `user_files_path` from the working directory.
-String resolveFileLogPath(const String & path, const String & user_files_path);
 
 }

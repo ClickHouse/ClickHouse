@@ -1,10 +1,17 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Common/FieldVisitorToString.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Core/Settings.h>
 
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
+
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeArray.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -18,6 +25,8 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Storages/KeyDescription.h>
+
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -25,6 +34,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -33,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy = false);
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy = false);
 
 /// Produces the lambda's column name in the AST format `lambda(tuple(args), body)`.
 /// Used both for live FUNCTION nodes wrapping `ExecutableFunctionCapture`/`FunctionCapture` and for
@@ -44,6 +58,7 @@ void appendLambdaColumnName(
     ActionsDAG capture_dag,
     WriteBuffer & out,
     const ContextPtr & context,
+    bool use_analyzer,
     bool legacy)
 {
     writeString("lambda(tuple(", out);
@@ -58,10 +73,8 @@ void appendLambdaColumnName(
     }
     writeString("), ", out);
 
-    /// The lambda body is a value expression whose reconstructed name must match the original
-    /// expression exactly, so truthiness-only rewrites must not apply.
-    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context, /* boolean_context */ false);
-    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, legacy);
+    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
     writeChar(')', out);
 }
 
@@ -71,9 +84,10 @@ bool tryAppendConstantFunctionColumnName(
     const ActionsDAG::Node & node,
     WriteBuffer & out,
     const ContextPtr & context,
+    bool use_analyzer,
     bool legacy)
 {
-    const auto * column_const = node.column.get();
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
     if (!column_const)
         return false;
 
@@ -103,9 +117,7 @@ bool tryAppendConstantFunctionColumnName(
         outputs.reserve(captured_columns.size());
         for (size_t i = 0; i < captured_columns.size(); ++i)
         {
-            const auto & captured = captured_columns[i];
-            auto captured_column_const = assert_cast<const ColumnConst &>(*captured.column).getPtr();
-            const auto & captured_node = captured_columns_dag.addColumn(std::move(captured_column_const), captured.type, captured.name);
+            const auto & captured_node = captured_columns_dag.addColumn(captured_columns[i]);
             const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture.captured_names[i]);
             outputs.push_back(&alias_node);
         }
@@ -113,11 +125,11 @@ bool tryAppendConstantFunctionColumnName(
         capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
     }
 
-    appendLambdaColumnName(capture, std::move(capture_dag), out, context, legacy);
+    appendLambdaColumnName(capture, std::move(capture_dag), out, context, use_analyzer, legacy);
     return true;
 }
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy)
 {
     switch (node.type)
     {
@@ -129,18 +141,24 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// A constant-folded lambda is a `ColumnConst` of a `ColumnFunction`. Recover the
             /// `lambda(tuple(args), body)` AST form so the name aligns with what the index sample
             /// block produced for the same expression (the index goes through the old analyzer).
-            if (tryAppendConstantFunctionColumnName(node, out, context, legacy))
+            if (tryAppendConstantFunctionColumnName(node, out, context, use_analyzer, legacy))
                 break;
 
-            writeString(node.result_name, out);
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+            if (column_const && !use_analyzer)
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            else
+                writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, use_analyzer, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -159,7 +177,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
                 }
 
-                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, legacy);
+                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, use_analyzer, legacy);
                 break;
             }
             else
@@ -180,7 +198,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, context, legacy);
+                appendColumnNameWithoutAlias(*arg, out, context, use_analyzer, legacy);
             }
             writeChar(')', out);
             break;
@@ -191,10 +209,10 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool legacy = false)
+String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool use_analyzer, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, context, legacy);
+    appendColumnNameWithoutAlias(node, out, context, use_analyzer, legacy);
 
     return std::move(out.str());
 }
@@ -211,43 +229,109 @@ const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
 
 }
 
-RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_)
-    : WithContext(query_context_)
-    , dag_node(dag_node_)
+RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_)
+    : query_context(std::move(query_context_))
+{}
+
+RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_, Block block_with_constants_, PreparedSetsPtr prepared_sets_)
+    : query_context(std::move(query_context_))
+    , block_with_constants(std::move(block_with_constants_))
+    , prepared_sets(std::move(prepared_sets_))
+{}
+
+const Settings & RPNBuilderTreeContext::getSettings() const
 {
-    chassert(dag_node);
+    return query_context->getSettingsRef();
+}
+
+RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
+    : dag_node(dag_node_)
+    , tree_context(tree_context_)
+{
+    assert(dag_node);
+}
+
+RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
+    : ast_node(ast_node_)
+    , tree_context(tree_context_)
+{
+    assert(ast_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnName() const
 {
-    return getColumnNameWithoutAlias(*dag_node, getContext());
+    if (ast_node)
+        return ast_node->getColumnNameWithoutAlias();
+
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
 {
-    return getColumnNameWithoutAlias(*dag_node, getContext(), true /*legacy*/);
+    if (ast_node)
+    {
+        auto adjusted_ast = ast_node->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        return adjusted_ast->getColumnNameWithoutAlias();
+    }
+
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
 {
+    if (ast_node)
+    {
+        return typeid_cast<const ASTFunction *>(ast_node);
+    }
+
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
     return node_without_alias->type == ActionsDAG::ActionType::FUNCTION;
 }
 
 bool RPNBuilderTreeNode::isConstant() const
 {
+    if (ast_node)
+    {
+        bool is_literal = typeid_cast<const ASTLiteral *>(ast_node);
+        if (is_literal)
+            return true;
+
+        String column_name = ast_node->getColumnName();
+        const auto & block_with_constants = tree_context.getBlockWithConstants();
+
+        if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
+            return true;
+
+        return false;
+    }
+
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    return node_without_alias->column != nullptr;
+    return node_without_alias->column && isColumnConst(*node_without_alias->column);
 }
 
 bool RPNBuilderTreeNode::isNullable() const
 {
+    if (ast_node)
+    {
+        Field value;
+        DataTypePtr type;
+        return tryGetConstant(value, type) && type && type->isNullable();
+    }
+
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
     return node_without_alias->result_type && node_without_alias->result_type->isNullable();
 }
 
 bool RPNBuilderTreeNode::isSubqueryOrSet() const
 {
+    if (ast_node)
+    {
+        return
+            typeid_cast<const ASTSubquery *>(ast_node) ||
+            typeid_cast<const ASTTableIdentifier *>(ast_node);
+    }
+
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
     return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
 }
@@ -257,34 +341,88 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     if (!isConstant())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a constant");
 
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-
     ColumnWithTypeAndName result;
+
+    if (ast_node)
+    {
+        const auto * literal = typeid_cast<const ASTLiteral *>(ast_node);
+        if (literal)
+        {
+            result.type = applyVisitor(FieldToDataType(), literal->value);
+            result.column = result.type->createColumnConst(0, literal->value);
+
+            return result;
+        }
+
+        String column_name = ast_node->getColumnName();
+        const auto & block_with_constants = tree_context.getBlockWithConstants();
+
+        return block_with_constants.getByName(column_name);
+    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
     result.type = node_without_alias->result_type;
     result.column = node_without_alias->column;
 
     return result;
 }
 
-/// A `Field` is the plain value of a constant: `LowCardinality` is only an encoding of the column,
-/// and a value that is not NULL has no `Nullable` type.
-static DataTypePtr getTypeOfConstantValue(const Field & value, const DataTypePtr & type)
-{
-    auto value_type = removeLowCardinality(type);
-    if (!value.isNull())
-        value_type = removeNullable(value_type);
-    return value_type;
-}
-
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    if (!node_without_alias->column)
-        return false;
+    if (ast_node)
+    {
+        // Constant expr should use alias names if any
+        String column_name = ast_node->getColumnName();
+        const auto & block_with_constants = tree_context.getBlockWithConstants();
 
-    output_value = node_without_alias->column->getField();
-    output_type = getTypeOfConstantValue(output_value, node_without_alias->result_type);
-    return true;
+        if (const auto * literal = ast_node->as<ASTLiteral>())
+        {
+            /// By default block_with_constants has only one column named "_dummy".
+            /// If block contains only constants it's may not be preprocessed by
+            //  ExpressionAnalyzer, so try to look up in the default column.
+            if (!block_with_constants.has(column_name))
+                column_name = "_dummy";
+
+            /// Simple literal
+            output_value = literal->value;
+            output_type = block_with_constants.getByName(column_name).type;
+
+            /// If constant is not Null, we can assume it's type is not Nullable as well.
+            if (!output_value.isNull())
+                output_type = removeNullable(output_type);
+
+            return true;
+        }
+        if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
+        {
+            /// An expression which is dependent on constants only
+            const auto & constant_column = block_with_constants.getByName(column_name);
+            output_value = (*constant_column.column)[0];
+            output_type = constant_column.type;
+
+            if (!output_value.isNull())
+                output_type = removeNullable(output_type);
+
+            return true;
+        }
+    }
+    else
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+
+        if (node_without_alias->column && isColumnConst(*node_without_alias->column))
+        {
+            output_value = (*node_without_alias->column)[0];
+            output_type = node_without_alias->result_type;
+
+            if (!output_value.isNull())
+                output_type = removeNullable(output_type);
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 namespace
@@ -295,7 +433,11 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     if (!dag_node->column)
         return {};
 
-    if (const auto * column_set = typeid_cast<const ColumnSet *>(&dag_node->column->getDataColumn()))
+    const IColumn * column = dag_node->column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
+
+    if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
         return column_set->getData();
 
     return {};
@@ -305,8 +447,45 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
 
 FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 {
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    return tryGetSetFromDAGNode(node_without_alias);
+    const auto & prepared_sets = getTreeContext().getPreparedSets();
+
+    if (ast_node && prepared_sets)
+    {
+        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
+        const auto & sets = prepared_sets->getSetsFromTuple();
+        auto it = sets.find(key);
+        if (it != sets.end() && !it->second.empty())
+            return it->second.at(0);
+
+        return prepared_sets->findSubquery(key);
+    }
+    if (dag_node)
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        return tryGetSetFromDAGNode(node_without_alias);
+    }
+
+    return {};
+}
+
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
+{
+    const auto & prepared_sets = getTreeContext().getPreparedSets();
+
+    if (prepared_sets && ast_node)
+    {
+        if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
+            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
+
+        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
+    }
+    if (dag_node)
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        return tryGetSetFromDAGNode(node_without_alias);
+    }
+
+    return nullptr;
 }
 
 RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
@@ -314,7 +493,9 @@ RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
     if (!isFunction())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a function");
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
+    if (ast_node)
+        return RPNBuilderFunctionTreeNode(ast_node, tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
 std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNull() const
@@ -322,30 +503,31 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
     if (!isFunction())
         return {};
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
-}
-
-std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() const
-{
-    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    if (node_without_alias->type == ActionsDAG::ActionType::ARRAY_JOIN && node_without_alias->children.size() == 1)
-        return RPNBuilderTreeNode(node_without_alias->children[0], getContext());
-
-    return {};
+    if (ast_node)
+        return RPNBuilderFunctionTreeNode(this->ast_node, tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
 std::string RPNBuilderFunctionTreeNode::getFunctionName() const
 {
+    if (ast_node)
+        return assert_cast<const ASTFunction *>(ast_node)->name;
     return dag_node->function_base->getName();
 }
 
 FunctionBasePtr RPNBuilderFunctionTreeNode::getFunctionBase() const
 {
-    return dag_node->function_base;
+    return ast_node ? nullptr : dag_node->function_base;
 }
 
 size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 {
+    if (ast_node)
+    {
+        const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);
+        return ast_function->arguments ? ast_function->arguments->children.size() : 0;
+    }
+
     // indexHint arguments are stored inside of `FunctionIndexHint` class,
     // because they are used only for index analysis.
     if (dag_node->function_base->getName() == "indexHint")
@@ -366,85 +548,22 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
                 "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
                 total_arguments, index);
 
+    if (ast_node)
+    {
+        const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);
+        return RPNBuilderTreeNode(ast_function->arguments->children[index].get(), tree_context);
+    }
+
     // indexHint arguments are stored inside of `FunctionIndexHint` class,
     // because they are used only for index analysis.
     if (dag_node->function_base->getName() == "indexHint")
     {
         const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*dag_node->function_base);
         const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-        return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], getContext());
+        return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], tree_context);
     }
 
-    return RPNBuilderTreeNode(dag_node->children[index], getContext());
-}
-
-namespace
-{
-
-/// Whether converting a value of type `from` to type `to` never changes it and never throws.
-/// `Nullable` cannot be dropped, because it may throw on NULL.
-bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
-{
-    auto from_type = removeLowCardinality(from);
-    auto to_type = removeLowCardinality(to);
-
-    if (to_type->isNullable())
-    {
-        from_type = removeNullable(from_type);
-        to_type = removeNullable(to_type);
-    }
-    else if (from_type->isNullable())
-    {
-        return false;
-    }
-
-    if (from_type->equals(*to_type))
-        return true;
-
-    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
-    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
-}
-
-}
-
-bool isLosslessConversionFunction(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return false;
-
-    const auto function_name = node.function_base->getName();
-    const size_t arguments_size = node.children.size();
-
-    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
-    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
-
-    if (!is_cast && !is_wrapper)
-        return false;
-
-    return isLosslessConversion(node.children.front()->result_type, node.result_type);
-}
-
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
-{
-    if (!node.isFunction())
-        return node;
-
-    const auto function = node.toFunctionNode();
-    if (!isLosslessConversionFunction(*function.getDAGNode()))
-        return node;
-
-    return unwrapLosslessConversion(function.getArgumentAt(0));
-}
-
-const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
-{
-    const auto * node_without_alias = getNodeWithoutAlias(node);
-
-    if (!isLosslessConversionFunction(*node_without_alias))
-        return node;
-
-    return unwrapLosslessConversion(node_without_alias->children.front());
+    return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
 template <typename RPNElement>
@@ -454,7 +573,8 @@ RPNBuilder<RPNElement>::RPNBuilder(
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
     : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
-    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, query_context_));
+    RPNBuilderTreeContext tree_context(query_context_);
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
 }
 
 template <typename RPNElement>
@@ -478,16 +598,6 @@ void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
-
-        if constexpr (!RPNBuilderTraits<RPNElement>::expand_index_hint)
-        {
-            if (function_node.getFunctionName() == "indexHint")
-            {
-                element.function = RPNElement::ALWAYS_TRUE;
-                rpn_elements.emplace_back(std::move(element));
-                return;
-            }
-        }
 
         if (extractLogicalOperatorFromTree(function_node, element))
         {
@@ -549,13 +659,6 @@ bool RPNBuilder<RPNElement>::extractLogicalOperatorFromTree(const RPNBuilderFunc
 
     return true;
 }
-
-/// Estimating selectivity is the one use that must not descend into `indexHint`.
-template <>
-struct RPNBuilderTraits<ConditionSelectivityEstimator::RPNElement>
-{
-    static constexpr bool expand_index_hint = false;
-};
 
 template class RPNBuilder<KeyCondition::RPNElement>;
 template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;

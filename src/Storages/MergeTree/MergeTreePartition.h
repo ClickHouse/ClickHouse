@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/KeyDescription.h>
-#include <Core/Block.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -28,7 +27,7 @@ struct MergeTreePartition
 
     MergeTreePartition() = default;
 
-    explicit MergeTreePartition(Row value_);
+    explicit MergeTreePartition(Row value_) : value(std::move(value_)) {}
 
     /// For month-based partitioning.
     explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
@@ -38,11 +37,8 @@ struct MergeTreePartition
 
     static std::optional<Row> tryParseValueFromID(const String & partition_id, const Block & partition_key_sample);
 
-    /// `partition_key_sample` must be the adjusted partition key (see `adjustPartitionKey`): it is the key
-    /// whose types produced the values in `value`, and its signedness can differ from the declared key's.
-    void serializeText(const Block & partition_key_sample, WriteBuffer & out, const FormatSettings & format_settings) const;
-    String serializeToString(const Block & partition_key_sample) const;
-    String serializeToString(const IMergeTreeDataPart & part) const;
+    void serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const;
+    String serializeToString(StorageMetadataPtr metadata_snapshot) const;
 
     void load(const IMergeTreeDataPart & part);
 
@@ -69,20 +65,6 @@ struct MergeTreePartition
 
     /// Make a modified partition key with substitution from modulo to moduloLegacy. Used in paritionPruner.
     static KeyDescription adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
-};
-
-/// Resolves the partition key that a part's stored partition value must be rendered with, reusing the
-/// table's adjusted key across the parts it is asked about. The returned reference is valid until the
-/// next `get`. A patch part carries a generated `__patchPartitionID` key, already its own adjusted key.
-class PartitionKeySamples
-{
-public:
-    const Block & get(const IMergeTreeDataPart & part);
-
-private:
-    const MergeTreeData * table = nullptr;
-    Block table_sample;
-    Block patch_sample;
 };
 
 }

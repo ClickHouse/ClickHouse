@@ -51,13 +51,10 @@ public:
         checkpoint.emplace(pos);
     }
 
-    /// Number of bytes read since the checkpoint was set.
-    size_t offsetFromCheckpoint() const;
-
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
     {
-        chassert(checkpoint);
+        assert(checkpoint);
 
         if (!recursive_checkpoints_offsets.empty())
         {
@@ -109,6 +106,7 @@ private:
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
     size_t offsetFromCheckpointInOwnMemory() const;
+    size_t offsetFromCheckpoint() const;
 
 
     ReadBuffer * sub_buf;
@@ -120,7 +118,7 @@ private:
     /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
     /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
     /// larger buffer only if reserved memory is not enough.
-    char stack_memory[PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
+    char stack_memory[PADDING_FOR_SIMD];
     bool use_stack_memory = true;
 
     std::stack<size_t> recursive_checkpoints_offsets;

@@ -4,17 +4,16 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <mutex>
 #include <atomic>
-#include <utility>
 
 
 namespace CurrentMetrics
@@ -37,30 +36,23 @@ struct MergeInfo
     Array source_part_paths;
     std::string partition_id;
     std::string partition;
-    bool is_mutation{};
-    Float64 elapsed{};
-    Float64 progress{};
-    UInt64 num_parts{};
-    UInt64 total_size_bytes_compressed{};
-    UInt64 total_size_bytes_uncompressed{};
-    UInt64 total_size_marks{};
-    UInt64 total_rows_count{};
-    UInt64 bytes_read_uncompressed{};
-    UInt64 bytes_written_uncompressed{};
-    UInt64 rows_read{};
-    UInt64 rows_written{};
-    UInt64 columns_written{};
-    UInt64 memory_usage{};
-    UInt64 thread_id{};
+    bool is_mutation;
+    Float64 elapsed;
+    Float64 progress;
+    UInt64 num_parts;
+    UInt64 total_size_bytes_compressed;
+    UInt64 total_size_bytes_uncompressed;
+    UInt64 total_size_marks;
+    UInt64 total_rows_count;
+    UInt64 bytes_read_uncompressed;
+    UInt64 bytes_written_uncompressed;
+    UInt64 rows_read;
+    UInt64 rows_written;
+    UInt64 columns_written;
+    UInt64 memory_usage;
+    UInt64 thread_id;
     std::string merge_type;
     std::string merge_algorithm;
-
-    std::string current_projection;
-    Float64 current_projection_progress{0};
-    UInt64 current_projection_parts_merging{0};
-    UInt64 current_projection_parts_remaining{0};
-    Array projections_completed;
-    Array projections_remaining;
 };
 
 struct FutureMergedMutatedPart;
@@ -68,9 +60,6 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 
 struct MergeListElement;
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
-
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
@@ -116,24 +105,6 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    /// Projection merge introspection.
-    /// Updated by MergeTask when merging/rebuilding projections.
-    mutable std::mutex projection_introspection_mutex;
-    String current_projection;
-    Names projections_done;
-    Names projections_pending;
-
-    /// Atomic fields for projection sub-merge progress (lock-free reads from system.merges).
-    /// current_projection_progress is written by child MergeListElement via parent_progress pointer.
-    std::atomic<Float64> current_projection_progress{0};
-    std::atomic<UInt64> current_projection_parts_merging{0};
-    std::atomic<UInt64> current_projection_parts_remaining{0};
-
-    /// When non-null, child MergeListElement writes its progress here.
-    /// Points to parent's current_projection_progress. Safe because parent
-    /// lifetime always exceeds child lifetime.
-    std::atomic<Float64> * parent_progress{nullptr};
-
     ThreadGroupPtr thread_group;
     CurrentMetrics::Increment num_parts_metric_increment;
 
@@ -161,12 +132,16 @@ class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo
 private:
     using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
     std::atomic<size_t> merges_with_ttl_counter = 0;
-    /// Set by cancelAll (on server shutdown): entries inserted after it are cancelled at birth.
-    std::atomic<bool> all_cancelled = false;
 public:
     MergeList()
         : Parent(CurrentMetrics::Merge)
     {}
+
+    void onEntryDestroy(const Parent::Entry & entry) override
+    {
+        if (isTTLMergeType(entry->merge_type))
+            --merges_with_ttl_counter;
+    }
 
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
@@ -181,28 +156,6 @@ public:
         }
     }
 
-    /// Cancel all current merges and mutations, and also all inserted later.
-    /// Used on server shutdown, when their results would be discarded anyway.
-    void cancelAll()
-    {
-        /// The flag is set before iterating the list, and `insert` checks it after linking
-        /// the new entry into the list under the mutex, so an entry is either cancelled by
-        /// the loop below or observes the flag in `insert` - none can escape.
-        all_cancelled = true;
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
-    }
-
-    template <typename... Args>
-    EntryPtr insert(Args &&... args)
-    {
-        auto entry = Parent::insert(std::forward<Args>(args)...);
-        if (all_cancelled)
-            (*entry)->is_cancelled = true;
-        return entry;
-    }
-
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
         std::lock_guard lock{mutex};
@@ -215,59 +168,23 @@ public:
         }
     }
 
-    /// A merge consists of two parts: assignment and execution, and only the execution puts an entry
-    /// into this list. Counting the entries at assignment time would therefore let more merges with
-    /// TTL be assigned than `max_number_of_merges_with_ttl_in_pool` allows, so a slot is taken as
-    /// soon as the merge is selected, by this token.
+    /// Merge consists of two parts: assignment and execution. We add merge to
+    /// merge list on execution, but checking merge list during merge
+    /// assignment. This lead to the logical race condition (we can assign more
+    /// merges with TTL than allowed). So we "book" merge with ttl during
+    /// assignment, and remove from list after merge execution.
     ///
-    /// The token owns the slot for the whole life of the selected merge, which is what makes the
-    /// count exact: the slot comes back however that merge ends, including when it is dropped
-    /// without ever being executed - the background pool discards a queued task when its table goes
-    /// away, and then no entry is ever inserted here to account for it.
-    class TTLMergeSlot
+    /// NOTE: Not important for replicated merge tree, we check count of merges twice:
+    /// in assignment and in queue before execution.
+    void bookMergeWithTTL()
     {
-    public:
-        TTLMergeSlot() = default;
+        ++merges_with_ttl_counter;
+    }
 
-        explicit TTLMergeSlot(MergeList & merge_list_)
-            : merge_list(&merge_list_)
-        {
-            ++merge_list->merges_with_ttl_counter;
-        }
-
-        TTLMergeSlot(TTLMergeSlot && other) noexcept
-            : merge_list(std::exchange(other.merge_list, nullptr))
-        {
-        }
-
-        TTLMergeSlot & operator=(TTLMergeSlot && other) noexcept
-        {
-            if (this != &other)
-            {
-                release();
-                merge_list = std::exchange(other.merge_list, nullptr);
-            }
-            return *this;
-        }
-
-        TTLMergeSlot(const TTLMergeSlot &) = delete;
-        TTLMergeSlot & operator=(const TTLMergeSlot &) = delete;
-
-        ~TTLMergeSlot()
-        {
-            release();
-        }
-
-    private:
-        void release() noexcept
-        {
-            if (merge_list)
-                --merge_list->merges_with_ttl_counter;
-            merge_list = nullptr;
-        }
-
-        MergeList * merge_list = nullptr;
-    };
+    void cancelMergeWithTTL()
+    {
+        --merges_with_ttl_counter;
+    }
 
     size_t getMergesWithTTLCount() const
     {

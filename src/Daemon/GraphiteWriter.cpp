@@ -3,7 +3,6 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/DNSResolver.h>
 
 #include <mutex>
 #include <iomanip>
@@ -37,9 +36,4 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
             root_path += ".";
         root_path += sub_path;
     }
-}
-
-Poco::Net::SocketAddress GraphiteWriter::resolveAddress() const
-{
-    return DB::DNSResolver::instance().resolveAddress(host, static_cast<UInt16>(port));
 }

@@ -4,8 +4,6 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerUtils.h>
-#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
 #include <Common/logger_useful.h>
@@ -69,7 +67,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         const auto & part = future_part->parts[0];
-        partition = part->partition.serializeToString(*part);
+        partition = part->partition.serializeToString(part->getMetadataSnapshot());
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
@@ -112,18 +110,6 @@ MergeInfo MergeListElement::getInfo() const
     for (const auto & source_part_path : source_part_paths)
         res.source_part_paths.emplace_back(source_part_path);
 
-    {
-        std::lock_guard lock(projection_introspection_mutex);
-        res.current_projection = current_projection;
-        for (const auto & name : projections_done)
-            res.projections_completed.emplace_back(name);
-        for (const auto & name : projections_pending)
-            res.projections_remaining.emplace_back(name);
-    }
-    res.current_projection_progress = current_projection_progress.load(std::memory_order_relaxed);
-    res.current_projection_parts_merging = current_projection_parts_merging.load(std::memory_order_relaxed);
-    res.current_projection_parts_remaining = current_projection_parts_remaining.load(std::memory_order_relaxed);
-
     return res;
 }
 
@@ -134,9 +120,7 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
-    thread_group->memory_tracker.setDriftExpected();
-    setCurrentQueryMemoryDriftExpected();
+    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }

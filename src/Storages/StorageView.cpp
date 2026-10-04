@@ -1,11 +1,8 @@
-#include <Access/DefinerDependencies.h>
-#include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context_fwd.h>
+#include <Access/ViewDefinerDependencies.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -19,62 +16,31 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
 
-#include <Common/CurrentThread.h>
-#include <IO/WriteBufferFromString.h>
-
-#include <ranges>
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTWindowDefinition.h>
 #include <Common/typeid_cast.h>
 
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
-#include <Analyzer/WindowFunctionsUtils.h>
-#include <Planner/findQueryForParallelReplicas.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool extremes;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsUInt64 query_plan_max_step_description_length;
-    extern const SettingsBool parallel_replicas_plan_based;
-    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -134,352 +100,23 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
-bool hasSubquery(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubquery(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns true if the expression contains an aggregate function anywhere in its tree.
-bool hasAggregate(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
-        {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasAggregate(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns true if the expression contains a scalar subquery or a window function anywhere in its tree.
-bool hasSubqueryOrWindow(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (!func->window_name.empty() || func->window_definition)
-        {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubqueryOrWindow(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns the underlying storage if the view's inner query is "trivial":
-/// a plain SELECT of columns, expressions, or * from a single table, optionally with a simple WHERE
-/// (no subqueries), and no other transformations. Scalar subqueries, window functions, and aggregate
-/// functions in the SELECT list are not allowed.
-/// Returns nullptr if any condition is not met.
-StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, ContextPtr context)
-{
-    const auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
-    if (!select_with_union || select_with_union->list_of_selects->children.size() != 1)
-    {
-        return nullptr;
-    }
-
-    const auto * select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>();
-    if (!select)
-    {
-        return nullptr;
-    }
-
-    /// Non-deterministic / server-local functions (hostName, nowInBlock, ...) inside the view
-    /// body are intentionally not checked here: the body is read through StorageDistributed::read
-    /// in both the pushdown and non-pushdown paths, so those expressions run on the shards either
-    /// way. Only the outer query needs that gate, applied in PlannerJoinTree.cpp.
-    ///
-    /// A SETTINGS clause in the view body is rejected outright (fail close). Some query-level
-    /// settings (notably `limit` and `offset`) are turned into QueryNode limit/offset by
-    /// QueryTreeBuilder, so a body such as `SELECT id FROM dist SETTINGS limit = 1` would be limited
-    /// once globally on the normal path but once per shard on the pushdown path, changing the
-    /// result. Rather than enumerate every result-changing setting, disqualify any SETTINGS clause.
-    /// GROUP BY ALL and LIMIT BY ALL set boolean flags (group_by_all / limit_by_all) while leaving the
-    /// corresponding expression lists (groupBy() / limitBy()) empty, so the list checks above miss them
-    /// and they must be checked via the flags. Like their explicit counterparts, they aggregate or
-    /// limit per shard under the pushdown instead of once globally on the normal path, changing the
-    /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
-    /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
-    /// A `LIMIT [n] AFTER/UNTIL` range is applied once on the initiator on the normal path
-    /// (StorageDistributed::getOptimizedQueryProcessingStageAnalyzer keeps the default stage for it), whereas
-    /// the pushdown would apply it on every shard to that shard's rows, so it is rejected as well.
-    ///
-    /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
-    /// addition to setting order_by_all, so the orderBy() check above already rejects it (ORDER BY ALL
-    /// with an outer LIMIT would otherwise let the coordinator return a shard-local first row instead
-    /// of the globally first one). order_by_all is still checked here as defense-in-depth in case the
-    /// body AST is ever produced without that placeholder.
-    if (select->with() || select->prewhere()
-        || (select->where() && hasSubquery(select->where()))
-        || select->groupBy() || select->group_by_all
-        || select->group_by_with_totals || select->group_by_with_rollup
-        || select->group_by_with_cube || select->group_by_with_grouping_sets
-        || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all
-        || select->limitLength() || select->limitOffset()
-        || select->limitAfter() || select->limitUntil()
-        || select->limitBy() || select->limit_by_all
-        || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
-        || select->settings())
-    {
-        return nullptr;
-    }
-
-    const auto * select_expr_list = select->select().get();
-    if (!select_expr_list)
-    {
-        return nullptr;
-    }
-    for (const auto & expr : select_expr_list->children)
-    {
-        if (const auto * asterisk = expr->as<ASTAsterisk>())
-        {
-            /// Column transformers (APPLY/REPLACE/EXCEPT) can carry aggregate, window, or
-            /// non-deterministic expressions, making the view non-trivial.
-            if (asterisk->transformers)
-                return nullptr;
-            continue;
-        }
-        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
-        {
-            if (qualified_asterisk->transformers)
-                return nullptr;
-            continue;
-        }
-        if (hasSubqueryOrWindow(expr) || hasAggregate(expr))
-        {
-            return nullptr;
-        }
-    }
-
-    const auto * tables = select->tables().get();
-    if (!tables || tables->children.size() != 1)
-    {
-        return nullptr;
-    }
-
-    const auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
-    if (!table_element || !table_element->table_expression
-        || table_element->table_join || table_element->array_join)
-    {
-        return nullptr;
-    }
-
-    const auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
-    if (!table_expr || !table_expr->database_and_table_name
-        || table_expr->subquery || table_expr->table_function
-        || table_expr->final || table_expr->sample_size)
-    {
-        return nullptr;
-    }
-
-    const auto * table_id_node = table_expr->database_and_table_name->as<ASTTableIdentifier>();
-    if (!table_id_node)
-    {
-        return nullptr;
-    }
-
-    StorageID storage_id = table_id_node->getTableId();
-    if (storage_id.database_name.empty())
-    {
-        storage_id.database_name = context->getCurrentDatabase();
-    }
-
-    return DatabaseCatalog::instance().tryGetTable(storage_id, context);
-}
-
-
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
-  *
-  * The context is also marked as a view inner context so that the query analyzer
-  * resolves positional arguments inside the view even on remote/secondary nodes
-  * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
-
-    /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
-    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
-        && !view_settings[Setting::parallel_replicas_plan_based])
-    {
-        if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
-            view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
-    }
-
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    /// The view query is the inner query of the view:
+    /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 
-/// Reads a sealed view (see `StorageView::isSealed`). The view's plan is a child plan of this step rather
-/// than its subtree, so the optimizations of the outer query cannot see through it; it is optimized on its own.
-/// The plan runs with the privileges of the view's definer and may hold values folded from data the invoker
-/// cannot read, such as a scalar subquery over a private table, so EXPLAIN shows it only if `show_plan` is set.
-class ReadFromSealedViewStep final : public ISourceStep
-{
-public:
-    ReadFromSealedViewStep(QueryPlan view_plan_, const ContextPtr & view_context, bool show_plan_)
-        : ISourceStep(view_plan_.getCurrentHeader())
-        , view_plan(std::move(view_plan_))
-        , optimization_settings(view_context)
-        , show_plan(show_plan_)
-    {
-        /// The view's plan becomes a part of the outer pipeline, so parallel replicas, which ship the fragment
-        /// of the outer plan around the read, cannot apply. A distributed plan is decided for the view's plan
-        /// on its own, as for a child plan of `ReadFromMerge`: the outer plan cannot be distributed, because
-        /// this step is not serializable, but the view's plan still can.
-        optimization_settings.enable_parallel_replicas = false;
-        view_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
-        view_plan.optimize(optimization_settings);
-    }
-
-    String getName() const override { return "ReadFromSealedView"; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::unique_ptr<ReadFromSealedViewStep>(new ReadFromSealedViewStep(view_plan.clone(), optimization_settings, show_plan));
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override
-    {
-        pipeline = std::move(*view_plan.buildQueryPipeline(optimization_settings, settings, /*do_optimize=*/ false));
-
-        /// The processors name the steps they come from and carry their descriptions, which show up in
-        /// `EXPLAIN PIPELINE graph = 1` and in `system.processors_profile_log`. Attribute them to this step instead.
-        if (!show_plan)
-        {
-            for (const auto & processor : pipeline.getProcessors())
-            {
-                processor->setQueryPlanStep(this);
-                processor->setDescription({});
-            }
-        }
-    }
-
-    QueryPlanRawPtrs getChildPlans(bool for_explain) override
-    {
-        if (for_explain && !show_plan)
-            return {};
-        return {&view_plan};
-    }
-
-    void describePipeline(FormatSettings & settings) const override
-    {
-        if (!show_plan)
-            return;
-
-        WriteBufferFromOwnString out;
-        view_plan.explainPipeline(out, {.header = settings.write_header, .compact_repeated_processor_chains = settings.compact_repeated_processor_chains});
-
-        const String indent(settings.offset + settings.base_indent, settings.indent_char);
-        for (const auto line : std::views::split(std::string_view(out.str()), '\n'))
-            if (!line.empty())
-                settings.out << indent << std::string_view(line) << '\n';
-    }
-
-private:
-    /// For `clone`: the plan is already optimized.
-    ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_)
-        : ISourceStep(view_plan_.getCurrentHeader())
-        , view_plan(std::move(view_plan_))
-        , optimization_settings(std::move(optimization_settings_))
-        , show_plan(show_plan_)
-    {
-    }
-
-    QueryPlan view_plan;
-    QueryPlanOptimizationSettings optimization_settings;
-    bool show_plan;
-};
-
-/// Whether the plan of the view, which runs with the view's privileges, holds nothing new to the user.
-/// That is the case for the definer, and for a user who could have created the same view: `SET DEFINER` on the
-/// definer (or `ALLOW SQL SECURITY NONE` for a `NONE` view) is not enough for that, because `CREATE VIEW` also
-/// checks the access of the creator to everything the query of the view reads. So the user must also be able
-/// to read whatever any query can read: tables, dictionaries, table functions and named collections, and to
-/// create a view in the database of this view.
-bool canSeeViewPlan(const StorageID & view_id, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
-{
-    const auto access = context->getAccess();
-
-    if (metadata.sql_security_type == SQLSecurityType::NONE)
-    {
-        if (!access->isGranted(AccessType::ALLOW_SQL_SECURITY_NONE))
-            return false;
-    }
-    else
-    {
-        if (!metadata.definer)
-            return false;
-        if (*metadata.definer == context->getUserName())
-            return true;
-        if (!access->isGranted(AccessType::SET_DEFINER, *metadata.definer))
-            return false;
-    }
-
-    if (!access->isGranted(AccessType::CREATE_VIEW, view_id.getDatabaseName(), view_id.getTableName()))
-        return false;
-
-    return access->isGranted(AccessFlags(AccessType::SELECT) | AccessType::dictGet | AccessType::READ | AccessType::CREATE_TEMPORARY_TABLE
-                             | AccessType::NAMED_COLLECTION);
-}
-
-}
-
-VirtualColumnsDescription StorageView::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 StorageView::StorageView(
@@ -488,7 +125,7 @@ StorageView::StorageView(
     const ColumnsDescription & columns_,
     const String & comment,
     bool is_parameterized_view_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
@@ -505,7 +142,7 @@ StorageView::StorageView(
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -518,193 +155,10 @@ StorageView::StorageView(
 
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-/// Build and resolve the view's inner query tree
-/// Then find the leftmost underlying MT storage eligible for parallel replicas.
-/// Returns nullptr if the view is too complex or resolution fails.
-StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const
-{
-    if (isParameterizedView())
-        return nullptr;
-
-    /// When called from INSERT ... SELECT context, the context carries insertion table info.
-    /// If we resolve the view's inner query with this context, table functions like file()
-    /// may incorrectly infer schema from the insertion table (via use_structure_from_insertion_table_in_table_functions),
-    /// poisoning the schema cache with wrong column names.
-    if (context->hasInsertionTable())
-        return nullptr;
-
-    /// A sealed view is read through an opaque step, which parallel replicas cannot look into.
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    if (isSealed(*metadata_snapshot, context))
-        return nullptr;
-
-    auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
-
-    QueryTreeNodePtr inner_query_tree;
-    try
-    {
-        inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
-        QueryTreePassManager pass_manager(context);
-        addQueryTreePasses(pass_manager);
-        pass_manager.runOnlyResolve(inner_query_tree);
-    }
-    catch (const Exception &)
-    {
-        /// The view may reference table functions, use SQL SECURITY DEFINER,
-        /// or have other constructs that prevent resolution with the current user's context.
-        /// Example: 03667_view_with_s3_cluster_and_sql_security_definer.
-        /// Just return nullptr to indicate the view is not suitable for this optimization.
-        tryLogCurrentException(
-            __func__, fmt::format("Failed to resolve inner query of view {}", getStorageID().getFullTableName()), LogsLevel::trace);
-        return nullptr;
-    }
-
-    /// Recursively walk the resolved query tree to find the underlying MergeTree storage.
-    /// For UNION nodes, all branches must be eligible.
-    /// Returns nullptr if the view is not suitable for parallel replicas.
-    std::function<StoragePtr(const IQueryTreeNode *)> find_storage = [&](const IQueryTreeNode * node) -> StoragePtr
-    {
-        while (node)
-        {
-            switch (node->getNodeType())
-            {
-                case QueryTreeNodeType::QUERY:
-                {
-                    const auto & query_node = node->as<QueryNode &>();
-                    /// Only simple pass-through views are eligible. Any clause that changes
-                    /// result semantics when evaluated per-replica must disqualify the view.
-                    if (query_node.hasGroupBy() || query_node.hasHaving()
-                        || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isDistinct()
-                        || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
-                        || query_node.hasLimitBy()
-                        || query_node.hasLimit() || query_node.hasOffset()
-                        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
-                        || hasWindowFunctionNodes(query_node.getProjectionNode()))
-                        return nullptr;
-
-                    node = query_node.getJoinTreeNode().get();
-                    break;
-                }
-                case QueryTreeNodeType::UNION:
-                {
-                    const auto & union_node = node->as<UnionNode &>();
-
-                    /// Only UNION ALL is safe to parallelize.
-                    if (union_node.getUnionMode() != SelectUnionMode::UNION_ALL)
-                        return nullptr;
-
-                    const auto & queries = union_node.getQueries().getNodes();
-                    if (queries.empty())
-                        return nullptr;
-
-                    /// Check ALL branches of the UNION — not just the first one.
-                    /// Every branch must resolve to an eligible MergeTree storage.
-                    /// The branches may reference different tables, but if the same
-                    /// table appears in multiple branches, reject it —
-                    /// we avoid supporting it, since it requires to complicate parallel replicas protocol
-                    /// and considered as not very practical case
-                    StoragePtr result;
-                    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen_ids;
-                    for (const auto & query : queries)
-                    {
-                        auto branch_storage = find_storage(query.get());
-                        if (!branch_storage)
-                            return nullptr;
-
-                        if (!seen_ids.insert(branch_storage->getStorageID()).second)
-                            return nullptr;
-
-                        if (!result)
-                            result = branch_storage;
-                    }
-                    return result;
-                }
-                case QueryTreeNodeType::TABLE:
-                {
-                    const auto & table_node = node->as<const TableNode &>();
-                    const auto & storage = table_node.getStorage();
-
-                    /// If the table is itself a view, recursively check its inner query.
-                    const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
-                    if (nested_view)
-                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
-
-                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, context))
-                        return nullptr;
-
-                    return table_node.getStorage();
-                }
-                default:
-                    return nullptr;
-            }
-        }
-        return nullptr;
-    };
-
-    return find_storage(inner_query_tree.get());
-}
-
-bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
-{
-    if (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
-        return false;
-
-    /// A row policy of the invoker on the view itself hides rows too, even though it is applied above the read.
-    if (getEffectiveRowPolicyFilter(*this, context))
-        return true;
-
-    const auto & inner_query = metadata.getSelectQuery().inner_query;
-    auto storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
-    if (!storage || !storage->isMergeTree())
-        return true;
-
-    const auto & select = inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
-    if (select.where())
-        return true;
-
-    /// A transparent view is inlined into the invoker's plan, so `EXPLAIN` shows its expressions.
-    /// Only a projection of stored columns reveals nothing beyond what the view returns: any other expression
-    /// (including an `ALIAS` column of the table, which `*` may expand to) can carry constants such as keys.
-    const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
-    const auto & columns = storage_metadata->getColumns();
-    for (const auto & expr : select.select()->children)
-    {
-        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
-        {
-            if (!columns.getAliases().empty())
-                return true;
-            continue;
-        }
-        const auto * identifier = expr->as<ASTIdentifier>();
-        if (!identifier || !columns.tryGetPhysical(identifier->name()))
-            return true;
-    }
-
-    /// A row policy of the view's context on the table is applied inside the read, so the projection still hides rows.
-    return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
-}
-
-StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
-{
-    if (is_parameterized_view || isSealed(*snapshot->metadata, context))
-    {
-        return nullptr;
-    }
-    const auto & inner_query = snapshot->metadata->getSelectQuery().inner_query;
-    auto underlying = tryGetTrivialViewUnderlyingStorage(inner_query, context);
-    if (!underlying || !typeid_cast<const StorageDistributed *>(underlying.get()))
-    {
-        return nullptr;
-    }
-    return underlying;
-}
-
-void StorageView::readImpl(
+void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -725,16 +179,29 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    const bool sealed = isSealed(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        /// The outer filter is used only to analyze the indexes of the inner tables,
-        /// but for a sealed view it would skip data by the values of the rows the view hides.
-        InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
+        auto view_context = getViewContext(context, storage_snapshot);
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
+    else
+    {
+        auto view_context = getViewContext(context, storage_snapshot);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        interpreter.buildQueryPlan(query_plan);
+    }
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
+
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
+    materializing->setStepDescription("Materialize constants after VIEW subquery");
+    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -754,55 +221,41 @@ void StorageView::readImpl(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
-            context, false, false, nullptr, nullptr, false);
+            context);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
-
-    if (sealed)
-    {
-        const bool show_plan = canSeeViewPlan(getStorageID(), *storage_snapshot->metadata, context) || canDisplaySecrets(context);
-
-        auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context, show_plan);
-        read_from_sealed_view->setStepDescription(
-            show_plan ? getStorageID().getFullNameNotQuoted()
-                      : getStorageID().getFullNameNotQuoted() + ", plan hidden without the displaySecretsInShowAndSelect privilege",
-            context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
-        query_plan = QueryPlan();
-        query_plan.addStep(std::move(read_from_sealed_view));
-    }
 }
 
 void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().removeDependencies(table_id);
+    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,
-    AlterLockHolder &,
-    DDLGuardPtr &)
+    AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = DefinerDependencies::instance();
+    auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addDependency(*new_metadata.definer, table_id);
-    else
-        instance.removeDependencies(table_id);
+        instance.addViewDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 }
@@ -837,7 +290,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
-            if (table_function_name == "view" || table_function_name == "viewIfPermitted" || table_function_name == "eval")
+            if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__view");
             else if (table_function_name == "merge")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__merge");
@@ -894,7 +347,6 @@ void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     }
 }
 
-void registerStorageView(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory)
 {
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)
@@ -902,48 +354,8 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a View");
 
-        /// Resolve INTERSECT/EXCEPT precedence before constructing StorageView.
-        /// StorageView's constructor runs NormalizeSelectWithUnionQueryVisitor which
-        /// does not understand INTERSECT/EXCEPT modes and would incorrectly drop
-        /// SELECT branches connected by these operators.
-        /// This is needed when the AST is freshly parsed from stored metadata
-        /// (e.g. during ATTACH) and has not been through executeQuery's visitors.
-        /// For already-processed ASTs (e.g. from CREATE VIEW via executeQuery),
-        /// this is a safe no-op since INTERSECT/EXCEPT modes have already been
-        /// converted to ASTSelectIntersectExceptQuery nodes.
-        if (args.query.select)
-        {
-            auto context = args.getContext();
-            SelectIntersectExceptQueryVisitor::Data data{
-                context->getSettingsRef()[Setting::intersect_default_mode],
-                context->getSettingsRef()[Setting::except_default_mode]};
-            auto select = args.query.select->ptr();
-            SelectIntersectExceptQueryVisitor{data}.visit(select);
-        }
-
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
-    },
-    {},
-    Documentation{
-        .description = R"DOCS_MD(
-Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query).
-)DOCS_MD",
-        .syntax = "CREATE VIEW name AS SELECT ...",
-        .related = {"MaterializedView"}});
-}
-
-ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
-{
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettingsCopy();
-    view_settings[Setting::max_result_rows] = 0;
-    view_settings[Setting::max_result_bytes] = 0;
-    view_settings[Setting::extremes] = false;
-    view_context->setSettings(view_settings);
-    /// The inlined view body is the inner query of the view, just like in `getViewContext`:
-    /// e.g. it must read the table itself, not the inserted block of a materialized view.
-    view_context->setIsViewInnerQuery(true);
-    return view_context;
+    });
 }
 
 }
