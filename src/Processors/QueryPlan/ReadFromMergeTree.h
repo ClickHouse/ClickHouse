@@ -103,11 +103,18 @@ struct TopKFilterInfo
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
 
-    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
-    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
-    /// the pass that installs, and the copies rebuild this struct field by field.
+    /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
 };
+
+namespace QueryPlanOptimizations
+{
+/// The PREWHERE that `installTopKDynamicFilter` gives a read whose current PREWHERE is `existing_prewhere_info`
+/// (may be null): `__topKFilter` merged into it as the first conjunct. Null when the filter cannot share it.
+/// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
+/// the executed read writes its entries under it.
+PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+}
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
@@ -360,6 +367,7 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
+        bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits);
 
@@ -509,6 +517,11 @@ public:
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool isParallelReplicasLocalPlanForFollower() const;
 
+    /// A non-storage filter above this read, such as a join runtime `__applyFilter`, can affect the
+    /// dynamic TopK threshold without participating in the PREWHERE query condition cache key.
+    /// Keep the regular query condition cache enabled, but do not read or write TopK PREWHERE entries.
+    void disableTopKPrewhereQueryConditionCache() { allow_top_k_prewhere_query_condition_cache = false; }
+
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
@@ -578,6 +591,8 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+    bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
+    bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
     bool hasPendingTopKDynamicFilter() const
     {
@@ -599,6 +614,7 @@ public:
     {
         top_k_filter_info = replaced_step.top_k_filter_info;
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
+        allow_top_k_prewhere_query_condition_cache = replaced_step.allow_top_k_prewhere_query_condition_cache;
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
@@ -618,6 +634,7 @@ public:
 
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
+    bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
@@ -834,6 +851,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
+    bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 

@@ -172,7 +172,7 @@ void UnityV2Catalog::maybeSetAuthHeader(const std::string & catalog_credential_,
     auth_header = parseAuthHeader(auth_header_);
     /// CREATE checks `http_forbid_headers`, ATTACH does not.
     DB::HTTPHeaderEntries header_to_check{*auth_header};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_to_check);
 }
 
 std::string UnityV2Catalog::getOAuthRequestParams() const
@@ -240,7 +240,7 @@ DB::HTTPHeaderEntries UnityV2Catalog::getAuthHeaders(bool force_refresh) const
         return {};
 
     DB::HTTPHeaderEntries headers{{"Authorization", "Bearer " + token}};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
     return headers;
 }
 
@@ -416,7 +416,7 @@ void UnityV2Catalog::createTable(
     }
 }
 
-void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
 }
