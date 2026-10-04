@@ -4709,8 +4709,33 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
     return new_reading;
 }
 
+bool ReadFromMergeTree::canComputeGlobalRowIndex() const
+{
+    auto is_computed_output = [](const ActionsDAG & actions, std::string_view column_name)
+    {
+        return std::ranges::any_of(actions.getOutputs(), [&](const auto * node)
+        {
+            return node->result_name == column_name && node->type != ActionsDAG::ActionType::INPUT;
+        });
+    };
+
+    const auto & columns = getStorageMetadata()->getColumns();
+    for (const auto * column_name : {"_part_starting_offset", "_part_offset"})
+    {
+        if (columns.has(column_name))
+            return false;
+        if (query_info.row_level_filter && is_computed_output(query_info.row_level_filter->actions, column_name))
+            return false;
+        if (query_info.prewhere_info && is_computed_output(query_info.prewhere_info->prewhere_actions, column_name))
+            return false;
+    }
+    return true;
+}
+
 void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
 {
+    chassert(canComputeGlobalRowIndex());
+
     /// A read column consumed by a filter is exposed again by adding it back to the filter outputs,
     /// the same way `PREWHERE` keeps pass-through columns. When the column is the filter column itself
     /// (e.g. `PREWHERE _part_offset`), it is already among the outputs, so the remove-filter flag is
