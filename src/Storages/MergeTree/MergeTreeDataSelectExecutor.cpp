@@ -2725,7 +2725,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        const size_t num_unevaluable_before = KeyCondition::getNumUnevaluableChainApplications();
+                        const bool exact_range_can_be_false
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+                        /// A monotonic function chain that could not be evaluated on the range answers "unknown":
+                        /// an over-approximation that supports no exactness claim and contradicts none either.
+                        const bool exact_range_unevaluable
+                            = KeyCondition::getNumUnevaluableChainApplications() != num_unevaluable_before;
+
+                        if (exact_range_unevaluable)
+                        {
+                            /// Neither an exact range nor an inconsistency.
+                        }
+                        else if (exact_range_can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a
