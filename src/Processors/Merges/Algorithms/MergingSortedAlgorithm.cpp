@@ -20,6 +20,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+constexpr UInt64 MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS = 10'000;
+
 static bool anyChunkColumnReplicated(const Chunk & chunk)
 {
     if (!chunk)
@@ -188,15 +190,24 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         input.skip_last_row = true;
     }
 
-    removeReplicatedFromSortingColumns(header, inputs, description);
+    if (limit == 0 || limit >= MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS)
+    {
+        for (auto & input : inputs)
+            if (input.chunk)
+                materializeReplicatedColumns(input.chunk);
+    }
+    else
+        removeReplicatedFromSortingColumns(header, inputs, description);
+
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
 
     /// Enable the row-by-row fast path in `MergedData` when no input column is `ColumnReplicated`.
-    /// `removeReplicatedFromSortingColumns` already materialized the sort columns, but non-sort
-    /// columns can still be replicated (for example from a JOIN with lazy replication). If none
-    /// are, the per-row wrapping check in `insertRow` / `insertRows` is pure overhead. This is
-    /// only ever raised back to `true` in `consume` (before those rows can reach `insertRow`).
+    /// The sort columns were just materialized, and so were all the others unless a small limit kept
+    /// them lazy, in which case a chunk can still have replicated non-sort columns (for example from
+    /// a JOIN with lazy replication). If none are, the per-row wrapping check in `insertRow` /
+    /// `insertRows` is pure overhead. This is only ever raised back to `true` in `consume` (before
+    /// those rows can reach `insertRow`).
     merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
 
     current_inputs = std::move(inputs);
@@ -344,7 +355,11 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
         input.skip_last_row = true;
     }
 
-    removeReplicatedFromSortingColumns(header, input, description);
+    if (limit == 0 || limit >= MIN_LIMIT_TO_MATERIALIZE_REPLICATED_COLUMNS)
+        materializeReplicatedColumns(input.chunk);
+    else
+        removeReplicatedFromSortingColumns(header, input, description);
+
     removeConstAndSparse(input);
 
     /// A late-arriving chunk may bring non-sort `ColumnReplicated` columns even if the initial

@@ -99,7 +99,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
-    compactReplicatedColumns(chunk);
+    materializeReplicatedColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();

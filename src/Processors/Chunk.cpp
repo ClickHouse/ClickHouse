@@ -238,6 +238,15 @@ void compactReplicatedColumns(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+void materializeReplicatedColumns(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfReplicated();
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
 {
     auto columns = chunk.cloneEmptyColumns();

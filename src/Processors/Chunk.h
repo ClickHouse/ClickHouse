@@ -179,6 +179,9 @@ void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions);
 /// Optimize ColumnReplicated columns memory layout.
 void compactReplicatedColumns(Chunk & chunk);
 
+/// Convert every ColumnReplicated in the chunk to a full column.
+void materializeReplicatedColumns(Chunk & chunk);
+
 /// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.
 Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows);
 
