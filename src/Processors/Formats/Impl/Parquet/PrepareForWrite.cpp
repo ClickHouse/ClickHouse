@@ -371,8 +371,9 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 types(T::INT32, C::INT_16, int_type(16, true));
             break;
         }
-        /// IPv4 does not have suitable parquet logical types, so we write them as plain numbers.
+        /// IPv4 and MacAddress do not have suitable parquet logical types, so we write them as plain numbers.
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
+        case TypeIndex::MacAddress: types(T::INT64, C::UINT_64, int_type(64, false)); break; // UInt64
 
         /// Parquet doesn't have 16-bit date type, so we cast Date to 32 bits.
         case TypeIndex::Date:

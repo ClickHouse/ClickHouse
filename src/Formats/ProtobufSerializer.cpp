@@ -305,7 +305,7 @@ namespace
             try
             {
                 /// TODO: use accurate::convertNumeric() maybe?
-                if constexpr (std::is_same_v<SrcType, IPv4>)
+                if constexpr (std::is_same_v<SrcType, IPv4> || std::is_same_v<SrcType, MacAddress>)
                     result = boost::numeric_cast<DestType>(value.toUnderType());
                 else
                     result = boost::numeric_cast<DestType>(value);
@@ -1638,6 +1638,82 @@ namespace
             IPv4 value;
             ReadBufferFromString buf{str};
             readIPv4Text(value, buf);
+            return value;
+        }
+    };
+
+    class ProtobufSerializerMacAddress : public ProtobufSerializerNumber<MacAddress>
+    {
+    public:
+        ProtobufSerializerMacAddress(
+            std::string_view column_name_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<MacAddress>(column_name_, field_descriptor_, reader_or_writer_)
+        {
+            setFunctions();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerMacAddress: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
+    private:
+        void setFunctions()
+        {
+            switch (field_typeid)
+            {
+                case FieldTypeId::TYPE_INT32:
+                case FieldTypeId::TYPE_SINT32:
+                case FieldTypeId::TYPE_UINT32:
+                case FieldTypeId::TYPE_INT64:
+                case FieldTypeId::TYPE_SINT64:
+                case FieldTypeId::TYPE_UINT64:
+                case FieldTypeId::TYPE_FIXED32:
+                case FieldTypeId::TYPE_SFIXED32:
+                case FieldTypeId::TYPE_FIXED64:
+                case FieldTypeId::TYPE_SFIXED64:
+                case FieldTypeId::TYPE_FLOAT:
+                case FieldTypeId::TYPE_DOUBLE:
+                    break; /// already set in ProtobufSerializerNumber<MacAddress>::setFunctions().
+
+                case FieldTypeId::TYPE_STRING:
+                case FieldTypeId::TYPE_BYTES:
+                {
+                    write_function = [this](MacAddress value)
+                    {
+                        macAddressToString(value, text_buffer);
+                        writeStr(text_buffer);
+                    };
+
+                    read_function = [this]() -> MacAddress
+                    {
+                        readStr(text_buffer);
+                        return stringToMacAddress(text_buffer);
+                    };
+
+                    default_function = [this]() -> MacAddress { return stringToMacAddress(field_descriptor.default_value_string()); };
+                    break;
+                }
+
+                default:
+                    incompatibleColumnType("MacAddress");
+            }
+        }
+
+        static void macAddressToString(MacAddress value, String & str)
+        {
+            WriteBufferFromString buf{str};
+            writeMacAddressText(value, buf);
+        }
+
+        static MacAddress stringToMacAddress(const absl::string_view & str)
+        {
+            MacAddress value;
+            ReadBufferFromString buf{str};
+            readMacAddressText(value, buf);
             return value;
         }
     };
@@ -3946,6 +4022,7 @@ namespace
                 case TypeIndex::UUID: return std::make_unique<ProtobufSerializerUUID>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::IPv4: return std::make_unique<ProtobufSerializerIPv4>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::IPv6: return std::make_unique<ProtobufSerializerIPv6>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::MacAddress: return std::make_unique<ProtobufSerializerMacAddress>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Interval: return std::make_unique<ProtobufSerializerInterval>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::AggregateFunction: return std::make_unique<ProtobufSerializerAggregateFunction>(column_name, typeid_cast<std::shared_ptr<const DataTypeAggregateFunction>>(data_type), field_descriptor, reader_or_writer);
 

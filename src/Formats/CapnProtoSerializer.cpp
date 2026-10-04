@@ -670,6 +670,47 @@ namespace
         }
     };
 
+    class CapnProtoMacAddressSerializer : public ICapnProtoSerializer
+    {
+    public:
+        CapnProtoMacAddressSerializer(const DataTypePtr & data_type, const String & column_name, const capnp::Type & capnp_type)
+        {
+            if (!capnp_type.isUInt64())
+                throwCannotConvert(data_type, column_name, capnp_type);
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
+        {
+            parent_struct_builder.getBuilderImpl().setDataField<UInt64>(slot_offset, getValue(column, row_num));
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_list_builder, UInt32 array_index, size_t row_num) override
+        {
+            parent_list_builder.getBuilderImpl().setDataElement<UInt64>(array_index, getValue(column, row_num));
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            insertValue(column, parent_struct_reader.getReaderImpl().getDataField<UInt64>(slot_offset));
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            insertValue(column, parent_list_reader.getReaderImpl().getDataElement<UInt64>(array_index));
+        }
+
+    private:
+        UInt64 getValue(const ColumnPtr & column, size_t row_num)
+        {
+            return assert_cast<const ColumnVector<MacAddress> &>(*column).getElement(row_num).toUInt64();
+        }
+
+        void insertValue(IColumn & column, UInt64 value)
+        {
+            assert_cast<ColumnVector<MacAddress> &>(column).insertValue(MacAddress(value));
+        }
+    };
+
     template <typename T>
     class CapnProtoFixedSizeRawDataSerializer : public ICapnProtoSerializer
     {
@@ -1475,6 +1516,8 @@ namespace
                 return std::make_unique<CapnProtoIPv4Serializer>(type, name, capnp_type);
             case TypeIndex::IPv6:
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<IPv6>>(type, name, capnp_type);
+            case TypeIndex::MacAddress:
+                return std::make_unique<CapnProtoMacAddressSerializer>(type, name, capnp_type);
             case TypeIndex::UUID:
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UUID>>(type, name, capnp_type);
             case TypeIndex::Enum8:

@@ -10231,6 +10231,10 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
         {"26.9", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."}, \
         {"26.3", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."}) \
     \
+    DECLARE(Bool, allow_experimental_macaddress_type, false, R"(
+Allows creation of [MacAddress](/sql-reference/data-types/macaddress) columns in tables.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to allow the use of `MacAddress` data type"}) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL, \

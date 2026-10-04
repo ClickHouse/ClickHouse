@@ -1755,6 +1755,12 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
             return std::nullopt;
         return Field(IPv4(UInt32(val)));
     }
+    else if (field_mac_address)
+    {
+        if (val > 0xFFFFFFFFFFFFULL)
+            return std::nullopt;
+        return Field(MacAddress(val));
+    }
     else if (field_timestamp_from_millis)
     {
         /// Convert milliseconds to seconds, with the same rounding as when casting from
