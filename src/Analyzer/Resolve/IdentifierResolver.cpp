@@ -741,6 +741,11 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
         if (!array_join_node)
             continue;
 
+        /// The aliases of an ARRAY JOIN on a hidden SEMI/ANTI JOIN side are not visible here either,
+        /// so they must not make a name of the preserved side ambiguous (see `tryBindIdentifierToTableExpressions`).
+        if (isTableExpressionHiddenBySemiAntiJoin(table_expression.get(), scope))
+            continue;
+
         for (const auto & array_join_expression : array_join_node->getJoinExpressions())
         {
             auto array_join_expression_alias = array_join_expression->getAlias();

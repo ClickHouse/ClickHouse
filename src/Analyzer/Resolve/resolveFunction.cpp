@@ -1347,7 +1347,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !function_node_ptr->isWindowFunction()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
-        && !scope.resolving_join_on_expression
+        && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
         && !lambda_expression_untyped
         && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)

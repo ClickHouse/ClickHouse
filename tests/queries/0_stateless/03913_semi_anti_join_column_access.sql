@@ -462,3 +462,13 @@ SELECT *
 FROM (SELECT 1 AS a) AS t1
 LEFT SEMI JOIN (SELECT 1 AS y) AS t6 ON true, (SELECT 1 AS d) AS t4, (SELECT 1 AS b) AS t2
 LEFT SEMI JOIN (SELECT 1 AS c) AS t3 ON t4.d = t2.b AND t6.y = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- An ARRAY JOIN on the hidden side of a SEMI/ANTI JOIN reads its own input, but its aliases are hidden as well:
+-- they must not make a preserved-side column of the same name ambiguous for an outer query.
+SELECT a FROM (SELECT * FROM (SELECT [2] AS arr) AS r ARRAY JOIN arr AS a RIGHT SEMI JOIN (SELECT 1 AS a) AS l ON true);
+SELECT b FROM (SELECT * FROM (SELECT [2] AS arr) AS r ARRAY JOIN arr AS b RIGHT ANTI JOIN (SELECT 1 AS b) AS l ON r.arr[1] = l.b);
+SELECT * FROM (SELECT 1 AS x) AS r ARRAY JOIN [2] AS a RIGHT SEMI JOIN (SELECT 1 AS a) AS l ON true FORMAT TSVWithNames;
+SELECT r.arr FROM (SELECT [2] AS arr) AS r ARRAY JOIN arr AS a RIGHT SEMI JOIN (SELECT 1 AS a) AS l ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- An ARRAY JOIN applied after the SEMI JOIN sees only the preserved side.
+SELECT x FROM (SELECT 1 AS x, [1] AS arr) AS t1 LEFT SEMI JOIN (SELECT 1 AS y) AS t2 ON t1.x = t2.y ARRAY JOIN arr;
+SELECT y FROM (SELECT 1 AS x) AS t1 LEFT SEMI JOIN (SELECT 1 AS y, [1] AS arr) AS t2 ON t1.x = t2.y ARRAY JOIN arr; -- { serverError UNKNOWN_IDENTIFIER }

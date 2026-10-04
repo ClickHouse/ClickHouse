@@ -5741,6 +5741,12 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     std::vector<QueryTreeNodePtr> array_join_column_expressions;
     array_join_column_expressions.reserve(array_join_nodes_size);
 
+    /// ARRAY JOIN expressions read the columns of their own input, even if that input is on the hidden side of
+    /// an enclosing SEMI/ANTI JOIN, so treat them as an ON expression of this node (see `SemiAntiJoinSideChecker`).
+    const auto * previous_resolving_join_on_expression = scope.resolving_join_on_expression;
+    scope.resolving_join_on_expression = array_join_node.get();
+    SCOPE_EXIT(scope.resolving_join_on_expression = previous_resolving_join_on_expression);
+
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
