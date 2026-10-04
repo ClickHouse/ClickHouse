@@ -11,7 +11,11 @@ void addConvertingActions(QueryPlan & plan, const Block & header, const ContextP
     if (blocksHaveEqualStructure(*plan.getCurrentHeader(), header))
         return;
 
-    auto mode = ActionsDAG::MatchColumnsMode::Name;
+    const auto & current_header = *plan.getCurrentHeader();
+    /// Same-named columns (SELECT *, x + 1 AS x) cannot be told apart by name; the source produces them in header order.
+    auto mode = header.getIndexByName().size() < header.columns() && current_header.columns() == header.columns()
+        ? ActionsDAG::MatchColumnsMode::Position
+        : ActionsDAG::MatchColumnsMode::Name;
 
     auto get_converting_dag = [mode, context](const Block & block_, const Block & header_)
     {
