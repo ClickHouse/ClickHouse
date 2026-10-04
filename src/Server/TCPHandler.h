@@ -334,6 +334,17 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
+
+    /// Undo a packet write that threw part-way through, so that the next packet is not appended
+    /// to a partial one. Returns false if part of it already reached the socket and cannot be
+    /// unwritten; the stream is then canceled and no further packet may be written to it.
+    static bool rollbackPartialPacket(
+        QueryState & state,
+        std::shared_ptr<TCPHandlerPocoChunkedWriter> & out,
+        size_t prev_bytes_written_out,
+        size_t prev_bytes_written_compressed_out,
+        size_t prev_offset_out);
+
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
