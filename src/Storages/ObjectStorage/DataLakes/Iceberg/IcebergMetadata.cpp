@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
+#include <base/EnumReflection.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
 #include "config.h"
@@ -122,6 +123,7 @@ extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int FILE_ALREADY_EXISTS;
+extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -1731,7 +1733,14 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     readStringBinary(table_location, in);
     Int32 metadata_compression_method_val = 0;
     readVarInt(metadata_compression_method_val, in);
-    auto metadata_compression_method = static_cast<CompressionMethod>(metadata_compression_method_val);
+    using CompressionMethodUnderlying = std::underlying_type_t<CompressionMethod>;
+    std::optional<CompressionMethod> read_compression_method;
+    if (metadata_compression_method_val >= 0 && metadata_compression_method_val <= std::numeric_limits<CompressionMethodUnderlying>::max())
+        read_compression_method
+            = magic_enum::enum_cast<CompressionMethod>(static_cast<CompressionMethodUnderlying>(metadata_compression_method_val));
+    if (!read_compression_method)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Iceberg metadata compression method {}", metadata_compression_method_val);
+    const auto metadata_compression_method = *read_compression_method;
     IcebergMetadataFilesCachePtr cache_ptr = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
         cache_ptr = local_context->getIcebergMetadataFilesCache();

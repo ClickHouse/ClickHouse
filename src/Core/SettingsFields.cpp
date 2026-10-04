@@ -252,15 +252,15 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
 {
     if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
     {
-        UInt64 x = 0;
+        T x{};
         readVarUInt(x, in);
-        *this = static_cast<T>(x);
+        *this = x;
     }
     else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
     {
-        Int64 x = 0;
+        T x{};
         readVarInt(x, in);
-        *this = static_cast<T>(x);
+        *this = x;
     }
     else
     {
