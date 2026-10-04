@@ -40,7 +40,7 @@ max_insert_threads=8
 # at the requested value regardless of concurrent memory pressure.
 # Without these flags the test is flaky on `per_test_coverage` and other
 # memory-constrained builds. See PR #100383.
-NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0'
+NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0 --parallel_view_processing=1'
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE -q """
