@@ -8,6 +8,9 @@
 -- system.query_log (isolated by current_database) make the check deterministic. The INSERT
 -- queries are tagged with an inline comment so they can be found in system.query_log.
 
+-- An asynchronous insert is flushed later in the background, outside of the INSERT query, so its rows are
+-- not in the query's ProfileEvents; this test checks the synchronous path.
+SET async_insert = 0;
 SET log_queries = 1;
 SET log_queries_min_type = 'QUERY_FINISH';
 SET parallel_view_processing = 0;
