@@ -634,6 +634,9 @@ public:
 
     bool hasBrokenProjection(const String & projection_name) const;
 
+    /// Listed in checksums but not loaded by loadProjections, e.g. because the part was loaded with table metadata that did not have it yet.
+    bool hasUnloadedProjection(const String & projection_name) const;
+
     /// Return true, if all projections were loaded successfully and none was marked as broken.
     void loadProjections(
         bool require_columns_checksums,
