@@ -10,6 +10,9 @@
 namespace DB
 {
 
+struct AggregatingTransformParams;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
@@ -172,6 +175,9 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) if it applies.
+    bool tryBuildRadixUniqExact(QueryPipelineBuilder & pipeline, const AggregatingTransformParamsPtr & transform_params, size_t max_threads) const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

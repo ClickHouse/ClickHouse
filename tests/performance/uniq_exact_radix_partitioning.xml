@@ -1,0 +1,25 @@
+<test>
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+           <name>col</name>
+           <values>
+               <value>UserID</value>
+               <value>WatchID</value>
+               <value>SearchPhrase</value>
+               <value>URL</value>
+               <value>ClientIP</value>
+               <value>EventTime</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count(DISTINCT {col}) FROM hits_100m_single FORMAT Null</query>
+
+    <query>SELECT uniqExact(number) FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT uniqExact(number % 1000000) FROM numbers_mt(100000000) FORMAT Null</query>
+    <query>SELECT uniqExact(toString(number)) FROM numbers_mt(20000000) FORMAT Null</query>
+</test>
