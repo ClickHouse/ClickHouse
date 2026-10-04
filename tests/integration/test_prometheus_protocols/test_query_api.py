@@ -1,3 +1,4 @@
+import json
 import urllib
 import uuid
 
@@ -21,7 +22,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/prometheus.xml"],
+    main_configs=["configs/prometheus.xml", "configs/unavailable_shard_cluster.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_read=(9093, "/read"),
     handle_prometheus_remote_write=(9093, "/write"),
@@ -394,3 +395,67 @@ def test_generated_sql_always_runs_with_materialized_cte():
             retry_count=30,
             sleep_time=1,
         )
+
+
+# Parameters of other Prometheus-compatible servers that are safe to ignore don't change the result.
+def test_ignored_params():
+    query = 'foo{shape="square"}'
+    expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    for name, value in [("trace", "1"), ("round_digits", "3"), ("partial_response", "true"), ("dedup", "true")]:
+        assert (
+            execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value})
+            == expected
+        )
+
+
+# `nocache=1` bypasses the query cache that a settings profile enables.
+def test_nocache_bypasses_query_cache():
+    node.query(
+        "CREATE SETTINGS PROFILE query_cache_profile SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'"
+    )
+    node.query("CREATE USER query_cache_user IDENTIFIED WITH no_password SETTINGS PROFILE query_cache_profile")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO query_cache_user")
+
+    def get_value(params):
+        params = {"user": "query_cache_user", **params}
+        data = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", "nocache_metric", timestamp=1010, params=params)
+        return json.loads(data)["result"][0]["value"][1]
+
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1000.0: 1.0})])
+    assert get_value({}) == "1"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1005.0: 2.0})])
+    assert get_value({}) == "1"
+    assert get_value({"nocache": "1"}) == "2"
+
+
+# `partial_response=false` makes an unreachable shard an error even for a user with `skip_unavailable_shards = 1`.
+def test_partial_response_false_requires_all_shards():
+    node.query("CREATE TABLE shard_data (id UUID, timestamp DateTime64(3), value Float64) ENGINE=MergeTree ORDER BY (id, timestamp)")
+    node.query("CREATE TABLE dist_data AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data, 0)")
+    node.query("CREATE TABLE prometheus_dist ENGINE=TimeSeries DATA dist_data")
+    node.query("INSERT INTO prometheus_dist (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    node.query("CREATE USER skip_shards_user IDENTIFIED WITH no_password SETTINGS skip_unavailable_shards = 1")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO skip_shards_user")
+
+    path = "/dynamic_table/api/v1/query"
+    params = {"table": "prometheus_dist", "user": "skip_shards_user"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+
+# Tenancy filters must be rejected, never ignored.
+def test_tenancy_filters_rejected():
+    url = f"http://{node.ip_address}:9093"
+    responses = [
+        (name, get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", "foo", 150, params={name: value}))
+        for name, value in [("extra_label", "shape=square"), ("extra_filters", '{shape="square"}'), ("extra_filters[]", '{shape="square"}')]
+    ]
+    responses.append(("extra_label", requests.get(f"{url}/api/v1/series", params={"match[]": "foo", "extra_label": "shape=square"})))
+    responses.append(("extra_filters[]", requests.post(f"{url}/api/v1/query", data={"query": "foo", "time": "150", "extra_filters[]": '{shape="square"}'})))
+    for name, response in responses:
+        assert response.status_code == 400
+        assert response.json()["errorType"] == "bad_data"
+        assert f"The '{name}' parameter is not supported" in extract_error_from_http_api_response(response)
