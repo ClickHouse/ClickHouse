@@ -1190,6 +1190,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
+    const WriteSettings & write_settings,
     bool merge_is_needed,
     bool try_adaptive_codec,
     bool use_selected_codec)
@@ -1326,7 +1327,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
+        write_settings,
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec);
 
@@ -1370,6 +1371,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(compression_codec),
         std::move(indices),
+        context->getWriteSettings(),
         merge_is_needed,
         /*try_adaptive_codec=*/ false);
 }
@@ -1405,6 +1407,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(compression_codec),
         std::move(indices),
+        context->getWriteSettings(),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
         use_selected_codec);
