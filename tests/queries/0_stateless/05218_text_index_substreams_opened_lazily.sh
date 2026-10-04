@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage
+# Tags: no-object-storage, no-parallel
 # no-object-storage: the oracle is ProfileEvents['FileOpen'], which counts local file opens only.
+# no-parallel: the oracle needs the server caches to stay warm between the warm-up and the measured query, and a
+# concurrent `DROP` or `RENAME` of a `MergeTree` table in a database without table UUIDs clears all of them.
 # Random settings limits: min_bytes_to_use_mmap_io=(1048576, None)
 # min_bytes_to_use_mmap_io: below the file sizes here it makes every read go through the mmap cache,
 # which does not count as a file open at all, so both counts collapse to 0.
@@ -48,41 +50,17 @@ SETTINGS_POSTINGS_CACHE="$SETTINGS_COMMON, use_text_index_postings_cache = 1,
 SELECTIVE="SELECT sum(val) FROM t_text_lazy_substreams WHERE hasToken(msg, 'onepart') SETTINGS $SETTINGS"
 IN_RANGE="SELECT sum(val) FROM t_text_lazy_substreams WHERE hasToken(msg, 'everypart') SETTINGS $SETTINGS"
 
-# Any of these counters above zero means the measured query found the caches cold: a concurrent DROP or RENAME of a
-# MergeTree table in a database without table UUIDs (Ordinary, Memory) clears every server cache.
-CACHE_MISSES="ProfileEvents['MarkCacheMisses'] + ProfileEvents['TextIndexHeaderCacheMisses'] + ProfileEvents['TextIndexTokensCacheMisses']"
-
-# Runs an unmeasured warm-up and then the measured query, both again while the measured query found the caches
-# cold: the point of the test is the steady state of a repeated search term, where the caches are populated.
-# Sets MEASURED_ID and ANSWER for the last measured query.
-function measure_warm()
-{
-    local name=$1 query=$2 cache_misses=$3 attempt cold
-    for attempt in {1..10}; do
-        ${CLICKHOUSE_CLIENT} -q "$query" > /dev/null
-        MEASURED_ID="05218_${name}_${CLICKHOUSE_DATABASE}_${attempt}"
-        ANSWER=$(${CLICKHOUSE_CLIENT} --query_id "$MEASURED_ID" -q "$query")
-        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
-        cold=$(${CLICKHOUSE_CLIENT} -q "
-            SELECT ($cache_misses) > 0
-            FROM system.query_log
-            WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-              AND event_date >= yesterday() AND query_id = '$MEASURED_ID'")
-        [ "$cold" = 0 ] && break
-    done
-}
-
-measure_warm selective "$SELECTIVE" "$CACHE_MISSES"
-SELECTIVE_ID=$MEASURED_ID
-SELECTIVE_ANSWER=$ANSWER
-
-# The in-range query is the control below, and a cold cache only adds opens to it.
+# Unmeasured warm-up: the point of the test is the steady state of a repeated search term, where the
+# index header and the negative-tokens caches are already populated.
+${CLICKHOUSE_CLIENT} -q "$SELECTIVE" > /dev/null
 ${CLICKHOUSE_CLIENT} -q "$IN_RANGE" > /dev/null
+
+SELECTIVE_ID="05218_selective_${CLICKHOUSE_DATABASE}"
 IN_RANGE_ID="05218_in_range_${CLICKHOUSE_DATABASE}"
 
 # The answers are asserted too: a threshold on a counter says nothing if the query stopped
 # returning the right rows.
-printf 'selective_answer\t%s\n' "$SELECTIVE_ANSWER"
+echo -n "selective_answer	"; ${CLICKHOUSE_CLIENT} --query_id "$SELECTIVE_ID" -q "$SELECTIVE"
 echo -n "in_range_answer	";  ${CLICKHOUSE_CLIENT} --query_id "$IN_RANGE_ID" -q "$IN_RANGE"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
@@ -103,11 +81,13 @@ ${CLICKHOUSE_CLIENT} -q "
 # The same in-range query once its postings block is in the global postings cache: reading no
 # substream then covers the postings stream too.
 POSTINGS_CACHED="SELECT sum(val) FROM t_text_lazy_substreams WHERE hasToken(msg, 'everypart') SETTINGS $SETTINGS_POSTINGS_CACHE"
+POSTINGS_CACHED_ID="05218_postings_cached_${CLICKHOUSE_DATABASE}"
 
-measure_warm postings_cached "$POSTINGS_CACHED" "$CACHE_MISSES + ProfileEvents['TextIndexPostingsCacheMisses']"
-POSTINGS_CACHED_ID=$MEASURED_ID
+${CLICKHOUSE_CLIENT} -q "$POSTINGS_CACHED" > /dev/null
 
-printf 'postings_cached_answer\t%s\n' "$ANSWER"
+echo -n "postings_cached_answer	"; ${CLICKHOUSE_CLIENT} --query_id "$POSTINGS_CACHED_ID" -q "$POSTINGS_CACHED"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 ${CLICKHOUSE_CLIENT} -q "
     SELECT 'postings_cached_below_threshold', ProfileEvents['FileOpen'] < $PARTS + $PARTS / 2
