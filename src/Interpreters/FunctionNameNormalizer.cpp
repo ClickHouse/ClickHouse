@@ -6,10 +6,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTTTLElement.h>
 
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -49,15 +52,15 @@ bool canonicalNameCanReparseShape(const String & canonical_name, const ASTFuncti
 
 void FunctionNameNormalizer::visit(IAST * ast)
 {
-    visitImpl(ast, /*normalize_apply_transformer=*/ false);
+    visitImpl(ast, /*for_comparison=*/ false);
 }
 
 void FunctionNameNormalizer::visitForComparison(IAST * ast)
 {
-    visitImpl(ast, /*normalize_apply_transformer=*/ true);
+    visitImpl(ast, /*for_comparison=*/ true);
 }
 
-void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transformer)
+void FunctionNameNormalizer::visitImpl(IAST * ast, bool for_comparison)
 {
     if (!ast)
         return;
@@ -66,11 +69,11 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transfor
     // have the same name as function, e.g. Log.
     if (auto * node_storage = ast->as<ASTStorage>())
     {
-        visitImpl(node_storage->partition_by, normalize_apply_transformer);
-        visitImpl(node_storage->primary_key, normalize_apply_transformer);
-        visitImpl(node_storage->order_by, normalize_apply_transformer);
-        visitImpl(node_storage->sample_by, normalize_apply_transformer);
-        visitImpl(node_storage->ttl_table, normalize_apply_transformer);
+        visitImpl(node_storage->partition_by, for_comparison);
+        visitImpl(node_storage->primary_key, for_comparison);
+        visitImpl(node_storage->order_by, for_comparison);
+        visitImpl(node_storage->sample_by, for_comparison);
+        visitImpl(node_storage->ttl_table, for_comparison);
         return;
     }
 
@@ -78,8 +81,8 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transfor
     // have the same name as function, e.g. Date.
     if (auto * node_decl = ast->as<ASTColumnDeclaration>())
     {
-        visitImpl(node_decl->getDefaultExpression().get(), normalize_apply_transformer);
-        visitImpl(node_decl->getTTL().get(), normalize_apply_transformer);
+        visitImpl(node_decl->getDefaultExpression().get(), for_comparison);
+        visitImpl(node_decl->getTTL().get(), for_comparison);
         return;
     }
 
@@ -92,14 +95,14 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transfor
     }
 
     for (auto & child : ast->children)
-        visitImpl(child.get(), normalize_apply_transformer);
+        visitImpl(child.get(), for_comparison);
 
     if (auto * ttl_elem = ast->as<ASTTTLElement>())
     {
         for (const auto & a : ttl_elem->group_by_key)
-            visitImpl(a.get(), normalize_apply_transformer);
+            visitImpl(a.get(), for_comparison);
         for (const auto & a : ttl_elem->group_by_assignments)
-            visitImpl(a.get(), normalize_apply_transformer);
+            visitImpl(a.get(), for_comparison);
     }
 
     /// An `APPLY` transformer carries its function in the non-child `func_name` string, and its
@@ -109,8 +112,18 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transfor
     /// comparison path (see `visitForComparison`): the persisted definition keeps the transformer
     /// as written, because older replicas compare the serialized `projections` field
     /// byte-for-byte and the canonical form of an older version is the definition as written.
-    if (!normalize_apply_transformer)
+    if (!for_comparison)
         return;
+
+    /// The engine treats a skip index type case-insensitively (`IndexDescription::getIndexFromAST`
+    /// lowercases it), so `TYPE SET(0)` and `TYPE set(0)` are the same index. The stored
+    /// definition keeps the type as written.
+    if (auto * index_declaration = ast->as<ASTIndexDeclaration>())
+    {
+        if (auto index_type = index_declaration->getType())
+            index_type->name = Poco::toLower(index_type->name);
+        return;
+    }
 
     if (auto * apply_transformer = ast->as<ASTColumnsApplyTransformer>())
     {
@@ -130,8 +143,8 @@ void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transfor
                 apply_transformer->func_name = canonical_name;
         }
 
-        visitImpl(apply_transformer->parameters.get(), normalize_apply_transformer);
-        visitImpl(apply_transformer->lambda.get(), normalize_apply_transformer);
+        visitImpl(apply_transformer->parameters.get(), for_comparison);
+        visitImpl(apply_transformer->lambda.get(), for_comparison);
     }
 }
 

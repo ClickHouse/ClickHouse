@@ -18,7 +18,8 @@ struct FunctionNameNormalizer
 
     /// Same, and additionally canonicalizes the function name of a projection's
     /// `COLUMNS(...) APPLY` transformer (including the function names inside its parameters and
-    /// lambda), so `APPLY SUM` and `APPLY sum` compare as the same definition.
+    /// lambda), so `APPLY SUM` and `APPLY sum` compare as the same definition. It also lowercases
+    /// the type of a skip index declaration, which the engine treats case-insensitively.
     ///
     /// Comparison-only. `visit` deliberately keeps the transformer as written: it runs on every
     /// `CREATE`/`ALTER` before the definition is persisted (table metadata on disk and in
@@ -28,7 +29,7 @@ struct FunctionNameNormalizer
     static void visitForComparison(IAST *);
 
 private:
-    static void visitImpl(IAST *, bool normalize_apply_transformer);
+    static void visitImpl(IAST *, bool for_comparison);
 };
 
 }
