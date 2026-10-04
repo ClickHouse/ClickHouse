@@ -85,6 +85,6 @@ grep -v '^report' "${LOCAL_DIR}/1048576.out"
 grep '^report' "${LOCAL_DIR}/1048576.out"
 
 # Every spilled set moved keys from memory, as the trace log reports; without a threshold, none spills.
-grep -o -E 'Switching the set of IN to external mode: [^(]*\(keys in memory: [0-9]+' "${LOCAL_DIR}/1048576.log" \
+grep -o -E 'Switching the set of IN to external mode [^:]*: [^(]*\(keys in memory: [0-9]+' "${LOCAL_DIR}/1048576.log" \
     | grep -o -E '[0-9]+$' | awk '{ total += 1; moved += ($1 > 0) } END { print total, moved }'
 grep -c 'Switching the set of IN to external mode' "${LOCAL_DIR}/0.log" || true

@@ -25,8 +25,8 @@ SQL
     ); then
         local result reason
         result=$(tr '\n' ' ' <<< "${out}" | sed -E 's/ +$//')
-        reason=$(grep -o -m 1 -E 'Switching the set of IN to external mode: [^(]+' "${LOCAL_DIR}/${name}.log" \
-            | sed -E 's/^Switching the set of IN to external mode: //; s/ +$//' || true)
+        reason=$(grep -o -m 1 -E 'Switching the set of IN to external mode [^:]*: [^(]+' "${LOCAL_DIR}/${name}.log" \
+            | sed -E 's/^Switching the set of IN to external mode [^:]*: //; s/ +$//' || true)
         echo "${name} ${result}${reason:+ ${reason}}"
     else
         echo "${name}" "$(grep -o -m 1 -E '\([A-Z_]+\)' "${LOCAL_DIR}/${name}.log")"
