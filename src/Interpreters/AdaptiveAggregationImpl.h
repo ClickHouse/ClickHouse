@@ -11,6 +11,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation.h>
@@ -69,35 +70,36 @@ constexpr size_t adaptive_count_bins = ADAPTIVE_AGGREGATION_NUM_BUCKETS * adapti
 /// every block while the query stays over the threshold.
 constexpr size_t adaptive_frozen_spill_min_hits = 65'536;
 
-/// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the
-/// same missing keys instead of bringing rare ones.
-/// Staged misses are supposed to be rare keys, each staged about once. A key's first staged
-/// record is the price of storing it once, repaid by the merge working on deduplicated keys;
-/// every repeat is bytes the baseline would have absorbed as a cheap in-place update. The
-/// verdict therefore weighs the repeats by the records' bytes: a thread thaws once the
-/// wasted staged bytes per distinct key, (repeat factor - 1) * bytes per record, exceed the
-/// bound. Each thread decides on its own stream: its baseline table would absorb only the
-/// repeats it sees itself, and a key that every thread stages once costs no more than the
-/// one cell per thread the baseline would keep. The repeat factor is estimated over a sparse
-/// sample of the thread's staged hashes. The repeats weigh only while the staged records are
-/// at least a share of the rows the frozen table saw (`adaptive_thaw_staged_share_inverse`):
-/// a table that absorbs nearly every row in place loses little to a sliver of repeated misses,
-/// and its thaw would give up the frozen table's merge. The weighting separates the shapes by how
-/// much a repeat costs. A near-unique stream has repeat ~ 1, so its wasted bytes are ~ 0 and
-/// it can never fire, no matter how heavy its records are. A stream of narrow fixed-width
-/// records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
-/// bound only past repeat ~ 13, where the pathological mid-cardinality streams live. A stream
-/// of wide keys or wide string arguments pays the whole record per repeat, so ~ 100-byte
-/// records cross already at repeat ~ 4. The bound of 300 splits the measured shapes: every
-/// shape that wants the thaw wastes at least ~ 440 bytes per key (a 90-byte string key at
-/// repeat ~ 3, a 90-byte string argument at repeat ~ 5, high-repeat count streams land in the
-/// kilobytes), and every shape that wins when kept engaged wastes at most ~ 275 (fixed-width
-/// arguments up to repeat ~ 12.5, count streams far below). `adaptive_thaw_min_staged_records`
-/// is the evidence floor of a thread before its verdict may fire. It is in records rather than
-/// bytes because the repeat estimate's confidence comes from the number of sampled observations.
+/// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the same missing
+/// keys instead of bringing rare ones. Staged misses are supposed to be rare keys, each staged about once.
+/// A key's first staged record is the price of storing it once, repaid by the merge working on deduplicated
+/// keys; repeats can instead be absorbed by in-place updates. The verdict weighs the repeated records'
+/// bytes against the state retained by an ordinary table. Cheap, fixed-size states use the calibrated
+/// minimum cost below. Larger inline states raise that cost, and a supported model of state growth adds
+/// the estimated distinct payload. Switching mid-stream must pay for retaining the records already staged,
+/// so the thaw multiplies the whole state cost by four. For cheap states this gives a bound of 300 bytes.
+///
+/// Each thread decides on its own stream: its baseline table would absorb only the repeats it sees itself,
+/// and a key that every thread stages once costs no more than the one cell per thread the baseline would
+/// keep. The repeat factor is estimated from a sparse sample of distinct staged hashes and the exact number
+/// of staged records. The repeats weigh only while the staged records are at least a share of the rows the
+/// frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly every row in place
+/// loses little to a sliver of repeated misses, and its thaw would give up the frozen table's merge.
+///
+/// The weighting separates the shapes by how much a repeat costs. With an accurate cardinality estimate,
+/// a near-unique stream has repeat ~ 1 and wasted bytes ~ 0 regardless of the records' size. A stream of
+/// narrow fixed-width records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses
+/// the bound only past repeat ~ 13, where the pathological mid-cardinality streams live. Wide keys or wide
+/// string arguments pay the whole record per repeat, so ~ 100-byte records cross already at repeat ~ 4.
+/// For cheap states, the bound of 300 splits the measured shapes: every shape that wants the thaw wastes
+/// at least ~ 440 bytes per key (a 90-byte string key at repeat ~ 3, a 90-byte string argument at repeat ~ 5,
+/// high-repeat count streams land in the kilobytes), and every shape that wins when kept engaged wastes
+/// at most ~ 275 (fixed-width arguments up to repeat ~ 12.5, count streams far below).
+/// `adaptive_thaw_min_staged_records` is the evidence floor of a thread before its verdict may fire. It is
+/// in records rather than bytes because the repeat estimate's confidence comes from sampled observations.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 65'536;
-constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
+constexpr size_t adaptive_thaw_state_cost_multiplier = 4;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
@@ -105,12 +107,13 @@ constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 /// finish as the thaw guard does, but against a lower bound. A thaw switches a thread in the middle of its stream:
 /// the records staged so far stay, and the table starts filling only then, so it pays only for heavy repeats. A
 /// verdict decides the next runs from their start, which have nothing to switch, so the stream needs to repeat only
-/// enough for the ordinary path to win. The bound of 75 splits the shapes measured per thread: the numeric-key
-/// streams that lose to the ordinary path when kept engaged waste ~ 84 bytes per key and more (a count, a sum or a
-/// key-only stream at repeat ~ 6-10 in a thread), and those that win waste at most ~ 34 (the same streams at
+/// enough for the ordinary path to win. Its state cost has a floor of 75 bytes per key, which splits the
+/// cheap-state shapes measured per thread: the numeric-key streams that lose to the ordinary path when kept
+/// engaged waste ~ 84 bytes per key and more (a count, a sum or a key-only stream at repeat ~ 6-10 in a
+/// thread), and those that win waste at most ~ 34 (the same streams at
 /// repeat ~ 1.5-3). Narrow count and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound:
 /// the ordinary path of an aggregation without states wins at less waste than the bytes tell.
-constexpr size_t adaptive_verdict_wasted_bytes_per_key = 75;
+constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
 
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
 /// The fixed-size arguments come first, at fixed offsets and in the form `RowDataStore` uses (a Nullable field is a
@@ -278,13 +281,35 @@ struct AdaptiveAggregationProducer
 
         /// The thaw evidence of this thread (see `Aggregator::adaptiveStagingRepeats`): the rows the frozen table saw,
         /// the records it staged and their estimated footprint (key bytes, variable-width argument bytes and the
-        /// per-record bookkeeping), and a sparse sample of the staged hashes, whose occurrences per distinct sampled
-        /// hash estimate the repeat factor of the thread's staged stream.
+        /// per-record bookkeeping), and a sparse sample of distinct staged hashes. Scaling the sample estimates
+        /// the number of keys, which the known record count turns into a repetition estimate.
         size_t rows = 0;
         size_t staged_records = 0;
         size_t staged_bytes = 0;
-        size_t thaw_sampled_records = 0;
         HashSet<UInt64> distinct_sampled_hashes;
+
+        size_t getEstimatedStagedKeyCount() const
+        {
+            return distinct_sampled_hashes.size() * (adaptive_thaw_sample_mask + 1);
+        }
+
+        size_t getEstimatedDistinctInputCount() const
+        {
+            return distinct_sampled_inputs ? distinct_sampled_inputs->size() * (adaptive_thaw_sample_mask + 1) : 0;
+        }
+
+        /// Adds the hash of a sampled group key together with its aggregate argument tuple.
+        void addSampledInputHash(UInt64 hash)
+        {
+            if (!distinct_sampled_inputs)
+                distinct_sampled_inputs = std::make_unique<HyperLogLogCounter<12, UInt64, TrivialHash, UInt64>>();
+            distinct_sampled_inputs->insert(hash);
+        }
+
+    private:
+        /// Distinct argument tuples of the sampled keys estimate the payload a growing set state would retain.
+        /// The sketch stays bounded even when a sampled key has arbitrarily many distinct arguments.
+        std::unique_ptr<HyperLogLogCounter<12, UInt64, TrivialHash, UInt64>> distinct_sampled_inputs;
     };
 
     /// Terminal: the thread aggregates exactly as with the feature off. It stands down at its

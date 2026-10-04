@@ -919,6 +919,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
         adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, aggregates_positions);
+        /// Distinct tuples of all arguments describe one set-valued aggregate. Multiple independent sets
+        /// can have different reduction factors, so they cannot share this estimate.
+        if (params.aggregates_size == 1)
+            adaptive_state_bytes_per_distinct_input = aggregate_functions[0]->getStateBytesPerDistinctInput();
         for (size_t i = 0; i < params.aggregates_size; ++i)
             if (aggregate_functions[i]->isAbleToParallelizeMerge() && aggregate_functions[i]->isParallelizeMergePrepareNeeded())
                 adaptive_parallel_merge_indices.push_back(i);
@@ -2471,7 +2475,8 @@ bool Aggregator::executeOnBlock(Columns columns,
             frozen.rows,
             frozen.staged_records,
             frozen.staged_bytes,
-            static_cast<double>(frozen.thaw_sampled_records) / static_cast<double>(frozen.distinct_sampled_hashes.size()));
+            static_cast<double>(frozen.staged_records)
+                / static_cast<double>(frozen.getEstimatedStagedKeyCount()));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
         adaptive->session->repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
         adaptive->standDown();

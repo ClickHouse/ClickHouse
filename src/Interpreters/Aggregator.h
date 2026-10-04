@@ -588,7 +588,8 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
-    /// Per-query aggregate metadata used to estimate the cost of merging states.
+    /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
+    size_t adaptive_state_bytes_per_distinct_input = 0;
     std::vector<size_t> adaptive_parallel_merge_indices;
 
     AggregatedDataVariants::Type method_chosen;

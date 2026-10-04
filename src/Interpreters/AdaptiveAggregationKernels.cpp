@@ -14,6 +14,7 @@
 #include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
@@ -1126,23 +1127,34 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     ///   Charging them would fire the thaw on streams where staging is in fact profitable. The
     ///   measured anchor is a stream of five UInt64 arguments at repeat 10: it stays a clear
     ///   adaptive win, and counting its forty fixed bytes per record would have thawed it.
-    /// - The sample receives the batch's routing hashes matching `hash & 0xFF == 0`, about
-    ///   total / 256 of them. `thaw_sampled_records` counts every sampled occurrence, and
-    ///   `distinct_sampled_hashes` collapses a key's repeats onto one entry.
+    /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
+    ///   same sampling probability, and `distinct_sampled_hashes` collapses its repeats onto one entry.
+    ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
+    ///   keys, including the key in their hash because equal arguments in different groups occupy
+    ///   separate states.
     if (adaptiveMayThaw(*adaptive.session))
     {
+        chassert(!adaptive_state_bytes_per_distinct_input || aggregates_positions.size() == 1);
         size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);
         batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<SharedKey> ? sizeof(UInt64) : 0));
 
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
         frozen.staged_bytes += batch_bytes;
-        for (const auto hash : adaptive.miss_hashes)
+        for (size_t i = 0; i < total; ++i)
         {
+            const auto hash = adaptive.miss_hashes[i];
             if ((hash & adaptive_thaw_sample_mask) == 0)
             {
-                ++frozen.thaw_sampled_records;
                 frozen.distinct_sampled_hashes.insert(hash);
+                if (adaptive_state_bytes_per_distinct_input)
+                {
+                    SipHash input_hash;
+                    input_hash.update(hash);
+                    for (const auto position : aggregates_positions[0])
+                        columns[position]->updateHashWithValue(adaptive.miss_source_rows[i], input_hash);
+                    frozen.addSampledInputHash(input_hash.get64());
+                }
             }
         }
     }

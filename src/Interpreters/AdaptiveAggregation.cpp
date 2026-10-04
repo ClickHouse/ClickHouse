@@ -30,20 +30,29 @@ namespace ErrorCodes
 namespace
 {
 
-/// Whether a frozen producer's staged stream so far wastes more than `wasted_bytes_per_key` per distinct key, given
-/// the evidence floor and the staged share of the thaw guard (see the tuning constants in `AdaptiveAggregationImpl.h`).
-/// The waste per key, (repeat - 1) * bytes per record, is compared against the bound rearranged onto a common
-/// denominator so the arithmetic stays integral: (sampled - distinct) * staged_bytes > bound * distinct *
-/// staged_records. The products are widened to 128 bits: a giant near-unique stream (billions of staged records times
-/// their bytes) overflows 64, and a wrapped product could condemn a healthy stream.
-bool adaptiveStagingWastes(const AdaptiveAggregationProducer::FrozenState & frozen, size_t wasted_bytes_per_key)
+/// Compares the repeated records' staging cost with the state an ordinary table would retain. Distinct keys
+/// are estimated by scaling the hash sample; the record count is known exactly. Counting only sampled
+/// occurrences would let one frequent sampled key distort the repetition estimate for the whole stream.
+/// Growing set states also retain distinct arguments, even when their group keys repeat. Their estimated
+/// payload is added to the per-key state cost. Multiplication by the record count avoids division, and
+/// 128-bit products accommodate streams of billions of records without overflow.
+bool adaptiveStagingWastes(
+    const AdaptiveAggregationProducer::FrozenState & frozen,
+    size_t inline_state_bytes,
+    size_t state_bytes_per_distinct_input,
+    size_t state_cost_multiplier)
 {
-    const size_t distinct = frozen.distinct_sampled_hashes.size();
-    return frozen.staged_records >= adaptive_thaw_min_staged_records
-        && frozen.staged_records * adaptive_thaw_staged_share_inverse >= frozen.rows
-        && frozen.thaw_sampled_records > distinct
-        && static_cast<UInt128>(frozen.thaw_sampled_records - distinct) * frozen.staged_bytes
-            > static_cast<UInt128>(wasted_bytes_per_key) * distinct * frozen.staged_records;
+    const size_t distinct = frozen.getEstimatedStagedKeyCount();
+    if (frozen.staged_records < adaptive_thaw_min_staged_records
+        || frozen.staged_records * adaptive_thaw_staged_share_inverse < frozen.rows
+        || !distinct || frozen.staged_records <= distinct)
+        return false;
+
+    const size_t state_bytes_per_key = std::max(adaptive_staging_min_state_bytes_per_key, inline_state_bytes);
+    const UInt128 state_bytes = static_cast<UInt128>(state_bytes_per_key) * distinct
+        + static_cast<UInt128>(state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
+    return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
+        > state_bytes * frozen.staged_records * state_cost_multiplier;
 }
 
 }
@@ -93,7 +102,11 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// A producer that finishes frozen counts toward the verdict of the run when its whole staged stream repeated past
     /// the bound of the verdict; one that thawed was counted at its thaw.
     if (adaptive.isFrozen() && adaptiveMayThaw(shared)
-        && adaptiveStagingWastes(std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase), adaptive_verdict_wasted_bytes_per_key))
+        && adaptiveStagingWastes(
+            std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase),
+            total_size_of_aggregate_states,
+            adaptive_state_bytes_per_distinct_input,
+            /*state_cost_multiplier=*/1))
         shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
 
     /// A producer that never froze staged nothing.
@@ -327,8 +340,14 @@ bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) cons
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
+    /// Switching in the middle of a stream retains the staged records as well as the new table. Apply
+    /// the same hysteresis to the estimated state cost as the calibrated bounds apply to cheap states.
     return adaptiveMayThaw(*adaptive.session)
-        && adaptiveStagingWastes(std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase), adaptive_thaw_wasted_bytes_per_key);
+        && adaptiveStagingWastes(
+            std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase),
+            total_size_of_aggregate_states,
+            adaptive_state_bytes_per_distinct_input,
+            adaptive_thaw_state_cost_multiplier);
 }
 
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
