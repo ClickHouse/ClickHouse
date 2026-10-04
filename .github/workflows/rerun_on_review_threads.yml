@@ -87,13 +87,12 @@ jobs:
               -f description="$description" \
               -f target_url="https://github.com/$GH_REPO/pull/$pr" >/dev/null
 
-            local posted_state posted_description
-            posted_state=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
-              --jq --arg context "$context" \
-              '[.[] | select(.context == $context)] | first | .state // empty')
-            posted_description=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
-              --jq --arg context "$context" \
-              '[.[] | select(.context == $context)] | first | .description // empty')
+            # `gh api --jq` takes no `--arg`, so filter with a separate `jq`.
+            local posted posted_state posted_description
+            posted=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              | jq --arg context "$context" '[.[] | select(.context == $context)] | first // {}')
+            posted_state=$(echo "$posted" | jq -r '.state // empty')
+            posted_description=$(echo "$posted" | jq -r '.description // empty')
             if [ "$posted_state" != "$state" ] || [ "$posted_description" != "$description" ]; then
               echo "Failed to verify $context status update" >&2
               return 1
@@ -107,9 +106,16 @@ jobs:
           fi
           if [ -z "$pr" ] && [ -n "$WR_HEAD_SHA" ]; then
             # workflow_run.pull_requests is empty for PRs from forks - find
-            # the PR through its head commit instead.
-            pr=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
-              --jq 'map(select(.state == "open")) | .[0].number // empty')
+            # the PR through its head commit instead. Several open PRs can
+            # share one head commit; then the commit does not tell which of
+            # them the run belongs to, so do not guess.
+            open_prs=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+              --jq '[.[] | select(.state == "open") | .number]')
+            if [ "$(echo "$open_prs" | jq 'length')" -gt 1 ]; then
+              echo "Head commit $WR_HEAD_SHA belongs to several open PRs ($open_prs) - ambiguous, nothing to do."
+              exit 0
+            fi
+            pr=$(echo "$open_prs" | jq -r '.[0] // empty')
           fi
           if [ -z "$pr" ]; then
             echo "No PR associated with the event - nothing to do."
@@ -120,6 +126,8 @@ jobs:
           pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")
           state=$(echo "$pr_data" | jq -r '.state')
           head_sha=$(echo "$pr_data" | jq -r '.head.sha')
+          head_ref=$(echo "$pr_data" | jq -r '.head.ref')
+          head_repo=$(echo "$pr_data" | jq -r '.head.repo.full_name // ""')
           override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
             '[.labels[].name] | index($label) != null')
           if [ "$state" != "open" ]; then
@@ -186,8 +194,17 @@ jobs:
           # from here while "Finish Workflow" runs would land in the same
           # time window as the gate's own verdict and could be mistaken for
           # it by retry_infra_failures.yml.
+          #
+          # Another PR can share this head commit, so keep only the runs of
+          # this PR: by `pull_requests` when GitHub fills it in, and by the
+          # head branch and repository for fork PRs, where it is empty.
           runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
-            --jq '[.workflow_runs[] | select(.name == "PR")]')
+            | jq --argjson pr "$pr" --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
+              '[.workflow_runs[] | select(.name == "PR")
+                | select(if (.pull_requests | length) > 0
+                         then any(.pull_requests[]; .number == $pr)
+                         else .head_branch == $head_ref and .head_repository.full_name == $head_repo
+                         end)]')
           active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
           if [ "$active" -gt 0 ]; then
             echo "A PR workflow run is still in progress - its finish step records the" \
@@ -212,8 +229,7 @@ jobs:
             # and do not overwrite one either: the gate owns this status only
             # while nothing else is failing in it.
             mergeable=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
-              --jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" \
-              '[.[] | select(.context == $context)] | first // {}')
+              | jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" '[.[] | select(.context == $context)] | first // {}')
             mergeable_state=$(echo "$mergeable" | jq -r '.state // "none"')
             mergeable_description=$(echo "$mergeable" | jq -r '.description // ""')
             gate_owned_mergeable=false
@@ -246,8 +262,8 @@ jobs:
                   "review threads: $unresolved unresolved review thread(s)"
               fi
             else
-              last_pr_run=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
-                --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
+              last_pr_run=$(echo "$runs" \
+                | jq '[.[] | select(.status == "completed")] | sort_by(.created_at) | last // {}')
               last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
               if [ "$mergeable_state" = "failure" ] \
                  && { [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \

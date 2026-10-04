@@ -19,6 +19,7 @@ decision functions in `review_threads.py` and their integration into
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -848,11 +849,10 @@ STATUS_NAME='Review Threads'
 MERGEABLE_CHECK_STATUS_NAME='Mergeable Check'
 unresolved=2
 desired_blocked={"true" if desired_blocked else "false"}
+runs={shlex.quote(json.dumps([{"name": "PR", "status": "completed", "conclusion": last_pr_conclusion, "created_at": "2026-09-09T00:00:00Z"}]))}
 api_with_retries() {{
   case "$1" in
-    *commits/*/statuses*) echo {json.dumps(json.dumps(statuses))} | jq "${{@:3}}" ;;
-    *actions/runs*) echo {json.dumps(json.dumps([{"name": "PR", "status": "completed", "conclusion": last_pr_conclusion, "created_at": "2026-09-09T00:00:00Z"}]))} \
-      | jq '{{workflow_runs: .}}' | jq "${{@:3}}" ;;
+    *commits/*/statuses*) echo {json.dumps(json.dumps(statuses))} ;;
     *) echo '{{}}' ;;
   esac
 }}
@@ -980,3 +980,61 @@ def test_retry_suppression_needs_finish_workflow_to_be_the_only_non_green_job(
     assert _retry_non_green_jobs(green + [finish]) == "Finish Workflow"
     flaky = {"name": "Build (amd_debug)", "conclusion": conclusion}
     assert _retry_non_green_jobs(green + [flaky, finish]) != "Finish Workflow"
+
+
+def _run_runs_filter(workflow_runs, pr, head_ref, head_repo):
+    """Run the "runs of this PR" lookup of `rerun_on_review_threads.yml`, sliced
+    out of the workflow, with the GitHub API stubbed, and return the ids it kept."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    start = workflow.index(
+        '          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?'
+    )
+    end = workflow.index("          active=$(")
+    snippet = "\n".join(line[10:] for line in workflow[start:end].splitlines())
+    script = f"""
+set -euo pipefail
+GH_REPO=ClickHouse/ClickHouse
+head_sha={RUN_SHA}
+pr={pr}
+head_ref={shlex.quote(head_ref)}
+head_repo={shlex.quote(head_repo)}
+api_with_retries() {{ echo {shlex.quote(json.dumps({"workflow_runs": workflow_runs}))}; }}
+{snippet}
+echo "$runs" | jq -c '[.[].id]'
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    )
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_rerun_considers_only_the_runs_of_its_own_pr():
+    """Two PRs can share a head commit. The runs of the other PR must neither
+    hold off the reconciliation as "active" nor be picked for a re-run."""
+
+    def run(run_id, prs, head_branch, head_repo, name="PR"):
+        return {
+            "id": run_id,
+            "name": name,
+            "status": "completed",
+            "pull_requests": [{"number": n} for n in prs],
+            "head_branch": head_branch,
+            "head_repository": {"full_name": head_repo},
+        }
+
+    runs = [
+        run(1, [100], "feature", "ClickHouse/ClickHouse"),
+        run(2, [200], "feature-copy", "ClickHouse/ClickHouse"),
+        run(3, [100, 200], "feature", "ClickHouse/ClickHouse"),
+        # Fork PRs: GitHub leaves `pull_requests` empty.
+        run(4, [], "feature", "someone/ClickHouse"),
+        run(5, [], "feature", "other/ClickHouse"),
+        run(6, [100], "feature", "ClickHouse/ClickHouse", name="Other"),
+    ]
+    assert _run_runs_filter(runs, 100, "feature", "ClickHouse/ClickHouse") == [1, 3]
+    assert _run_runs_filter(runs, 200, "feature-copy", "ClickHouse/ClickHouse") == [2, 3]
+    assert _run_runs_filter(runs, 300, "feature", "someone/ClickHouse") == [4]
