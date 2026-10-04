@@ -9,6 +9,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
+#include <TableFunctions/TableFunctionTimeSeriesHistogramSelector.h>
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 
@@ -193,6 +194,25 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
+        {.description = R"DOCS_MD(
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine
+and which was created with a `HISTOGRAMS` target or the `store_native_histograms` setting:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SETTINGS store_native_histograms = 1
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesHistograms(db_name.time_series_table);
+SELECT * FROM timeSeriesHistograms('db_name.time_series_table');
+SELECT * FROM timeSeriesHistograms('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
@@ -230,6 +250,44 @@ There is no specific order for returned data.
 
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+    factory.registerFunction<TableFunctionTimeSeriesHistogramSelector>(
+        {.description = R"DOCS_MD(
+Reads native histogram samples from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
+This function is the histogram sibling of `timeSeriesSelector` and requires the table to have a `HISTOGRAMS` target
+(or to be created with the `store_native_histograms` setting).
+
+## Syntax {#syntax}
+
+```sql
+timeSeriesHistogramSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
+timeSeriesHistogramSelector(db_name.time_series_table, 'instant_query', min_time, max_time)
+timeSeriesHistogramSelector('time_series_table', 'instant_query', min_time, max_time)
+```
+
+## Arguments {#arguments}
+
+- `db_name` - The name of the database where a TimeSeries table is located.
+- `time_series_table` - The name of a TimeSeries table.
+- `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
+- `min_time` - Start timestamp, inclusive.
+- `max_time` - End timestamp, inclusive.
+
+## Returned value {#returned-value}
+
+The function returns the columns `id`, `timestamp`, and the 15 histogram payload columns
+(`flags`, `schema`, `zero_threshold`, `count`, `sum`, `zero_count`, `positive_spans`, `positive_values`,
+`negative_spans`, `negative_values`, `custom_values`, `count_int`, `zero_count_int`, `positive_values_int`,
+`negative_values_int`).
+
+There is no specific order for returned data.
+
+## Example {#example}
+
+```sql
+SELECT * FROM timeSeriesHistogramSelector(mytable, 'request_duration_seconds', now() - INTERVAL 10 MINUTES, now())
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 
@@ -285,10 +343,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
-| Histogram | `histogram_quantile` |
+| Histogram | `histogram_quantile`, `histogram_count`, `histogram_sum` |
 | Other | `time`, `pi`, `absent`, `timestamp` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). It doesn't support native histograms yet: over a table storing native histograms, an argument which keeps the histogram samples (such as a plain selector) is rejected with a `NOT_IMPLEMENTED` exception. `histogram_count` and `histogram_sum` work on native histograms only; float samples and classic buckets are skipped. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
@@ -366,10 +424,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
-| Histogram | `histogram_quantile` |
+| Histogram | `histogram_quantile`, `histogram_count`, `histogram_sum` |
 | Other | `time`, `pi`, `absent`, `timestamp` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). It doesn't support native histograms yet: over a table storing native histograms, an argument which keeps the histogram samples (such as a plain selector) is rejected with a `NOT_IMPLEMENTED` exception. `histogram_count` and `histogram_sum` work on native histograms only; float samples and classic buckets are skipped. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 

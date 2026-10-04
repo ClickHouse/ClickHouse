@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -102,6 +103,14 @@ SQLQueryPiece applySimpleFunction(
                 break;
             }
 
+            case StoreMethod::HISTOGRAM_GRID:
+            {
+                /// Simple functions compute new float values from `values`; the histogram payloads
+                /// of a combined grid are dropped (see dropHistogramValues).
+                argument = dropHistogramValues(std::move(argument), context);
+                [[fallthrough]];
+            }
+
             case StoreMethod::VECTOR_GRID:
             {
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
@@ -130,6 +139,7 @@ SQLQueryPiece applySimpleFunction(
 
             case StoreMethod::CONST_STRING:
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "applySimpleFunction: Can't handle argument {} because of its store method {}",

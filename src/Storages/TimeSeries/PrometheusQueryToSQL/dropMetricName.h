@@ -6,9 +6,8 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Drops the metric name (i.e. tag '__name__') if it hasn't been dropped before.
-/// Prometheus functions and operators returning instant vectors almost always do that.
-/// The function must not be called with StoreMethod::RAW_DATA.
+/// Drops the metric name (tag `__name__`) if not dropped before, as PromQL functions/operators almost always do.
+/// Must not be called with StoreMethod::RAW_DATA or StoreMethod::HISTOGRAM_RAW_DATA.
 SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context);
 
 }
