@@ -253,30 +253,49 @@ def test_default_schema_stays_wide_with_explicit_engine(start_cluster):
 
 
 def test_bucketed_schema_with_explicit_engine_warns(start_cluster):
-    # An explicit `bucketed` schema with an explicit `engine` works, but the server warns when the
-    # engine does not set `map_serialization_version`. A setting that only shares the prefix,
-    # `map_serialization_version_for_zero_level_parts`, leaves the main serialization at its
-    # default, so it must not suppress the warning.
-    warning = "that does not set 'map_serialization_version'"
+    # An explicit `bucketed` schema with an explicit `engine` works, but the server warns unless
+    # the engine has all the settings of the bucketed Map serialization with the same values.
+    # A setting that only shares the prefix, `map_serialization_version_for_zero_level_parts`,
+    # leaves the main serialization at its default, and `map_serialization_version` alone leaves
+    # the number and the strategy of buckets at their defaults, so neither suppresses the warning.
+    warning = "differ from the ones of the bucketed Map serialization"
     config_path = "/etc/clickhouse-server/config.d/metric_log_default_schema_with_engine.xml"
+    bucketed_settings = (
+        "map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'basic', "
+        "max_buckets_in_map = 128, map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0"
+    )
+
+    current_settings = [""]
+
+    def restart_with_engine_settings(settings):
+        node7.replace_in_config(config_path, f"{current_settings[0]}</engine>", f"SETTINGS {settings}</engine>")
+        current_settings[0] = f"SETTINGS {settings}"
+        node7.stop_clickhouse()
+        node7.exec_in_container(["bash", "-c", "truncate -s 0 /var/log/clickhouse-server/clickhouse-server.log"])
+        node7.start_clickhouse()
+        node7.query("SYSTEM FLUSH LOGS metric_log")
+        assert "`metrics` Map(Enum16(" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
 
     node7.replace_in_config(config_path, "<table>metric_log</table>", "<table>metric_log</table><schema_type>bucketed</schema_type>")
-    node7.replace_in_config(config_path, "</engine>", "SETTINGS map_serialization_version_for_zero_level_parts = 'basic'</engine>")
-    node7.restart_clickhouse()
-    node7.query("SYSTEM FLUSH LOGS metric_log")
-    assert "`metrics` Map(Enum16(" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
-    assert int(node7.count_in_log(warning)) > 0
 
-    node7.replace_in_config(config_path, "SETTINGS map_serialization_version_for_zero_level_parts", "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts")
-    node7.stop_clickhouse()
-    node7.exec_in_container(["bash", "-c", "truncate -s 0 /var/log/clickhouse-server/clickhouse-server.log"])
-    node7.start_clickhouse()
-    node7.query("SYSTEM FLUSH LOGS metric_log")
-    assert "map_serialization_version = 'with_buckets'" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    restart_with_engine_settings("map_serialization_version_for_zero_level_parts = 'basic'")
+    assert node7.contains_in_log(warning)
+    assert node7.contains_in_log("map_serialization_version is not set")
+
+    restart_with_engine_settings("map_serialization_version = 'with_buckets'")
+    assert node7.contains_in_log(warning)
+    assert node7.contains_in_log("max_buckets_in_map is not set")
+
+    restart_with_engine_settings(bucketed_settings.replace("'constant'", "'sqrt'"))
+    assert node7.contains_in_log(warning)
+    assert node7.contains_in_log("map_buckets_strategy = 'sqrt' instead of 'constant'")
+
+    restart_with_engine_settings(bucketed_settings)
+    assert "max_buckets_in_map = 128" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
     assert int(node7.count_in_log(warning)) == 0
 
     node7.replace_in_config(config_path, "<schema_type>bucketed</schema_type>", "")
-    node7.replace_in_config(config_path, "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'basic'", "")
+    node7.replace_in_config(config_path, current_settings[0], "")
     node7.restart_clickhouse()
 
 
