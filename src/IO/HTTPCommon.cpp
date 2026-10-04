@@ -60,7 +60,15 @@ HTTPSessionPtr makeHTTPSession(
     return connection_pool->getConnection(timeouts, connect_time);
 }
 
-bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status)
+{
+    return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY
+        || status == Poco::Net::HTTPResponse::HTTP_FOUND
+        || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER
+        || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT
+        /// `308 Permanent Redirect` (RFC 9110, 15.4.9) keeps the method and the body like `307`.
+        || status == Poco::Net::HTTPResponse::HTTP_PERMANENT_REDIRECT;
+}
 
 bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
 {
@@ -92,6 +100,7 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
+        || status == Poco::Net::HTTPResponse::HTTP_NO_CONTENT /// Success without a body, e.g. Iceberg REST DropTable.
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
