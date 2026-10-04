@@ -58,6 +58,13 @@ def kill_nats(cluster):
     p.communicate()
     return p.returncode == 0
 
+def hard_kill_nats(cluster):
+    # `SIGKILL`, so the broker answers nothing on its way out: unlike `kill_nats`, which stops it
+    # gracefully, the client is left holding subscriptions it has no status for.
+    p = subprocess.Popen(("docker", "kill", cluster.nats_docker_id), stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
 def revive_nats(cluster):
     p = subprocess.Popen(("docker", "start", cluster.nats_docker_id), stdout=subprocess.PIPE)
     p.communicate()
@@ -95,14 +102,33 @@ def wait_for_mv_attached_to_table(instance, table_name, sleep_timeout = 0.5, tim
 
 STREAMING_STARTED_LOG_LINE = "Started streaming to [0-9]+ attached views"
 
-def wait_for_streaming_started(instance, table_name, time_limit_sec = 60):
+def wait_for_streaming_started(instance, table_name, time_limit_sec = 60, anchor = None, sleep_timeout = 0.2):
     # The background task logs the line on every iteration, right after the consumer has
     # subscribed, so a fresh occurrence means the subscription is live now. Tests within a
-    # module reuse table names, hence the wait is anchored past the occurrences the previous
-    # tests left in the window `wait_for_log_line` looks at.
+    # module reuse table names, hence the wait has to tell a fresh occurrence from the ones the
+    # previous tests left behind.
+    #
+    # `anchor` - an absolute log offset from `log_line_count`, taken before whatever makes the
+    # table stream - draws that line exactly, and is the only reliable way to draw it for a table
+    # with a long flush interval. Without it the earlier occurrences are counted in a tail window
+    # that keeps sliding as the log grows, so a line written between that count and the wait is not
+    # new to the window the wait then looks at: it evicted an older match instead of adding to one.
+    # The wait then needs the streaming cycle after it, a whole flush interval away.
     log_line = "{}.*{}".format(table_name, STREAMING_STARTED_LOG_LINE)
-    seen = count_in_recent_log(instance, log_line)
-    instance.wait_for_log_line(log_line, timeout=time_limit_sec, repetitions=seen + 1)
+
+    if anchor is None:
+        seen = count_in_recent_log(instance, log_line)
+        instance.wait_for_log_line(log_line, timeout=time_limit_sec, repetitions=seen + 1)
+        return
+
+    deadline = time.monotonic() + time_limit_sec
+    while time.monotonic() < deadline:
+        if count_in_log_after(instance, log_line, anchor) > 0:
+            return
+        time.sleep(sleep_timeout)
+
+    raise AssertionError(
+        "{} did not start streaming within {} seconds".format(table_name, time_limit_sec))
 
 def count_in_recent_log(instance, pattern, look_behind_lines = 10000):
     result = instance.exec_in_container(
