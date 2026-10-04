@@ -632,7 +632,8 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypeP
         fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
-/// Fills column from pre-resolved row data pointers. Devirtualized insertData.
+/// Fills columns from resolved row pointers. Fixed-size columns without missing rows grow once,
+/// so the copy loop does not update their size or check capacity for every value.
 template <bool has_defaults, bool with_null_map, bool range_mode, typename ColumnType>
 static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
@@ -650,7 +651,17 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
     [[maybe_unused]] const char * const base_ptr = row_store_ptrs.base_ptr;
     [[maybe_unused]] const size_t row_length = row_store_ptrs.row_length;
 
-    col->reserve(col->size() + count);
+    constexpr bool copy_fixed_values = !has_defaults && std::is_base_of_v<ColumnFixedSizeHelper, ColumnType>;
+    char * values_dst = nullptr;
+    if constexpr (copy_fixed_values)
+    {
+        const size_t column_value_size = col->sizeOfValueIfFixed();
+        chassert(value_size == column_value_size);
+        value_size = column_value_size;
+        values_dst = col->insertRawUninitialized(count).data();
+    }
+    else
+        col->reserve(col->size() + count);
     for (size_t i = 0; i < count; ++i)
     {
         /// TODO: try prefetching row store rows.
@@ -673,7 +684,10 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
 
         if constexpr (with_null_map)
             null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
-        col->insertData(row_store_ptr + value_offset, value_size);
+        if constexpr (copy_fixed_values)
+            memcpy(values_dst + i * value_size, row_store_ptr + value_offset, value_size);
+        else
+            col->insertData(row_store_ptr + value_offset, value_size);
     }
 }
 
