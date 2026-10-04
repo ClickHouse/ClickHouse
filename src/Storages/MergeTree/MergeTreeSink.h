@@ -68,9 +68,14 @@ protected:
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
+
+    /// Limits for a table created with `CREATE TEMPORARY TABLE`, zero means no limit.
+    UInt64 max_temporary_table_size_bytes_compressed = 0;
+    UInt64 max_temporary_table_size_bytes_uncompressed = 0;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 
+    void checkTemporaryTableSize(const IMergeTreeDataPart & part) const;
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);

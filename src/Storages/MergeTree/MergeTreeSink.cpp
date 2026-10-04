@@ -5,12 +5,14 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
+#include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <base/sleep.h>
@@ -33,12 +35,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int TOO_MANY_BYTES;
 }
 
 namespace Setting
 {
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
@@ -81,6 +86,14 @@ MergeTreeSink::MergeTreeSink(
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
+
+    /// Only `CREATE TEMPORARY TABLE` creates `MergeTree` tables in the temporary database.
+    if (storage.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        const auto & settings = context->getSettingsRef();
+        max_temporary_table_size_bytes_compressed = settings[Setting::max_temporary_table_size_bytes_compressed];
+        max_temporary_table_size_bytes_uncompressed = settings[Setting::max_temporary_table_size_bytes_uncompressed];
+    }
 
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
@@ -313,6 +326,8 @@ void MergeTreeSink::finishDelayedChunk()
             partition.temp_part->part->getDataPartStorage().commitTransaction();
 
             auto & part = partition.temp_part->part;
+            checkTemporaryTableSize(*part);
+
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
             auto conflicts = commitPart(part, deduplication_hashes);
 
@@ -402,6 +417,28 @@ void MergeTreeSink::finishDelayedChunk()
     }
 
     delayed_chunk.reset();
+}
+
+void MergeTreeSink::checkTemporaryTableSize(const IMergeTreeDataPart & part) const
+{
+    /// The check is not atomic with the commit, so concurrent inserts may exceed the limits slightly.
+    if (max_temporary_table_size_bytes_compressed)
+    {
+        const UInt64 total_bytes = storage.totalBytes(context).value_or(0) + part.getBytesOnDisk();
+        if (total_bytes > max_temporary_table_size_bytes_compressed)
+            throw Exception(ErrorCodes::TOO_MANY_BYTES,
+                "The temporary table would take {} of compressed data, the maximum is {} (the `max_temporary_table_size_bytes_compressed` setting)",
+                ReadableSize(total_bytes), ReadableSize(max_temporary_table_size_bytes_compressed));
+    }
+
+    if (max_temporary_table_size_bytes_uncompressed)
+    {
+        const UInt64 total_bytes = storage.totalBytesUncompressed(context->getSettingsRef()).value_or(0) + part.getBytesUncompressedOnDisk();
+        if (total_bytes > max_temporary_table_size_bytes_uncompressed)
+            throw Exception(ErrorCodes::TOO_MANY_BYTES,
+                "The temporary table would take {} of uncompressed data, the maximum is {} (the `max_temporary_table_size_bytes_uncompressed` setting)",
+                ReadableSize(total_bytes), ReadableSize(max_temporary_table_size_bytes_uncompressed));
+    }
 }
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
