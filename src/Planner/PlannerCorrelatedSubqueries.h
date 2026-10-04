@@ -53,10 +53,19 @@ struct CorrelatedSubtrees
     CorrelatedSubqueries subqueries;
 };
 
+/// The referenced input subplan root shared by the correlated subqueries of one expression. Empty
+/// until the first subquery fills it in, and only ever filled when the in-memory buffer is not used:
+/// the buffer optimization rewrites the referenced step, so a buffered reference needs its own root.
+struct SharedCorrelatedInputRoot
+{
+    QueryPlan::Node * node = nullptr;
+};
+
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
-    const SelectQueryOptions & select_query_options);
+    const SelectQueryOptions & select_query_options,
+    SharedCorrelatedInputRoot * shared_input_root = nullptr);
 
 }
