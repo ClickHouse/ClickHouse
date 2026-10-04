@@ -92,7 +92,10 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, is_insert_query),
+        /// With a `body(...)`, every inference request sends the body. Inferring the structure here and then
+        /// the format (when it is `auto`) in the constructor would send it twice, so let the constructor infer
+        /// both from a single request.
+        configuration.body.empty() ? getActualTableStructure(context, is_insert_query) : columns,
         ConstraintsDescription{},
         configuration);
 }
