@@ -21,6 +21,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
+#include <Columns/FilterDescription.h>
 #include <Common/assert_cast.h>
 
 namespace ProfileEvents
@@ -35,6 +36,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+namespace
+{
+
+bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & mask_column)
+{
+    if (!column)
+        return true;
+
+    if (mask_column == column)
+        return false;
+
+    if (column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        if (!can_inplace)
+            return;
+
+        if (!canInplaceFilter(subcolumn, mask_column))
+            can_inplace = false;
+    });
+
+    return can_inplace;
+}
+
 }
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
@@ -347,6 +377,26 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         filter_description = std::make_unique<FilterDescription>(*filter_column);
 
+    const IColumn::Filter * filter_data = nullptr;
+    ColumnPtr filter_holder;
+    if (const auto * dense_description = dynamic_cast<const FilterDescription *>(filter_description.get()))
+    {
+        filter_data = dense_description->data;
+        filter_holder = dense_description->data_holder;
+    }
+
+    auto filter_column_inplace_or_copy = [&](ColumnPtr & column, ssize_t result_size_hint)
+    {
+        if (filter_data && canInplaceFilter(column, filter_holder))
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->filter(*filter_data);
+            column = std::move(mutable_column);
+        }
+        else
+            column = filter_description->filter(*column, result_size_hint);
+    };
+
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
       *  or calculate number of set bytes in the filter.
@@ -371,8 +421,9 @@ void FilterTransform::doTransform(Chunk & chunk)
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
     {
-        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
-        num_filtered_rows = columns[first_non_constant_column]->size();
+        auto & first_column = columns[first_non_constant_column];
+        filter_column_inplace_or_copy(first_column, -1);
+        num_filtered_rows = first_column->size();
     }
     else
         num_filtered_rows = filter_description->countBytesInFilter();
@@ -412,7 +463,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         auto & current_column = columns[i];
 
-        if (i == filter_column_position && remove_filter_column)
+        if (i == filter_column_position)
             continue;
 
         if (i == first_non_constant_column)
@@ -421,7 +472,13 @@ void FilterTransform::doTransform(Chunk & chunk)
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            current_column = filter_description->filter(*current_column, num_filtered_rows);
+            filter_column_inplace_or_copy(current_column, num_filtered_rows);
+    }
+
+    if (!remove_filter_column)
+    {
+        auto & mask_output_column = columns[filter_column_position];
+        mask_output_column = filter_description->filter(*mask_output_column, num_filtered_rows);
     }
 
     removeFilterIfNeed(columns);
