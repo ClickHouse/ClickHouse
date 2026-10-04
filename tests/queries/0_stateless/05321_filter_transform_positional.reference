@@ -1,0 +1,20 @@
+filter column is kept
+0	0	1
+7	7	1
+14	14	1
+input column is used twice
+96	192
+97	194
+98	196
+99	198
+only Nullable and LowCardinality numeric columns pass the filter
+2	0
+2	0
+2	2
+2	3
+2	4
+2	5
+2	6
+\N	1
+\N	3
+\N	6
