@@ -46,8 +46,7 @@ enum class StoreMethod
 
     /// Data are stored in three columns:
     /// - `group` (UInt64),
-    /// - `timestamp` (the type of the timestamps in the TimeSeries table,
-    ///   or `ConverterContext::result_timestamp_type` after applying an offset),
+    /// - `timestamp` (the type of the timestamps in the TimeSeries table),
     /// - `value` (Float64 or Float32, the type of the values in the table).
     /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
