@@ -43,6 +43,10 @@ SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%pa%'
 SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%common%'
     SETTINGS log_comment = 'like_direct_q5', text_index_like_rows_max_selectivity = 0.5;
 
+-- Q12: q5's discard depended on the rows limit, so it is not cached for a query without one.
+SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%common%'
+    SETTINGS log_comment = 'like_direct_q12';
+
 -- `common` and `pmm` cover more rows than the part has, but 1 turns the rows check off.
 SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%mm%'
     SETTINGS log_comment = 'like_direct_q6', text_index_like_rows_max_selectivity = 1,
@@ -79,6 +83,12 @@ OPTIMIZE TABLE t_text_index_like_gap FINAL;
 -- Baseline without the index.
 SELECT count() FROM t_text_index_like_gap
 WHERE id >= 70000 AND id < 71000 AND message LIKE '%gap%' SETTINGS use_skip_indexes = 0;
+
+-- Q11: without a window both tokens count, so a budget of 1 discards the scan; q3 must not reuse that.
+SELECT count() FROM t_text_index_like_gap WHERE message LIKE '%gap%'
+    SETTINGS log_comment = 'like_direct_q11', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_max_postings_to_read = 1;
 
 -- Q3: only `gapnear` counts, which is exactly the budget, so the scan is not discarded.
 SELECT count() FROM t_text_index_like_gap
@@ -141,7 +151,8 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_da
     AND log_comment = 'like_direct_q2';
 
 SELECT 'q3',
-    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded,
+    ProfileEvents['TextIndexPatternBypassCacheHits'] = 0 AS no_bypass_cache_hit
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q3';
@@ -187,6 +198,19 @@ SELECT 'q10',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q10';
+
+SELECT 'q11',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 1 AS discarded_scan_once
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q11';
+
+SELECT 'q12',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded,
+    ProfileEvents['TextIndexPatternBypassCacheHits'] = 0 AS no_bypass_cache_hit
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q12';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;
