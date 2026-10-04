@@ -73,6 +73,7 @@
 #include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemSessionQueryIds.h>
@@ -1689,6 +1690,21 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", R"DOCS_MD(
+.description
+Contains the entries of the curated ClickHouse changelog (the repository's `CHANGELOG.md`), one row per entry of each feature release, so release notes can be queried with SQL.
+
+.examples
+Find recent JSON-related changes, newest release first:
+
+```sql
+SELECT version, category, description
+FROM system.changelog
+WHERE description ILIKE '%JSON%' AND version >= (26, 1, 0)
+ORDER BY version DESC
+LIMIT 3
 ```
 )DOCS_MD");
     attach<StorageSystemUsers>(context, system_database, "users", R"DOCS_MD(
