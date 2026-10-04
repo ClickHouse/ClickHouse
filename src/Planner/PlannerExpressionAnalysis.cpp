@@ -678,8 +678,7 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
   * columns and chain finalization would prune them. This adds an identity step over every current value column:
   * all of its inputs are its outputs, so the whole stream, boundary columns included, stays alive up to the
   * range step, which builds its conditions from the resulting header.
-  * The `Set` placeholder of an `IN` and the `Function` column of a lambda are not values and are not kept:
-  * a boundary expression that needs one builds its own.
+  * `IN` set and lambda `Function` placeholders are not values and are not kept: a boundary expression builds its own.
   */
 LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,

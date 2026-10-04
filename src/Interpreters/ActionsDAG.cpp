@@ -969,8 +969,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
                 /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
                 /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
-                /// An INPUT is never folded: every entry of `inputs` must be an INPUT node, because that is the
-                /// only kind `ExpressionActions` gives the extra argument binding it to a required column.
+                /// An INPUT is never folded: `ExpressionActions` binds each entry of `inputs` to a required column as an INPUT.
                 if (allow_constant_folding && node->column
                     && (!node->children.empty()
                         || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
