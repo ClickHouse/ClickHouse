@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <vector>
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -210,7 +210,7 @@ private:
         size_t end = 0;
     };
 
-    std::vector<Run> runs;
+    VectorWithMemoryTracking<Run> runs;
 };
 
 }

@@ -201,6 +201,27 @@
         SETTINGS allow_limit_by_partitions_independently = 1
     </query>
 
+    <!-- String key: long runs of the leading column, every group ended by the second column. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_str
+        (a String, b String, z UInt64)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_str
+        SELECT concat('k', toString(sipHash64(number % 10000))), hex(sipHash64(number)), number
+        FROM numbers(5000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_in_pk_order_str FINAL</fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_str
+        LIMIT 1 BY a, b
+        FORMAT NULL
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_int</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_dt</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_low</drop_query>
@@ -209,4 +230,5 @@
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_1</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_2</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_part_in_order</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_str</drop_query>
 </test>
