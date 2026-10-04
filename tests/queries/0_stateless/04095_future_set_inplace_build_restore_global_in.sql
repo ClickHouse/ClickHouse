@@ -1,5 +1,6 @@
--- Tags: no-parallel, shard
+-- Tags: no-parallel, no-fasttest, shard
 -- no-parallel: Uses the `prepared_sets_build_ordered_set_inplace_fail` failpoint, which is global.
+-- no-fasttest: tests that run alone (because of the failpoint) are kept out of the fast test.
 -- shard: Uses `remote('127.0.0.{1,2}', ...)`.
 --
 -- Regression test for `GLOBAL IN` when the speculative in-place set build stops early.

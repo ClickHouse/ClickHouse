@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: Uses the `prepared_sets_build_ordered_set_inplace_fail` failpoint, which is global.
+-- no-fasttest: tests that run alone (because of the failpoint) are kept out of the fast test.
 --
 -- Regression test: an `IN` subquery that reads a (non-materialized) CTE must still produce the
 -- correct result when its speculative in-place set build for primary key analysis stops without
