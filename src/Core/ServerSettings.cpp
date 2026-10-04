@@ -1458,6 +1458,14 @@ Controls if the user can change settings related to the different feature tiers.
 
 This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
 
+A statement on a user, a role or a settings profile is rejected when it sets such a setting to a value other
+than the one in effect for the session running it, and also when it moves such a setting for some user even
+though it names no setting: granting or revoking a role that carries one, assigning a settings profile,
+dropping a role or a profile, or dropping an override by omission. A user defined by SQL whose own settings or
+whose roles' settings hold such a value cannot log in. Settings that the server itself puts in effect through
+the configuration file, and users defined in it, are never rejected. The `compatibility` setting leaves a
+setting of a disabled tier at its default instead of applying the default of the previous version.
+
 <Note>
 A value of `0` means that all settings can be changed.
 </Note>
@@ -2212,7 +2220,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "user_defined_executable_functions_config",
         "user_defined_executable_function_drivers_config",
         "nb_models",
+        /// Definition elements of the files loaded by the three `*_config` globs above;
+        /// they are top-level keys when those files are placed in `config.d`.
         "dictionary",
+        "function",
+        "functions",
+        "driver",
         "lemmatizers",
         "synonyms_extensions",
         "path_to_regions_hierarchy_file",

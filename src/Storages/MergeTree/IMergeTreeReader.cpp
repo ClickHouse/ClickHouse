@@ -560,6 +560,11 @@ void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
     last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
+void IMergeTreeReader::updateReadRequestMap(MarkRangesPtr request_map)
+{
+    read_request_map = std::move(request_map);
+}
+
 std::optional<IMergeTreeReader::ColumnForOffsets>
 IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {

@@ -48,6 +48,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -77,7 +78,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -1142,28 +1142,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     size_t remaining_streams = num_streams;
 
     if (order_info)
-    {
         query_info_.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
-        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-        {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
-            if (it == selected_tables.begin())
-                input_sorting_info = current_info;
-            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-                input_sorting_info.reset();
-
-            if (!input_sorting_info)
-                break;
-        }
-
-        query_info_.input_order_info = input_sorting_info;
-    }
 
     auto logger = getLogger("StorageMerge");
 
@@ -1756,8 +1735,17 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 }
             }
 
-            column_name_to_node.emplace(column_name,
-                std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
+            /// A subcolumn of a missing column is the subcolumn of the column's default: `x.null` of a NULL is 1.
+            Field default_value = merge_column->type->getDefault();
+            if (merge_column->isSubcolumn())
+            {
+                const auto & type_in_storage = merge_column->getTypeInStorage();
+                auto subcolumn = type_in_storage->getSubcolumn(
+                    merge_column->getSubcolumnName(), type_in_storage->createColumnConstWithDefaultValue(1));
+                default_value = (*subcolumn)[0];
+            }
+
+            column_name_to_node.emplace(column_name, std::make_shared<ConstantNode>(std::move(default_value), merge_column->type));
         }
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
@@ -2514,13 +2502,43 @@ void ReadFromMerge::convertAndFilterSourceStream(
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
             inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
+        /// A subcolumn of a column the child does not have is extracted from that column once it is filled.
+        const auto & current_header = *child.plan.getCurrentHeader();
+        NamesAndTypesList columns_to_fill;
+        NameSet columns_to_fill_names;
+        bool has_subcolumns_of_missing_columns = false;
+        for (const auto & column : header)
+        {
+            NameAndTypePair column_to_fill(column.name, column.type);
+            if (!current_header.has(column.name) && !merge_columns.has(column.name))
+            {
+                auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
+                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage()))
+                {
+                    column_to_fill = NameAndTypePair(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
+                    has_subcolumns_of_missing_columns = true;
+                }
+            }
+
+            if (columns_to_fill_names.insert(column_to_fill.name).second)
+                columns_to_fill.push_back(std::move(column_to_fill));
+        }
+
         auto adding_missing_defaults_dag = addMissingDefaults(
-            *child.plan.getCurrentHeader(),
-            header.getNamesAndTypesList(),
+            current_header,
+            columns_to_fill,
             snapshot->getAllColumnsDescription(),
             local_context,
             false,
             inner_share_nested_offsets);
+
+        if (has_subcolumns_of_missing_columns)
+        {
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
+                Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
+            adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
+            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
+        }
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
