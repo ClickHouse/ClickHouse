@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -63,8 +62,34 @@ public:
         PaddedPODArray<UInt32> values;
     };
 
-    /// Encodes the writer's sorted RoaringishEntry accumulation as the blocked stream.
-    static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out);
+    /// Streams one token's position lists in posting order; full blocks are compressed as they fill.
+    class Encoder
+    {
+    public:
+        /// Appends a position of the open document; `finishDocument` sorts them unless they came strictly increasing.
+        void addPosition(UInt32 position) { values.push_back(position); }
+        void finishDocument(bool sorted);
+        /// `positions` must be non-empty and strictly increasing.
+        void addDocument(std::span<const UInt32> positions);
+        void finalize(WriteBuffer & out);
+        UInt64 numDocuments() const { return num_docs; }
+
+    private:
+        /// Appends the open block's payload to `out` and returns its size.
+        size_t encodeBlock(PaddedPODArray<UInt8> & out);
+
+        /// Deltas of the open block's finished documents, then the open document's raw positions.
+        PaddedPODArray<UInt32, 64> values;
+        size_t open_document_begin = 0;
+        /// (local rank, frequency) of the open block's documents with more than one position.
+        PODArray<UInt32, 16> exceptions;
+        size_t docs_in_block = 0;
+        /// Payloads of the sealed blocks.
+        PaddedPODArray<UInt8> staged;
+        PODArray<UInt64, 16> block_bytes;
+        UInt64 num_docs = 0;
+        UInt64 num_positions = 0;
+    };
 
     /// Reads the directory (stream positioned at the token's `blob_offset` = position_offset).
     /// `expected_num_docs` (header cardinality) and `available_bytes` fail-close every declared size.
@@ -90,6 +115,47 @@ public:
         PaddedPODArray<UInt32> & doc_offsets,
         PaddedPODArray<UInt32> & positions,
         DecodeScratch & scratch);
+};
+
+/// Collects one token's positions during the index build and streams them to the encoder.
+class PositionListBuilder
+{
+public:
+    /// Positions may repeat or go backwards within a document: Array and Map restart them per element.
+    void add(UInt32 doc_id, UInt32 position)
+    {
+        if (has_document && doc_id != current_doc)
+            finishDocument();
+
+        if (has_document && position <= last_position)
+            is_sorted = false;
+
+        current_doc = doc_id;
+        last_position = position;
+        has_document = true;
+        encoder.addPosition(position);
+    }
+
+    void finalize(WriteBuffer & out)
+    {
+        if (has_document)
+            finishDocument();
+        encoder.finalize(out);
+    }
+
+private:
+    void finishDocument()
+    {
+        encoder.finishDocument(is_sorted);
+        is_sorted = true;
+        has_document = false;
+    }
+
+    TextIndexBlockedPositionsCodec::Encoder encoder;
+    UInt32 current_doc = 0;
+    UInt32 last_position = 0;
+    bool has_document = false;
+    bool is_sorted = true;
 };
 
 }
