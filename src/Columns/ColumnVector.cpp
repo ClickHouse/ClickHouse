@@ -770,28 +770,6 @@ static inline UInt64 blsr(UInt64 mask)
     return mask & (mask - 1);
 }
 
-/// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
-/// Otherwise it returns the special value: 0xFF.
-static uint8_t prefixToCopy(UInt64 mask)
-{
-    if (mask == 0)
-        return 0;
-    if (mask == static_cast<UInt64>(-1))
-        return 64;
-    /// Row with index 0 correspond to the least significant bit.
-    /// So the length of the prefix to copy is 64 - #(leading zeroes).
-    const UInt64 leading_zeroes = __builtin_clzll(mask);
-    if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
-        return static_cast<uint8_t>(64 - leading_zeroes);
-    return 0xFF;
-}
-
-static uint8_t suffixToCopy(UInt64 mask)
-{
-    const auto prefix_to_copy = prefixToCopy(~mask);
-    return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
-}
-
 template <typename T>
 class ResultInserter
 {
@@ -799,6 +777,8 @@ private:
     PaddedPODArray<T> & container;
 
 public:
+    static constexpr bool IS_IN_PLACE = false;
+
     explicit ResultInserter(PaddedPODArray<T> & cont) : container(cont) {}
 
     void insertSingle(T element)
@@ -820,6 +800,8 @@ private:
     size_t & container_size;
 
 public:
+    static constexpr bool IS_IN_PLACE = true;
+
     explicit InPlaceResultInserter(T * ptr, size_t & size) : result_ptr(ptr), container_size(size) {}
 
     void insertSingle(T element)
@@ -831,12 +813,65 @@ public:
 
     void insertRange(const T * begin, const T * end)
     {
-        size_t count = end - begin;
-        memmove(result_ptr, begin, count * sizeof(T));
+        const size_t count = end - begin;
+        if (count && likely(result_ptr != begin))
+            memmove(result_ptr, begin, count * sizeof(T));
         result_ptr += count;
         container_size += count;
     }
 };
+
+template <typename T, typename Inserter>
+ALWAYS_INLINE void insertSelectedRows(UInt64 mask, const T * data_pos, Inserter & inserter)
+{
+    static constexpr size_t MIN_RANGE_COPY_LENGTH = 4;
+    static constexpr UInt64 MIN_RANGE_COPY_MASK = (UInt64{1} << MIN_RANGE_COPY_LENGTH) - 1;
+    static constexpr size_t MAX_IN_PLACE_RUNS = 4;
+    static constexpr size_t MAX_OUT_OF_PLACE_RANGE_SCORE = 68;
+
+    const size_t selected_count = std::popcount(mask);
+    const size_t run_count = std::popcount(mask & ~(mask << 1));
+
+    /// Single inserts are cheaper when selected rows are fragmented. Otherwise,
+    /// copy sufficiently long contiguous runs in bulk.
+    bool use_range_copy = selected_count >= MIN_RANGE_COPY_LENGTH * run_count;
+    if constexpr (Inserter::IS_IN_PLACE)
+        use_range_copy = use_range_copy && run_count <= MAX_IN_PLACE_RUNS;
+    else
+    {
+        /// Dense masks split by isolated holes can pass the average-run check but still pay for many short memcpy calls.
+        /// This keeps the first two runs free and asks for roughly two rejected rows per additional run.
+        use_range_copy = use_range_copy && selected_count + 2 * run_count <= MAX_OUT_OF_PLACE_RANGE_SCORE;
+    }
+
+    if (!use_range_copy)
+    {
+        while (mask)
+        {
+            const size_t index = std::countr_zero(mask);
+            inserter.insertSingle(data_pos[index]);
+            mask = blsr(mask);
+        }
+        return;
+    }
+
+    while (mask)
+    {
+        const size_t index = std::countr_zero(mask);
+        const UInt64 shifted_mask = mask >> index;
+
+        if ((shifted_mask & MIN_RANGE_COPY_MASK) != MIN_RANGE_COPY_MASK)
+        {
+            inserter.insertSingle(data_pos[index]);
+            mask = blsr(mask);
+            continue;
+        }
+
+        const size_t run_length = std::countr_one(shifted_mask);
+        inserter.insertRange(data_pos + index, data_pos + index + run_length);
+        mask &= ~(((UInt64{1} << run_length) - 1) << index);
+    }
+}
 
 DECLARE_DEFAULT_CODE(
 template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
@@ -845,29 +880,13 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-        const uint8_t prefix_to_copy = prefixToCopy(mask);
 
-        if (0xFF != prefix_to_copy)
-        {
-            inserter.insertRange(data_pos, data_pos + prefix_to_copy);
-        }
-        else
-        {
-            const uint8_t suffix_to_copy = suffixToCopy(mask);
-            if (0xFF != suffix_to_copy)
-            {
-                inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
-            }
-            else
-            {
-                while (mask)
-                {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
-                }
-            }
-        }
+        /// Full blocks are copied at once. Mixed blocks decide between single
+        /// inserts and contiguous range copies based on fragmentation.
+        if (mask == static_cast<UInt64>(-1))
+            inserter.insertRange(data_pos, data_pos + SIMD_ELEMENTS);
+        else if (mask)
+            insertSelectedRows(mask, data_pos, inserter);
 
         filt_pos += SIMD_ELEMENTS;
         data_pos += SIMD_ELEMENTS;
