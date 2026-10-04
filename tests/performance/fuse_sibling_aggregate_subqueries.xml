@@ -1,0 +1,88 @@
+<test>
+  <settings>
+      <max_threads>1</max_threads>
+  </settings>
+
+  <substitutions>
+      <substitution>
+          <name>table_size</name>
+          <values>
+              <value>20000000</value>
+          </values>
+      </substitution>
+      <substitution>
+          <name>dim_size</name>
+          <values>
+              <value>2000</value>
+          </values>
+      </substitution>
+  </substitutions>
+
+  <create_query>
+      CREATE TABLE facts (id UInt64, slice UInt8, val UInt64) ENGINE = MergeTree() ORDER BY id
+  </create_query>
+  <create_query>
+      CREATE TABLE dim (g UInt64, bucket UInt8) ENGINE = MergeTree() ORDER BY g
+  </create_query>
+
+  <fill_query>
+      INSERT INTO facts SELECT number, number % 16, number FROM numbers({table_size})
+  </fill_query>
+  <fill_query>
+      INSERT INTO dim SELECT number, number % 16 FROM numbers({dim_size})
+  </fill_query>
+
+  <!-- The win: eight sibling count() branches over one table, each with its own narrow residual. -->
+  <query>
+      SELECT * FROM
+          (SELECT count() AS c0 FROM facts WHERE val > 0 AND slice = 0) AS s0,
+          (SELECT count() AS c1 FROM facts WHERE val > 0 AND slice = 1) AS s1,
+          (SELECT count() AS c2 FROM facts WHERE val > 0 AND slice = 2) AS s2,
+          (SELECT count() AS c3 FROM facts WHERE val > 0 AND slice = 3) AS s3,
+          (SELECT count() AS c4 FROM facts WHERE val > 0 AND slice = 4) AS s4,
+          (SELECT count() AS c5 FROM facts WHERE val > 0 AND slice = 5) AS s5,
+          (SELECT count() AS c6 FROM facts WHERE val > 0 AND slice = 6) AS s6,
+          (SELECT count() AS c7 FROM facts WHERE val > 0 AND slice = 7) AS s7
+  </query>
+  <query>
+      SELECT * FROM
+          (SELECT count() AS c0 FROM facts WHERE val > 0 AND slice = 0) AS s0,
+          (SELECT count() AS c1 FROM facts WHERE val > 0 AND slice = 1) AS s1,
+          (SELECT count() AS c2 FROM facts WHERE val > 0 AND slice = 2) AS s2,
+          (SELECT count() AS c3 FROM facts WHERE val > 0 AND slice = 3) AS s3,
+          (SELECT count() AS c4 FROM facts WHERE val > 0 AND slice = 4) AS s4,
+          (SELECT count() AS c5 FROM facts WHERE val > 0 AND slice = 5) AS s5,
+          (SELECT count() AS c6 FROM facts WHERE val > 0 AND slice = 6) AS s6,
+          (SELECT count() AS c7 FROM facts WHERE val > 0 AND slice = 7) AS s7
+      SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1
+  </query>
+
+  <!-- The regression guard: the worst shape the single-table residual restriction still admits, so the
+       fused pass carries the maximum join-side widening and condition work that is allowed. -->
+  <query>
+      SELECT * FROM
+          (SELECT count() AS c0 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 0) AS s0,
+          (SELECT count() AS c1 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 1) AS s1,
+          (SELECT count() AS c2 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 2) AS s2,
+          (SELECT count() AS c3 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 3) AS s3,
+          (SELECT count() AS c4 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 4) AS s4,
+          (SELECT count() AS c5 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 5) AS s5,
+          (SELECT count() AS c6 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 6) AS s6,
+          (SELECT count() AS c7 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 7) AS s7
+  </query>
+  <query>
+      SELECT * FROM
+          (SELECT count() AS c0 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 0) AS s0,
+          (SELECT count() AS c1 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 1) AS s1,
+          (SELECT count() AS c2 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 2) AS s2,
+          (SELECT count() AS c3 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 3) AS s3,
+          (SELECT count() AS c4 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 4) AS s4,
+          (SELECT count() AS c5 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 5) AS s5,
+          (SELECT count() AS c6 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 6) AS s6,
+          (SELECT count() AS c7 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 7) AS s7
+      SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1
+  </query>
+
+  <drop_query>DROP TABLE IF EXISTS facts</drop_query>
+  <drop_query>DROP TABLE IF EXISTS dim</drop_query>
+</test>
