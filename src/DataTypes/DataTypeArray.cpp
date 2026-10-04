@@ -78,10 +78,9 @@ String DataTypeArray::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
-void DataTypeArray::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeArray::doCloneWithChildren(const DataTypes & new_children) const
 {
-    callback(*nested);
-    nested->forEachChild(callback);
+    return std::make_shared<DataTypeArray>(new_children[0]);
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const

@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/AlignedBuffer.h>
@@ -570,7 +571,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     ///
     /// Wrappers such as `Nullable(Float32)`, `LowCardinality(Nullable(Float32))`, `Array(Float32)`,
     /// `Tuple(..., Float32, ...)`, and `Map(K, Float32)` all route through the same `Field` layer,
-    /// so they are affected too. We use `IDataType::forEachChild` to walk the whole type tree.
+    /// so they are affected too. We use `anyInTypeTree` to walk the whole type tree.
     def.columns_need_exact_copy.resize(num_columns, false);
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -578,16 +579,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (!col.type)
             continue;
 
-        bool contains_float = WhichDataType(*col.type).isFloat();
-        if (!contains_float)
-        {
-            col.type->forEachChild([&contains_float](const IDataType & child)
-            {
-                if (!contains_float && WhichDataType(child).isFloat())
-                    contains_float = true;
-            });
-        }
-        if (contains_float)
+        if (anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); }))
             def.columns_need_exact_copy[i] = true;
     }
 

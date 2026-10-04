@@ -220,13 +220,21 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
     return SerializationVariant::create(variants, serializations, variant_names, getName());
 }
 
-void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const
+DataTypePtr DataTypeVariant::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & variant : variants)
-    {
-        callback(*variant);
-        variant->forEachChild(callback);
-    }
+    /// A rewritten alternative can print a different name, and two alternatives that differed only in
+    /// that name then collapse into one. Announcing fewer alternatives than the payload was written
+    /// with is a wrong result rather than something to paper over, so refuse instead.
+    std::unordered_set<String> names;
+    for (const auto & variant : new_children)
+        if (!names.insert(variant->getName()).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot rewrite the nested types of {}: two of its alternatives would become the same type {}",
+                getName(), variant->getName());
+
+    /// The default constructor re-sorts the alternatives by name, which after a rename would silently
+    /// permute the discriminators of an existing column. Keep the order this type already has.
+    return std::make_shared<DataTypeVariant>(new_children, FixedDiscriminatorOrder{});
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
