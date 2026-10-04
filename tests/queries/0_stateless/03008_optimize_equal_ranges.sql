@@ -7,6 +7,8 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 0;
+-- query_log keeps only the initiator's ProfileEvents; remote parallel replicas' events are not merged into it.
+SET enable_parallel_replicas = 0;
 
 INSERT INTO t_optimize_equal_ranges SELECT 0, toString(number), number FROM numbers(30000);
 INSERT INTO t_optimize_equal_ranges SELECT 1, toString(number), number FROM numbers(30000);
