@@ -6405,6 +6405,7 @@ Note that this setting influences [Materialized view](/reference/statements/crea
     DECLARE(Bool, apply_ttl_delete_on_insert, false, R"(
 Removes the rows which are already expired by a table-level `TTL ... DELETE` rule (with or without `WHERE`) of a `MergeTree` table while inserting into it, instead of writing them to a part and waiting for a TTL merge to drop them.
 Only the `DELETE` rules of the table TTL are applied: `TTL ... GROUP BY`, `TTL ... RECOMPRESS`, move rules and column-level TTLs are not.
+For the `MergeTree` engines which merge rows (`ReplacingMergeTree`, `SummingMergeTree`, etc.), the rules are applied to the rows produced by merging the inserted block, as with a TTL merge, so only when the block is merged on insert (see `optimize_on_insert`).
 
 This is useful when backfilling historical data into a table with a short TTL: the expired rows would otherwise create parts (one per partition) which only wait for the background TTL merge to drop them.
 

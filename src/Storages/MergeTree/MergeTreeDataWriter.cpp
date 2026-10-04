@@ -865,7 +865,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & data_settings = data.getSettings();
     const auto & global_settings = context->getSettingsRef();
 
-    if (!isPatchPartitionId(partition_id) && global_settings[Setting::apply_ttl_delete_on_insert])
+    const bool optimize_on_insert = !isPatchPartitionId(partition_id)
+        && global_settings[Setting::optimize_on_insert]
+        && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+
+    /// A TTL merge applies the TTL to the rows produced by the merging algorithm, so for `ReplacingMergeTree`, `SummingMergeTree`, etc.
+    /// the expired rows are removed only after `mergeBlock` below: otherwise an expired row could not replace, cancel
+    /// or be summed with the other rows of the block. If such a block is not merged on insert, the TTL is not applied.
+    const bool apply_ttl_delete_on_insert = !isPatchPartitionId(partition_id)
+        && global_settings[Setting::apply_ttl_delete_on_insert]
+        && (optimize_on_insert || data.merging_params.mode == MergeTreeData::MergingParams::Ordinary);
+    if (apply_ttl_delete_on_insert && !optimize_on_insert)
     {
         removeRowsExpiredByTTL(context, *metadata_snapshot, block);
 
@@ -881,9 +891,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
 
-    const bool optimize_on_insert = !isPatchPartitionId(partition_id)
-        && global_settings[Setting::optimize_on_insert]
-        && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
@@ -977,6 +984,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
 
+    if (apply_ttl_delete_on_insert && optimize_on_insert)
+        removeRowsExpiredByTTL(context, *metadata_snapshot, block);
+
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
@@ -999,7 +1009,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    /// If optimize_on_insert is true, block may become empty after merge. There
+    /// If optimize_on_insert is true, block may become empty after merge (or after removing the expired rows). There
     /// is no need to create empty part. Since expected_size could be zero when
     /// part only contains empty tuples. As a result, check rows instead.
     if (block.rows() == 0)
