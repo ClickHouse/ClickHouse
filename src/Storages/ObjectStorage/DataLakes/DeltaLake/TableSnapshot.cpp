@@ -140,10 +140,10 @@ public:
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
@@ -1016,6 +1016,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
         auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
 
+        /// Both names are logical here; the rename to physical names happens later, on copies.
+        for (const auto & column_name : partition_columns)
+            if (!table_schema.tryGetByName(column_name))
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Partition column {} is not present in the table schema", column_name);
+
         LOG_TRACE(
             log, "Table logical schema: {}, read schema: {}, "
             "partition columns: {}, physical names map size: {}",
@@ -1045,6 +1051,13 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->read_schema;
+}
+
+Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
+{
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
 }
 
 const DB::Names & TableSnapshot::getPartitionColumns() const

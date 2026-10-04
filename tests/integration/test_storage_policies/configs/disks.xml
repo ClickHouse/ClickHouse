@@ -9,6 +9,13 @@
             </disk2>
         </disks>
         <policies>
+            <disk1_only_policy>
+                <volumes>
+                    <volume1>
+                        <disk>disk1</disk>
+                    </volume1>
+                </volumes>
+            </disk1_only_policy>
             <test_policy>
                 <volumes>
                     <volume1>

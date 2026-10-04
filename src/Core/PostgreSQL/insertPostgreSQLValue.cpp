@@ -125,10 +125,7 @@ try
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;
-            /// Parse with the column's own scale: the inferred type is no longer always `DateTime64(6)`
-            /// (a `timestamp(p)` carries its precision), and the stored value is in units of 10^-scale.
-            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
-            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -181,9 +178,7 @@ try
                 parsed = parser.get_next();
             }
 
-            /// PostgreSQL prints an empty array as `{}` whatever its dimensionality, so an empty value
-            /// carries no nesting to count and is a valid empty array for every expected dimension.
-            if (max_dimension < expected_dimensions && !dimensions[1].empty())
+            if (max_dimension < expected_dimensions)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Got less dimensions than expected. ({} instead of {})", max_dimension, expected_dimensions);
 
@@ -297,13 +292,8 @@ void preparePostgreSQLArrayInfo(
         {
             ReadBufferFromString in(field);
             DateTime64 time = 0;
-            /// Parse with the element type's own scale: the inferred type is no longer always
-            /// `DateTime64(6)` (a `timestamp(p)` carries its precision), and the stored value is in
-            /// units of 10^-scale.
-            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*nested);
-            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
-            /// No non-negative clamp here: unlike 32-bit `DateTime`, `DateTime64` has a valid
-            /// pre-epoch range, so negative values must be preserved (same as the scalar parser).
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
+            time = std::max<time_t>(time, 0);
             return time;
         };
     else if (which.isDecimal32())

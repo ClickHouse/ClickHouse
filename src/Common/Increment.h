@@ -67,9 +67,8 @@ public:
         if (min_initial_value_provider)
             provider = [&min_initial_value_provider] { return static_cast<Int64>(min_initial_value_provider()); };
 
-        return static_cast<UInt64>(
-            counter.add(static_cast<Int64>(count), create_if_need, static_cast<Int64>(min_initial_value), provider)
-            - count + 1);
+        return counter.add(static_cast<Int64>(count), create_if_need, static_cast<Int64>(min_initial_value), provider)
+            - count + 1;
     }
 
     /// Change the path to the file.

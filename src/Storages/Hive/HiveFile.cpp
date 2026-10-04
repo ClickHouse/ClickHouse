@@ -160,7 +160,8 @@ void HiveORCFile::prepareReader()
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
     orc::ReaderOptions options;
-    reader = orc::createReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
+    options.setMemoryPool(getORCMemoryPool());
+    reader = createORCReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
 }
 
 void HiveORCFile::prepareColumnMapping()

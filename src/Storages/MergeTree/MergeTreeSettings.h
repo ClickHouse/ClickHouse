@@ -10,6 +10,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
+#include <optional>
+
 namespace boost
 {
 namespace program_options
@@ -52,6 +54,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, UniqueKeyConflictAction) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
@@ -61,11 +64,13 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
+    M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
     M(CLASS_NAME, SearchOrphanedPartsDisks) \
-    M(CLASS_NAME, TextIndexPostingListCodec)
+    M(CLASS_NAME, TextIndexPostingListCodec) \
+    M(CLASS_NAME, MergeTreeTextIndexSerializationVersion)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
@@ -86,10 +91,19 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
+    /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
+    SettingsChanges changesFrom(const MergeTreeSettings & base) const;
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
+    /// For the computations that derive a value from the settings a statement would leave behind, and
+    /// read scalar settings only. Resolving the `disk` setting creates and registers the disk its
+    /// definition describes, and a computation that runs before the statement is known to be allowed
+    /// must not do that: a rejected `ALTER TABLE ... MODIFY SETTING disk = disk(...)` would leave the
+    /// disk, and the directory it created, behind. The settings update itself resolves it, see
+    /// `MergeTreeData::changeSettings`.
+    void applyChangesLeavingDiskUnresolved(const SettingsChanges & changes);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getAllAliasNames() const;
+    static std::vector<std::string_view> getAllAliasNames();
     std::string_view getDescription(std::string_view name) const;
     std::string_view getTypeName(std::string_view name) const;
     String getDefaultValueString(std::string_view name) const;
@@ -101,7 +115,7 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
@@ -112,6 +126,7 @@ struct MergeTreeSettings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);

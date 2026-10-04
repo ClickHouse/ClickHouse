@@ -16,9 +16,10 @@ struct libdeflate_decompressor;
 namespace DB
 {
 
-/// Streaming gzip/zlib decompressor built on libdeflate's block-boundary-suspendable decoder
+/// Streaming gzip/zlib decompressor built on libdeflate's symbol-boundary-suspendable decoder
 /// (libdeflate_deflate_decompress_stream, a ClickHouse addition). It is faster than the zlib
-/// streaming path while keeping memory bounded.
+/// streaming path while keeping memory bounded and time linear regardless of the stream's
+/// DEFLATE block structure (a single block may span the whole stream, as with zlib-ng level 1).
 ///
 /// We parse the gzip/zlib header and trailer ourselves and feed the raw DEFLATE body to libdeflate,
 /// carrying the last 32 KiB of output as the back-reference window. Concatenated members are handled

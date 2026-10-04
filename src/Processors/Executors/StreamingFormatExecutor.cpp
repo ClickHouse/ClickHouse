@@ -1,6 +1,5 @@
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -54,9 +53,7 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
 {
-    /// Query parameters make sense only for format Values.
-    if (auto * values_format = typeid_cast<ValuesBlockInputFormat *>(format.get()))
-        values_format->setQueryParameters(parameters);
+    format->setQueryParameters(parameters);
 }
 
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
@@ -138,7 +135,9 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     {
         format->resetParser();
         /// Cancellation aborts the whole execution; it is not a recoverable per-input parse error.
-        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+        /// A cancelled `QueryStatus` reports an arbitrary exception, so ask the callback rather than
+        /// match on the code, which for a callback-less caller `on_error` must keep handling.
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || (is_cancelled && is_cancelled()))
             throw;
         return on_error(result_columns, checkpoints, e);
     }

@@ -4,9 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -28,10 +26,19 @@ public:
     static constexpr auto name = "mergeTreeCodecBlockCounts";
     std::string getName() const override { return name; }
 
+    /// Refused in line with the other `MergeTree` introspection table functions. This storage holds only the source
+    /// table's name and resolves it on every read, so it pins nothing, but the persisted form has no uses and is
+    /// refused for all of them alike, so that none of them has to stay correct while outliving its query.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
 private:
+    /// The fixed structure. It is not derived from the source table, but the table function does not declare it as
+    /// static: resolving it is a read of the source table and has to check access to it, see `getActualTableStructure`.
+    static ColumnsDescription getColumns();
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -69,13 +76,15 @@ void TableFunctionMergeTreeCodecBlockCounts::parseArguments(const ASTPtr & ast_f
 
 ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    /// The structure is fixed, so nothing in it depends on the source table. The table is still resolved here, because
+    /// resolving the structure is a read of it and needs the same access as reading it: this is what `DESCRIBE`
+    /// goes through, under the context of the user who asks.
+    StorageMergeTreeCodecBlockCounts::resolveSourceTable(source_table_id, context);
+    return getColumns();
+}
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Table function {} expected MergeTree table, got: {}", getName(), source_table->getName());
-
+ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getColumns()
+{
     auto codec_map = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
 
     ColumnsDescription columns;
@@ -99,16 +108,17 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
 
 StoragePtr TableFunctionMergeTreeCodecBlockCounts::executeImpl(
     const ASTPtr & /*ast_function*/,
-    ContextPtr context,
+    ContextPtr /*context*/,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto columns = getActualTableStructure(context, is_insert_query);
-
+    /// Deliberately does not resolve the source table. Building the storage discloses nothing, because its structure
+    /// is fixed, and the storage may be built and read under different contexts (`EXPLAIN` builds it without reading).
+    /// The source is resolved and checked by `StorageMergeTreeCodecBlockCounts::read`, on the path that reads its data,
+    /// under the context of the user who reads.
     StorageID storage_id(getDatabaseName(), table_name);
-    auto res = std::make_shared<StorageMergeTreeCodecBlockCounts>(std::move(storage_id), std::move(source_table), std::move(columns));
+    auto res = std::make_shared<StorageMergeTreeCodecBlockCounts>(std::move(storage_id), source_table_id, getColumns());
 
     res->startup();
     return res;
@@ -118,9 +128,88 @@ void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & facto
 void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeCodecBlockCounts>(
-        {.description = "Shows compressed-block counts by codec, per (part, column, substream) of a MergeTree table. "
-                        "Selecting `codec_block_counts` reads data files, not just metadata.",
-         .examples = {{"mergeTreeCodecBlockCounts", "SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), mt_table)", ""}},
+        {.description = R"DOCS_MD(
+Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec. This is how you observe adaptive codec selection (enabled by `enable_adaptive_codec_selection` setting), which can pick a codec per block for default-codec columns.
+
+Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
+
+Parts that do not record their substreams in `columns_substreams.txt` are not listed.
+
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW TABLES` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
+
+If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
+
+## Syntax {#syntax}
+
+```sql
+mergeTreeCodecBlockCounts(database, table)
+```
+
+## Arguments {#arguments}
+
+| Argument   | Description                          |
+|------------|--------------------------------------|
+| `database` | The database name of the table.      |
+| `table`    | The MergeTree table name.            |
+
+## Returned value {#returned-value}
+
+A table object with one row per (active part, column, substream) of the source table:
+
+- `part_name` ([String](/reference/data-types/string)) — The active data part the column belongs to.
+- `column` ([String](/reference/data-types/string)) — The column name.
+- `substream` ([String](/reference/data-types/string)) — The physical stream of the column the counts are for. Matches `system.parts_columns.substreams`.
+- `data_compressed_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — Size of compressed data in the substream, in bytes. `NULL` for `Compact` parts.
+- `data_uncompressed_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — Size of uncompressed data in the substream, in bytes. `NULL` for `Compact` parts.
+- `codec_block_counts` ([Map(String, UInt64)](/reference/data-types/map)) — The number of compressed blocks of this substream grouped by codec. Empty for `Compact` parts, whose columns share one data file and so have no per-stream codec attribution.
+
+## Usage example {#usage-example}
+
+```sql
+CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO mt SELECT number FROM numbers(100000);
+
+SELECT column, substream, codec_block_counts
+FROM mergeTreeCodecBlockCounts(currentDatabase(), mt);
+```
+
+```text
+┌─column─┬─substream─┬─codec_block_counts─┐
+│ a      │ a         │ {'LZ4':13}         │
+└────────┴───────────┴────────────────────┘
+```
+
+Column-level totals are a `GROUP BY column` with [`sumMap`](/reference/functions/aggregate-functions/sumMap):
+
+```sql
+SELECT column, sumMap(codec_block_counts)
+FROM mergeTreeCodecBlockCounts(currentDatabase(), mt)
+GROUP BY column;
+```
+
+A `LowCardinality` column reports its dictionary and indexes streams separately:
+
+```sql
+CREATE TABLE mt_lc (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO mt_lc SELECT toString(number % 1000) FROM numbers(1000000);
+
+SELECT substream, codec_block_counts
+FROM mergeTreeCodecBlockCounts(currentDatabase(), mt_lc)
+WHERE column = 's'
+ORDER BY substream;
+```
+
+```text
+┌─substream─┬─codec_block_counts─┐
+│ s         │ {'LZ4':31}         │
+│ s.dict    │ {'LZ4':1}          │
+└───────────┴────────────────────┘
+```
+)DOCS_MD",
          .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true});
 }

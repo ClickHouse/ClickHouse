@@ -20,6 +20,8 @@ Toutes les valeurs des colonnes sont simplement copiées, à l’exception de ce
   Pour renvoyer une seule ligne contenant la valeur par défaut du type de tableau, vous pouvez l’imbriquer dans [emptyArrayToSingle](/fr/reference/functions/regular-functions/array-functions#emptyArrayToSingle), par exemple : `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (depuis la version 26.5) est un alias de `arrayJoin`, insensible à la casse, sous forme d’appel de fonction (`SELECT unnest(arr)`). La syntaxe PostgreSQL de source de table n’est pas prise en charge (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL`). Utilisez la clause [`ARRAY JOIN`](/fr/reference/statements/select/array-join) pour ces requêtes.
+
 Par exemple :
 
 ```sql title="Query"
@@ -50,6 +52,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 │           2 │
 └─────────────┘
 ```
+
+Il existe une exception : `arrayJoin`, y compris par l’intermédiaire de son alias `unnest`, n’est pas autorisé dans une condition `JOIN ON` évaluée pendant la jointure, car une telle condition doit préserver le nombre de lignes et est évaluée séparément pour chaque lot de lignes jointes. Une condition qui ne s’applique qu’à un seul côté, ainsi qu’une clé d’égalité portant sur `arrayJoin`, sont extraites avant la jointure et ne sont pas affectées. Une condition `ALL INNER JOIN` non disjonctive n’est pas non plus affectée, car elle est alors appliquée après la jointure. Lorsque l’expansion ne dépend que d’un seul côté, déplacez-la dans un `ARRAY JOIN` d’une sous-requête avant la jointure ; une condition dont l’argument `arrayJoin` lit des colonnes des deux côtés doit être restructurée.
 
 Une requête peut utiliser plusieurs fonctions `arrayJoin`. Dans ce cas, la transformation est effectuée plusieurs fois et le nombre de lignes est multiplié.
 Par exemple :
