@@ -20,10 +20,13 @@ SET query_plan_aggregation_having_prefilter = 1;
 SET group_by_two_level_threshold = 100;
 SET group_by_two_level_threshold_bytes = 1;
 -- Those thresholds are zeroed again unless the pipeline has more than one stream or an external
--- group-by threshold is set (AggregatingStep::transformPipeline), and this fixture is small enough to
--- be read in one stream. Pin a threshold far above it: non-zero keeps the two-level path, and nothing
+-- group-by threshold is set (`AggregatingStep::transformPipeline`), and this fixture can be read in one
+-- stream. Pin a threshold far above it: non-zero keeps the two-level path, and nothing
 -- here comes close to spilling.
 SET max_bytes_before_external_group_by = 10737418240;
+-- An adaptive aggregator table stays single-level until it freezes, and a read split into many
+-- streams can leave every table below the freeze threshold, so freeze them at once.
+SET adaptive_aggregator_freeze_threshold = 0;
 SET optimize_aggregation_in_order = 0;
 SET query_plan_merge_filters = 1;
 -- Some CI configurations set this as a safety net, which would make the group-by-limit cells at the
