@@ -126,13 +126,7 @@ public:
             if (left.isNull() || right.isNull())
                 return is_not_monotonic;
 
-            const auto * type_ptr = &type;
-
-            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-                type_ptr = lc_type->getDictionaryType().get();
-
-            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-                type_ptr = nullable_type->getNestedType().get();
+            const auto * type_ptr = removeLowCardinalityAndNullable(&type);
 
             /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
