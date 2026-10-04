@@ -2052,15 +2052,6 @@ Allow to create a table with sampling expression not in primary key. This is
 needed only to temporarily allow to run the server with wrong tables for
 backward compatibility.
 )", 0) \
-    DECLARE(Bool, use_minimalistic_checksums_in_zookeeper, true, R"(
-Use small format (dozens bytes) for part checksums in ZooKeeper instead of
-ordinary ones (dozens KB). Before enabling check that all replicas support
-new format.
-)", 0) \
-    DECLARE(Bool, use_minimalistic_part_header_in_zookeeper, true, R"(
-Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
-stores less data. For details, see [here](/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper).
-)", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
 How many records about mutations that are done to keep. If zero, then keep
 all of them.
@@ -2831,6 +2822,8 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, \
         {"26.7", false, true, "New setting"}) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_checksums_in_zookeeper, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_part_header_in_zookeeper, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
