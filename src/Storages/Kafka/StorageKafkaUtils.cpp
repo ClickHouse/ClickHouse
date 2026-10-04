@@ -424,8 +424,10 @@ Required parameters:
 
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
-- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere. Supports macro expansion (e.g., `'consumers_{replica}'`), which lets each replica use its own consumer group and read all messages.
 - `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+
+The values of `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` and `kafka_schema` support macro expansion: `{database}` and `{table}` are replaced with the table's database and name, and other macros such as `{shard}` and `{replica}` are taken from the server's `macros` configuration.
 
 Optional parameters:
 
