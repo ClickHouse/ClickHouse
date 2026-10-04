@@ -200,7 +200,9 @@ void requireRowOffsetRepresentable(size_t row_offset);
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
 /// The caller is responsible for preparing the cursor vector (resolving search tokens
 /// to cursors and deduplicating if necessary).
-void lazyUnionPostingLists(
+/// Returns false only if no row of the window is set, so the caller may skip scanning the column.
+/// True means that some rows may be set.
+bool lazyUnionPostingLists(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
@@ -216,7 +218,9 @@ void lazyUnionPostingLists(
 //      the remaining ones increment counters,
 ///     then a final pass keeps only the rows where the count is n.
 ///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
-void lazyIntersectPostingLists(
+/// Returns false only if no row of the window is set, so the caller may skip scanning the column.
+/// True means that some rows may be set: brute-force intersection may return true when no row survives.
+bool lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
