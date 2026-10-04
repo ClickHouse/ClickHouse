@@ -586,6 +586,7 @@
     M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.", ValueType::Bytes) \
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
+    M(MergeTreeDataWriterAggregatingBlocksWithUniqueKeys, "Number of blocks INSERTed to AggregatingMergeTree tables whose sorting key values were already unique, so the aggregating merge was skipped.", ValueType::Number) \
     \
     /* Per-executor background executor task timings */ \
     M(MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds, "Time spent in executeStep() for MergeMutate executor tasks.", ValueType::Microseconds) \

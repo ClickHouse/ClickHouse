@@ -1,10 +1,12 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Disks/createVolume.h>
@@ -58,6 +60,7 @@ namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
     extern const Event MergeTreeDataWriterBlocksAlreadySorted;
+    extern const Event MergeTreeDataWriterAggregatingBlocksWithUniqueKeys;
     extern const Event MergeTreeDataWriterRows;
     extern const Event MergeTreeDataWriterUncompressedBytes;
     extern const Event MergeTreeDataWriterCompressedBytes;
@@ -579,6 +582,21 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     return result;
 }
 
+/// Every supported SimpleAggregateFunction on a scalar type returns a single value unchanged.
+static bool hasOnlyScalarSimpleAggregates(const Block & block)
+{
+    for (const auto & column : block)
+    {
+        if (!typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+            continue;
+
+        WhichDataType which(column.type);
+        if (which.isArray() || which.isTuple() || which.isMap())
+            return false;
+    }
+    return true;
+}
+
 Block MergeTreeDataWriter::mergeBlock(
     Block && block,
     const StorageMetadataPtr & metadata_snapshot,
@@ -592,6 +610,25 @@ Block MergeTreeDataWriter::mergeBlock(
     size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
+
+    /// Nested SimpleAggregateFunction leaves still need the merge when tuple elements aggregate.
+    if (merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        && !merging_params.allow_tuple_element_aggregation
+        && hasOnlyScalarSimpleAggregates(*header)
+        && hasUniqueSortingKey(*header, sort_description, permutation))
+    {
+        Block result = *header;
+        if (permutation)
+        {
+            Columns columns = result.getColumns();
+            transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(*permutation, permutation->size()); });
+            result.setColumns(columns);
+            permutation = nullptr;
+        }
+
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterAggregatingBlocksWithUniqueKeys);
+        return result;
+    }
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
