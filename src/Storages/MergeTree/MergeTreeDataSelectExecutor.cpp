@@ -1171,6 +1171,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
         auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
+        auto skipping_index_cache = context->getSkippingIndexCache();
 
         auto query_status = context->getProcessListElement();
 
@@ -1299,6 +1300,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
+                            skipping_index_cache.get(),
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
@@ -1336,7 +1338,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                                             reader_settings,
                                             mark_cache.get(),
                                             uncompressed_cache.get(),
-                                            vector_similarity_index_cache.get());
+                                            vector_similarity_index_cache.get(),
+                                            skipping_index_cache.get());
 
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
@@ -2810,6 +2813,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    SkippingIndexCache * skipping_index_cache,
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
@@ -2859,6 +2863,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         mark_cache,
         uncompressed_cache,
         vector_similarity_index_cache,
+        skipping_index_cache,
         reader_settings,
         /*interruptible_marks_read=*/ true);
 
@@ -3192,7 +3197,8 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    VectorSimilarityIndexCache * vector_similarity_index_cache)
+    VectorSimilarityIndexCache * vector_similarity_index_cache,
+    SkippingIndexCache * skipping_index_cache)
 {
     if (!skip_index_minmax->getDeserializedFormat(*part_info, skip_index_minmax->getFileName()))
     {
@@ -3220,6 +3226,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
             mark_cache,
             uncompressed_cache,
             vector_similarity_index_cache,
+            skipping_index_cache,
             reader_settings,
             /*interruptible_marks_read=*/ true);
 
