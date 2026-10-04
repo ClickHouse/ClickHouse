@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail`
+-- - no-fasttest - tests that run alone are kept out of the fast test
 
 -- Regression test for "Not-ready Set is passed as the second argument" when the `IN` subquery
 -- source plan contains a regular `JoinStep`, exercising `JoinStep::clone` in the non-destructive

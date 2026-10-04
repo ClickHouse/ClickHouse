@@ -11,8 +11,9 @@
 -- preserved and `DelayedCreatingSetsStep::makePlansForSets` rebuilds the set in the deferred
 -- pipeline.
 --
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail`
+-- - no-fasttest - tests that run alone are kept out of the fast test
 
 DROP TABLE IF EXISTS with_fill_in_pr;
 CREATE TABLE with_fill_in_pr (dt DateTime, idx Int32) ENGINE = MergeTree() PARTITION BY dt ORDER BY idx;

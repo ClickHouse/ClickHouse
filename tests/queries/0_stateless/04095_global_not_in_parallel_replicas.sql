@@ -15,8 +15,9 @@
 -- original `source` plan and `makePlansForSets` rebuilds the set. Without the fix, the
 -- consumed source would leave the set permanently unbuilt and `FunctionIn` would throw.
 --
--- Tags: replica, no-parallel
+-- Tags: replica, no-parallel, no-fasttest
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail`
+-- - no-fasttest - tests that run alone are kept out of the fast test
 
 DROP TABLE IF EXISTS null_in_pr;
 CREATE TABLE null_in_pr (dt DateTime, idx Int32, i Nullable(UInt64)) ENGINE = MergeTree() PARTITION BY dt ORDER BY idx;

@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail` and the shared query result cache
+-- - no-fasttest - tests that run alone are kept out of the fast test
 
 -- Regression test for "Not-ready Set is passed as the second argument" when the `IN` subquery result
 -- also goes through the query result cache.
