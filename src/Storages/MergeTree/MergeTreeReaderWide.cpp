@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
@@ -421,6 +422,22 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         return nullptr;
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
+    return getStream(seek_to_start, substream_path, stream_name, name_and_type, from_mark, seek_to_mark, cache);
+}
+
+ReadBuffer * MergeTreeReaderWide::getStream(
+    bool seek_to_start,
+    const ISerialization::SubstreamPath & substream_path,
+    const std::optional<String> & stream_name,
+    const NameAndTypePair & name_and_type,
+    size_t from_mark,
+    bool seek_to_mark,
+    ISerialization::SubstreamsCache & cache)
+{
+    /// If substream have already been read.
+    if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
+        return nullptr;
+
     if (!stream_name)
     {
         /// We allow missing streams only for columns/subcolumns that are not present in this part.
@@ -688,6 +705,32 @@ void MergeTreeReaderWide::prefetchForColumn(
 }
 
 
+const std::optional<String> & MergeTreeReaderWide::getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
+{
+    /// The key covers everything the file name of the stream is made of.
+    SipHash hash;
+    auto update_string = [&](const String & value)
+    {
+        hash.update(value.size());
+        hash.update(value);
+    };
+
+    update_string(name_and_type.getNameInStorage());
+    for (const auto & substream : substream_path)
+    {
+        hash.update(substream.type);
+        update_string(substream.name_of_substream);
+        update_string(substream.variant_element_name);
+        update_string(substream.object_path_name);
+        hash.update(substream.bucket);
+    }
+
+    auto [it, inserted] = stream_names.try_emplace(hash.get128());
+    if (inserted)
+        it->second = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+    return it->second;
+}
+
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
@@ -708,19 +751,18 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        const auto & stream_name = getStreamName(name_and_type, substream_path);
         bool was_prefetched = stream_name && streams.isPrefetched(*stream_name);
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
-            /* seek_to_start = */false, substream_path,
-            data_part_info_for_read->getChecksums(),
+            /* seek_to_start = */false, substream_path, stream_name,
             name_and_type, from_mark, seek_to_mark, cache);
     };
 
     deserialize_settings.seek_stream_to_mark_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        const auto & stream_name = getStreamName(name_and_type, substream_path);
         if (!stream_name)
             return;
 
@@ -741,7 +783,7 @@ void MergeTreeReaderWide::readData(
         if (read_without_marks)
             return;
 
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        const auto & stream_name = getStreamName(name_and_type, substream_path);
         if (!stream_name)
             return;
 
@@ -752,7 +794,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.get_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path) -> double
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        const auto & stream_name = getStreamName(name_and_type, substream_path);
         if (!stream_name)
             return 0.0;
 
@@ -762,7 +804,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.update_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        const auto & stream_name = getStreamName(name_and_type, substream_path);
         if (!stream_name)
             return;
 

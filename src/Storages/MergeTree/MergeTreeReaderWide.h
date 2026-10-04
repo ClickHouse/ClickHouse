@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/HashTable/Hash.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
@@ -101,6 +102,22 @@ private:
 
     MergeTreeReaderStream * getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
+    /// Same as above, with the name of the stream already found for the substream.
+    ReadBuffer * getStream(
+        bool seek_to_start,
+        const ISerialization::SubstreamPath & substream_path,
+        const std::optional<String> & stream_name,
+        const NameAndTypePair & name_and_type,
+        size_t from_mark,
+        bool seek_to_mark,
+        ISerialization::SubstreamsCache & cache);
+
+    /// Same as `IMergeTreeDataPart::getStreamNameForColumn`, but remembers the result. Finding the name builds the
+    /// file name of the substream and looks it up in the checksums, and it is done several times for every substream
+    /// of every block, which is noticeable for columns with many substreams, such as `JSON`.
+    /// Not for the callbacks of prefix deserialization, which may be called from other threads.
+    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
+
     void readData(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
@@ -138,6 +155,7 @@ private:
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
+    std::unordered_map<UInt128, std::optional<String>, UInt128Hash> stream_names;
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
