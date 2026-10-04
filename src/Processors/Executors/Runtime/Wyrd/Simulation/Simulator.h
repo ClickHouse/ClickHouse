@@ -3,6 +3,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Simulation/FutexTable.h>
 #include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
 #include <Common/CoroutineStack.h>
+#include <Common/SipHash.h>
 
 #include <exception>
 #include <functional>
@@ -79,7 +80,7 @@ private:
     UInt32 next_thread_id = 1;
 
     size_t steps = 0;
-    UInt64 digest_state = 0;
+    SipHash digest;
     std::exception_ptr exception;
 };
 

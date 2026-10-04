@@ -2,7 +2,6 @@
 #include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
 
 #include <fmt/format.h>
 
@@ -24,11 +23,6 @@ namespace
 {
 
 Simulator * current_simulator = nullptr;
-
-UInt64 combineDigest(UInt64 state, UInt64 value)
-{
-    return intHash64(state ^ (value + 0x9E3779B97F4A7C15ULL + (state << 6) + (state >> 2)));
-}
 
 std::string formatRecord(const SyscallRecord & record)
 {
@@ -72,7 +66,7 @@ SimulatorResult Simulator::run(std::function<void()> main)
         .status = status,
         .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
         .total_steps = steps,
-        .digest = digest_state,
+        .digest = digest.get64(),
         .last_syscalls = formatTail(trace, params.printed_syscalls),
     };
 }
@@ -108,7 +102,8 @@ SimulatorResult::Status Simulator::runLoop()
 
 void Simulator::recordSyscall(const char * operation, std::source_location location)
 {
-    digest_state = combineDigest(combineDigest(digest_state, running_thread->id), location.line());
+    digest.update(running_thread->id);
+    digest.update(location.line());
     trace.push_back(SyscallRecord{.step = steps, .thread_id = running_thread->id, .operation = operation, .location = location});
 }
 
