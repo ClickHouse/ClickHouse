@@ -648,26 +648,27 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             "Sending a distributed query with unknown (zero) client version. "
             "The query context was not initialized as an initial query");
 
-    /// Forward the initial user's current roles so the remote scopes row policies the same way (gated by the setting).
-    /// Reset first against stale/injected values.
+    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
+    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
     modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.initial_user == modified_client_info.current_user)
     {
-        if (modified_client_info.initial_user == modified_client_info.current_user)
+        const auto & access_control = context->getAccessControl();
+        Strings current_role_names;
+        for (const auto & role_id : context->getCurrentRoles())
         {
-            const auto & access_control = context->getAccessControl();
-            Strings current_role_names;
-            for (const auto & role_id : context->getCurrentRoles())
-            {
-                /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
-                if (auto name = access_control.tryReadName(role_id))
-                    current_role_names.push_back(*name);
-            }
-            modified_client_info.current_roles = std::move(current_role_names);
+            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
+            if (auto name = access_control.tryReadName(role_id))
+                current_role_names.push_back(*name);
         }
-        else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-            modified_client_info.current_roles = context->getClientInfo().current_roles;
+        modified_client_info.current_roles = std::move(current_role_names);
     }
+    /// Relay the received roles only if this node applies them too: the server setting decides, not the query one.
+    else if (modified_client_info.initial_user != modified_client_info.current_user
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getGlobalContext()->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+        modified_client_info.current_roles = context->getClientInfo().current_roles;
 
     /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
     modified_client_info.collaborate_with_initiator = extension.has_value();

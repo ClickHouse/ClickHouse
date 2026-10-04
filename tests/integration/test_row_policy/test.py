@@ -988,6 +988,72 @@ def test_initial_user_current_roles_on_secret_less_shard():
             )
 
 
+def test_initial_user_current_roles_relay_follows_server_setting():
+    # node2 -> node -> node2 without a secret. node relays the roles active on node2 only if it applies
+    # them itself, so once its server profile sets push_external_roles_in_interserver_queries = 0, node2
+    # filters by the default roles of u_relay too, although the query sets the setting to 1.
+    opt_out_path = "/etc/clickhouse-server/users.d/no_push_external_roles.xml"
+    opted_out = False
+    read = (
+        "SET ROLE r_narrow; SELECT svc FROM t_relay_chain ORDER BY svc "
+        "SETTINGS push_external_roles_in_interserver_queries = 1, prefer_localhost_replica = 0"
+    )
+    try:
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP TABLE IF EXISTS t_relay;
+                CREATE TABLE t_relay (svc String) ENGINE = MergeTree ORDER BY svc;
+                INSERT INTO t_relay VALUES ('narrow'), ('secret');
+                CREATE ROLE OR REPLACE r_narrow;
+                CREATE ROLE OR REPLACE r_all;
+                CREATE ROW POLICY OR REPLACE p_narrow ON t_relay USING svc = 'narrow' TO r_narrow;
+                CREATE ROW POLICY OR REPLACE p_all ON t_relay USING 1 TO r_all;
+                GRANT SELECT ON t_relay TO r_narrow, r_all;
+                CREATE USER OR REPLACE u_relay;
+                GRANT r_narrow, r_all TO u_relay;
+                """
+            )
+        node.query(
+            "CREATE TABLE t_relay_dist AS t_relay ENGINE = Distributed(test_local_cluster, default, t_relay)"
+        )
+        node2.query(
+            """
+            CREATE TABLE t_relay_chain AS t_relay ENGINE = Distributed(test_cluster_two_shards_same_node, default, t_relay_dist);
+            GRANT SELECT ON t_relay_chain TO r_narrow;
+            """
+        )
+
+        assert node2.query(read, user="u_relay") == TSV([["narrow"]] * 4)
+
+        node.replace_config(
+            opt_out_path,
+            "<clickhouse><profiles><default><push_external_roles_in_interserver_queries>0"
+            "</push_external_roles_in_interserver_queries></default></profiles></clickhouse>",
+        )
+        opted_out = True
+        node.restart_clickhouse()
+
+        assert node2.query(read, user="u_relay") == TSV(
+            [["narrow"]] * 4 + [["secret"]] * 4
+        )
+    finally:
+        if opted_out:
+            node.exec_in_container(["rm", "-f", opt_out_path])
+            node.restart_clickhouse()
+        node.query("DROP TABLE IF EXISTS t_relay_dist")
+        node2.query("DROP TABLE IF EXISTS t_relay_chain")
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP ROW POLICY IF EXISTS p_narrow, p_all ON t_relay;
+                DROP TABLE IF EXISTS t_relay;
+                DROP USER IF EXISTS u_relay;
+                DROP ROLE IF EXISTS r_narrow, r_all;
+                """
+            )
+
+
 def test_row_policy_filter_with_subquery():
     copy_policy_xml("no_filters.xml")
     assert node.query("SHOW POLICIES") == ""
