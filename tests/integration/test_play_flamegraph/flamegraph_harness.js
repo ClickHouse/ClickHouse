@@ -251,10 +251,12 @@ async function main()
 
     const api = vm.runInNewContext(extract('const MAX_FLAME_NODES', 'async function getServerStatus')
         + extract('function makeEventStreamHandler(', '/// Parse one SSE event block')
-        + '\n({freshFlameGraphState, accumulateProfileTraces, selectFlameTree, updateFlameHostSelector, flameGraphStatus, renderFlameGraph, makeEventStreamHandler, MAX_FLAME_NODES, MAX_FLAME_LABEL_CHARS, MAX_FLAME_HOSTS, MAX_FLAME_DOM_FRAMES, MAX_FLAME_SERVER_DROPS})',
+        + '\n({freshFlameGraphState, flameProducerKey, accumulateProfileTraces, selectFlameTree, updateFlameHostSelector, flameGraphStatus, renderFlameGraph, makeEventStreamHandler, MAX_FLAME_NODES, MAX_FLAME_LABEL_CHARS, MAX_FLAME_HOSTS, MAX_FLAME_DOM_FRAMES, MAX_FLAME_SERVER_DROPS})',
         { document, _logHash: () => 0 });
-    const sample = (symbols, trace_type = 'CPU', size = '0', trace = symbols.map((_, i) => String(i + 1)), host_name = 'host') =>
-        ({ host_name, query_id: 'query', thread_id: '1', event_time_microseconds: '1788690000000000', symbols, trace, trace_type, size });
+    /// Per-node data is keyed by the producing server: its host name and its `query_id`.
+    const producer = (host, query_id = 'query') => api.flameProducerKey(host, query_id);
+    const sample = (symbols, trace_type = 'CPU', size = '0', trace = symbols.map((_, i) => String(i + 1)), host_name = 'host', query_id = 'query') =>
+        ({ host_name, query_id, thread_id: '1', event_time_microseconds: '1788690000000000', symbols, trace, trace_type, size });
     const state = api.freshFlameGraphState();
     const handle = api.makeEventStreamHandler({ appendProfileTraces: batch => api.accumulateProfileTraces(state, batch) });
     handle('profile_traces', [JSON.stringify([sample(['leaf;with separator', 'root']), sample(['leaf;with separator', 'root'])])]);
@@ -282,27 +284,57 @@ async function main()
         sample(['other', 'root'], 'CPU', '0', ['3', '2'], 'node-a'),
         sample(['allocation'], 'MemorySample', '128', ['4'], 'node-a'),
         sample(['allocation'], 'MemorySample', '256', ['4'], 'node-b')]);
-    const hostA = api.selectFlameTree(hosts, 'CPU', 'node-a');
-    const hostB = api.selectFlameTree(hosts, 'CPU', 'node-b');
+    const hostA = api.selectFlameTree(hosts, 'CPU', producer('node-a'));
+    const hostB = api.selectFlameTree(hosts, 'CPU', producer('node-b'));
     assert.equal(api.selectFlameTree(hosts, 'CPU').root.value, 3);
     assert.equal(hostA.root.value, 2);
     assert.equal(hostB.root.value, 1);
     assert.equal(api.selectFlameTree(hosts, 'MemorySample').root.value, 384);
-    assert.equal(api.selectFlameTree(hosts, 'MemorySample', 'node-b').root.value, 256);
+    assert.equal(api.selectFlameTree(hosts, 'MemorySample', producer('node-b')).root.value, 256);
     const selector = new Element();
     api.updateFlameHostSelector(selector, hosts);
     assert.deepEqual(selector.children.map(option => option.textContent), ['All nodes', 'node-a', 'node-b']);
-    selector.value = ':node-a';
+    selector.value = ':' + producer('node-a');
     const originalOptions = selector.children;
     api.updateFlameHostSelector(selector, hosts);
     assert.equal(selector.children, originalOptions);
     api.accumulateProfileTraces(hosts, [sample(['unknown'], 'Real', '0', ['5'], ''),
         sample(['hostile'], 'Real', '0', ['6'], '<img src=x onerror=alert(1)>')]);
     api.updateFlameHostSelector(selector, hosts);
-    assert.equal(selector.value, ':node-a');
-    assert.ok(selector.children.some(option => option.value === ':' && option.textContent === '(unknown node)'));
+    assert.equal(selector.value, ':' + producer('node-a'));
+    assert.ok(selector.children.some(option => option.value === ':' + producer('') && option.textContent === '(unknown node)'));
     assert.ok(selector.children.some(option => option.textContent === '<img src=x onerror=alert(1)>'));
     console.log('PASS all-node and per-node trees agree; selector preserves selection and treats host names as text');
+
+    const sameHost = api.freshFlameGraphState();
+    api.accumulateProfileTraces(sameHost, [sample(['shared', 'root'], 'CPU', '0', ['1', '2'], 'node', 'query-1'),
+        sample(['shared', 'root'], 'CPU', '0', ['1', '2'], 'node', 'query-2'),
+        sample(['only-second', 'root'], 'CPU', '0', ['3', '2'], 'node', 'query-2'),
+        sample([''], 'CPU', '0', ['18446744073709551615'], 'node', 'query-1'),
+        sample([''], 'CPU', '0', ['18446744073709551615'], 'node', 'query-2'),
+        sample(['<b>x</b>'], 'Real', '0', ['7'], 'node', '<img src=x onerror=alert(1)>')]);
+    assert.equal(sameHost.hosts.size, 3);
+    const first = api.selectFlameTree(sameHost, 'CPU', producer('node', 'query-1'));
+    const second = api.selectFlameTree(sameHost, 'CPU', producer('node', 'query-2'));
+    assert.notEqual(first, second);
+    assert.equal(first.root.value, 2);
+    assert.equal(second.root.value, 3);
+    assert.equal(first.root.children.get('sroot').children.has('sonly-second'), false);
+    assert.equal(second.root.children.get('sroot').children.get('sonly-second').value, 1);
+    /// The same unresolved address from two producers on one host stays two frames, in the all-node
+    /// tree as well as in each producer's own tree.
+    const addressFrames = tree => [...tree.root.children.values()].filter(node => node.name === 'node: 18446744073709551615');
+    assert.equal(addressFrames(api.selectFlameTree(sameHost, 'CPU')).length, 2);
+    assert.ok(addressFrames(api.selectFlameTree(sameHost, 'CPU')).every(node => node.value === 1));
+    assert.equal(addressFrames(first).length, 1);
+    assert.equal(addressFrames(second).length, 1);
+    const sameHostSelector = new Element();
+    api.updateFlameHostSelector(sameHostSelector, sameHost);
+    assert.deepEqual(sameHostSelector.children.map(option => option.textContent),
+        ['All nodes', 'node (<img src=x onerror=alert(1)>)', 'node (query-1)', 'node (query-2)']);
+    assert.deepEqual(sameHostSelector.children.map(option => option.value), ['', ':' + producer('node', '<img src=x onerror=alert(1)>'),
+        ':' + producer('node', 'query-1'), ':' + producer('node', 'query-2')]);
+    console.log('PASS producers sharing a host name stay separate by query_id in the selector, trees, and unresolved addresses');
 
     const losses = api.freshFlameGraphState();
     const lossHandler = api.makeEventStreamHandler({ appendProfileTraces: batch => api.accumulateProfileTraces(losses, batch) });
@@ -313,7 +345,7 @@ async function main()
     assert.equal(losses.hosts.size, 0);
     assert.equal(losses.types.size, 0);
     api.accumulateProfileTraces(losses, [sample(['cpu'], 'CPU', '0', ['1'], 'node-a'), sample(Array(257).fill('deep'))]);
-    const lossStatus = api.flameGraphStatus(losses, 'CPU', 'node-a', true);
+    const lossStatus = api.flameGraphStatus(losses, 'CPU', producer('node-a'), true);
     assert.ok(lossStatus.includes('9,007,199,254,740,995 samples lost in server queues (all nodes)'));
     assert.ok(lossStatus.includes('additional losses are unknown'));
     assert.ok(lossStatus.includes('1 samples omitted at the browser memory limit'));
@@ -354,11 +386,11 @@ async function main()
     api.accumulateProfileTraces(bounded, Array.from({ length: api.MAX_FLAME_NODES + 5 }, (_, i) => sample(['frame-' + i])));
     assert.equal(bounded.nodes, api.MAX_FLAME_NODES);
     assert.equal(bounded.dropped, api.MAX_FLAME_NODES + 5 - bounded.types.get('CPU').samples);
-    assert.equal(api.selectFlameTree(bounded, 'CPU', 'host').root.value, bounded.types.get('CPU').root.value);
+    assert.equal(api.selectFlameTree(bounded, 'CPU', producer('host')).root.value, bounded.types.get('CPU').root.value);
     const beforeRejectedHost = bounded.types.get('CPU').root.value;
     api.accumulateProfileTraces(bounded, [sample(['frame-0'], 'CPU', '0', ['1'], 'late-host')]);
     assert.equal(bounded.types.get('CPU').root.value, beforeRejectedHost);
-    assert.equal(bounded.hosts.has('late-host'), false);
+    assert.equal(bounded.hosts.has(producer('late-host')), false);
     api.accumulateProfileTraces(bounded, [sample(['frame-0'])]);
     assert.equal(bounded.types.get('CPU').root.children.get('sframe-0').value, 2);
     const labels = api.freshFlameGraphState();
@@ -376,12 +408,17 @@ async function main()
     assert.equal(manyHosts.types.get('CPU').samples, api.MAX_FLAME_HOSTS);
     assert.equal(manyHosts.dropped, 3);
     api.accumulateProfileTraces(manyHosts, [sample(['shared'], 'CPU', '0', ['1'], 'node-0')]);
-    assert.equal(api.selectFlameTree(manyHosts, 'CPU', 'node-0').samples, 2);
+    assert.equal(api.selectFlameTree(manyHosts, 'CPU', producer('node-0')).samples, 2);
     const hugeHost = api.freshFlameGraphState();
     api.accumulateProfileTraces(hugeHost, [sample(['shared'], 'CPU', '0', ['1'], 'h'.repeat(api.MAX_FLAME_LABEL_CHARS))]);
     assert.equal(hugeHost.hosts.size, 0);
     assert.equal(hugeHost.types.size, 0);
     assert.equal(hugeHost.dropped, 1);
+    const hugeQueryId = api.freshFlameGraphState();
+    api.accumulateProfileTraces(hugeQueryId, [sample(['shared'], 'CPU', '0', ['1'], 'h', 'q'.repeat(api.MAX_FLAME_LABEL_CHARS))]);
+    assert.equal(hugeQueryId.hosts.size, 0);
+    assert.equal(hugeQueryId.types.size, 0);
+    assert.equal(hugeQueryId.dropped, 1);
     console.log('PASS host count and host text share bounded storage without dropping established hosts');
 
     const large = api.freshFlameGraphState();
@@ -408,7 +445,7 @@ async function main()
     result._flame_data = hosts;
     result._flameType.value = 'CPU';
     result._showFlameGraph();
-    result._flameHost.value = ':node-b';
+    result._flameHost.value = ':' + producer('node-b');
     result._showFlameGraph();
     assert.equal(result._flameStatus.textContent, '1 samples received.');
     result._flameType.value = 'MemorySample';

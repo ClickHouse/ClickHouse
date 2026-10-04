@@ -9195,9 +9195,18 @@ function freshFlameTree()
     return { root, zoom: root, maxDepth: 0, samples: 0 };
 }
 
-function selectFlameTree(state, type, host = null)
+/// Per-node data belongs to one producing server. Several servers can share a host name (instances
+/// on one machine, nested `remote` hops), so a producer is identified by its host name together with
+/// the `query_id` it ran the query under. The JSON array keeps the key free of separator collisions.
+function flameProducerKey(host, query_id)
 {
-    return (host === null ? state.types : state.hosts.get(host)?.types)?.get(type);
+    return JSON.stringify([host, query_id]);
+}
+
+/// `producer` is a `flameProducerKey`, or null for the tree of all nodes.
+function selectFlameTree(state, type, producer = null)
+{
+    return (producer === null ? state.types : state.hosts.get(producer)?.types)?.get(type);
 }
 
 function updateFlameHostSelector(select, state)
@@ -9213,8 +9222,17 @@ function updateFlameHostSelector(select, state)
         select.appendChild(item);
     };
     option('', 'All nodes');
-    for (const host of [...state.hosts.keys()].sort())
-        option(':' + host, host || '(unknown node)');
+    const producers = [...state.hosts.entries()].sort(([, a], [, b]) =>
+        a.host < b.host ? -1 : a.host > b.host ? 1 : a.queryId < b.queryId ? -1 : a.queryId > b.queryId ? 1 : 0);
+    const host_counts = new Map();
+    for (const [, producer] of producers)
+        host_counts.set(producer.host, (host_counts.get(producer.host) ?? 0) + 1);
+    /// The host name labels a node; producers sharing one also show their `query_id` to tell them apart.
+    for (const [key, producer] of producers)
+    {
+        const host = producer.host || '(unknown node)';
+        option(':' + key, host_counts.get(producer.host) > 1 ? `${host} (${producer.queryId})` : host);
+    }
     select.value = previous && state.hosts.has(previous.slice(1)) ? previous : '';
     select._flameState = state;
     select._flameHostCount = state.hosts.size;
@@ -9276,7 +9294,9 @@ function accumulateProfileTraces(state, traces)
         if (!Number.isFinite(weight) || weight <= 0 || !Array.isArray(sample.trace) || sample.trace.length === 0) continue;
         if (sample.trace.length > MAX_FLAME_DEPTH) { ++state.dropped; continue; }
         const host = typeof sample.host_name === 'string' ? sample.host_name : '';
-        let hostState = state.hosts.get(host);
+        const query_id = typeof sample.query_id === 'string' ? sample.query_id : '';
+        const producer = flameProducerKey(host, query_id);
+        let hostState = state.hosts.get(producer);
         if (!hostState && state.hosts.size >= MAX_FLAME_HOSTS) { ++state.dropped; continue; }
         const frames = [];
         for (let i = sample.trace.length - 1; i >= 0; --i)
@@ -9287,12 +9307,12 @@ function accumulateProfileTraces(state, traces)
             const address = String(sample.trace[i]);
             frames.push(typeof symbol === 'string' && symbol.length
                 ? { key: 's' + symbol, name: symbol }
-                : { key: 'a' + JSON.stringify([host, address]), name: `${host || '(unknown node)'}: ${address}` });
+                : { key: 'a' + JSON.stringify([host, query_id, address]), name: `${host || '(unknown node)'}: ${address}` });
         }
         const allCost = flameStackCost(state.types.get(type), frames);
         const hostCost = flameStackCost(hostState?.types.get(type), frames);
         const new_nodes = allCost.nodes + hostCost.nodes;
-        const new_chars = allCost.chars + hostCost.chars + (hostState ? 0 : host.length);
+        const new_chars = allCost.chars + hostCost.chars + (hostState ? 0 : host.length + query_id.length);
         if (state.nodes + new_nodes > MAX_FLAME_NODES || state.labelChars + new_chars > MAX_FLAME_LABEL_CHARS)
         {
             ++state.dropped;
@@ -9302,8 +9322,8 @@ function accumulateProfileTraces(state, traces)
         state.labelChars += new_chars;
         if (!hostState)
         {
-            hostState = { types: new Map() };
-            state.hosts.set(host, hostState);
+            hostState = { host, queryId: query_id, types: new Map() };
+            state.hosts.set(producer, hostState);
         }
         for (const types of [state.types, hostState.types])
         {

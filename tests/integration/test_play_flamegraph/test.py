@@ -63,3 +63,15 @@ def test_play_flamegraph(started_cluster, nodejs_container):
     err = (stderr or b"").decode()
     assert code == 0, "harness failed:\n{}\n{}".format(out, err)
     assert "All scenarios passed" in out
+    # Pin the key scenarios by their `PASS` prefix, so a harness edit that silently
+    # drops one cannot pass as "all scenarios passed".
+    for line in (
+        "PASS request settings respect SQL opt-outs",
+        "PASS Flame activates only after local preflight accepts a profiling request",
+        "PASS all-node and per-node trees agree; selector preserves selection",
+        "PASS producers sharing a host name stay separate by query_id",
+        "PASS shared node, symbol, and depth budgets",
+        "PASS host count and host text share bounded storage",
+        "PASS result controls select node/type and clearing resets",
+    ):
+        assert line in out, "scenario '{}' did not run:\n{}".format(line, out)
