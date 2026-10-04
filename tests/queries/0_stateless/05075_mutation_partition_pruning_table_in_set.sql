@@ -1,4 +1,7 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-replicated-database
+-- no-replicated-database: the mutations must stay pending, but `SYSTEM STOP REPLICATION QUEUES` stops
+-- only the local replica, and executing `DELETE WHERE is_hit` on another one hits the `Not-ready Set`
+-- exception of https://github.com/ClickHouse/ClickHouse/issues/117276
 -- https://github.com/ClickHouse/ClickHouse/issues/117113
 -- Mutation partition pruning must leave a predicate with a deferred `IN` set unpruned: the pruning
 -- pass and the asynchronous mutation execution evaluate the set independently, so rows in a partition
