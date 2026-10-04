@@ -8,14 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}/paimon_path_traversal"
 rm -rf "${BASE_DIR}"
 mkdir -p "${BASE_DIR}/outside"
-echo "SECRET_OUTSIDE_TABLE" > "${BASE_DIR}/outside/secret.txt"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION file('${BASE_DIR}/outside/secret.parquet', 'Parquet', 'data String') VALUES ('SECRET_OUTSIDE_TABLE')"
 
 # $1 - table name, $2 - manifest file name in the manifest list, $3 - data file name in the manifest
 create_table()
 {
     local table_dir="${BASE_DIR}/$1"
     mkdir -p "${table_dir}/schema" "${table_dir}/snapshot" "${table_dir}/manifest" "${table_dir}/bucket-0"
-    echo "INSIDE_TABLE" > "${table_dir}/bucket-0/data.txt"
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION file('${table_dir}/bucket-0/data.parquet', 'Parquet', 'data String') VALUES ('INSIDE_TABLE')"
     echo '{"version":3,"id":0,"highestFieldId":0,"partitionKeys":[],"primaryKeys":[],"options":{},"timeMillis":0,"fields":[{"id":0,"name":"data","type":"STRING NOT NULL"}]}' > "${table_dir}/schema/schema-0"
     echo -n '1' > "${table_dir}/snapshot/LATEST"
     echo '{"id":1,"schemaId":0,"baseManifestList":"manifest-list-1","deltaManifestList":"manifest-list-1","commitUser":"test","commitIdentifier":0,"commitKind":"APPEND","timeMillis":0}' > "${table_dir}/snapshot/snapshot-1"
@@ -41,23 +41,23 @@ create_table()
 
 read_table()
 {
-    ${CLICKHOUSE_CLIENT} -q "SELECT data FROM paimonLocal('${BASE_DIR}/$1', 'RawBLOB', 'data String')" 2>&1 \
+    ${CLICKHOUSE_CLIENT} -q "SELECT data FROM paimonLocal('${BASE_DIR}/$1', 'Parquet', 'data String')" 2>&1 \
         | grep -o -m1 -E "INSIDE_TABLE|SECRET_OUTSIDE_TABLE|PATH_ACCESS_DENIED"
 }
 
-create_table valid 'manifest-1' 'data.txt'
+create_table valid 'manifest-1' 'data.parquet'
 read_table valid
 
-create_table data_file_dotdot 'manifest-1' '../../outside/secret.txt'
+create_table data_file_dotdot 'manifest-1' '../../outside/secret.parquet'
 read_table data_file_dotdot
 
-create_table data_file_absolute 'manifest-1' "${BASE_DIR}/outside/secret.txt"
+create_table data_file_absolute 'manifest-1' "${BASE_DIR}/outside/secret.parquet"
 read_table data_file_absolute
 
-create_table manifest_dotdot '../../valid/manifest/manifest-1' 'data.txt'
+create_table manifest_dotdot '../../valid/manifest/manifest-1' 'data.parquet'
 read_table manifest_dotdot
 
-create_table manifest_absolute "${BASE_DIR}/valid/manifest/manifest-1" 'data.txt'
+create_table manifest_absolute "${BASE_DIR}/valid/manifest/manifest-1" 'data.parquet'
 read_table manifest_absolute
 
 rm -rf "${BASE_DIR}"
