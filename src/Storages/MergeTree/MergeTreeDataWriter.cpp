@@ -95,6 +95,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
@@ -1104,11 +1105,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// With fsync_after_insert_each_part = 0 the part is not synced as it is written: the INSERT
+    /// syncs all the parts it wrote in one batch when it finishes, see
+    /// MergeTreeData::fsyncPartsAfterInsert(). That needs a disk which can sync a file after it
+    /// was finalized; on other disks the part is still synced as it is written.
+    const bool fsync_after_insert = (*data_settings)[MergeTreeSetting::fsync_after_insert];
+    const bool sync_this_part = fsync_after_insert
+        && ((*data_settings)[MergeTreeSetting::fsync_after_insert_each_part] || !data_part_storage->supportsSyncFiles());
+    temp_part->needs_fsync_on_finish = fsync_after_insert && !sync_this_part;
+
     /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
     /// records its checksum in `gathered_data.checksums` (so it is covered by
     /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
     /// optionally fsyncs the file inline - before `checksums.txt` is written,
     /// so a crash cannot leave the checksum durable while the SST is not.
+    /// In the batched mode the SST is synced at the end of the INSERT together
+    /// with the other files of the part, before the INSERT is acknowledged.
     if (metadata_snapshot->hasUniqueKey())
     {
         SSTIndexWriter::writeDenseIndexOnInsert(
@@ -1118,7 +1130,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
             gathered_data.checksums,
-            (*data_settings)[MergeTreeSetting::fsync_after_insert],
+            sync_this_part,
             context);
     }
 
@@ -1169,7 +1181,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        sync_this_part);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});

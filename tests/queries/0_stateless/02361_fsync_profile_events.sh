@@ -15,6 +15,9 @@ $CLICKHOUSE_CLIENT -m -q "
     settings
         min_rows_for_wide_part = 2,
         fsync_after_insert = 1,
+        -- This test counts the fsyncs of one part done by the write path itself, so it pins the
+        -- per-part mode; the batched end-of-query mode is covered by 05052_fsync_after_insert_batched.
+        fsync_after_insert_each_part = 1,
         fsync_part_directory = 1,
         ratio_of_defaults_for_sparse_serialization = 1,
         serialization_info_version = 'basic',

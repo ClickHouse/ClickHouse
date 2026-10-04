@@ -47,6 +47,12 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    /// The part was not synced when it was finalized, and the INSERT that wrote it has to sync it
+    /// when it finishes, see MergeTreeData::fsyncPartsAfterInsert. Decided from the same snapshot of
+    /// the table settings as the inline sync, so every part gets exactly one of the two even if
+    /// `fsync_after_insert` or `fsync_after_insert_each_part` is changed while the INSERT is running.
+    bool needs_fsync_on_finish = false;
+
     void cancel();
     void finalize();
     void prewarmCaches();
