@@ -580,39 +580,67 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         ThreadFromThreadPool * idle_thread_for_job = nullptr;
         if (job_occupies_thread && !adding_new_thread)
         {
-            idle_thread_for_job = popNewestIdleThreadNoLock();
-
-            /// The counters may say that there are free workers while none of them is in the idle stack:
-            /// a worker that was just woken by another `schedule` (and may find no job for itself), or a
-            /// worker that has just finished its job, is not linked into the stack until it reacquires
-            /// `mutex`. Nothing guarantees that such a worker will ever take our job, so start a fresh
-            /// worker for it instead, as long as the pool is below `max_threads`. A worker that was started
-            /// outside the critical section but not accepted above (because of `max_free_threads`) is used
-            /// for that if there is one.
-            if (!idle_thread_for_job && !new_thread && threads.size() < max_threads)
+            while (true)
             {
-                int64_t current_capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-                while (current_capacity > 0
-                    && !remaining_pool_capacity.compare_exchange_weak(current_capacity, current_capacity - 1, std::memory_order_relaxed))
+                idle_thread_for_job = popNewestIdleThreadNoLock();
+                if (idle_thread_for_job)
+                    break;
+
+                /// The counters may say that there are free workers while none of them is in the idle stack:
+                /// a worker that was just woken by another `schedule` (and may find no job for itself), or a
+                /// worker that has just finished its job, is not linked into the stack until it reacquires
+                /// `mutex`. Nothing guarantees that such a worker will ever take our job, so start a fresh
+                /// worker for it instead, as long as the pool is below `max_threads`. A worker that was started
+                /// outside the critical section but not accepted above (because of `max_free_threads`) is used
+                /// for that if there is one.
+                if (!new_thread && threads.size() < max_threads)
                 {
+                    int64_t current_capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+                    while (current_capacity > 0
+                        && !remaining_pool_capacity.compare_exchange_weak(current_capacity, current_capacity - 1, std::memory_order_relaxed))
+                    {
+                    }
+
+                    if (current_capacity > 0)
+                    {
+                        try
+                        {
+                            new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                        }
+                        catch (...)
+                        {
+                            remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                            return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
+                        }
+                    }
                 }
 
-                if (current_capacity > 0)
+                if (new_thread && threads.size() < max_threads)
                 {
-                    try
-                    {
-                        new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                    }
-                    catch (...)
-                    {
-                        remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                        return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
-                    }
+                    adding_new_thread = true;
+                    break;
                 }
+
+                /// The pool is at `max_threads` and the idle stack is empty. Some of the workers may be
+                /// neither running a job nor waiting in the idle stack: a worker that was woken from the
+                /// stack (by another `schedule`, or by `setMaxFreeThreads` to exit as an excess one) has
+                /// not reacquired `mutex` yet. Each of them is about to link itself back into the idle
+                /// stack, take a queued job, or leave the pool, so wait for that instead of reporting the
+                /// pool as full: none of them is busy. Only the workers that run a job (or have one handed
+                /// to them) are busy, and those are the jobs that are scheduled but no longer queued.
+                const size_t workers_with_job = scheduled_jobs - jobs.size();
+                if (finished || threads.size() <= workers_with_job)
+                    break;
+
+                /// Do not keep a thread that cannot be added spinning in `Preparing` while we wait.
+                new_thread.reset();
+                ++schedulers_waiting_for_worker;
+                worker_settled.wait(lock);
+                --schedulers_waiting_for_worker;
             }
 
-            if (!idle_thread_for_job && new_thread && threads.size() < max_threads)
-                adding_new_thread = true;
+            if (finished)
+                return on_error("finished");
 
             if (!idle_thread_for_job && !adding_new_thread)
             {
@@ -873,6 +901,7 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
     job_finished.notify_all();
+    worker_settled.notify_all();
 }
 
 template <typename Thread>
@@ -983,6 +1012,13 @@ typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::
     if (thread)
         removeIdleThreadNoLock(thread);
     return thread;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::notifyWorkerSettledNoLock()
+{
+    if (schedulers_waiting_for_worker)
+        worker_settled.notify_all();
 }
 
 template <typename Thread>
@@ -1236,6 +1272,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
+                parent_pool.notifyWorkerSettledNoLock();
                 cv.wait(lock, [this]
                 {
                     return idle_wakeup_flag
@@ -1265,6 +1302,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 //  - either this thread is not needed anymore due to max_free_threads excess;
                 //  - or shutdown happened AND all jobs are already handled.
 
+                /// The waiting scheduler wakes up only after `mutex` is released, when this worker has
+                /// already left the pool. `this` is destroyed by `removeSelfFromPoolNoPoolLock`.
+                parent_pool.notifyWorkerSettledNoLock();
+
                 if (parent_pool.threads_remove_themselves)
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
 
@@ -1275,6 +1316,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
             job_data = std::move(const_cast<JobWithPriority &>(parent_pool.jobs.top()));
             parent_pool.jobs.pop();
+            parent_pool.notifyWorkerSettledNoLock();
 
             ProfileEvents::increment(
                 std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,

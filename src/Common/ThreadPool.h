@@ -227,6 +227,14 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
 
+    /// Notified when a worker that was neither running a job nor waiting in the idle stack settles:
+    /// links itself into the idle stack, takes a queued job, or leaves the pool. Only
+    /// `scheduleThreadOrThrow` waits for it (see `scheduleImpl`), and only when it found no idle worker
+    /// while the pool is at `max_threads`; `schedulers_waiting_for_worker` counts such waits so that the
+    /// workers do not notify it for nothing.
+    std::condition_variable worker_settled;
+    size_t schedulers_waiting_for_worker = 0;
+
     Metric metric_threads;
     Metric metric_active_threads;
     Metric metric_scheduled_jobs;
@@ -293,6 +301,9 @@ private:
     ThreadFromThreadPool * popNewestIdleThreadNoLock();
     ThreadFromThreadPool * popOldestIdleThreadNoLock();
     void wakeIdleThreadNoLock(ThreadFromThreadPool * thread);
+
+    /// Wakes the schedulers waiting on `worker_settled`, if any. Must be called with mutex held.
+    void notifyWorkerSettledNoLock();
 
     /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
     /// Must be called with mutex held.

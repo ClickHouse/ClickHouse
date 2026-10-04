@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <base/scope_guard.h>
 
 #include <gtest/gtest.h>
 
@@ -33,6 +34,14 @@ TEST(ThreadPool, GlobalFullLargeQueue)
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
 
     static constexpr size_t capacity = 5;
+
+    /// Restore the global pool even if the test fails, otherwise the following test cases would run
+    /// with a global pool of a few threads and fail (or hang) for no reason of their own.
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
 
     global_pool.setMaxThreads(capacity);
     global_pool.setMaxFreeThreads(1);
@@ -103,9 +112,6 @@ TEST(ThreadPool, GlobalFullLargeQueue)
             /// queued worker run and exit, and skip the rest of the test.
             pool.reset();
             another_pool.reset();
-            global_pool.setMaxThreads(10000);
-            global_pool.setMaxFreeThreads(1000);
-            global_pool.setQueueSize(10000);
             return;
         }
 
@@ -125,8 +131,4 @@ TEST(ThreadPool, GlobalFullLargeQueue)
         pool.wait();
     }
     EXPECT_EQ(counter, capacity);
-
-    global_pool.setMaxThreads(10000);
-    global_pool.setMaxFreeThreads(1000);
-    global_pool.setQueueSize(10000);
 }
