@@ -76,5 +76,23 @@ Query: SELECT `s`, `n` FROM `tbl` WHERE `n` IN (3)
 f = E
 7
 Query: SELECT `s`, `f` FROM `tbl` WHERE `f` = 3
+(s, n) < Nullable((E, 4))
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 4)
+(s, n) < Dynamic((E, 4))
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 4)
+(s, n) < Variant((E, 4))
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 4)
+(s, n) IN (Nullable((E, 3)))
+7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) IN (('7', 3))
+tuple(s) IN (tuple(E))
+3
+Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('3')
+tuple(s) IN (tuple(E), tuple(E2))
+3
+Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('3', '4')
 (s, n) < (E, x)
 TYPE_MISMATCH

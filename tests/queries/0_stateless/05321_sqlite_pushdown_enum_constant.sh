@@ -36,6 +36,7 @@ E2="CAST('3', 'Enum8(\\'3\\' = 4)')"
 VE="CAST(CAST('7', 'Enum8(\\'7\\' = 3, \\'3\\' = 4)') AS Variant(Enum8('7' = 3, '3' = 4), Array(UInt8)))"
 VE2="CAST(CAST('3', 'Enum8(\\'7\\' = 3, \\'3\\' = 4)') AS Variant(Enum8('7' = 3, '3' = 4), Array(UInt8)))"
 VS="Variant(String, Array(UInt8))"
+VT="CAST(CAST(($E, 4), 'Tuple(Enum8(\\'7\\' = 3), UInt8)') AS Variant(Tuple(Enum8('7' = 3), UInt8), String))"
 
 # Prints the rows, then the query sent to SQLite.
 function check()
@@ -72,6 +73,12 @@ check '(s, f) < (E, toDecimal64(4, 1))' "(s, f) < ($E, toDecimal64(4, 1))"
 check 'n = E' "n = $E"
 check 'n IN (E)' "n IN ($E)"
 check 'f = E' "f = $E"
+check '(s, n) < Nullable((E, 4))' "(s, n) < toNullable(($E, 4))"
+check '(s, n) < Dynamic((E, 4))' "(s, n) < CAST(($E, 4) AS Dynamic)"
+check '(s, n) < Variant((E, 4))' "(s, n) < $VT"
+check '(s, n) IN (Nullable((E, 3)))' "(s, n) IN (toNullable(($E, 3)))"
+check 'tuple(s) IN (tuple(E))' "tuple(s) IN (tuple($E))"
+check 'tuple(s) IN (tuple(E), tuple(E2))' "tuple(s) IN (tuple($E), tuple($E2))"
 
 echo '(s, n) < (E, x)'
 ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE (s, n) < ($E, 'x')" 2>&1 | grep -o 'TYPE_MISMATCH' | head -1

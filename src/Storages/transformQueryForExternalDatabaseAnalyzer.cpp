@@ -48,51 +48,54 @@ namespace ErrorCodes
 namespace
 {
 
-/// Whether the value at `row` is an `Enum` value, also as the non-NULL value of a `Nullable`, the active alternative of
-/// a `Variant` or `Dynamic`, or (with `search_tuples`) inside a `Tuple`. `Array` and `Map` are not searched.
-bool holdsEnumValue(const IColumn & column, size_t row, const DataTypePtr & type, bool search_tuples)
+/// The value of the size-1 `column` seen through `Nullable` and the active alternative of a `Variant` or `Dynamic`.
+/// Empty for NULL.
+std::optional<ColumnWithTypeAndName> unwrapCarrier(const ColumnPtr & column, const DataTypePtr & type)
 {
-    if (isEnum(type))
-        return true;
+    if (column->isNullAt(0))
+        return std::nullopt;
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
-        return !nullable_column.isNullAt(row)
-            && holdsEnumValue(nullable_column.getNestedColumn(), row, nullable_type->getNestedType(), search_tuples);
-    }
+        return unwrapCarrier(assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr(), nullable_type->getNestedType());
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && search_tuples)
-    {
-        const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
-        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-            if (holdsEnumValue(tuple_column.getColumn(i), row, tuple_type->getElement(i), search_tuples))
-                return true;
-        return false;
-    }
-
+    DataTypePtr active_type;
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
-    {
-        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-        auto discriminator = variant_column.globalDiscriminatorAt(row);
-        return discriminator != ColumnVariant::NULL_DISCRIMINATOR
-            && holdsEnumValue(variant_column.getVariantByGlobalDiscriminator(discriminator), variant_column.offsetAt(row),
-                              variant_type->getVariant(discriminator), search_tuples);
-    }
+        active_type = variant_type->getVariant(assert_cast<const ColumnVariant &>(*column).globalDiscriminatorAt(0));
+    else if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(column.get()))
+        active_type = dynamic_column->getTypeAt(0);
+    else
+        return ColumnWithTypeAndName{column, type, ""};
 
-    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(&column))
-    {
-        auto active_type = dynamic_column->getTypeAt(row);
-        return active_type && isEnum(active_type);
-    }
+    auto value = convertColumnToTypeOrNull(*column, type, active_type);
+    if (!value)
+        return std::nullopt;
+    return unwrapCarrier(value, active_type);
+}
 
+/// Whether the size-1 `column` holds an `Enum` value, also inside a `Tuple`. `Array` and `Map` are not searched.
+bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
+{
+    auto value = unwrapCarrier(column, type);
+    if (!value)
+        return false;
+
+    if (isEnum(value->type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(value->type.get()))
+    {
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*value->column);
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+            if (holdsEnumValue(tuple_column.getColumnPtr(i), tuple_type->getElement(i)))
+                return true;
+    }
     return false;
 }
 
-bool isStringOrNativeNumber(const DataTypePtr & type)
+bool isStringOrNumber(const DataTypePtr & type)
 {
     auto value_type = removeLowCardinalityAndNullable(type);
-    return isStringOrFixedString(value_type) || isNativeNumber(value_type);
+    return isStringOrFixedString(value_type) || isNumber(value_type);
 }
 
 /// Rewrites each `Enum` leaf of the size-1 constant `column` the way a comparison with `operand_type` reads it: as
@@ -100,15 +103,16 @@ bool isStringOrNativeNumber(const DataTypePtr & type)
 /// another type.
 std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
 {
-    if (!holdsEnumValue(*column, 0, type, /*search_tuples=*/ true))
+    if (!holdsEnumValue(column, type))
         return ColumnWithTypeAndName{column, type, ""};
 
+    auto value = unwrapCarrier(column, type);
     auto operand_value_type = removeLowCardinalityAndNullable(operand_type);
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(value->type.get());
     const auto * operand_tuple_type = typeid_cast<const DataTypeTuple *>(operand_value_type.get());
     if (tuple_type && operand_tuple_type && tuple_type->getElements().size() == operand_tuple_type->getElements().size())
     {
-        const auto & tuple_column = assert_cast<const ColumnTuple &>(*column);
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*value->column);
         Columns columns;
         DataTypes types;
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
@@ -125,21 +129,13 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
         return ColumnWithTypeAndName{ColumnTuple::create(std::move(columns)), result_type, ""};
     }
 
-    if (!holdsEnumValue(*column, 0, type, /*search_tuples=*/ false) || !isStringOrNativeNumber(operand_value_type))
+    if (!isEnum(value->type) || !isStringOrNumber(operand_value_type))
         return {};
-
-    ColumnPtr value = column;
-    DataTypePtr value_type = type;
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        value = assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
-        value_type = nullable_type->getNestedType();
-    }
 
     DataTypePtr result_type = isStringOrFixedString(operand_value_type)
         ? DataTypePtr(std::make_shared<DataTypeString>())
         : DataTypePtr(std::make_shared<DataTypeInt64>());
-    auto result = convertColumnToTypeOrNull(*value, value_type, result_type);
+    auto result = convertColumnToTypeOrNull(*value->column, value->type, result_type);
     if (!result)
         return {};
     return ColumnWithTypeAndName{result, result_type, ""};
@@ -209,11 +205,8 @@ private:
             return nullptr;
 
         const auto & column = constant_node->getColumn()->getDataColumnPtr();
-        if (!holdsEnumValue(*column, 0, constant_node->getResultType(), /*search_tuples=*/ true))
-            return nullptr;
-
         auto rendered = renderEnumLeaves(column, constant_node->getResultType(), operand->getResultType());
-        if (!rendered)
+        if (!rendered || rendered->column == column)
             return nullptr;
         return std::make_shared<ConstantNode>(ColumnConst::create(rendered->column, 1), rendered->type);
     }
@@ -222,16 +215,18 @@ private:
     QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
-        if (!constant_node || !holdsEnumValue(*constant_node->getColumn()->getDataColumnPtr(), 0, constant_node->getResultType(), /*search_tuples=*/ true))
+        if (!constant_node || !holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
             return nullptr;
 
-        /// Keys unpacked as `getSetElementsForConstantValue` does. A `FixedString` key gets the unpadded name.
+        /// Keys as `getSetElementsForConstantValue` sees them: a one-element tuple stays packed. A `FixedString` key gets
+        /// the unpadded name.
         auto lhs_type = lhs->getResultType();
         const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_type.get());
-        DataTypes key_types = lhs_tuple_type && lhs_tuple_type->getElements().size() > 1 ? lhs_tuple_type->getElements() : DataTypes{lhs_type};
+        bool packed_key = lhs_tuple_type && lhs_tuple_type->getElements().size() == 1;
+        DataTypes key_types = lhs_tuple_type && !lhs_tuple_type->getElements().empty() ? lhs_tuple_type->getElements() : DataTypes{lhs_type};
         for (auto & key_type : key_types)
         {
-            if (!isStringOrNativeNumber(key_type))
+            if (!isStringOrNumber(key_type))
                 return nullptr;
             if (isFixedString(removeLowCardinalityAndNullable(key_type)))
             {
@@ -239,7 +234,7 @@ private:
                 key_type = removeLowCardinality(key_type)->isNullable() ? makeNullable(string_type) : string_type;
             }
         }
-        DataTypePtr set_lhs_type = key_types.size() > 1 ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
+        DataTypePtr set_lhs_type = lhs_tuple_type ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
 
         auto set = getSetElementsForConstantValue(set_lhs_type, constant_node->getColumn(), constant_node->getResultType(), set_params);
         if (set.empty() || set.front().column->empty())
@@ -250,7 +245,8 @@ private:
         {
             if (set.size() == 1)
             {
-                members.push_back((*set.front().column)[row]);
+                auto member = (*set.front().column)[row];
+                members.push_back(packed_key ? member.safeGet<Tuple>()[0] : std::move(member));
                 continue;
             }
             Tuple key;
