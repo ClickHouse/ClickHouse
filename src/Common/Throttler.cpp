@@ -4,6 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/SilkFiberScheduler.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -70,6 +71,8 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
+    /// A real (non-fiber) sleep uses no CPU: park the CPU lease to free the slot for its duration.
+    CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
 

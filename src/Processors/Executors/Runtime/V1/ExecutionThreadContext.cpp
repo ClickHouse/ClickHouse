@@ -2,6 +2,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -42,12 +43,29 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
 
+    /// If a wake already arrived (or execution finished) we are not going to block, so we must not
+    /// park the CPU lease: parking and immediately unparking would churn the slot without sleeping.
+    if (finished || wake_flag)
+    {
+        wake_flag = false;
+        return;
+    }
+
+    /// About to block: park the CPU lease (context mutex released) so a sleeping worker frees its slot.
+    lock.unlock();
+    CPULeaseParkGuard park_guard;
+    lock.lock();
+
     condvar.wait(lock, [&]
     {
         return finished || wake_flag;
     });
 
     wake_flag = false;
+
+    /// Release the context mutex before park_guard's destructor unparks, so the unpark also runs
+    /// with no context mutex held.
+    lock.unlock();
 }
 
 void ExecutionThreadContext::wakeUp()

@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
@@ -301,7 +302,11 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         /// readers are potentially long, and refinement of a non-prefetched task may block.
         if (thread_task->isValidReadersFuture())
         {
-            thread_task->readers_future->wait();
+            {
+                /// Non-CPU wait for the prefetch job (outside the pool mutex): park the CPU lease.
+                CPULeaseParkGuard cpu_park;
+                thread_task->readers_future->wait();
+            }
             if (thread_task->pruned_by_refiner)
                 continue;
         }
