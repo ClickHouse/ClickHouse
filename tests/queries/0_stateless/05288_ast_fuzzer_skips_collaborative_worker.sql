@@ -62,10 +62,6 @@ SELECT 'view_before', count()
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND has(databases, currentDatabase())
   AND has(tables, currentDatabase() || '.t05288_view');
-INSERT INTO t05288_events
-SELECT 'plain_before', count()
-FROM system.query_log
-WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control');
 -- A fuzzed copy runs internally, with an initiating row of its own naming the arm's source.
 INSERT INTO t05288_events
 SELECT 'worker_fuzz_copies_before', count()
@@ -152,7 +148,17 @@ SELECT 'source_rows_written',
           AND has(tables, currentDatabase() || '.t05288_worker_src'));
 
 -- Control: an ordinary statement produces no worker queries. It reads no table, because the fuzzer can
--- rewrite a table read into a distributed one; the alias makes its rows selectable.
+-- rewrite a table read into a distributed one; the alias makes its rows selectable. The fuzzer's corpus is
+-- server-wide, so fuzzed copies of other statements can carry the alias too: only workers of queries this
+-- database initiates around this statement are counted.
+INSERT INTO t05288_events
+SELECT 'plain_before', count()
+FROM system.query_log
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control')
+  AND initial_query_id IN (SELECT query_id FROM system.query_log
+                           WHERE event_date >= yesterday() AND is_initial_query = 1
+                             AND current_database = currentDatabase());
+
 SELECT 1 AS t05288_plain_control
 SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1 FORMAT Null;
 
@@ -160,7 +166,10 @@ SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05288_events
 SELECT 'plain_after', count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control');
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND startsWith(query, 'SELECT 1 AS t05288_plain_control')
+  AND initial_query_id IN (SELECT query_id FROM system.query_log
+                           WHERE event_date >= yesterday() AND is_initial_query = 1
+                             AND current_database = currentDatabase());
 
 SELECT 'plain_query_no_workers',
       (SELECT workers FROM t05288_events WHERE label = 'plain_after')
