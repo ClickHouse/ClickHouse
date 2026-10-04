@@ -2941,7 +2941,9 @@ Result:
         {"26.8", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."}) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
-Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
+Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) for `.sql` metadata files. Enabled by default.
+
+It covers the contents of a `.sql` file. It also covers the directory entry that commits it, for database metadata on any engine and for table metadata on `Atomic` databases, so such a statement survives a power loss once acknowledged. Some paths that write metadata are not covered yet, so this is not a blanket durability guarantee.
 
 It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 )", 0)    \
