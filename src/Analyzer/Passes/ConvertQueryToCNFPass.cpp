@@ -297,6 +297,11 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     Analyzer::CNF::OrGroup result;
     for (const auto & atom : group)
     {
+        /// A negated ordered comparison - `NOT (A < C)`, which is not `A >= C` when an argument can be a
+        /// `NaN` - says nothing about where `A` sits relative to `C`, so no hint follows from it.
+        if (atom.negative)
+            return {};
+
         const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
         if (!function_node || !getRelationMap().contains(function_node->getFunctionName()))
             continue;
