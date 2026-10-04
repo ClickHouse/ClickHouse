@@ -8,9 +8,9 @@ namespace DB
 
 struct Settings;
 
-/// The query settings that define a set of `IN`: its size limits, its handling of `NULL`s, the values that it
-/// keeps for index analysis and, for a set built from a subquery, its moving to disk while it is filled (see
-/// `Set::setSpillSettings`).
+/// The query settings that define a set of `IN`: its size limits, its handling of `NULL`s, the
+/// values that it keeps for index analysis and, for a set built from a subquery, its spilling to
+/// disk while it is filled (see `Set::setSpillSettings`).
 struct FutureSetSettings
 {
     /// `max_rows_in_set`, `max_bytes_in_set` and `set_overflow_mode`.

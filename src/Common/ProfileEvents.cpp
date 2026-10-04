@@ -1719,7 +1719,7 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
-    M(SetsSpilledToDisk, "Number of `IN` sets that moved to disk in external memory while they were built from their subquery.", ValueType::Number) \
+    M(SetsSpilledToDisk, "Number of `IN` sets that spilled to disk while they were built from their subquery.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
