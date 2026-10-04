@@ -17,12 +17,15 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/assert_cast.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Disks/IDisk.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheCommon.h>
 #endif
 #include <Interpreters/Context.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -34,7 +37,8 @@ public:
     SystemFilesystemCacheSource(
         SharedHeader header_,
         UInt64 max_block_size_,
-        ContextPtr context_)
+        ContextPtr context_,
+        const ExpressionActionsPtr & cache_name_filter)
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
@@ -45,8 +49,20 @@ public:
 #endif
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
-        for (const auto & [cache_name, cache_data] : caches_by_name)
+
+        /// Only the caches whose name passes the `cache_name` part of the query filter.
+        MutableColumnPtr names = ColumnString::create();
+        for (const auto & [cache_name, _] : caches_by_name)
+            names->insert(cache_name);
+        Block names_block{{std::move(names), std::make_shared<DataTypeString>(), "cache_name"}};
+        if (cache_name_filter)
+            VirtualColumnUtils::filterBlockWithExpression(cache_name_filter, names_block);
+
+        const auto & filtered_names = assert_cast<const ColumnString &>(*names_block.getByPosition(0).column);
+        for (size_t i = 0; i < filtered_names.size(); ++i)
         {
+            const String cache_name{filtered_names.getDataAt(i)};
+            const auto & cache_data = caches_by_name.at(cache_name);
             unique_caches.insert(cache_data);
             caches_by_instance[cache_data].push_back(cache_name);
         }
@@ -76,6 +92,13 @@ protected:
         MutableColumnPtr col_user_id = ColumnString::create();
         MutableColumnPtr col_file_size = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
         MutableColumnPtr col_file_origin = ColumnString::create();
+        MutableColumnPtr col_active_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_passive_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_idle_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_last_hit_windows_ago = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_last_hit_active_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_last_hit_passive_bytes = ColumnUInt64::create();
+        MutableColumnPtr col_queue_entry_type = ColumnString::create();
 
         auto get_total_size = [&] -> size_t
         {
@@ -94,7 +117,14 @@ protected:
                 col_kind->byteSize() +
                 col_unbound->byteSize() +
                 col_user_id->byteSize() +
-                col_file_origin->byteSize();
+                col_file_origin->byteSize() +
+                col_active_bytes->byteSize() +
+                col_passive_bytes->byteSize() +
+                col_idle_bytes->byteSize() +
+                col_last_hit_windows_ago->byteSize() +
+                col_last_hit_active_bytes->byteSize() +
+                col_last_hit_passive_bytes->byteSize() +
+                col_queue_entry_type->byteSize();
         };
 
         size_t num_rows = 0;
@@ -135,6 +165,17 @@ protected:
                 else
                     col_file_size->insertDefault();
 
+                col_active_bytes->insert(file_segment.efficiency.active_bytes);
+                col_passive_bytes->insert(file_segment.efficiency.passive_bytes);
+                col_idle_bytes->insert(file_segment.efficiency.idle_bytes);
+                if (file_segment.efficiency.last_hit_windows_ago)
+                    col_last_hit_windows_ago->insert(*file_segment.efficiency.last_hit_windows_ago);
+                else
+                    col_last_hit_windows_ago->insertDefault();
+                col_last_hit_active_bytes->insert(file_segment.efficiency.last_hit_active_bytes);
+                col_last_hit_passive_bytes->insert(file_segment.efficiency.last_hit_passive_bytes);
+                col_queue_entry_type->insert(String(magic_enum::enum_name(file_segment.queue_entry_type)));
+
                 ++num_rows;
             }
         };
@@ -174,7 +215,10 @@ protected:
             std::move(col_key), std::move(col_range_begin), std::move(col_range_end), std::move(col_size),
             std::move(col_state), std::move(col_finished_download_time), std::move(col_hits),
             std::move(col_references), std::move(col_downloaded_size), std::move(col_kind), std::move(col_unbound),
-            std::move(col_user_id), std::move(col_file_origin), std::move(col_file_size)};
+            std::move(col_user_id), std::move(col_file_origin), std::move(col_file_size),
+            std::move(col_active_bytes), std::move(col_passive_bytes), std::move(col_idle_bytes),
+            std::move(col_last_hit_windows_ago), std::move(col_last_hit_active_bytes), std::move(col_last_hit_passive_bytes),
+            std::move(col_queue_entry_type)};
 
         return Chunk(std::move(columns), num_rows);
     }
@@ -216,17 +260,28 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto source = std::make_shared<SystemFilesystemCacheSource>(getOutputHeader(), max_block_size, context);
+        auto source = std::make_shared<SystemFilesystemCacheSource>(getOutputHeader(), max_block_size, context, cache_name_filter);
         source->setStorageLimits(storage_limits);
         processors.emplace_back(source);
         pipeline.init(Pipe(std::move(source)));
     }
 
-    /// TODO: void applyFilters(ActionDAGNodes added_filter_nodes) can be implemented to filter out cache names
+    void applyFilters(ActionDAGNodes added_filter_nodes) override
+    {
+        SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+        if (!filter_actions_dag)
+            return;
+
+        Block block_to_filter{{ColumnString::create(), std::make_shared<DataTypeString>(), "cache_name"}};
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        if (dag)
+            cache_name_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
+    ExpressionActionsPtr cache_name_filter;
 };
 
 }
@@ -254,6 +309,13 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
         {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
+        {"active_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment served from the cache in the live efficiency window, rounded up to 64 KiB granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses."},
+        {"passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment not served in the live efficiency window, if it had a cache hit in it"},
+        {"idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment, if it had no cache hit in the live efficiency window. `active_bytes`, `passive_bytes` and `idle_bytes` add up to `downloaded_size`"},
+        {"last_hit_windows_ago", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Efficiency windows since the latest earlier window with a cache hit (1 is the last full window). NULL if there is none"},
+        {"last_hit_active_bytes", std::make_shared<DataTypeUInt64>(), "Bytes served from the cache in that earlier window"},
+        {"last_hit_passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of the file segment, at its current downloaded size, not served from the cache in that earlier window"},
+        {"queue_entry_type", std::make_shared<DataTypeString>(), "Queue of the file segment in the cache policy, for example `SLRU_Protected` or `SLRU_Probationary`"},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);

@@ -1269,6 +1269,8 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     if (file_segment->queue_iterator && invalidate_queue_entry)
         file_segment->queue_iterator->invalidate();
 
+    file_segment->onRemovedFromCache(segment_lock);
+
     try
     {
         file_segment->detach(segment_lock, *this);
