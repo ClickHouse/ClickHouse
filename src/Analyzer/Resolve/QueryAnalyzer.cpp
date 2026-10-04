@@ -2438,7 +2438,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         {
             /// `analyzer_compatibility_prefer_alias_over_subcolumn` also applies to a qualified
             /// matcher. If its qualifier names a table, prefer that table over a same-named Tuple
-            /// column and run the SEMI/ANTI access check before expanding the Tuple subcolumns.
+            /// column: skip the Tuple expansion and fall through to table-expression resolution,
+            /// which also runs the SEMI/ANTI access check.
+            bool prefer_table_expression = false;
             if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
             {
                 IdentifierResolveContext identifier_resolve_settings;
@@ -2446,62 +2448,36 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 identifier_resolve_settings.allow_to_check_database_catalog = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
-                if (table_identifier_resolve_result.resolved_identifier)
-                    checkSemiAntiJoinTableAccess(table_identifier_resolve_result.resolved_identifier, scope, matcher_node);
-                else
-                {
-                    const auto & element_names = tuple_data_type->getElementNames();
-                    QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
-                    auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-                    for (const auto & element_name : element_names)
-                    {
-                        if (!matcher_node_typed.isMatchingColumn(element_name))
-                            continue;
-
-                        auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-                        get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
-                        get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
-
-                        QueryTreeNodePtr function_query_node = get_subcolumn_function;
-                        resolveFunction(function_query_node, scope);
-
-                        qualified_matcher_element_identifier.push_back(element_name);
-                        node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
-                        qualified_matcher_element_identifier.pop_back();
-
-                        matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
-                    }
-
-                    return matched_expression_nodes_with_column_names;
-                }
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr;
             }
 
-            const auto & element_names = tuple_data_type->getElementNames();
-            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
-            auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-            for (const auto & element_name : element_names)
+            if (!prefer_table_expression)
             {
-                if (!matcher_node_typed.isMatchingColumn(element_name))
-                    continue;
+                const auto & element_names = tuple_data_type->getElementNames();
+                QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
-                auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-                get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
-                get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+                auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+                for (const auto & element_name : element_names)
+                {
+                    if (!matcher_node_typed.isMatchingColumn(element_name))
+                        continue;
 
-                QueryTreeNodePtr function_query_node = get_subcolumn_function;
-                resolveFunction(function_query_node, scope);
+                    auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+                    get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+                    get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
 
-                qualified_matcher_element_identifier.push_back(element_name);
-                node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
-                qualified_matcher_element_identifier.pop_back();
+                    QueryTreeNodePtr function_query_node = get_subcolumn_function;
+                    resolveFunction(function_query_node, scope);
 
-                matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+                    qualified_matcher_element_identifier.push_back(element_name);
+                    node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+                    qualified_matcher_element_identifier.pop_back();
+
+                    matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+                }
+
+                return matched_expression_nodes_with_column_names;
             }
-
-            return matched_expression_nodes_with_column_names;
         }
     }
 

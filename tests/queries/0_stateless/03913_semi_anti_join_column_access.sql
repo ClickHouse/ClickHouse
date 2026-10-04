@@ -67,6 +67,20 @@ FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS t2) AS l
 LEFT SEMI JOIN (SELECT 1 AS b) AS t2 ON true
 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
+-- When the qualifier names an accessible table, `t.*` must expand that table rather than a same-named Tuple column.
+SELECT r.*
+FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS r) AS l
+LEFT JOIN (SELECT 2 AS b) AS r ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT r.*
+FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS r) AS l
+LEFT JOIN (SELECT 2 AS b) AS r ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT t1.*
+FROM (SELECT 3 AS b) AS t1
+LEFT SEMI JOIN (SELECT CAST(tuple(4), 'Tuple(b UInt8)') AS t1) AS r ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
 SETTINGS anti_join_include_columns_from_both_sides = 1;
