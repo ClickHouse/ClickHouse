@@ -1,0 +1,326 @@
+--- aggregates ---
+=== max: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== min: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== avg over Float64, the join repeats rows: rewritten 1 ===
+1	10	20
+1	10	20
+1	30	20
+1	30	20
+2	5	5e307
+2	1e308	5e307
+=== avg over Decimal: rewritten 1 ===
+1	10.25	20.5
+1	10.25	20.5
+1	30.75	20.5
+1	30.75	20.5
+2	5	5
+=== sum: rewritten 1 ===
+1	10	40
+1	10	40
+1	30	40
+1	30	40
+2	5	1e308
+2	1e308	1e308
+=== count: rewritten 1 ===
+1	10	2
+1	10	2
+1	30	2
+1	30	2
+2	5	2
+2	1e308	2
+=== two aggregates and parameters: rewritten 1 ===
+1	10	2
+1	10	2
+1	30	2
+1	30	2
+2	5	2
+2	1e308	2
+=== maxIf: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== expression argument: rewritten 1 ===
+1	10	900
+1	10	900
+1	30	900
+1	30	900
+2	5	inf
+2	1e308	inf
+=== aggregate_functions_null_for_empty: rewritten 1 ===
+1	10	\N
+1	10	\N
+1	30	\N
+1	30	\N
+2	5	1e308
+2	1e308	1e308
+=== extra condition in the subquery: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== no row matches the condition of the subquery: rewritten 1 ===
+1	10	1	\N
+1	10	1	\N
+1	30	1	\N
+1	30	1	\N
+2	5	1	1e308
+2	1e308	1	1e308
+=== outer key in the argument: rewritten 0 ===
+1	10	42
+1	10	42
+1	30	42
+1	30	42
+2	5	1e308
+2	1e308	1e308
+=== condition of a non-boolean type: rewritten 1 ===
+100	1	1
+101	2	3
+101	3	3
+200	4	4
+=== two subqueries: rewritten 1 ===
+1	10	10	2
+1	10	10	2
+1	30	10	2
+1	30	10	2
+2	5	5	2
+2	1e308	5	2
+--- shapes of the enclosing query ---
+=== TPC-H Q17 shape: rewritten 1 ===
+5
+=== in WHERE with rows kept: rewritten 1 ===
+101	30
+200	1e308
+=== two subqueries in one WHERE: rewritten 1 ===
+101	30
+200	1e308
+=== correlated to the same table: rewritten 1 ===
+2	5	2
+2	1e308	2
+3	-7	1
+=== condition on the correlated table: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	1e308	1e308
+=== condition on an ALIAS column of the correlated table: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+=== join condition on a non-key column: rewritten 0 ===
+2	1e308	1e308
+=== ANY join: rewritten 1 ===
+1	10	30
+2	5	1e308
+=== LEFT join, correlated table on the left: rewritten 1 ===
+1	10	100	30
+1	10	101	30
+1	30	100	30
+1	30	101	30
+2	5	200	1e308
+2	1e308	200	1e308
+3	-7	0	-7
+=== third table joined to the other relation: rewritten 1 ===
+1	2	10	30
+1	2	30	30
+1	3	10	30
+1	3	30	30
+2	4	5	1e308
+2	4	1e308	1e308
+=== join_use_nulls: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== LIMIT: rewritten 1 ===
+1	1
+=== IN subquery in WHERE: rewritten 1 ===
+3
+=== non-deterministic condition: rewritten 1 ===
+0
+=== inside a correlated subquery: rewritten 1 ===
+1	1e308
+2	\N
+3	\N
+=== FINAL on both: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	5
+=== additional_table_filters: rewritten 0 ===
+1	10	10
+1	10	10
+2	5	5
+--- keys ---
+=== Nullable key and argument: rewritten 1 ===
+1	10	10
+1	\N	10
+2	\N	\N
+=== NULL key, correlated to the same table: rewritten 1 ===
+1	10	2
+1	\N	2
+2	\N	1
+\N	5	\N
+\N	7	\N
+=== Float key: rewritten 0 ===
+5
+=== key types differ: rewritten 0 ===
+1	10	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+--- not rewritten ---
+=== nothing restricts the keys, the decorrelated plan needs less memory: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== correlated table on the NULL-extended side: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+4	0	\N
+=== RIGHT join: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== non-equality correlation: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== no equality between the keys: rewritten 0 ===
+1	10	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== self-join: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	5	1e308
+2	1e308	1e308
+2	1e308	1e308
+3	-7	-7
+=== FINAL only in the subquery: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	5
+=== GROUP BY in the subquery: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== arrayJoin in the subquery: rewritten 0 ===
+6	1e308	2
+=== non-deterministic function in the subquery: rewritten 0 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== outer GROUP BY with the subquery in SELECT: rewritten 0 ===
+1	30	80
+2	1e308	1e308
+=== subqueries correlated to each other's table: rewritten 0 ===
+3	25
+=== -If aggregate with a condition in the subquery: rewritten 0 ===
+1	10	\N
+1	10	\N
+1	30	\N
+1	30	\N
+2	5	1
+2	1e308	1
+=== result type that cannot be Nullable: rewritten 0 ===
+1	10	[30]
+1	10	[30]
+1	30	[30]
+1	30	[30]
+2	5	[1e308]
+2	1e308	[1e308]
+=== argument that may throw on rows the condition skips: rewritten 0 ===
+100	1	\N
+101	2	15
+101	3	15
+200	4	3
+=== count of a Nullable column: rewritten 0 ===
+1	10	1
+1	\N	1
+2	\N	0
+=== outer key inside an expression argument: rewritten 0 ===
+1	10	20
+1	10	20
+1	30	20
+1	30	20
+2	5	10
+2	1e308	10
+=== NULL inside a Tuple key: rewritten 0 ===
+(NULL)	1	\N
+(NULL)	2	\N
+(1)	3	1
+=== column named like a window column: rewritten 1 ===
+1	5	7
+1	7	7
+2	3	3
+=== NULL in a Variant key: rewritten 0 ===
+3	\N
+4	\N
+5	1
+10	2
+20	2
+=== PASTE JOIN: rewritten 0 ===
+0	1	40
+1	2	60
+2	3	40
+3	4	60
+=== expression over no matching rows without short-circuit: rewritten 0 ===
+1	10	\N
+1	10	\N
+1	30	\N
+1	30	\N
+2	5	10
+2	1e308	10
+--- materialized view reading its source table in the subquery ---
+1	1	101
+2	2	202
+1	1	101
+2	2	202
