@@ -29,11 +29,19 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
+#include <Common/re2.h>
+#include <base/errnoToString.h>
 
 #include <sys/stat.h>
+
+#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -68,6 +76,7 @@ namespace ErrorCodes
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -152,7 +161,8 @@ private:
                 file_log.getPollTimeoutMillisecond(),
                 stream_number,
                 max_streams_number,
-                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode]));
+                (*file_log.filelog_settings)[FileLogSetting::handle_error_mode],
+                /* skip_broken_records */ false));
         }
 
         return Pipe::unitePipes(std::move(pipes));
@@ -162,6 +172,13 @@ private:
     StoragePtr storage;
     StorageSnapshotPtr storage_snapshot;
 };
+
+String resolveFileLogPath(const String & path, const String & user_files_path)
+{
+    if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
+        return path;
+    return std::filesystem::path(user_files_path) / path;
+}
 
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
@@ -177,7 +194,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(path_)
+    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -224,7 +241,12 @@ StorageFileLog::StorageFileLog(
         chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
-            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
+        {
+            std::unordered_map<UInt64, String> read_files;
+            for (const auto & [inode, meta] : file_infos.meta_by_inode)
+                read_files.emplace(inode, meta.file_name);
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, std::move(read_files), getContext());
+        }
 
         auto thread = getContext()->getSchedulePool()->createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
@@ -280,38 +302,94 @@ void StorageFileLog::loadFiles()
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
+    std::vector<String> matching_files;
+    /// Files that the glob excludes but whose inode has a stored meta, with that inode.
+    std::vector<std::pair<String, UInt64>> rotated_files;
+
     if (std::filesystem::is_regular_file(absolute_path))
     {
         path_is_directory = false;
         root_data_path = absolute_path.parent_path();
 
-        file_infos.file_names.push_back(absolute_path.filename());
-    }
-    else if (std::filesystem::is_directory(absolute_path))
-    {
-        root_data_path = absolute_path;
-        /// Just consider file with depth 1
-        for (const auto & dir_entry : std::filesystem::directory_iterator{absolute_path})
-        {
-            if (dir_entry.is_regular_file())
-            {
-                file_infos.file_names.push_back(dir_entry.path().filename());
-            }
-        }
+        matching_files.push_back(absolute_path.filename());
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());
+        if (std::filesystem::is_directory(absolute_path))
+        {
+            root_data_path = absolute_path;
+        }
+        else
+        {
+            const String glob = absolute_path.filename();
+            const auto directory = absolute_path.parent_path();
+            if (containsGlobs(directory.string()) && !std::filesystem::is_directory(directory))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Globs are supported only in the file name of the path {}", absolute_path.c_str());
+            if (!containsGlobs(glob))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", absolute_path.c_str());
+            if (!std::filesystem::is_directory(directory))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The directory {} of the path {} does not exist", directory.c_str(), absolute_path.c_str());
+
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(glob));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", glob, matcher->error());
+            file_name_matcher = std::move(matcher);
+            root_data_path = directory;
+        }
+
+        /// Just consider file with depth 1
+        for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
+        {
+            if (!dir_entry.is_regular_file())
+                continue;
+            String file_name = dir_entry.path().filename();
+            struct stat file_stat{};
+            if (fileNameMatches(file_name))
+                matching_files.push_back(std::move(file_name));
+            else if (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino))
+                rotated_files.emplace_back(std::move(file_name), file_stat.st_ino);
+        }
     }
 
     /// Get files inode
-    for (const auto & file : file_infos.file_names)
+    std::vector<std::pair<String, UInt64>> found_files;
+    for (auto & file : matching_files)
     {
         auto inode = getInode(getFullDataPath(file));
-        file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
+        found_files.emplace_back(std::move(file), inode);
     }
 
+    /// A file with several names (hard links) is read under one of them: the name it was read under, if that name
+    /// still has it (whether or not it matches the glob), otherwise a matching name, otherwise a non-matching one.
+    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read.
+    std::ranges::sort(found_files);
+    std::ranges::sort(rotated_files);
+    auto has_stored_name = [this](const std::pair<String, UInt64> & file)
+    {
+        auto meta = file_infos.meta_by_inode.find(file.second);
+        return meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.first;
+    };
+    std::unordered_set<UInt64> inodes_with_name;
+    auto add_files = [&](std::vector<std::pair<String, UInt64>> & files, bool only_stored_names)
+    {
+        for (auto & file : files)
+        {
+            if (only_stored_names && !has_stored_name(file))
+                continue;
+            /// A name added in the first pass has its inode in the set, so it is not visited again after the move.
+            if (!inodes_with_name.insert(file.second).second)
+                continue;
+            file_infos.context_by_name.emplace(file.first, FileContext{.inode = file.second});
+            file_infos.file_names.push_back(std::move(file.first));
+        }
+    };
+    add_files(found_files, true);
+    add_files(rotated_files, true);
+    add_files(found_files, false);
+    add_files(rotated_files, false);
+
     /// Update file meta or create file meta
+    std::vector<String> renamed_files;
     for (const auto & [file, ctx] : file_infos.context_by_name)
     {
         if (auto it = file_infos.meta_by_inode.find(ctx.inode); it != file_infos.meta_by_inode.end())
@@ -319,8 +397,11 @@ void StorageFileLog::loadFiles()
             /// data file have been renamed, need update meta file's name
             if (it->second.file_name != file)
             {
-                disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
+                /// Through a temporary name: the renames of a rotation chain are visited in any order.
+                if (disk->existsFile(getFullMetaPath(it->second.file_name)))
+                    disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file) + TMP_SUFFIX);
                 it->second.file_name = file;
+                renamed_files.push_back(file);
             }
         }
         /// New file
@@ -330,6 +411,9 @@ void StorageFileLog::loadFiles()
             file_infos.meta_by_inode.emplace(ctx.inode, meta);
         }
     }
+    for (const auto & file : renamed_files)
+        if (disk->existsFile(getFullMetaPath(file) + TMP_SUFFIX))
+            disk->replaceFile(getFullMetaPath(file) + TMP_SUFFIX, getFullMetaPath(file));
 
     /// Clear unneeded meta file, because data files may be deleted
     if (file_infos.meta_by_inode.size() > file_infos.context_by_name.size())
@@ -367,7 +451,12 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
 
-    std::string tmp_path = full_path + TMP_SUFFIX;
+    disk->replaceFile(writeTemporaryMeta(inode, file_meta), full_path);
+}
+
+String StorageFileLog::writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const
+{
+    std::string tmp_path = getFullMetaPath(file_meta.file_name) + TMP_SUFFIX;
     disk->removeFileIfExists(tmp_path);
 
     try
@@ -384,7 +473,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
         disk->removeFileIfExists(tmp_path);
         throw;
     }
-    disk->replaceFile(tmp_path, full_path);
+    return tmp_path;
 }
 
 void StorageFileLog::deserialize()
@@ -495,16 +584,74 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
     }
 }
 
+bool StorageFileLog::isTrackedByDirectoryEvents(const String & file_name) const
+{
+    return directory_watch && !FS::isSymlinkNoThrow(getFullDataPath(file_name));
+}
+
 void StorageFileLog::openFilesAndSetPos()
 {
+    bool any_open_failed = false;
     for (const auto & file : file_infos.file_names)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
-        if (file_ctx.status != FileStatus::NO_CHANGE)
+        if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
             file_ctx.reader.emplace(getFullDataPath(file));
+            const int open_errno = errno;
+            if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
+            {
+                /// Removed or renamed: the pending directory events drop the file or move its offset to the new name.
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                continue;
+            }
+            if (!file_ctx.reader->is_open()
+                && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
+            {
+                if (!file_ctx.open_failed)
+                    LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                file_ctx.open_failed = true;
+                /// The path leads to no file: what appears there later is read from its start, also after a restart.
+                if (open_errno == ENOENT || open_errno == ELOOP)
+                {
+                    if (auto it = file_infos.meta_by_inode.find(file_ctx.inode);
+                        it != file_infos.meta_by_inode.end() && it->second.file_name == file && it->second.last_writen_position != 0)
+                    {
+                        disk->removeFileIfExists(getFullMetaPath(file));
+                        it->second.last_writen_position = 0;
+                    }
+                }
+                any_open_failed = true;
+                /// Published at once: a later file can throw before the end of the loop.
+                has_files_to_reopen = true;
+                continue;
+            }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            if (file_ctx.open_failed)
+            {
+                /// The path may lead to another file now: read it from the start.
+                if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
+                {
+                    if (isTrackedByDirectoryEvents(file))
+                    {
+                        file_ctx.reader.reset();
+                        file_ctx.status = FileStatus::NO_CHANGE;
+                        any_open_failed = true;
+                        has_files_to_reopen = true;
+                        continue;
+                    }
+                    file_infos.meta_by_inode.erase(file_ctx.inode);
+                    disk->removeFileIfExists(getFullMetaPath(file));
+                    file_ctx.inode = inode;
+                    file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                }
+                file_ctx.open_failed = false;
+                file_ctx.status = FileStatus::UPDATED;
+            }
 
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
@@ -515,12 +662,16 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
+                /// Truncated in place, e.g. by `logrotate` with `copytruncate`.
+                LOG_INFO(
+                    log,
+                    "File {} is smaller than its saved offset ({} < {}), reading it again from the beginning",
                     file,
-                    meta.last_writen_position,
-                    std::streamoff{file_end});
+                    std::streamoff{file_end},
+                    meta.last_writen_position);
+                /// Before resetting: `serialize` refuses to store an offset smaller than the one on disk.
+                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
+                meta.last_writen_position = 0;
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -529,6 +680,7 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
         }
     }
+    has_files_to_reopen = any_open_failed;
     serialize();
 }
 
@@ -655,6 +807,7 @@ void StorageFileLog::threadFunc()
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
+        reschedule = !dependencies_count;
 
         if (dependencies_count)
         {
@@ -708,7 +861,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (!getTableDependentCount() || reschedule)
+            if (!getTableDependentCount() || reschedule || has_files_to_reopen)
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
@@ -754,6 +907,13 @@ bool StorageFileLog::streamToViews()
         return updateFileInfos();
     }
 
+    /// Nothing to read until the watcher events are applied, e.g. when only files that the glob excludes changed.
+    /// A file that could not be opened is retried by `openFilesAndSetPos`.
+    if (std::ranges::all_of(
+            file_infos.context_by_name,
+            [](const auto & file) { return file.second.status == FileStatus::NO_CHANGE && !file.second.open_failed; }))
+        return updateFileInfos();
+
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
@@ -774,6 +934,7 @@ bool StorageFileLog::streamToViews()
 
     auto block_io = interpreter.execute();
 
+    read_more_after_skipped_records = false;
     /// Each stream responsible for closing it's files and store meta
     openFilesAndSetPos();
 
@@ -790,7 +951,8 @@ bool StorageFileLog::streamToViews()
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number,
-            (*filelog_settings)[FileLogSetting::handle_error_mode]));
+            (*filelog_settings)[FileLogSetting::handle_error_mode],
+            /* skip_broken_records */ true));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -810,7 +972,8 @@ bool StorageFileLog::streamToViews()
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileInfos();
+    bool stalled = updateFileInfos();
+    return stalled && !read_more_after_skipped_records;
 }
 
 void StorageFileLog::wakeUp()
@@ -938,7 +1101,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -950,11 +1113,13 @@ Optional parameters:
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
-- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+- `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them.
+
+A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -972,7 +1137,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -998,6 +1163,20 @@ ATTACH TABLE consumer;
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
+## Selecting files with globs {#selecting-files-with-globs}
+
+When the file name in `path_to_logs` has globs, the table reads the files of that directory whose names match, including the ones that appear later. Globs are not supported in the directory part of the path.
+
+A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. A file that is created and renamed to a name that does not match while the table is detached or the server is stopped is not read. On macOS, where the directory is watched by comparing its listings, the same holds for a file that is created and renamed to a name that does not match before the table lists it. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
+
+```text
+app.log         the file the application writes
+app.log.1       the previous file, renamed by logrotate, compressed on the next rotation
+app.log.2.gz    older files, compressed
+```
+
+A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow')` reads `app.log`; after the rotation it keeps reading `app.log.1`, so the lines the application writes there before it reopens its log are not lost, and it never reads the compressed files. Make sure the glob does not match the compressed file names.
+
 ## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
@@ -1016,7 +1195,7 @@ The `FileLog` engine records the offset it has consumed for a chunk before the i
 
 A loss of the OS page cache can additionally discard data that had already been written to the target table; examples are a device-level power loss and an unclean host or kernel reset. The metadata files holding the offsets are themselves written without an fsync of the file or of its directory, so they carry no durability guarantee of their own either.
 
-Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. Dropping and recreating the table discards the recorded offsets and re-reads the files from the beginning.
+Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. [SYSTEM RESET FILELOG](/reference/statements/system#reset-filelog), or dropping and recreating the table, discards the recorded offsets and re-reads the files from the beginning.
 )DOCS_MD",
             .syntax = "ENGINE = FileLog('path_to_logs', 'format') SETTINGS ...",
             .related = {"Kafka", "RabbitMQ", "NATS"}});
@@ -1041,6 +1220,25 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
         }
     }
     it->second = FileContext{.inode = inode};
+}
+
+bool StorageFileLog::fileNameMatches(const String & file_name) const
+{
+    return !file_name_matcher || re2::RE2::FullMatch(file_name, *file_name_matcher);
+}
+
+bool StorageFileLog::isReadUnderOtherName(const String & file_name, UInt64 inode) const
+{
+    return std::ranges::any_of(
+        file_infos.context_by_name,
+        [&](const auto & file)
+        {
+            if (file.first == file_name || file.second.inode != inode || file.second.status == FileStatus::REMOVED)
+                return false;
+            /// The events of the other name may be not applied yet, e.g. it was removed right after the hard link was made.
+            struct stat file_stat{};
+            return stat(getFullDataPath(file.first).c_str(), &file_stat) == 0 && file_stat.st_ino == inode;
+        });
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1088,8 +1286,23 @@ bool StorageFileLog::updateFileInfos()
     /// be observed before any later `DW_ITEM_ADDED` for the source name, so
     /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
     /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
-    for (const auto & [file_name, event_info] : events)
+    /// Only the last add, removal or rename of a name is applied to the file found there now; earlier events of the
+    /// name only record whether the file they leave under it is read.
+    std::unordered_map<String, size_t> last_change;
+    for (size_t i = 0; i < events.size(); ++i)
+        if (events[i].second.type != DirectoryWatcherBase::DW_ITEM_MODIFIED)
+            last_change[events[i].first] = i;
+    std::unordered_map<String, bool> name_is_read;
+    std::unordered_set<UInt64> renamed_from_read_name;
+    auto is_read = [&](const String & name)
     {
+        auto it = name_is_read.find(name);
+        return it != name_is_read.end() ? it->second : fileNameMatches(name) || file_infos.context_by_name.contains(name);
+    };
+
+    for (size_t i = 0; i < events.size(); ++i)
+    {
+        const auto & [file_name, event_info] = events[i];
         String file_path = getFullDataPath(file_name);
         LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
 
@@ -1097,8 +1310,21 @@ bool StorageFileLog::updateFileInfos()
         {
             case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
-                /// Check if it is a regular file, and new file may be renamed or removed
-                if (std::filesystem::is_regular_file(file_path))
+                name_is_read[file_name] = fileNameMatches(file_name);
+                if (last_change.at(file_name) != i)
+                    break;
+                /// Check if it is a regular file, and new file may be renamed or removed.
+                /// Another name of a file that is still read here (a hard link) is not read again.
+                if (!std::filesystem::is_regular_file(file_path) || !fileNameMatches(file_name)
+                    || isReadUnderOtherName(file_name, getInode(file_path)))
+                {
+                    name_is_read[file_name] = false;
+                    /// The file read under this name, if any, was replaced by one that is not read, e.g. a file moved in
+                    /// from elsewhere over a rotated file.
+                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                        it->second.status = FileStatus::REMOVED;
+                }
+                else
                 {
                     auto inode = getInode(file_path);
 
@@ -1124,7 +1350,8 @@ bool StorageFileLog::updateFileInfos()
                 /// and DW_ITEM_MODIFIED, since the order of these two events in the
                 /// sequence is uncentain, so we may can not find it in file_infos, just
                 /// skip it, the file info will be handled in DW_ITEM_ADDED case.
-                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                if (auto it = file_infos.context_by_name.find(file_name);
+                    it != file_infos.context_by_name.end() && it->second.status != FileStatus::REMOVED)
                     it->second.status = FileStatus::UPDATED;
                 break;
             }
@@ -1133,6 +1360,9 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
+                if (event_info.type == DirectoryWatcherBase::DW_ITEM_MOVED_FROM && event_info.cookie && is_read(file_name))
+                    renamed_from_read_name.insert(event_info.cookie);
+                name_is_read[file_name] = false;
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1140,11 +1370,25 @@ bool StorageFileLog::updateFileInfos()
             /// The file **arrived** in this directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
             {
+                const bool renamed_from_read = event_info.cookie && renamed_from_read_name.contains(event_info.cookie);
+                name_is_read[file_name] = renamed_from_read || fileNameMatches(file_name);
+                if (last_change.at(file_name) != i)
+                    break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                 /// should obtain old meta file and rename meta file
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+
+                    /// Another name of a file that is still read here (a hard link) is not read again.
+                    if (isReadUnderOtherName(file_name, inode)
+                        || (!fileNameMatches(file_name) && !file_infos.meta_by_inode.contains(inode) && !renamed_from_read))
+                    {
+                        /// The file read under this name, if any, was replaced by one that is not read.
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                            it->second.status = FileStatus::REMOVED;
+                        break;
+                    }
 
                     onFileAppeared(file_name, inode);
 
@@ -1160,7 +1404,7 @@ bool StorageFileLog::updateFileInfos()
                         if (disk->existsFile(getFullMetaPath(old_name)))
                             disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    /// May move from other place, adding new meta info
+                    /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
@@ -1202,6 +1446,81 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
+}
+
+void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, std::optional<UInt64> offset)
+{
+    {
+        std::lock_guard lock(file_infos_mutex);
+        /// The sources of a direct SELECT use `file_infos` without the mutex.
+        if (running_streams)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot reset table {} while a SELECT query reads from it", getStorageID().getNameForLogs());
+
+        updateFileInfos();
+
+        struct Target
+        {
+            String name;
+            FileContext * file_ctx;
+            FileMeta new_meta;
+        };
+        std::vector<Target> targets;
+
+        auto add_target = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
+        {
+            FileMeta new_meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+            new_meta.last_writen_position = new_offset;
+            targets.push_back({name, &file_ctx, std::move(new_meta)});
+        };
+
+        if (!file_name)
+        {
+            chassert(offset == 0);
+            for (const auto & name : file_infos.file_names)
+                add_target(name, findInMap(file_infos.context_by_name, name), 0);
+        }
+        else
+        {
+            auto it = file_infos.context_by_name.find(*file_name);
+            if (it == file_infos.context_by_name.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} does not read a file named '{}'", getStorageID().getNameForLogs(), *file_name);
+            auto size = tryGetSizeFromFilePath(getFullDataPath(*file_name));
+            if (!size)
+                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
+            if (offset && *offset > *size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
+            add_target(*file_name, it->second, offset.value_or(*size));
+        }
+
+        /// Write every new meta file before publishing any of them, so that a failed write
+        /// (for example, a full metadata disk) leaves the whole table at its old position.
+        std::vector<String> tmp_paths;
+        tmp_paths.reserve(targets.size());
+        try
+        {
+            for (const auto & target : targets)
+                tmp_paths.push_back(writeTemporaryMeta(target.file_ctx->inode, target.new_meta));
+        }
+        catch (...)
+        {
+            for (const auto & tmp_path : tmp_paths)
+                disk->removeFileIfExists(tmp_path);
+            throw;
+        }
+
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            auto & target = targets[i];
+            disk->replaceFile(tmp_paths[i], getFullMetaPath(target.new_meta.file_name));
+            LOG_INFO(log, "File {} will be read from offset {}", target.name, target.new_meta.last_writen_position);
+            findInMap(file_infos.meta_by_inode, target.file_ctx->inode) = std::move(target.new_meta);
+            target.file_ctx->status = FileStatus::UPDATED;
+        }
+    }
+    /// The background task may be waiting for a directory event or sleeping until its next poll.
+    wakeUp();
+    if (task)
+        task->holder->schedule();
 }
 
 }
