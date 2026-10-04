@@ -249,4 +249,21 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     return true;
 }
 
+bool typeCanHideTheValueType(const IDataType & type)
+{
+    auto hides_the_value_type = [](const IDataType & checked)
+    {
+        return isVariant(checked) || isDynamic(checked) || isObject(checked);
+    };
+
+    if (hides_the_value_type(type))
+        return true;
+
+    /// `forEachChild` visits the whole subtree, not only the direct children.
+    bool result = false;
+    type.forEachChild([&](const IDataType & child) { result = result || hides_the_value_type(child); });
+
+    return result;
+}
+
 }
