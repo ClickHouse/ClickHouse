@@ -474,10 +474,12 @@ bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_
 {
     /// A valid SQL `SET` query is an escape hatch from non-ClickHouse dialects. Merely checking
     /// the leading token would hijack valid queries in those dialects, such as a PromQL metric
-    /// named `set`.
+    /// named `set`. The shorthand form `SET name` (without a value) is not accepted: it would
+    /// steal queries of other dialects such as the KQL `set notruncation`, while the escape only
+    /// needs to assign settings like `dialect`.
     Tokens tokens(begin, end, max_query_size, true);
     IParser::Pos pos(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-    ParserSetQuery parser;
+    ParserSetQuery parser(/*parse_only_internals_=*/ false, /*shorthand_syntax_=*/ false);
     ASTPtr ast;
     Expected expected;
     return parser.parse(pos, ast, expected) && ast->as<ASTSetQuery>();

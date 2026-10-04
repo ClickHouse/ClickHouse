@@ -526,8 +526,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     const Dialect dialect = settings[Setting::dialect];
     /// The Trino parser handles every `SET` form itself (including `SET SESSION` and `SET ROLE`),
-    /// so it does not take the escape.
-    const bool is_set_escape = dialect != Dialect::clickhouse && dialect != Dialect::trino
+    /// and the LogsQL parser has its own `SET` escape that keeps word filters such as `set error`,
+    /// so they do not take the escape.
+    const bool is_set_escape = dialect != Dialect::clickhouse && dialect != Dialect::trino && dialect != Dialect::logsql
         && isClickHouseJSONSetEscape(
             pos, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -3000,6 +3001,7 @@ void ClientBase::processParsedSingleQuery(
         current_query_is_set_escape = !current_query_parsed_as_json_dialect
             && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
             && client_context->getSettingsRef()[Setting::dialect] != Dialect::trino
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::logsql
             && parsed_query->as<ASTSetQuery>();
         const Field parse_dialect = client_context->getSettingsRef().get("dialect");
         const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
