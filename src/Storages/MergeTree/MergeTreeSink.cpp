@@ -21,6 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event RejectedInserts;
     extern const Event SelfDuplicatedAsyncInserts;
     extern const Event DuplicatedAsyncInserts;
     extern const Event DuplicationElapsedMicroseconds;
@@ -92,14 +93,22 @@ MergeTreeSink::MergeTreeSink(
     /// deferred to onStart, so that the error still surfaces during execution, where the callers
     /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
     /// thrown by an executing sink, not errors thrown while the insert chain is being built).
+    ///
+    /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
+    /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
+    /// retrying an INSERT which was already written stays a no-op even once the database is full.
     try
     {
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+        storage.delayInsertOrThrowIfNeeded(
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !deduplicate);
     }
     catch (...)
     {
         too_many_parts_exception = std::current_exception();
     }
+
+    if (deduplicate && !too_many_parts_exception)
+        database_rows_limit_exception = storage.getDatabaseRowsLimitReachedException();
 }
 
 void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
@@ -417,6 +426,18 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     {
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
+
+        /// The database had already reached `max_rows` when this insert started (see the constructor).
+        /// Reject the part unless it is a duplicate, which `addPart` below accepts as a no-op. This is
+        /// decided before `addPart`, which would record the block ids of a part that is not committed.
+        /// The parts lock serializes this with the `addPart` of the other inserts.
+        if (database_rows_limit_exception
+            && (deduplication_hashes.empty()
+                || !storage.getDeduplicationLog()->containsAnyBlock(getDeduplicationBlockIds(deduplication_hashes))))
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(database_rows_limit_exception);
+        }
 
         if (!deduplication_hashes.empty())
         {
