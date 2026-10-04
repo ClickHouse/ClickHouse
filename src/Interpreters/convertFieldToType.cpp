@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int DECIMAL_OVERFLOW;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
@@ -383,7 +384,8 @@ bool isNegativeDateTime64TicksSource(const Field & src)
 /// sort key, converted in `PlannerSorting`) consumes the `Field` as the value to store and does not retry through
 /// `CAST`, so it applies `date_time_overflow_behavior` the way `ConvertImpl` does for the very same constant: `throw`
 /// raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`, while both `saturate` and the default `ignore` clamp to the nearest end
-/// of the window, i.e. the extreme representable tick. A `NaN` has no side to saturate to and stays Null. The other
+/// of the window, i.e. the extreme representable tick. A `NaN` has no side to saturate to and throws under every mode,
+/// like `CAST`. The other
 /// `convert_inexact_floats` callers never get here: `FillingTransform` converts a `DateTime64` bound into a plain
 /// `Decimal64` and rejects `Time64`, and a `RANGE` window frame offset is not implemented for either type (a
 /// `Nullable` key gets as far as converting the offset in the `WindowTransform` constructor, but the first compared
@@ -403,8 +405,10 @@ Field dateTime64OutOfWindow(
     if (strict || !convert_inexact_floats)
         return {};
 
+    /// A `NaN` has no side to saturate to, and `CAST` rejects it under every mode. It must not become Null either:
+    /// the `VALUES` expression fallback with `input_format_null_as_default` would silently insert the column default.
     if (src.getType() == Field::Types::Float64 && isNaN(src.safeGet<Float64>()))
-        return {};
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", type.getName());
 
     if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
