@@ -1,0 +1,3 @@
+<clickhouse>
+    <async_load_databases>true</async_load_databases>
+</clickhouse>
