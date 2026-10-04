@@ -72,6 +72,26 @@ bool parseNumber(const String & description, size_t l, size_t r, size_t & res)
     return true;
 }
 
+/// `lhs * rhs`, or `std::nullopt` when it does not fit into `UInt64`.
+std::optional<UInt64> multiply(std::optional<UInt64> lhs, UInt64 rhs)
+{
+    if (!lhs)
+        return {};
+    if (rhs != 0 && *lhs > std::numeric_limits<UInt64>::max() / rhs)
+        return {};
+    return *lhs * rhs;
+}
+
+/// `lhs + rhs`, or `std::nullopt` when it does not fit into `UInt64`.
+std::optional<UInt64> add(std::optional<UInt64> lhs, std::optional<UInt64> rhs)
+{
+    if (!lhs || !rhs)
+        return {};
+    if (*lhs > std::numeric_limits<UInt64>::max() - *rhs)
+        return {};
+    return *lhs + *rhs;
+}
+
 enum class CardinalityStatus : uint8_t
 {
     Known,
@@ -233,22 +253,17 @@ Cardinality countAddresses(
     return {CardinalityStatus::Known, total.value};
 }
 
-/// The whole description the parser was given, so that the number of addresses reported in the
-/// error message is the cardinality of the entire first argument rather than of one factor - or,
-/// for `parseRemoteDescriptionWithFailover`, of one of its two stages.
-struct DescriptionContext
-{
-    const String & description;
-    size_t l;
-    size_t r;
-    char separator;
-    std::optional<char> replica_separator;
-};
+}
+
 
 [[noreturn]] void throwTooManyAddressesForDescription(
-    const DescriptionContext & ctx, const RemoteDescriptionCaller & caller, size_t max_addresses)
+    const String & description,
+    char separator,
+    std::optional<char> replica_separator,
+    const RemoteDescriptionCaller & caller,
+    size_t max_addresses)
 {
-    const auto cardinality = countAddresses(ctx.description, ctx.l, ctx.r, ctx.separator, ctx.replica_separator);
+    const auto cardinality = countAddresses(description, 0, description.size(), separator, replica_separator);
 
     /// A count that does not exceed the limit contradicts the fact that we are throwing, so it
     /// cannot be trusted: report the number only when it is consistent with the failure.
@@ -258,72 +273,84 @@ struct DescriptionContext
     throwTooManyAddresses(caller, max_addresses, std::nullopt);
 }
 
-/// The Cartesian product of two sets of rows, the result is written in place of the first argument
-void append(
-    std::vector<String> & to,
-    const std::vector<String> & what,
-    size_t max_addresses,
-    const RemoteDescriptionCaller & caller,
-    const DescriptionContext & ctx)
+
+UInt64 RemoteDescriptionGenerator::Factor::size() const
 {
-    if (what.empty())
-        return;
+    return is_range ? range_end - range_begin + 1 : alternatives.size();
+}
 
-    if (to.empty())
+void RemoteDescriptionGenerator::Factor::appendElementTo(String & out, UInt64 index) const
+{
+    if (!is_range)
     {
-        to = what;
+        out += alternatives[index];
         return;
     }
 
-    /// The caller feeds every ordinary character as a single-element set; rebuilding
-    /// the whole product would make the parsing quadratic in the description length.
-    if (what.size() == 1)
-    {
-        if (to.size() > max_addresses)
-            throwTooManyAddressesForDescription(ctx, caller, max_addresses);
-        for (auto & elem_to : to)
-            elem_to += what.front();
-        return;
-    }
-
-    /// Integer division makes this equivalent to `to.size() * what.size() > max_addresses` without overflowing.
-    if (to.size() > max_addresses / what.size())
-        throwTooManyAddressesForDescription(ctx, caller, max_addresses);
-
-    std::vector<String> res;
-    for (const auto & elem_to : to)
-        for (const auto & elem_what : what)
-            res.push_back(elem_to + elem_what);
-
-    to.swap(res);
+    const String number = toString<UInt64>(range_begin + index);
+    for (size_t i = number.size(); i < pad_width; ++i)
+        out += '0';
+    out += number;
 }
 
 
-/// `ctx` is only used to report the cardinality of the whole first argument when the limit is hit; the
-/// string being parsed is `description`, which is a part of it at some stage of the expansion.
-std::vector<String> parseRemoteDescriptionImpl(
+RemoteDescriptionGenerator::RemoteDescriptionGenerator(
     const String & description,
     size_t l,
     size_t r,
     char separator,
-    size_t max_addresses,
-    const RemoteDescriptionCaller & caller,
-    const DescriptionContext & ctx)
+    size_t max_addresses_,
+    const RemoteDescriptionCaller & caller_,
+    std::optional<char> replica_separator)
+    : RemoteDescriptionGenerator(description, l, r, separator, max_addresses_, caller_, replica_separator, nullptr)
 {
+}
 
-    /// Nested braces are parsed recursively, and `max_addresses` bounds the number of generated
-    /// addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
+RemoteDescriptionGenerator::RemoteDescriptionGenerator(
+    const String & description,
+    size_t l,
+    size_t r,
+    char separator,
+    size_t max_addresses_,
+    const RemoteDescriptionCaller & caller_,
+    std::optional<char> replica_separator,
+    const RemoteDescriptionGenerator * outer)
+    : max_addresses(max_addresses_)
+    , caller(caller_)
+    , origin_description(outer ? outer->origin_description : description.substr(l, r > l ? r - l : 0))
+    , origin_separator(outer ? outer->origin_separator : separator)
+    , origin_replica_separator(outer ? outer->origin_replica_separator : replica_separator)
+{
+    /// Groups holding the separator are parsed recursively, and `max_addresses` bounds the number
+    /// of generated addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
     checkStackSize();
-
-    std::vector<String> res;
-    std::vector<String> cur;
 
     /// An empty substring means a set of an empty string
     if (l >= r)
     {
-        res.push_back("");
-        return res;
+        Factor factor;
+        factor.alternatives.emplace_back();
+        segments.push_back(Segment{{std::move(factor)}});
+        total_count = 1;
+        startSegment();
+        return;
     }
+
+    segments.emplace_back();
+
+    /// Consecutive ordinary characters collapse into a single factor. Appending them one by one to
+    /// every address generated so far is what used to make the parsing quadratic in the description
+    /// length.
+    String literal;
+    auto flush_literal = [&]
+    {
+        if (literal.empty())
+            return;
+        Factor factor;
+        factor.alternatives.push_back(std::move(literal));
+        literal.clear();
+        segments.back().factors.push_back(std::move(factor));
+    };
 
     for (size_t i = l; i < r; ++i)
     {
@@ -333,7 +360,6 @@ std::vector<String> parseRemoteDescriptionImpl(
             ssize_t cnt = 1;
             ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
             size_t m = 0;
-            std::vector<String> buffer;
             bool have_splitter = false;
 
             /// Look for the corresponding closing bracket
@@ -352,6 +378,9 @@ std::vector<String> parseRemoteDescriptionImpl(
             }
             if (cnt != 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: incorrect brace sequence in first argument", caller.description);
+
+            Factor factor;
+
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
@@ -381,55 +410,111 @@ std::vector<String> parseRemoteDescriptionImpl(
                         "{}: incorrect argument in braces (left number is greater then right): {}",
                         caller.description,
                         description.substr(i, m - i + 1));
-                if (right - left + 1 > max_addresses)
-                    throwTooManyAddressesForDescription(ctx, caller, max_addresses);
-                bool add_leading_zeroes = false;
-                size_t len = last_dot - 1 - (i + 1);
+
+                factor.is_range = true;
+                factor.range_begin = left;
+                factor.range_end = right;
                 /// If the left and right borders have equal numbers, then you must add leading zeros.
-                /// TODO The code is somewhat awful.
                 if (last_dot - 1 - (i + 1) == m - (last_dot + 1))
-                    add_leading_zeroes = true;
-                for (size_t id = left; id <= right; ++id)
-                {
-                    String id_str = toString<UInt64>(id);
-                    if (add_leading_zeroes)
-                    {
-                        while (id_str.size() < len)
-                            id_str = "0" + id_str;
-                    }
-                    buffer.push_back(id_str);
-                }
+                    factor.pad_width = last_dot - 1 - (i + 1);
             }
-            else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
-                buffer = parseRemoteDescriptionImpl(description, i + 1, m, separator, max_addresses, caller, ctx);
-            else                     /// Otherwise just copy, spawn will occur when you call with the correct delimiter
-                buffer.push_back(description.substr(i, m - i + 1));
-            /// Add all possible received extensions to the current set of lines
-            append(cur, buffer, max_addresses, caller, ctx);
+            else if (have_splitter)
+            {
+                /// A group with the current separator inside is a set of alternatives, and the direct
+                /// product needs all of them up front. It cannot contain a numeric interval - a `..`
+                /// anywhere inside braces takes the branch above - so this only materializes literal
+                /// text, but keep it bounded all the same.
+                RemoteDescriptionGenerator nested(description, i + 1, m, separator, max_addresses, caller, std::nullopt, this);
+                String alternative;
+                while (nested.next(alternative))
+                    factor.alternatives.push_back(alternative);
+            }
+            else
+            {
+                /// Otherwise just copy, spawn will occur when you call with the correct delimiter
+                factor.alternatives.push_back(description.substr(i, m - i + 1));
+            }
+
+            flush_literal();
+            /// An empty group, as in `a{,}b`, contributes nothing rather than making the product empty.
+            if (factor.size() != 0)
+                segments.back().factors.push_back(std::move(factor));
             i = m;
         }
         else if (description[i] == separator)
         {
-            /// If the delimiter, then add found rows
-            res.insert(res.end(), cur.begin(), cur.end());
-            cur.clear();
+            flush_literal();
+            segments.emplace_back();
         }
         else
         {
-            /// Otherwise, simply append the character to current lines
-            std::vector<String> buffer;
-            buffer.push_back(description.substr(i, 1));
-            append(cur, buffer, max_addresses, caller, ctx);
+            literal += description[i];
         }
     }
+    flush_literal();
 
-    res.insert(res.end(), cur.begin(), cur.end());
-    if (res.size() > max_addresses)
-        throwTooManyAddressesForDescription(ctx, caller, max_addresses);
+    total_count = 0;
+    for (const auto & segment : segments)
+    {
+        if (segment.factors.empty())
+            continue;
 
-    return res;
+        std::optional<UInt64> count = 1;
+        for (const auto & factor : segment.factors)
+            count = multiply(count, factor.size());
+        total_count = add(total_count, count);
+    }
+
+    startSegment();
 }
 
+void RemoteDescriptionGenerator::startSegment()
+{
+    while (segment_index < segments.size() && segments[segment_index].factors.empty())
+        ++segment_index;
+
+    if (segment_index == segments.size())
+    {
+        finished = true;
+        return;
+    }
+
+    digits.assign(segments[segment_index].factors.size(), 0);
+}
+
+void RemoteDescriptionGenerator::throwTooManyAddresses() const
+{
+    throwTooManyAddressesForDescription(origin_description, origin_separator, origin_replica_separator, caller, max_addresses);
+}
+
+bool RemoteDescriptionGenerator::next(String & out)
+{
+    if (finished)
+        return false;
+
+    if (generated == max_addresses)
+        throwTooManyAddresses();
+    ++generated;
+
+    const auto & factors = segments[segment_index].factors;
+
+    out.clear();
+    for (size_t i = 0; i < factors.size(); ++i)
+        factors[i].appendElementTo(out, digits[i]);
+
+    /// Advance the odometer. The last factor is the least significant digit.
+    size_t position = factors.size();
+    while (position > 0)
+    {
+        --position;
+        if (++digits[position] < factors[position].size())
+            return true;
+        digits[position] = 0;
+    }
+
+    ++segment_index;
+    startSegment();
+    return true;
 }
 
 
@@ -441,8 +526,24 @@ std::vector<String> parseRemoteDescription(
     size_t max_addresses,
     const RemoteDescriptionCaller & caller)
 {
-    const DescriptionContext ctx{description, l, r, separator, std::nullopt};
-    return parseRemoteDescriptionImpl(description, l, r, separator, max_addresses, caller, ctx);
+    RemoteDescriptionGenerator generator(description, l, r, separator, max_addresses, caller);
+
+    /// Every address is needed at once, so reject a pattern that generates too many of them before
+    /// generating any.
+    const auto total_count = generator.totalCount();
+    if (!total_count)
+        throwTooManyAddresses(caller, max_addresses, std::nullopt);
+    if (*total_count > max_addresses)
+        throwTooManyAddresses(caller, max_addresses, static_cast<size_t>(*total_count));
+
+    std::vector<String> res;
+    res.reserve(*total_count);
+
+    String address;
+    while (generator.next(address))
+        res.push_back(address);
+
+    return res;
 }
 
 
@@ -450,24 +551,33 @@ std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
     const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
 {
     /// Whichever of the two stages hits the limit, the message reports the whole first argument.
-    const DescriptionContext ctx{description, 0, description.size(), ',', '|'};
-
-    auto shards = parseRemoteDescriptionImpl(description, 0, description.size(), ',', max_addresses, caller, ctx);
+    RemoteDescriptionGenerator shard_generator(description, 0, description.size(), ',', max_addresses, caller, '|');
+    const auto shard_count = shard_generator.totalCount();
+    if (!shard_count || *shard_count > max_addresses)
+        throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses);
 
     std::vector<RemoteDescriptionShard> result;
-    result.reserve(shards.size());
+    result.reserve(*shard_count);
 
-    /// Each stage on its own stays within the limit, so at most twice the limit is ever materialized.
     size_t total = 0;
-    for (auto & shard : shards)
+    String shard;
+    while (shard_generator.next(shard))
     {
-        auto replicas = parseRemoteDescriptionImpl(shard, 0, shard.size(), '|', max_addresses, caller, ctx);
+        RemoteDescriptionGenerator replica_generator(shard, 0, shard.size(), '|', max_addresses, caller, std::nullopt, &shard_generator);
 
-        if (replicas.size() > max_addresses - total)
-            throwTooManyAddressesForDescription(ctx, caller, max_addresses);
-        total += replicas.size();
+        /// Checked before generating any replica, so at most the limit is ever materialized.
+        const auto replica_count = replica_generator.totalCount();
+        if (!replica_count || *replica_count > max_addresses - total)
+            throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses);
+        total += *replica_count;
 
-        result.push_back({std::move(shard), std::move(replicas)});
+        std::vector<String> replicas;
+        replicas.reserve(*replica_count);
+        String replica;
+        while (replica_generator.next(replica))
+            replicas.push_back(replica);
+
+        result.push_back({shard, std::move(replicas)});
     }
 
     return result;
