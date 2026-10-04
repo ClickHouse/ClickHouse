@@ -34,7 +34,7 @@ public:
     void start(ThreadName name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+            scheduler = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, name] { schedulerThread(name); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful

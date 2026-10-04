@@ -325,7 +325,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
                 spawnThreadLocked();
         }
 
-        delayed_thread = std::make_unique<ThreadFromGlobalPoolNoTracingContextPropagation>([this] { delayExecutionThreadFunction(); });
+        delayed_thread = std::make_unique<ThreadFromGlobalPoolNoTracingContextPropagation>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+            [this] { delayExecutionThreadFunction(); });
     }
     catch (...)
     {
@@ -358,7 +360,9 @@ void BackgroundSchedulePool::spawnThreadLocked()
     if (threads.size() == threads.capacity())
         threads.reserve(threads.size() < max_size ? max_size : threads.size() + 1);
 
-    threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); }));
+    threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        [this] { threadFunction(); }));
 }
 
 
