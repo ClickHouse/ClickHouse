@@ -1,0 +1,8 @@
+dst after rejected adoptions	[(0,5),(1,5),(2,5),(3,5),(4,5),(5,5),(6,5),(7,5),(8,5),(9,5)]
+dst after allowed REPLACE from column-less src	[(300,7),(301,7),(302,7),(303,7),(304,7)]
+src after allowed self-REPLACE	[(100,1000),(101,1000),(102,1000),(103,1000),(104,1000),(200,1000),(201,1000),(202,1000),(203,1000),(204,1000)]
+clone1 has no adopted parts	0
+clone2 from column-less src	[(300,7),(301,7),(302,7),(303,7),(304,7)]
+dst after correctness postlude	[(300,7),(301,7),(302,42),(303,7),(304,7)]
+dst after rejected offset-only adoption	[(300,7),(301,7),(302,42),(303,7),(304,7)]
+dst after rejected number-only adoption	[(300,7),(301,7),(302,42),(303,7),(304,7)]

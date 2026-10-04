@@ -1,0 +1,6 @@
+rmt dst after rejected adoptions	[(0,5),(1,5),(2,5),(3,5),(4,5),(5,5),(6,5),(7,5),(8,5),(9,5)]
+rmt src after allowed self-REPLACE	[(100,1000),(101,1000),(102,1000),(103,1000),(104,1000),(200,1000),(201,1000),(202,1000),(203,1000),(204,1000)]
+rmt src has no detached parts after rejected fetch	0
+rmt mixed partition has an identity-bearing part and a level-0 part	1	1
+rmt mixed detached parts after rejected fetch (only the pre-existing one)	1	1
+rmt fetch of column-less part succeeded	1
