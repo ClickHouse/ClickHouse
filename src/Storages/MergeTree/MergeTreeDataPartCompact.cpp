@@ -289,7 +289,11 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getFullPath());
         }
     }
-    else
+
+    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
+    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
+    /// in that case too.
+    if (checksums.empty() || checksums_were_regenerated)
     {
         {
             /// count.txt should be present even in non custom-partitioned parts
@@ -307,21 +311,26 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
         if (getDataPartStorage().existsFile(mrk_file_name))
         {
             UInt64 file_size = getDataPartStorage().getFileSize(mrk_file_name);
-             if (!file_size)
+            if (!file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty.",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(getColumns().size()) * index_granularity->getMarksCount();
-            if (expected_file_size != file_size)
+            /// The size of compressed marks does not follow from the number of marks, so check their
+            /// decompressed size instead. With marks for substreams, each granule has a mark per substream.
+            UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(mrk_file_name)->ignoreAll() : file_size;
+            size_t num_marks_in_granule = index_granularity_info.mark_type.with_substreams
+                ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size();
+            UInt64 expected_payload_size = index_granularity_info.getMarkSizeInBytes(num_marks_in_granule) * index_granularity->getMarksCount();
+            if (expected_payload_size != marks_payload_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                    "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
+                    "Part {} is broken: bad size of marks in file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
-                    file_size, expected_file_size);
+                    marks_payload_size, expected_payload_size);
         }
     }
 }

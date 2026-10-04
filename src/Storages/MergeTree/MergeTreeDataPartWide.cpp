@@ -499,7 +499,11 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
         }
     }
-    else
+
+    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
+    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
+    /// in that case too.
+    if (checksums.empty() || checksums_were_regenerated)
     {
         if (!cols_substreams.empty())
         {
@@ -524,9 +528,13 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
+                    /// Compressed marks of different streams compress to different sizes, so compare their
+                    /// decompressed sizes. Reading them through also proves that each one is complete.
+                    UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
                     if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
+                        marks_size = marks_payload_size;
+                    else if (marks_payload_size != *marks_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
@@ -563,9 +571,13 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
+                    /// Compressed marks of different streams compress to different sizes, so compare their
+                    /// decompressed sizes. Reading them through also proves that each one is complete.
+                    UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
                     if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
+                        marks_size = marks_payload_size;
+                    else if (marks_payload_size != *marks_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());

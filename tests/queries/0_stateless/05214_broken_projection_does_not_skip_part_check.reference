@@ -1,0 +1,40 @@
+inserted	5000
+both rows	0
+both detached parts	1	broken-on-start
+both broken projections	0
+inserted	5000
+projection only rows	5000
+projection only detached parts	0	\N
+projection only broken projections	1
+inserted	5000
+both, no checksums rows	0
+both, no checksums detached parts	1	broken-on-start
+both, no checksums broken projections	0
+inserted	5000
+projection only, no checksums rows	5000
+projection only, no checksums detached parts	0	\N
+projection only, no checksums broken projections	1
+inserted	5000
+wide, no checksums rows	5000
+wide, no checksums detached parts	0	\N
+wide, no checksums broken projections	0
+inserted	5000
+wide, torn first column, no checksums rows	0
+wide, torn first column, no checksums detached parts	1	broken-on-start
+wide, torn first column, no checksums broken projections	0
+inserted	5000
+wide, torn second column, no checksums rows	0
+wide, torn second column, no checksums detached parts	1	broken-on-start
+wide, torn second column, no checksums broken projections	0
+inserted	5000
+compact, torn, no checksums rows	0
+compact, torn, no checksums detached parts	1	broken-on-start
+compact, torn, no checksums broken projections	0
+inserted	5000
+wide, several blocks, no checksums rows	5000
+wide, several blocks, no checksums detached parts	0	\N
+wide, several blocks, no checksums broken projections	0
+inserted	5000
+compact, several blocks, no checksums rows	5000
+compact, several blocks, no checksums detached parts	0	\N
+compact, several blocks, no checksums broken projections	0
