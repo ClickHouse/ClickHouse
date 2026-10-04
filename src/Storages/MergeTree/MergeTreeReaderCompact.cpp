@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
-#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -84,30 +83,15 @@ void MergeTreeReaderCompact::fillColumnPositions()
         if (position.has_value() && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i)))
             position.reset();
 
-        if (position.has_value() && column_to_read.isSubcolumn())
-        {
-            auto name_in_storage = column_to_read.getNameInStorage();
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-            auto storage_column_from_part = part_columns.getColumn(GetColumnsOptions::All, name_in_storage);
-
-            /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
-            /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
-            /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
-            /// the requested column's storage type in that case. Restricted to that specific serialization so it does
-            /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
-            const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
-            const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
-            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
-                && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
-                position.reset();
-        }
+        const bool subcolumn_missing_in_part = position.has_value() && isSubcolumnMissingInPart(i);
+        if (subcolumn_missing_in_part)
+            position.reset();
 
         column_positions[i] = std::move(position);
 
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (!column_positions[i])
+        if (!column_positions[i] && !subcolumn_missing_in_part)
             findPositionForMissedNested(i);
 
         if (column_positions[i] && column_to_read.isSubcolumn())
