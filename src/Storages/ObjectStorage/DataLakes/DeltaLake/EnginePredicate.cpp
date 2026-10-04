@@ -8,8 +8,10 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
@@ -69,12 +71,51 @@ namespace
         const auto * nullable = assert_cast<const DB::DataTypeNullable *>(node->result_type.get());
         return nullable->getNestedType();
     }
+
+    /// Looks for the fields among `names` and the tuple elements below them whose names joined with dots are `name`.
+    /// Sets `found` if there is one, and `dotted` if a field name on the path to one of them contains a dot.
+    void findFieldPaths(
+        const DB::Names & names, const DB::DataTypes & types, std::string_view name, bool dotted_path, bool & found, bool & dotted)
+    {
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            if (!name.starts_with(names[i]))
+                continue;
+
+            const bool path_has_dot = dotted_path || names[i].contains('.');
+            if (name.size() == names[i].size())
+            {
+                found = true;
+                dotted |= path_has_dot;
+            }
+            else if (name[names[i].size()] == '.')
+            {
+                if (const auto * tuple_type = typeid_cast<const DB::DataTypeTuple *>(types[i].get()))
+                    findFieldPaths(
+                        tuple_type->getElementNames(), tuple_type->getElements(), name.substr(names[i].size() + 1),
+                        path_has_dot, found, dotted);
+            }
+        }
+    }
+
+    /// delta-kernel splits a column name at every dot, so a name with a dot can be passed only if it is not
+    /// also the name of a field path with a dot in a field name.
+    bool canPassColumnName(const DB::NamesAndTypesList & schema, const std::string & name)
+    {
+        if (!name.contains('.'))
+            return true;
+
+        bool found = false;
+        bool dotted = false;
+        findFieldPaths(schema.getNames(), schema.getTypes(), name, /* dotted_path */ false, found, dotted);
+        return found && !dotted;
+    }
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
+    const DB::ActionsDAG & filter, const DB::NamesAndTypesList & schema, std::exception_ptr & exception, DB::ContextPtr context)
 {
-    return std::make_unique<EnginePredicate>(filter, exception, context);
+    return std::make_unique<EnginePredicate>(filter, schema, exception, context);
 }
 
 /// Contains state for EngineIterator
@@ -215,6 +256,20 @@ private:
     }
 
     static uintptr_t getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node);
+
+    /// Visits a column, or returns VISITOR_FAILED_OR_UNSUPPORTED if delta-kernel cannot name it.
+    static uintptr_t visitColumn(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * column_node)
+    {
+        if (!canPassColumnName(iterator_data.predicate.getSchema(), column_node->result_name))
+        {
+            LOG_TEST(iterator_data.log(), "Column {} cannot be passed to delta-kernel", column_node->result_name);
+            return VISITOR_FAILED_OR_UNSUPPORTED;
+        }
+
+        const auto column_name = KernelUtils::toDeltaString(column_node->result_name);
+        return KernelUtils::unwrapResult(
+            ffi::visit_expression_column(iterator_data.state, column_name, &KernelUtils::allocateError), "visit_expression_column");
+    }
 };
 
 uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
@@ -352,11 +407,9 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (isColumnNode(node->children[0]))
                 {
-                    const auto column_name = KernelUtils::toDeltaString(node->children[0]->result_name);
-                    uintptr_t column = KernelUtils::unwrapResult(
-                        ffi::visit_expression_column(iterator_data.state,
-                                                     column_name,
-                                                     &KernelUtils::allocateError), "visit_expression_column");
+                    uintptr_t column = visitColumn(iterator_data, node->children[0]);
+                    if (column == VISITOR_FAILED_OR_UNSUPPORTED)
+                        return column;
                     return ffi::visit_predicate_not(iterator_data.state, column);
                 }
 
@@ -417,18 +470,22 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
+                    uintptr_t column = visitColumn(iterator_data, column_node);
+                    if (column == VISITOR_FAILED_OR_UNSUPPORTED)
+                        return column;
+
                     /// If literal node has a different type from column's,
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
                     {
                         auto column_name = column_node->result_type->getName();
                         auto column_type = std::make_shared<DB::DataTypeString>();
-                        auto column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
+                        auto type_name_column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
 
                         /// TODO: get rid of const_cast.
                         DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
 
-                        const auto * right_arg = &dag.addColumn(std::move(column), std::move(column_type), std::move(column_name));
+                        const auto * right_arg = &dag.addColumn(std::move(type_name_column), std::move(column_type), std::move(column_name));
                         const auto * left_arg = literal_node;
 
                         DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
@@ -445,12 +502,6 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                         print_node_info(literal_node);
                     }
-
-                    const auto column_name = KernelUtils::toDeltaString(column_node->result_name);
-                    uintptr_t column = KernelUtils::unwrapResult(
-                        ffi::visit_expression_column(iterator_data.state,
-                                                    column_name,
-                                                    &KernelUtils::allocateError), "visit_expression_column");
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
