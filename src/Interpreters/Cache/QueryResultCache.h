@@ -32,6 +32,9 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// Does AST contain subqueries (e.g. IN (SELECT ...), scalar subqueries)?
 bool astContainsSubqueries(ASTPtr ast);
 
+/// Is the query result cache enabled for writes by the settings and able to store entries under the server configuration?
+bool canWriteToQueryResultCache(ContextPtr context);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 
@@ -171,6 +174,10 @@ public:
         size_t max_query_result_cache_entries_quota);
 
     void clear(const std::optional<String> & tag);
+
+    /// Can the cache store an entry at all under the current server configuration? It can not if one of its limits is 0, e.g. in
+    /// `clickhouse-local` or with `query_cache.max_size_in_bytes = 0`.
+    bool canStoreEntries() const;
 
     size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;

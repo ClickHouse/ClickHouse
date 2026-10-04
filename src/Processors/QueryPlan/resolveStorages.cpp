@@ -27,9 +27,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <Storages/IStorage.h>
 #include <Core/Settings.h>
 #include <Planner/Utils.h>
-#include <Storages/StorageMerge.h>
 #include <Common/MemoryTrackerUtils.h>
 
 #include <algorithm>
@@ -253,9 +253,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     if (!table_lock)
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+    /// The `SelectQueryInfo` built above has no query: the step carries only a table name and the
+    /// table expression modifiers. Reads that need one get a `SELECT` over that table synthesized
+    /// and re-analyzed below; the rest read the storage directly.
+    const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
+
     ASTPtr query;
-    bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
-    if (storage->isRemote() || is_storage_merge)
+    if (read_via_interpreter)
     {
         auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
@@ -297,7 +301,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     }
 
     QueryPlan reading_plan;
-    if (storage->isRemote() || is_storage_merge)
+    if (read_via_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
