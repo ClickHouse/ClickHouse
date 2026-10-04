@@ -15,6 +15,11 @@ SELECT 'datetime constant',
         SETTINGS optimize_and_compare_chain = 0) WHERE explain LIKE '%function_name: less,%');
 
 -- The constant is widened to one instant: a time zone of its own does not shift it.
+-- The counts read an indexed table, so a wrong derived bound prunes the row.
+DROP TABLE IF EXISTS t_tz;
+CREATE TABLE t_tz (a DateTime64(6, 'UTC'), b DateTime64(6, 'UTC')) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_tz VALUES ('2020-01-01 10:00:00.5', '2020-01-01 10:00:01');
+
 SELECT 'datetime constant in another time zone',
     (SELECT count() FROM (EXPLAIN QUERY TREE
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 10:00:00.5', '2020-01-01 10:00:01'))
@@ -25,9 +30,15 @@ SELECT 'datetime constant in another time zone',
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 10:00:00.5', '2020-01-01 10:00:01'))
         WHERE a < b AND b < toDateTime('2020-01-01 05:00:02', 'America/New_York')
         SETTINGS optimize_and_compare_chain = 0) WHERE explain LIKE '%function_name: less,%'),
-    (SELECT count() FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 10:00:00.5', '2020-01-01 10:00:01'))
+    (SELECT count() FROM t_tz
         WHERE a < b AND b < toDateTime('2020-01-01 05:00:02', 'America/New_York')
         SETTINGS optimize_and_compare_chain = 1);
+
+DROP TABLE t_tz;
+
+DROP TABLE IF EXISTS t_scale;
+CREATE TABLE t_scale (a DateTime64(6, 'UTC'), b DateTime64(6, 'UTC')) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_scale VALUES ('2020-01-01 00:00:02.122998', '2020-01-01 00:00:02.122999');
 
 SELECT 'lower scale datetime64 constant',
     (SELECT count() FROM (EXPLAIN QUERY TREE
@@ -39,9 +50,11 @@ SELECT 'lower scale datetime64 constant',
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 00:00:02.122998', '2020-01-01 00:00:02.122999'))
         WHERE a < b AND b < toDateTime64('2020-01-01 00:00:02.123', 3, 'UTC')
         SETTINGS optimize_and_compare_chain = 0) WHERE explain LIKE '%function_name: less,%'),
-    (SELECT count() FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 00:00:02.122998', '2020-01-01 00:00:02.122999'))
+    (SELECT count() FROM t_scale
         WHERE a < b AND b < toDateTime64('2020-01-01 00:00:02.123', 3, 'UTC')
         SETTINGS optimize_and_compare_chain = 1);
+
+DROP TABLE t_scale;
 
 -- A constant of a higher scale would have to be narrowed, and one that overflows the expression's
 -- scale cannot be widened: neither joins the chain.
