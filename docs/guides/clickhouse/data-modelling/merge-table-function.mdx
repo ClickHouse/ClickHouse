@@ -16,7 +16,7 @@ It does this by creating a temporary [Merge](/reference/engines/table-engines/sp
 
 ## Setup tables {#setup-tables}
 
-We're going to learn how to use this function with help from [TennisMyLife's ATP match database](https://github.com/Tennismylife/TML-Database).
+We're going to learn how to use this function with help from [Jeff Sackmann's tennis dataset](https://github.com/JeffSackmann/tennis_atp).
 We're going to process CSV files that contain matches going back to the 1960s, but we'll create a slightly different schema for each decade.
 We'll also add a couple of extra columns for the 1990s decade.
 
@@ -25,19 +25,19 @@ The import statements are shown below:
 ```sql
 CREATE OR REPLACE TABLE atp_matches_1960s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1968..1969}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1968..1969}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(String), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1970s ORDER BY tourney_id AS 
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1970..1979}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1970..1979}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(UInt8), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1980s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1980..1989}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1980..1989}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16)';
 
@@ -45,7 +45,7 @@ CREATE OR REPLACE TABLE atp_matches_1990s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score,
        toBool(arrayExists(x -> position(x, 'W/O') > 0, score))::Nullable(bool) AS walkover,
        toBool(arrayExists(x -> position(x, 'RET') > 0, score))::Nullable(bool) AS retirement
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1990..1999}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1990..1999}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
@@ -107,13 +107,11 @@ AND loser_seed = 1;
 │ Bjorn Borg    │ ['7-6','6-4']                   │
 │ Bjorn Borg    │ ['4-6','7-6','7-6','6-4']       │
 │ Jimmy Connors │ ['6-1','6-3']                   │
-│ Mats Wilander │ ['6-2','6-4']                   │
 │ Ivan Lendl    │ ['6-2','4-6','6-3','6-7','7-6'] │
 │ Ivan Lendl    │ ['6-3','3-6','6-3','7-6']       │
 │ Ivan Lendl    │ ['6-1','6-3']                   │
 │ Stefan Edberg │ ['6-2','6-3']                   │
 │ Stefan Edberg │ ['7-6','6-2']                   │
-│ Ivan Lendl    │ ['7-6','1-4','WEA']             │
 │ Stefan Edberg │ ['6-2','6-2']                   │
 │ Jakob Hlasek  │ ['6-3','7-6']                   │
 └───────────────┴─────────────────────────────────┘
@@ -130,7 +128,7 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
+  variantElement(winner_seed, 'String')::UInt16 >= 3
 );
 ```
 
@@ -139,14 +137,12 @@ When the type is `String`, we cast to a number and then do the comparison.
 The result of running the query is shown below:
 
 ```text
-┌─loser_name────┬─score───────────────┬─winner_seed─┐
-│ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
-│ Mats Wilander │ ['6-2','6-4']       │ 3           │
-│ Stefan Edberg │ ['6-2','6-3']       │ 6           │
-│ Stefan Edberg │ ['7-6','6-2']       │ 4           │
-│ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
-│ Stefan Edberg │ ['6-2','6-2']       │ 7           │
-└───────────────┴─────────────────────┴─────────────┘
+┌─loser_name────┬─score─────────┬─winner_seed─┐
+│ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────┴───────────────┴─────────────┘
 ```
 
 ## Which table do rows come from when using merge? {#which-table-merge}
@@ -162,19 +158,17 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
+  variantElement(winner_seed, 'String')::UInt16 >= 3
 );
 ```
 
 ```text
-┌─_table────────────┬─loser_name────┬─score───────────────┬─winner_seed─┐
-│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
-│ atp_matches_1980s │ Mats Wilander │ ['6-2','6-4']       │ 3           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3']       │ 6           │
-│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2']       │ 4           │
-│ atp_matches_1980s │ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2']       │ 7           │
-└───────────────────┴───────────────┴─────────────────────┴─────────────┘
+┌─_table────────────┬─loser_name────┬─score─────────┬─winner_seed─┐
+│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────────┴───────────────┴───────────────┴─────────────┘
 ```
 
 We could also use this virtual column as part of a query to count the values for the `walkover` column:
@@ -188,11 +182,11 @@ ORDER BY _table;
 
 ```text
 ┌─_table────────────┬─walkover─┬─count()─┐
-│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7319 │
-│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39404 │
-│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36097 │
-│ atp_matches_1990s │ true     │     129 │
-│ atp_matches_1990s │ false    │   37023 │
+│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7542 │
+│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39165 │
+│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36233 │
+│ atp_matches_1990s │ true     │     128 │
+│ atp_matches_1990s │ false    │   37022 │
 └───────────────────┴──────────┴─────────┘
 ```
 
@@ -221,13 +215,13 @@ If the underlying type of `score` is `Array(String)` we have to go over the arra
 
 ```text
 ┌─_table────────────┬─multiIf(isNo⋯, '%W/O%'))─┬─count()─┐
-│ atp_matches_1960s │ true                     │     296 │
-│ atp_matches_1960s │ false                    │    7023 │
-│ atp_matches_1970s │ true                     │     583 │
-│ atp_matches_1970s │ false                    │   38821 │
-│ atp_matches_1980s │ true                     │     117 │
-│ atp_matches_1980s │ false                    │   35980 │
-│ atp_matches_1990s │ true                     │     129 │
-│ atp_matches_1990s │ false                    │   37023 │
+│ atp_matches_1960s │ true                     │     242 │
+│ atp_matches_1960s │ false                    │    7300 │
+│ atp_matches_1970s │ true                     │     422 │
+│ atp_matches_1970s │ false                    │   38743 │
+│ atp_matches_1980s │ true                     │      92 │
+│ atp_matches_1980s │ false                    │   36141 │
+│ atp_matches_1990s │ true                     │     128 │
+│ atp_matches_1990s │ false                    │   37022 │
 └───────────────────┴──────────────────────────┴─────────┘
 ```

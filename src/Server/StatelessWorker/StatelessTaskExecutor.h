@@ -1,9 +1,7 @@
 #pragma once
 #include <QueryPipeline/DistributedPlanExecutor.h>
-#include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/InternalTextLogsQueue.h>
 #include <base/types.h>
 #include <base/defines.h>
 
@@ -11,7 +9,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -39,31 +36,9 @@ public:
         Result result;
         String message;
         Progress progress;
-        /// Error code of a failed task, 0 otherwise.
-        int error_code = 0;
-        /// Log lines drained on this poll together with the loss counters; set only when the task
-        /// collects logs (see `startTask`).
-        std::optional<TaskLogsPayload> logs;
-        /// What the coordinator asked to collect at `start`; empty for an unknown task id.
-        TaskCollectors collectors;
     };
 
-    /// The error a task ended with.
-    struct TaskFailure
-    {
-        int code = 0;
-        String message;
-    };
-
-    /// Draining the queue and advancing the counter happen under one lock, so concurrent polls (a retried
-    /// request overlapping the original one) get offsets in the same order as the lines they drained.
-    struct ForwardedLogsCounter
-    {
-        std::mutex mutex;
-        UInt64 count TSA_GUARDED_BY(mutex) = 0;
-    };
-
-    Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);
@@ -77,16 +52,9 @@ private:
 
     struct TaskState
     {
-        /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
-        std::shared_future<std::optional<TaskFailure>> completion_future;
+        std::shared_future<String> completion_future;
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
-        /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
-        TaskCollectors collectors;
-        /// Created only when logs are collected; drained by `getStatus`.
-        InternalTextLogsQueuePtr logs_queue;
-        /// Lines handed to status replies so far.
-        std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;

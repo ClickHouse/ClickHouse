@@ -8,33 +8,23 @@
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
           "PATCH /v1/organizations/{organizationId}",
-          "products/cloud/api-reference/organization/organization-quotas-get-list",
-          "products/cloud/api-reference/organization/organization-quota-get",
           "GET /v1/organizations/{organizationId}/activities",
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
         ]
       },
       {
         "group": "Billing",
         "pages": [
-          "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/active-balances-get",
-          "products/cloud/api-reference/billing/credit-balances-get"
+          "GET /v1/organizations/{organizationId}/usageCost"
         ]
       },
       {
         "group": "User management",
         "pages": [
-          "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
           "PATCH /v1/organizations/{organizationId}/members/{userId}",
@@ -54,23 +44,6 @@
           "PATCH /v1/organizations/{organizationId}/roles/{roleId}",
           "DELETE /v1/organizations/{organizationId}/roles/{roleId}"
         ]
-      },
-      {
-        "group": "UDF",
-        "pages": [
-          "POST /v1/organizations/{organizationId}/udfUploads/url",
-          "GET /v1/organizations/{organizationId}/udfs",
-          "POST /v1/organizations/{organizationId}/udfs",
-          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
-          "GET /v1/organizations/{organizationId}/udfs/{functionName}",
-          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
-          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
-          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
-          "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
-          "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
-          "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
-          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
-        ]
       }
     ]
   },
@@ -80,7 +53,6 @@
       {
         "group": "Service",
         "pages": [
-          "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
           "POST /v1/organizations/{organizationId}/services",
           "GET /v1/organizations/{organizationId}/services/{serviceId}",
@@ -120,40 +92,11 @@
           "products/cloud/api-reference/backup/backup-bucket-update",
           "products/cloud/api-reference/backup/backup-bucket-delete"
         ]
-      },
-      {
-        "group": "Snapshot",
-        "pages": [
-          "products/cloud/api-reference/snapshot/snapshot-get-list",
-          "products/cloud/api-reference/snapshot/snapshot-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
-        ]
-      },
-      {
-        "group": "Query API endpoints",
-        "pages": [
-          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
-          "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
-          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
-          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
-          "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
-        ]
-      },
-      {
-        "group": "Saved queries",
-        "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
-        ]
       }
     ]
   },
   {
-    "group": "API keys",
+    "group": "OpenAPI",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -165,8 +108,7 @@
   {
     "group": "Prometheus",
     "pages": [
-      "products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "GET /v1/organizations/{organizationId}/prometheus/discovery",
+      "GET /v1/organizations/{organizationId}/prometheus",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
@@ -177,7 +119,6 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
-      "products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
@@ -203,31 +144,13 @@
       "products/cloud/api-reference/clickstack/click-stack-get-dashboard",
       "products/cloud/api-reference/clickstack/click-stack-update-dashboard",
       "products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
-      "products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
       "products/cloud/api-reference/clickstack/click-stack-list-alerts",
       "products/cloud/api-reference/clickstack/click-stack-create-alert",
       "products/cloud/api-reference/clickstack/click-stack-list-sources",
-      "products/cloud/api-reference/clickstack/click-stack-create-source",
-      "products/cloud/api-reference/clickstack/click-stack-get-source",
-      "products/cloud/api-reference/clickstack/click-stack-update-source",
-      "products/cloud/api-reference/clickstack/click-stack-delete-source",
       "products/cloud/api-reference/clickstack/click-stack-get-alert",
       "products/cloud/api-reference/clickstack/click-stack-update-alert",
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
-      "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
-      "products/cloud/api-reference/clickstack/click-stack-create-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-update-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
-      "products/cloud/api-reference/clickstack/click-stack-list-roles",
-      "products/cloud/api-reference/clickstack/click-stack-create-role",
-      "products/cloud/api-reference/clickstack/click-stack-get-role",
-      "products/cloud/api-reference/clickstack/click-stack-update-role",
-      "products/cloud/api-reference/clickstack/click-stack-delete-role",
-      "products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
-      "products/cloud/api-reference/clickstack/click-stack-create-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-get-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-update-saved-search",
-      "products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
+      "products/cloud/api-reference/clickstack/click-stack-list-webhooks"
     ]
   },
   {
@@ -247,10 +170,8 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-post",
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
-      "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "products/cloud/api-reference/postgres/slow-query-pattern-get",
-      "products/cloud/api-reference/postgres/postgres-logs-get-list"
+      "products/cloud/api-reference/postgres/slow-query-pattern-get"
     ]
   }
 ]

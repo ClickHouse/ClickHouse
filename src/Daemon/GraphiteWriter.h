@@ -2,7 +2,6 @@
 
 #include <string>
 #include <time.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
@@ -43,7 +42,8 @@ private:
 
         try
         {
-            Poco::Net::StreamSocket socket(resolveAddress());
+            Poco::Net::SocketAddress socket_address(host, static_cast<Poco::UInt16>(port));
+            Poco::Net::StreamSocket socket(socket_address);
             socket.setSendTimeout(Poco::Timespan(static_cast<Poco::Int64>(timeout * 1000000)));
             Poco::Net::SocketStream str(socket);
 
@@ -68,9 +68,6 @@ private:
         for (const auto & key_val : key_val_vec)
             out(os, key_val, timestamp, custom_root_path);
     }
-
-    /// Resolves `host` through the DNS cache. Defined out of line to keep `DNSResolver` out of this header.
-    Poco::Net::SocketAddress resolveAddress() const;
 
     std::string root_path;
 

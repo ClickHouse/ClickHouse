@@ -64,23 +64,7 @@ Int64 getCurrentQueryMemoryUsage()
 }
 
 
-void setCurrentQueryMemoryDriftExpected()
-{
-    if (auto * tracker = DB::CurrentThread::getMemoryTracker())
-        tracker->setDriftExpected();
-}
-
-
-MemoryTracker * getCurrentUserMemoryTracker()
-{
-    auto * tracker = DB::CurrentThread::getMemoryTracker();
-    while (tracker && tracker->level != VariableContext::User)
-        tracker = tracker->getParent();
-    return tracker;
-}
-
-
-std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableContext level)
+std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
 {
     auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
     if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
@@ -90,7 +74,7 @@ std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableC
     if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
         return nullptr;
 
-    return std::make_unique<MemoryTracker>(query_memory_tracker, level, /*log_peak_memory_usage_in_destructor*/ false);
+    return std::make_unique<MemoryTracker>(query_memory_tracker, VariableContext::Thread);
 }
 
 

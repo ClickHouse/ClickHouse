@@ -74,42 +74,9 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     }
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
-    per_part_read_request_maps.resize(per_part_infos.size());
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
-{
-    /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
-    while (true)
-    {
-        size_t marks_in_range_before_cut = 0;
-        MarkRangesPtr read_request_map;
-        auto mark_ranges = cutRangesToRead(task_idx, previous_task, marks_in_range_before_cut, read_request_map);
-        if (!mark_ranges)
-            return nullptr;
-
-        /// Refinement may block (e.g. building a projection index bitmap on the first use
-        /// for the part), so it happens outside of the mutex.
-        auto refined = refineReadRanges(*per_part_infos[task_idx], std::move(*mark_ranges));
-        if (refined.empty())
-        {
-            /// The dropped cut did not read anything, so it must not inflate the warmup
-            /// growth of the task size: otherwise a pruned prefix would make the first
-            /// surviving task much larger than the small-limit warmup intends, and with
-            /// scattered matches such a task reads granules the LIMIT never needed.
-            std::lock_guard lock(mutex);
-            per_part_marks_in_range[task_idx] = marks_in_range_before_cut;
-            continue;
-        }
-
-        /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
-        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, refined.getNumberOfMarks());
-        return createTask(per_part_infos[task_idx], std::move(refined), previous_task, /*updater=*/ nullptr, read_request_map);
-    }
-}
-
-std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToRead(
-    size_t task_idx, MergeTreeReadTask * previous_task, size_t & marks_in_range_before_cut, MarkRangesPtr & read_request_map)
 {
     std::lock_guard lock(mutex);
 
@@ -117,15 +84,13 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
-    bool is_projection = per_part_infos[task_idx]->data_part_info->isProjectionPart();
+    bool is_projection = per_part_infos[task_idx]->data_part->isProjectionPart();
     chassert(!is_projection || per_part_infos[task_idx]->parent_part);
 
-    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part_info->getPartInfo();
-    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part_info->getPartName() : "";
+    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
+    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
 
     auto & marks_in_range = per_part_marks_in_range[task_idx];
-    marks_in_range_before_cut = marks_in_range;
-
     auto get_from_buffer = [&]() -> std::optional<MarkRanges>
     {
         /// Cap the warmup growth at `min_marks_per_task` so that steady-state task size
@@ -136,10 +101,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
         {
             if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())
             {
-                if (!per_part_read_request_maps[task_idx] && per_part_infos[task_idx]->read_request_map)
-                    per_part_read_request_maps[task_idx] = std::make_shared<const MarkRanges>(desc.ranges);
-                read_request_map = per_part_read_request_maps[task_idx];
-
                 if (mode == CoordinationMode::WithOrder)
                 {
                     /// Past warmup: return all remaining ranges as one task.
@@ -147,6 +108,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
+                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -172,6 +134,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                         }
 
                         chassert(result.size() == 1);
+                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -189,6 +152,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     }
                     chassert(!result.empty());
                     desc.ranges = MarkRanges{};
+                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
                 else
@@ -209,6 +173,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     }
 
                     chassert(result.size() == 1);
+                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
             }
@@ -217,13 +182,13 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
     };
 
     if (auto result = get_from_buffer())
-        return result;
+        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
 
     if (no_more_tasks)
-        return std::nullopt;
+        return nullptr;
 
     if (failed_to_get_task)
-        return std::nullopt;
+        return nullptr;
 
     std::optional<ParallelReadResponse> response;
     try
@@ -232,7 +197,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
-            LOG_TEST(log, "Response ranges: {}", response->description.describe());
             if (response->description.empty() || response->finish)
                 no_more_tasks = true;
         }
@@ -249,7 +213,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
     }
 
     if (no_more_tasks)
-        return std::nullopt;
+        return nullptr;
 
     /// Fill the buffer — match response parts to buffered_tasks by part info,
     /// not by position, because the coordinator may return parts in a different order.
@@ -271,15 +235,12 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
             it->ranges.insert(it->ranges.end(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
         else
             it->ranges.insert(it->ranges.begin(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
-
-        /// `buffered_tasks` follows the order of `per_part_infos`.
-        per_part_read_request_maps[std::distance(buffered_tasks.begin(), it)] = nullptr;
     }
 
     if (auto result = get_from_buffer())
-        return result;
+        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
 
-    return std::nullopt;
+    return nullptr;
 }
 
 }

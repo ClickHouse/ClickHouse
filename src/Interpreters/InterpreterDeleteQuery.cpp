@@ -1,22 +1,17 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/replaceLegacyToTime.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -26,7 +21,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 
@@ -34,7 +28,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool enable_lightweight_delete;
     extern const SettingsUInt64 lightweight_deletes_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -42,6 +35,7 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -59,7 +53,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -71,19 +64,6 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-
-    /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
-    /// unqualified table inside a body is resolved later, in a context whose current database is not
-    /// the database of the deleted-from table.
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-
-    /// The spelling must be canonical before the query is enqueued for a Replicated database or
-    /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
-    /// SQL UDF bodies are inlined above, so a `toTime` hidden in one is canonicalized too.
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        replaceLegacyToTime(*query_ptr);
-
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -102,15 +82,12 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
-    if (delete_query.cluster.empty())
-        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
-
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -118,21 +95,10 @@ BlockIO InterpreterDeleteQuery::execute()
     /// metadata is not loaded until the first access.  Initialize it now so that
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
-    /// A lazily loaded table reports only its columns, so the checks below would see no projections
-    /// and validate the mutation against metadata that has no keys.
-    auto resolved_table = resolveStorageProxyLoading(table);
-    auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     if (table->supportsDelete())
     {
-        /// This pipeline serializes only the predicate into the mutation command, and the storages
-        /// that take it (`KeeperMap`, `EmbeddedRocksDB`, Iceberg, `system.wasm_modules`, ...) have
-        /// no notion of MergeTree-style partitions anyway. Reject the clause instead of silently
-        /// mutating a wider scope than the query requested.
-        if (delete_query.partition || delete_query.partitions)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
-
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;
@@ -148,12 +114,17 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        /// Checked ahead of the full validation below, which repeats it, so that a
-        /// nondeterministic mutation is reported as such even when the predicate also fails
-        /// to analyze.
+        /// Replicated-storage non-determinism check must always run, even when
+        /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
+        /// diverge replicas.  The heavier query-shape validation that constructs a full
+        /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
+        /// reference not-yet-existing objects when the user opts out of validation.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
-        MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
+        {
+            MutationsInterpreter::Settings mutation_settings(false);
+            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        }
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -166,8 +137,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
-            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
@@ -175,29 +145,6 @@ BlockIO InterpreterDeleteQuery::execute()
                         "User should change lightweight_mutation_projection_mode OR "
                         "drop all the projections manually before running the query",
                         table_id.getFullTableName());
-        }
-
-        /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
-        /// derives its delete mode and its own storage-check relaxation from its own settings.
-        if (!delete_query.cluster.empty())
-        {
-            /// Substitute the database into table functions that use the current database implicitly, e.g.
-            /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
-            /// the database of the session. The table identifiers are qualified on each host instead.
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
-            if (mutable_delete_query.predicate)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
-            if (mutable_delete_query.partition)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
-
-            DDLQueryOnClusterParams params;
-            params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
-            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
-            {
-                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
-            };
-            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 
         using enum LightweightDeleteMode;
@@ -222,19 +169,11 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "UPDATE <table> [ON CLUSTER <cluster>] SET _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto update_query_template = "UPDATE {}{} SET `_row_exists` = 0{} WHERE {}";
 
-            auto partition_clause = [&]() -> String
-            {
-                if (delete_query.partitions)
-                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
-                if (delete_query.partition)
-                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
-                return "";
-            }();
             String update_query = fmt::format(
                 update_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                partition_clause,
+                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserUpdateQuery parser;
@@ -255,19 +194,11 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "ALTER <table> [ON CLUSTER <cluster>] UPDATE _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto alter_query_template = "ALTER TABLE {}{} UPDATE `_row_exists` = 0{} WHERE {}";
 
-            auto partition_clause = [&]() -> String
-            {
-                if (delete_query.partitions)
-                    return " IN PARTITION " + delete_query.partitions->formatWithSecretsOneLine();
-                if (delete_query.partition)
-                    return " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine();
-                return "";
-            }();
             String alter_query = fmt::format(
                 alter_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
-                partition_clause,
+                delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
                 delete_query.predicate->formatWithSecretsOneLine());
 
             ParserAlterQuery parser;
@@ -282,9 +213,6 @@ BlockIO InterpreterDeleteQuery::execute()
 
             auto context = Context::createCopy(getContext());
             context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
-            /// A user-written `ALTER TABLE ... UPDATE _row_exists = 0` reaches the storage as an
-            /// identical command, so `allow_non_metadata_alters` can only be relaxed here.
-            context->setSetting("allow_non_metadata_alters", true);
             InterpreterAlterQuery alter_interpreter(alter_ast, context);
             return alter_interpreter.execute();
         }

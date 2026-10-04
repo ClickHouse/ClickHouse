@@ -1,4 +1,3 @@
-#include <atomic>
 #include <optional>
 #include <shared_mutex>
 
@@ -8,13 +7,11 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -297,32 +294,6 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
-{
-    /// The result is cached on first use, so reading `set_elements` before the set is filled would not
-    /// merely give one wrong answer - it would pin an empty range set for every later caller.
-    checkIsCreated();
-
-    callOnce(
-        plain_ranges_once,
-        [this]
-        {
-            /// A tuple set has no single-column range representation; leave the cache null.
-            if (set_elements.size() != 1)
-                return;
-
-            const auto & column = *set_elements.front();
-            Ranges ranges;
-            ranges.reserve(column.size());
-            for (size_t i = 0; i < column.size(); ++i)
-                ranges.emplace_back(column[i]);
-
-            plain_ranges = std::make_shared<const PlainRanges>(ranges, /*may_have_intersection*/ true, /*ordered*/ false);
-        });
-
-    return plain_ranges;
-}
-
 Columns Set::getSetElements() const
 {
     checkIsCreated();
@@ -491,12 +462,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
-        /// The same restrictions, for the lenient conversion below: it also produces a `Nullable`.
-        /// When the probe already has the key type (up to `Nullable`), no value can fail to fit, so the
-        /// cheap paths below are kept: an exact-type cast is a no-op, and that is the common
-        /// `x IN set_table` case.
-        bool can_convert_leniently = target_type_without_nullable->canBeInsideNullable() && !is_tuple_type
-            && !removeNullable(column_to_cast.type)->equals(*target_type_without_nullable);
 
         if (use_cast_accurate_or_null)
         {
@@ -509,20 +474,21 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             /// In this case we cannot just cast Nullable column to non-nullable type because it will fail if column contains nulls.
             /// We should cast nested column and remember the null map to use negative value on rows with null (as key column is not
             /// Nullable, Set cannot contain nulls for this column anyhow).
-            /// Marks rows that cannot be members of the set for this key column, so they are skipped
-            /// instead of being compared.
-            auto add_non_member_rows = [&](ColumnPtr mask)
+            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
             {
+                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
+                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
                 if (!null_map_holder)
                 {
-                    null_map_holder = std::move(mask);
+                    null_map_holder = column_nullable.getNullMapColumnPtr();
                 }
                 else
                 {
                     MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
 
                     PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-                    const PaddedPODArray<UInt8> & other_null_map = assert_cast<const ColumnUInt8 &>(*mask).getData();
+                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
                     for (size_t j = 0, size = mutable_null_map.size(); j < size; ++j)
                         mutable_null_map[j] |= other_null_map[j];
 
@@ -530,61 +496,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 }
 
                 null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
-            };
-
-            if (can_convert_leniently)
-            {
-                /// `transform_null_in` makes NULL an ordinary matchable value, so the accurate-or-null
-                /// cast above is not taken. A value the key type cannot represent is still simply not a
-                /// member - which is what the literal `IN` list concludes, because it compares in a
-                /// common supertype - but converting it strictly raised `CANNOT_CONVERT_TYPE` on rows
-                /// the read path happened to deliver, so `v IN set_table` failed where `v IN (1)`
-                /// returned 0.
-                ///
-                /// Convert leniently and mark the values that did not fit as non-members. This also
-                /// covers a `Nullable` probe against a non-`Nullable` key, which `nullIn` and `IN` with
-                /// `transform_null_in = 1` reach directly: there a strict cast of the nested column
-                /// threw on the very same out-of-range values.
-                auto casted = castColumnAccurateOrNull(column_to_cast, makeNullable(target_type_without_nullable), cast_cache.get());
-                const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
-                const size_t num_rows = casted_nullable.size();
-
-                if (data_types[i]->isNullable())
-                {
-                    /// The set can hold a NULL, and a value that merely does not fit is not that NULL,
-                    /// so the key column keeps the rows' original nullness and only the NULLs the cast
-                    /// invented become non-members.
-                    const auto * source_nullable = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
-
-                    auto did_not_fit = ColumnUInt8::create(num_rows, UInt8(0));
-                    auto & did_not_fit_data = did_not_fit->getData();
-                    const auto & null_after_cast = casted_nullable.getNullMapData();
-                    for (size_t row = 0; row < num_rows; ++row)
-                        did_not_fit_data[row] = null_after_cast[row] && !(source_nullable && source_nullable->isNullAt(row));
-
-                    ColumnPtr original_null_map = source_nullable
-                        ? source_nullable->getNullMapColumnPtr()
-                        : ColumnUInt8::create(num_rows, UInt8(0));
-                    result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), original_null_map);
-                    add_non_member_rows(std::move(did_not_fit));
-                }
-                else
-                {
-                    /// The key column is not `Nullable`, so the set has nothing to match a NULL against:
-                    /// a source NULL and a value that does not fit are both non-members, and together
-                    /// they are exactly the NULLs of the lenient cast.
-                    result = casted_nullable.getNestedColumnPtr();
-                    add_non_member_rows(casted_nullable.getNullMapColumnPtr());
-                }
-            }
-            else if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
-            {
-                /// A key type that cannot be lenient (a `Tuple`, or a type that cannot be inside
-                /// `Nullable`) still needs the source NULLs kept away from the strict cast.
-                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
-                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
-                add_non_member_rows(column_nullable.getNullMapColumnPtr());
             }
             else
             {
@@ -677,11 +588,9 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
-    /// the last-element cache compares the key with the previous row's before probing the hash
-    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
-    /// calculating the hash.
+    /// NOTE Optimization is not used for consecutive identical strings.
+
+    /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
@@ -747,16 +656,8 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-static UInt64 getNextMergeTreeSetIndexId()
-{
-    static std::atomic<UInt64> counter{0};
-    return counter.fetch_add(1, std::memory_order_relaxed);
-}
-
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
-    : has_all_keys(set_elements.size() == indexes_mapping_.size())
-    , indexes_mapping(std::move(indexes_mapping_))
-    , instance_id(getNextMergeTreeSetIndexId())
+    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -794,56 +695,6 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
-
-    /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
-    /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
-    /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
-    /// thread-local storage could pin arbitrarily large buffers after the query ends.
-    cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
-        [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
-}
-
-MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
-{
-    size_t tuple_size = indexes_mapping.size();
-
-    if (!cache_ranges)
-    {
-        /// Query-scoped scratch buffer: normally tracked, freed when the caller returns.
-        scratch.reserve(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            scratch.emplace_back(*ordered_set[i]);
-        return scratch;
-    }
-
-    struct CacheEntry
-    {
-        UInt64 set_index_id;
-        FieldValueRanges ranges;
-    };
-    /// Must exceed the number of IN-set key conditions checked per mark within one query,
-    /// otherwise every call misses and rebuilds the buffer as before this cache existed.
-    static constexpr size_t max_entries = 8;
-    thread_local std::vector<CacheEntry> cache;
-
-    for (auto & entry : cache)
-        if (entry.set_index_id == instance_id)
-            return entry.ranges;
-
-    /// The cache outlives the query, so its memory (also freed here on eviction) must not be
-    /// charged to whichever query happens to be running on this thread. See FieldValue::update
-    /// for the same blocker on reallocations of the cached columns.
-    MemoryTrackerBlockerInThread blocker;
-
-    FieldValueRanges ranges;
-    ranges.reserve(tuple_size);
-    for (size_t i = 0; i < tuple_size; ++i)
-        ranges.emplace_back(*ordered_set[i], /*block_memory_tracker=*/ true);
-
-    if (cache.size() >= max_entries)
-        cache.erase(cache.begin());
-    cache.push_back({instance_id, std::move(ranges)});
-    return cache.back().ranges;
 }
 
 /** Return the BoolMask where:
@@ -861,14 +712,24 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     size_t tuple_size = indexes_mapping.size();
 
-    FieldValueRanges scratch;
-    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    std::vector<FieldValueRange> ranges;
+    ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-        FieldValueRange & range = ranges[i];
+        ranges.emplace_back(*ordered_set[i]);
 
         if (!is_key_col_present)
         {
@@ -878,10 +739,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
             /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
             /// So, we choose the more relaxed option:
             /// [-inf, +inf] instead of ( -inf, +inf ).
-            range.left.update(NEGATIVE_INFINITY);
-            range.right.update(POSITIVE_INFINITY);
-            range.left_included = true;
-            range.right_included = true;
+            ranges.back().left.update(NEGATIVE_INFINITY);
+            ranges.back().right.update(POSITIVE_INFINITY);
+            ranges.back().left_included = true;
+            ranges.back().right_included = true;
             continue;
         }
 
@@ -894,10 +755,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         if (!new_range)
             return {true, true};
 
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        ranges.back().left.update(new_range->left);
+        ranges.back().right.update(new_range->right);
+        ranges.back().left_included = new_range->left_included;
+        ranges.back().right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1
@@ -1013,8 +874,18 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 {
     size_t tuple_size = indexes_mapping.size();
 
-    FieldValueRanges scratch;
-    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    std::vector<FieldValueRange> ranges;
+    ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
         if (indexes_mapping[i].key_index >= key_ranges.size())
@@ -1029,11 +900,11 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         if (!new_range)
             return {true, true};
 
-        FieldValueRange & range = ranges[i];
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        ranges.emplace_back(*ordered_set[i]);
+        ranges.back().left.update(new_range->left);
+        ranges.back().right.update(new_range->right);
+        ranges.back().left_included = new_range->left_included;
+        ranges.back().right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1
@@ -1159,11 +1030,6 @@ void MergeTreeSetIndex::FieldValue::update(const Field & x)
         value = x;
     else
     {
-        /// When the column belongs to the thread-local buffer of getFieldValueRangesBuffer, which
-        /// outlives the query, its reallocations must not be charged to the current query.
-        std::optional<MemoryTrackerBlockerInThread> blocker;
-        if (block_memory_tracker)
-            blocker.emplace();
         /// Keep at most one element in column.
         if (!column->empty())
             column->popBack(1);

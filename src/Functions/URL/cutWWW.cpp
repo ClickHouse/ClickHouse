@@ -15,10 +15,10 @@ struct ExtractWWW
         res_data = data;
         res_size = 0;
 
-        Pos end = data + size;
-        Pos pos = find_first_symbols<'/'>(data, end);
+        Pos pos = data;
+        Pos end = pos + size;
 
-        if (pos != end)
+        if (end != (pos = find_first_symbols<'/'>(pos, end)))
         {
             if (pos != data)
             {
@@ -30,7 +30,7 @@ struct ExtractWWW
                     return;
             }
 
-            if (end - pos < 2 || *pos != '/' || *(pos + 1) != '/')
+            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
                 return;
 
             const char *start_of_host = (pos += 2);

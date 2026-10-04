@@ -220,10 +220,6 @@ private:
     /// Accounts consumed resource
     void consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns);
 
-    /// Finishes every request in consumption state. Used when the last running thread is preempted:
-    /// the requests are fully consumed, and no thread would report consumption to finish them.
-    void finishConsumedRequests(std::unique_lock<std::mutex> & lock);
-
     /// Enqueue a resource request to the scheduler if necessary.
     /// Returns true if request is enqueued, false if it is noncompeting and should be granted immediately.
     bool schedule(std::unique_lock<std::mutex> & lock);

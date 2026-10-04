@@ -1,8 +1,6 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel
 -- Tag no-parallel: depends on the server-level query condition cache entry written by the
 -- pre-warm query still being resident for the measured query (same reason as 04065, 04275).
--- Tag no-parallel-replicas: parallel replicas read the full mark set and bypass the QCC
--- granule drop, so the single-node PK-analysis mark-count assertion below would fire.
 
 -- Previously, the logs looked like this:
 --
@@ -31,7 +29,7 @@ set use_query_condition_cache=1;
 
 -- Pin the settings that the assertion depends on. The test runner injects
 -- random session settings; without these pins, the runner can flip
--- `optimize_move_to_prewhere` to `0` and the
+-- `optimize_move_to_prewhere` / `query_plan_optimize_prewhere` to `0` and the
 -- query condition cache then writes its verdict against the WHERE-side hash
 -- instead of the PREWHERE-side hash documented in the comment block at the
 -- top of this file. The assertion still holds for the WHERE-side path, but
@@ -39,6 +37,7 @@ set use_query_condition_cache=1;
 -- comment describes and removes a class of CI noise that is unrelated to
 -- the bug under test.
 set optimize_move_to_prewhere=1;
+set query_plan_optimize_prewhere=1;
 
 -- Pre-warm the query condition cache
 select avg(a) from t where s != 'xxx' format Null;

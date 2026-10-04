@@ -8,7 +8,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 #include <mutex>
 #include <shared_mutex>
@@ -28,7 +27,6 @@ namespace ProfileEvents
     extern const Event ParquetDecodingTaskBatches;
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
-    extern const Event ParquetTopKSkippedRowGroups;
 }
 
 namespace DB::Parquet
@@ -55,7 +53,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     parser_shared_resources = parser_shared_resources_;
 
     if (reader.file_metadata.schema.empty())
-        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher, reader.options.format.parquet.footer_read_size);
+        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
 
     if (buckets_to_read_)
     {
@@ -88,78 +86,11 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     for (Stage & stage : stages)
         stage.memory_target_fraction /= sum;
 
+    /// The NotStarted stage completed for all row groups, transition to next stage.
     MemoryUsageDiff diff(ReadStage::NotStarted);
-    if (reader.row_groups_ordered_by_top_k)
-    {
-        top_k_admission.min_outstanding = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, 1.).parsing_threads;
-        admitTopKRowGroups(diff);
-    }
-    else
-    {
-        /// The NotStarted stage completed for all row groups, transition to next stage.
-        for (size_t i = 0; i < reader.row_groups.size(); ++i)
-            finishRowGroupStage(i, ReadStage::NotStarted, diff);
-    }
+    for (size_t i = 0; i < reader.row_groups.size(); ++i)
+        finishRowGroupStage(i, ReadStage::NotStarted, diff);
     flushMemoryUsageDiff(std::move(diff));
-}
-
-/// The ReadManager whose admitTopKRowGroups is running in this thread, to keep it from recursing.
-static thread_local const ReadManager * top_k_admitting_manager = nullptr;
-
-void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
-{
-    /// Starts row groups in order, each checked against the latest threshold right before it starts.
-    if (top_k_admitting_manager == this)
-        return; /// The loop below, higher up in this thread's stack, picks up the released admission.
-    const ReadManager * outer_admitting_manager = top_k_admitting_manager;
-    top_k_admitting_manager = this;
-    SCOPE_EXIT(top_k_admitting_manager = outer_admitting_manager);
-
-    while (true)
-    {
-        size_t row_group_idx = 0;
-        {
-            std::lock_guard lock(top_k_admission.mutex);
-            size_t allowance = std::max(top_k_admission.min_outstanding, top_k_admission.admitted / 2);
-            if (top_k_admission.next_row_group == reader.row_groups.size() || top_k_admission.outstanding >= allowance)
-                return;
-            row_group_idx = top_k_admission.next_row_group++;
-            ++top_k_admission.outstanding;
-        }
-
-        RowGroup & row_group = reader.row_groups[row_group_idx];
-        const bool skipped_by_threshold = row_group.need_to_process && reader.topKShouldSkipRowGroup(row_group);
-        if (!row_group.need_to_process || skipped_by_threshold)
-        {
-            if (skipped_by_threshold)
-                ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
-            {
-                std::lock_guard lock(top_k_admission.mutex);
-                --top_k_admission.outstanding;
-            }
-            finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
-            continue;
-        }
-
-        {
-            std::lock_guard lock(top_k_admission.mutex);
-            ++top_k_admission.admitted;
-        }
-        row_group.holds_top_k_admission.store(true);
-        finishRowGroupStage(row_group_idx, ReadStage::NotStarted, diff);
-    }
-}
-
-void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff)
-{
-    if (!reader.row_groups[row_group_idx].holds_top_k_admission.exchange(false))
-        return;
-    {
-        std::lock_guard lock(top_k_admission.mutex);
-        chassert(top_k_admission.outstanding > 0);
-        --top_k_admission.outstanding;
-    }
-    admitTopKRowGroups(diff);
 }
 
 void ReadManager::shutdownTasks()
@@ -187,12 +118,11 @@ void ReadManager::cancel() noexcept
 void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
-    bool release_top_k_admission = false;
 
     /// Finish the stage.
     if (stage == ReadStage::BloomFilterBlocksOrDictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        if (!reader.applyBloomAndDictionaryFilters(row_group))
             stage = ReadStage::Deliver; // skip the row group
         for (auto & c : row_group.columns)
         {
@@ -245,17 +175,6 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                             .row_group_idx = row_group_idx, .column_idx = i});
                 break;
             case ReadStage::OffsetIndex: // (first of the per-row-subgroup stages)
-                /// TopN dynamic filtering: this is the last point before column data is read, and
-                /// the latest threshold published by the sorting transforms so far applies. Skipped
-                /// this way, the row group follows the same path as one whose rows were all
-                /// filtered out (empty subgroups below).
-                if (reader.topKShouldSkipRowGroup(row_group))
-                {
-                    if (row_group.need_to_process)
-                        ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
-                    stage = ReadStage::Deliver;
-                    break;
-                }
                 reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
                 if (!row_group.subgroups.empty())
                 {
@@ -279,7 +198,6 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 {
                     for (auto & c : row_group.columns)
                         clearColumnChunk(c, diff);
-                    release_top_k_admission = true;
                 }
                 break;
         }
@@ -321,9 +239,6 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
 
     if (!add_tasks.empty())
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
-
-    if (release_top_k_admission)
-        releaseTopKAdmission(row_group_idx, diff);
 }
 
 void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff)
@@ -561,8 +476,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
                 clearColumnChunk(row_group.columns.at(i), diff);
-
-            releaseTopKAdmission(row_group_idx, diff);
         }
     }
 }
@@ -904,38 +817,6 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
     }
 }
 
-PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsageDiff & diff)
-{
-    if (reader.options.format.parquet.memory_high_watermark == 0)
-        return {}; /// Unbounded.
-
-    size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
-    /// Budget the reservation with the same per-stage / per-reader limit the scheduler enforces in
-    /// `scheduleTasksIfNeeded` (`getLimitsPerReader(..., stage.memory_target_fraction)`): the query-global
-    /// `input_format_parquet_memory_high_watermark` scaled by this stage's fraction and split across the
-    /// `num_streams` files read in parallel. Reserving against the full watermark instead would let a single
-    /// `BloomFilterBlocksOrDictionary` stage - and every concurrently-read file, since `stage_memory` is
-    /// per-reader - each reserve the entire watermark, breaking its documented "total across those files"
-    /// contract and overshooting the cap before scheduler throttling has a chance to help.
-    size_t watermark = SharedResourcesExt::getLimitsPerReader(
-        *parser_shared_resources, stages[idx].memory_target_fraction).memory_high_watermark;
-    /// Never let a tiny per-reader budget round down to 0, which `PruningMemoryReservation` reads as
-    /// "unbounded"; a near-zero budget must instead mean "reserve nothing", i.e. skip pruning (full scan).
-    watermark = std::max(watermark, size_t(1));
-
-    /// Reserve against the live stage counter (what previous batches flushed, plus the decoded
-    /// dictionaries and value sets other row groups are holding right now), accounting for this batch's
-    /// own not-yet-flushed pruning memory (e.g. bloom-filter prefetches charged in this batch) via
-    /// `in_flight`. The decoded dictionaries of this batch are charged live to the stage counter (in
-    /// `decodeDictionaryPage`), not to `diff`, so they are already reflected in the counter, not here.
-    ssize_t in_flight = diff.by_stage[idx];
-    return PruningMemoryReservation{
-        .stage_memory = &stages[idx].memory_usage,
-        .watermark = watermark,
-        .in_flight = in_flight > 0 ? size_t(in_flight) : 0,
-    };
-}
-
 void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
@@ -953,27 +834,14 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
-                    /// budget so it is visible to every row group pruning in parallel the moment it is
-                    /// taken - not only after this batch flushes - and the default-on pruning stays
-                    /// within the reader's memory budget (see `decodeDictionaryPage`,
-                    /// `pruningMemoryReservation`, `PruningMemoryReservation`, `hashDictionaryValues`).
-                    /// The reservation (reduced to the actual footprint on success) is held until the
-                    /// chunk is cleared, throttling how many row groups can prune in parallel. If the
-                    /// dictionary is too large to reserve, skip pruning for this column:
-                    /// `applyBloomAndDictionaryFilters` then treats it as a full scan, and the dictionary
-                    /// is decoded later (throttled) on the data-read path if needed.
-                    column.dictionary_reservation = pruningMemoryReservation(diff);
-                    if (!reader.decodeDictionaryPage(
-                            column, column_info, column.dictionary_reservation, &column.dictionary_reserved_bytes))
-                        column.use_dictionary_filter = false;
+                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                    chassert(ok);
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
-                if (column.use_column_index)
-                    reader.applyColumnIndex(column, column_info, row_group);
+                reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
@@ -1043,14 +911,7 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// because stages can be skipped e.g. if the row group was filtered out by bloom filter.
 
     column.data_pages_prefetch.reset(&diff);
-    /// Release the live pruning reservation for the decoded dictionary (see `runTask` /
-    /// `PruningMemoryReservation`). Must happen before `column = {}` below drops the handle.
-    /// Free the dictionary buffers first, then release the reservation that covers them, so a
-    /// concurrent pruning task never observes this budget as free while the dictionary is still
-    /// allocated (which would let the stage transiently oversubscribe the watermark).
     column.dictionary.reset();
-    column.dictionary_reservation.release(column.dictionary_reserved_bytes);
-    column.dictionary_reserved_bytes = 0;
     for (auto & page : column.data_pages)
         page.prefetch.reset(&diff);
     column.bloom_filter_header_prefetch.reset(&diff);

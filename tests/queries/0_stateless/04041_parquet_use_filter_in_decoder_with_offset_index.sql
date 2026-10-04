@@ -6,7 +6,8 @@
 set engine_file_truncate_on_insert = 1;
 
 -- Create a parquet file with offset index and multiple small pages per row group.
--- Dictionary encoding is disabled so that `val` is read through the plain decoder.
+-- Dictionary encoding is disabled so that use_filter_in_decoder can trigger
+-- (it requires !column.page.is_dictionary_encoded).
 -- The data has a filter column `key` and a value column `val`.
 -- key = 1 for rows 0..49 and 150..199, key = 0 for rows 50..149.
 -- This creates a pattern where:

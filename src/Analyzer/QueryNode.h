@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
 
@@ -44,9 +43,7 @@ namespace DB
   * 5 AS b - LIMIT BY offset section.
   * id, value - LIMIT BY section.
   * 14. LIMIT section.
-  * 15. LIMIT AFTER section.
-  * 16. LIMIT UNTIL section.
-  * 17. OFFSET section.
+  * 15. OFFSET section.
   *
   * Query node contains settings changes that must be applied before query analysis or execution.
   * Example: SELECT * FROM test_table SETTINGS prefer_column_name_to_alias = 1, join_use_nulls = 1;
@@ -65,7 +62,7 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class QueryNode final : public ITableExpressionNode
+class QueryNode final : public IQueryTreeNode
 {
 public:
     /// Construct query node with context and changed settings
@@ -189,16 +186,6 @@ public:
     void setIsLimitByAll(bool is_limit_by_all_value)
     {
         is_limit_by_all = is_limit_by_all_value;
-    }
-
-    bool isLimitAfterAll() const
-    {
-        return is_limit_after_all;
-    }
-
-    void setIsLimitAfterAll(bool is_limit_after_all_value)
-    {
-        is_limit_after_all = is_limit_after_all_value;
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
@@ -340,28 +327,15 @@ public:
     }
 
     /// Get JOIN TREE section node
-    const ITableExpressionNode & getJoinTree() const
-    {
-        return children[join_tree_child_index]->assertTableExpression();
-    }
-
-    /// Get JOIN TREE section node
-    QueryTreeNodePtr & getJoinTreeNode()
+    const QueryTreeNodePtr & getJoinTree() const
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    const QueryTreeNodePtr & getJoinTreeNode() const
+    QueryTreeNodePtr & getJoinTree()
     {
         return children[join_tree_child_index];
-    }
-
-    /// Get JOIN TREE section node
-    TableExpressionNodePtr getJoinTreeNodeTyped() const
-    {
-        children[join_tree_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
@@ -628,42 +602,6 @@ public:
         return children[limit_child_index];
     }
 
-    /// Returns true if query node LIMIT AFTER section is not empty, false otherwise
-    bool hasLimitAfter() const
-    {
-        return children[limit_after_child_index] != nullptr;
-    }
-
-    /// Get LIMIT AFTER section node
-    const QueryTreeNodePtr & getLimitAfter() const
-    {
-        return children[limit_after_child_index];
-    }
-
-    /// Get LIMIT AFTER section node
-    QueryTreeNodePtr & getLimitAfter()
-    {
-        return children[limit_after_child_index];
-    }
-
-    /// Returns true if query node LIMIT UNTIL section is not empty, false otherwise
-    bool hasLimitUntil() const
-    {
-        return children[limit_until_child_index] != nullptr;
-    }
-
-    /// Get LIMIT UNTIL section node
-    const QueryTreeNodePtr & getLimitUntil() const
-    {
-        return children[limit_until_child_index];
-    }
-
-    /// Get LIMIT UNTIL section node
-    QueryTreeNodePtr & getLimitUntil()
-    {
-        return children[limit_until_child_index];
-    }
-
     /// Returns true if query node OFFSET section is not empty, false otherwise
     bool hasOffset() const
     {
@@ -746,11 +684,6 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
-    const Names & getProjectionAliasesToOverride() const
-    {
-        return projection_aliases_to_override;
-    }
-
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -774,7 +707,6 @@ private:
     bool is_group_by_all = false;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
-    bool is_limit_after_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
@@ -797,10 +729,8 @@ private:
     static constexpr size_t limit_by_offset_child_index = 12;
     static constexpr size_t limit_by_child_index = 13;
     static constexpr size_t limit_child_index = 14;
-    static constexpr size_t limit_after_child_index = 15;
-    static constexpr size_t limit_until_child_index = 16;
-    static constexpr size_t offset_child_index = 17;
-    static constexpr size_t correlated_columns_list_index = 18;
+    static constexpr size_t offset_child_index = 15;
+    static constexpr size_t correlated_columns_list_index = 16;
     static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 

@@ -297,11 +297,6 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     Analyzer::CNF::OrGroup result;
     for (const auto & atom : group)
     {
-        /// A negated ordered comparison - `NOT (A < C)`, which is not `A >= C` when an argument can be a
-        /// `NaN` - says nothing about where `A` sits relative to `C`, so no hint follows from it.
-        if (atom.negative)
-            return {};
-
         const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
         if (!function_node || !getRelationMap().contains(function_node->getFunctionName()))
             continue;
@@ -346,7 +341,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     return result;
 }
 
-void addIndexConstraint(Analyzer::CNF & cnf, const TableExpressionNodes & table_expressions, const ContextPtr & context)
+void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     for (const auto & table_expression : table_expressions)
     {
@@ -589,7 +584,7 @@ void bruteForce(
     }
 }
 
-void substituteColumns(QueryNode & query_node, const TableExpressionNodes & table_expressions, const ContextPtr & context)
+void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     static constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
     static constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
@@ -690,7 +685,7 @@ void substituteColumns(QueryNode & query_node, const TableExpressionNodes & tabl
     }
 }
 
-void optimizeWithConstraints(Analyzer::CNF & cnf, const TableExpressionNodes & table_expressions, const ContextPtr & context)
+void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     cnf.pullNotOutFunctions(context);
 
@@ -728,7 +723,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const TableExpressionNodes & t
         addIndexConstraint(cnf, table_expressions, context);
 }
 
-void optimizeNode(QueryTreeNodePtr & node, const TableExpressionNodes & table_expressions, const ContextPtr & context)
+void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -781,7 +776,7 @@ public:
         if (!query_node)
             return;
 
-        auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+        auto table_expressions = extractTableExpressions(query_node->getJoinTree());
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();

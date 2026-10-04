@@ -78,8 +78,7 @@ private:
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
         if (!data_ref.calculator || data_ref.calculator->isFinalized())
             data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
-                getCodecOrDefault(),
-                roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
+                getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
@@ -289,10 +288,10 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-<Note>
+:::note
 For the examples below, the result will differ based on the default compression codec of the server.
-See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
-</Note>
+See [Column Compression Codecs](/sql-reference/statements/create/table#column_compression_codec).
+:::
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
     FunctionDocumentation::Arguments arguments = {
@@ -300,7 +299,7 @@ See [Column Compression Codecs](/reference/statements/create/table#column_compre
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -321,9 +320,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌──────────estimate─┐
-│ 5.758875867430677 │
-└───────────────────┘
+┌───────────estimate─┐
+│ 1.9988506608699999 │
+└────────────────────┘
         )"
     },
     {

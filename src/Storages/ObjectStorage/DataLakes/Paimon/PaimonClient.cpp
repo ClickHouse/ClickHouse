@@ -231,7 +231,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
         Int64 next_snapshot_version = snapshot_version + 1;
         StoredObject snapshot_object(latest_snapshot_path);
         StoredObject next_snapshot_object(
-            std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR
+            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
             / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
         if (object_storage->exists(snapshot_object) && !object_storage->exists(next_snapshot_object))
         {
@@ -298,9 +298,8 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
 std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getManifestMeta(String manifest_list_path, bool disable_filesystem_cache)
 {
     /// read manifest list file
-    Paimon::checkPathIsRelativeToTable(manifest_list_path, "manifest list");
     auto context = getContext();
-    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_list_path);
+    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log, read_settings);
     /// createReadBuffer fills relative_path.metadata->size_bytes via a HEAD request.
@@ -321,13 +320,12 @@ std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getMan
 PaimonManifest
 PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache)
 {
-    Paimon::checkPathIsRelativeToTable(manifest_path, "manifest");
     String manifest_file_name(manifest_path.begin() + manifest_path.find_last_of('/') + 1, manifest_path.end());
     if (manifest_file_name.starts_with("index-manifest-"))
         return {};
 
     auto context = getContext();
-    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_path);
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     /// createReadBuffer fills object_info.metadata->size_bytes via a HEAD request.

@@ -1,6 +1,0 @@
-client_key, user_name	default
-client_key, user_name	kb
-client_key, ip_address	0.0.0.0
-client_key, ip_address	kb
-QUOTA_REQUIRES_CLIENT_KEY
-client_key	kb
