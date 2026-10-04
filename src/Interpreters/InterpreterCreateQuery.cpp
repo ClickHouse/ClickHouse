@@ -836,15 +836,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
+    const ASTExpressionList * constraints,
+    const ColumnsDescription & columns,
+    ContextPtr local_context,
+    bool validate_expressions)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
-            auto clone = constraint->clone();
-            TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            if (validate_expressions)
+            {
+                auto clone = constraint->clone();
+                TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            }
             constraints_data.push_back(constraint->clone());
         }
     return ConstraintsDescription{constraints_data};
@@ -927,6 +933,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    /// Whether the table definition is fresh user input, as opposed to metadata read back from disk.
+    /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` (with or without `FROM '/path/'`) is CREATE-like
+    /// user input that also runs under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions
+    /// read back from metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+    /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`. `SECONDARY_CREATE` covers
+    /// DDL replay in `Replicated` databases (already validated on the initiator) and `RESTORE`: a backup may hold
+    /// grandfathered metadata that predates a validation, and rejecting it here would make the backup unrestorable,
+    /// which is worse than the restored table failing later when the definition is compiled (the same grandfathering
+    /// the local metadata-loading paths get; see the other `is_restore_from_backup` relaxations in this file).
+    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -953,7 +971,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 constexpr bool is_implicitly_created = false;
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
-                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
+                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext(),
+                    /* validate_expressions = */ is_fresh_definition);
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
@@ -973,7 +992,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        /// Do not let a `CHECK` constraint that can never be evaluated (it contains a subquery) into the metadata.
+        /// Validate the raw AST before `getConstraintsDescription`: its `TreeRewriter` expands UDFs and executes
+        /// scalar subqueries. Only fresh definitions are checked, so an already existing table keeps loading even
+        /// if its metadata has one.
+        if (is_fresh_definition && create.columns_list->constraints)
+            ConstraintsDescription::validateNoSubqueries(create.columns_list->constraints->children, getContext());
+
+        properties.constraints = getConstraintsDescription(
+            create.columns_list->constraints, properties.columns, getContext(), /* validate_expressions = */ is_fresh_definition);
     }
     else if (!create.as_table.empty())
     {
@@ -1005,10 +1032,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
+            /// The copied indices become fresh metadata of the new table, so they are validated like on a
+            /// plain `CREATE`: an index grandfathered in the source table (e.g. over an `ALIAS` column that
+            /// hides an `IN` over a table) must not be copied into it.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
+            {
+                if (index.isImplicitlyCreated())
+                    continue;
+
+                if (is_fresh_definition)
+                    properties.indices.push_back(IndexDescription::getIndexFromAST(
+                        index.definition_ast, properties.columns, /* is_implicitly_created = */ false, index.escape_filenames,
+                        getContext(), /* validate_expressions = */ true));
+                else
                     properties.indices.push_back(index);
+            }
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
@@ -1040,6 +1079,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        /// The copied constraints become fresh metadata of the new table, so they are validated
+        /// like on a plain `CREATE`: a grandfathered `CHECK` constraint with a subquery in the source
+        /// table (created before the validation existed) must not be copied into it. The companion
+        /// row-count check runs below, for every branch, via `checkExpressionsPreserveRowCount`.
+        if (is_fresh_definition)
+            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
 
         if (create.is_clone_as)
         {

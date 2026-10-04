@@ -18,6 +18,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -2565,9 +2566,7 @@ static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, con
     if (!ctx->indices_recalc_expr_list)
         return;
 
-    auto syntax_result
-        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
-    auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
+    auto expression = analyzeExpressionToActions(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList(), ctx->context);
 
     builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
     builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));

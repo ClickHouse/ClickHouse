@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -341,24 +342,26 @@ ASTPtr convertSetColumnToAST(const IColumn & column)
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
 /// Returns `nullptr` if any part has no AST representation: a partial conversion would change the meaning.
-/// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
-/// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
+/// `captured` maps a lambda's captured-column names to the ASTs of the values supplied for them,
+/// so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, ASTPtr> & captured = {});
 
 /// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
-/// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
-ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, const ActionsDAG::NodeRawConstPtrs & captured_values)
+/// `captured_values` are the ASTs of the columns supplied for the capture, aligned with capture.captured_names.
+ASTPtr convertCapturedLambdaToAST(const LambdaCapture & capture, const ActionsDAG & capture_dag, const ASTs & captured_values)
 {
-    const auto & capture = function_capture.getCapture();
-    const auto & capture_dag = function_capture.getAcionsDAG();
     if (capture_dag.getOutputs().size() != 1 || captured_values.size() != capture.captured_names.size())
         return nullptr;
 
     /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
-    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
+    std::unordered_map<std::string, ASTPtr> body_captured;
     for (size_t i = 0; i < capture.captured_names.size(); ++i)
+    {
+        if (!captured_values[i])
+            return nullptr;
         body_captured.emplace(capture.captured_names[i], captured_values[i]);
+    }
 
     auto arguments = make_intrusive<ASTFunction>();
     arguments->name = "tuple";
@@ -381,13 +384,13 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     return lambda;
 }
 
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, ASTPtr> & captured)
 {
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
             if (auto it = captured.find(node.result_name); it != captured.end())
-                return convertNodeToAST(*it->second);
+                return it->second->clone();
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
@@ -398,6 +401,21 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
+
+            /// A lambda that the analyzer has already folded into a constant (e.g. `x -> lower(x)`, which
+            /// captures nothing) is a `ColumnFunction`, whose `Field` is an empty tuple.
+            if (const auto * column_function = checkAndGetColumn<ColumnFunction>(&node.column->getDataColumn()))
+            {
+                const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+                if (!function_expression)
+                    return nullptr;
+
+                ASTs captured_values;
+                for (const auto & captured_column : column_function->getCapturedColumns())
+                    captured_values.push_back(make_intrusive<ASTLiteral>((*captured_column.column)[0]));
+
+                return convertCapturedLambdaToAST(function_expression->getCapture(), function_expression->getAcionsDAG(), captured_values);
+            }
 
             return make_intrusive<ASTLiteral>((*node.column)[0]);
         }
@@ -411,7 +429,13 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
                 return nullptr;
 
             if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
-                return convertCapturedLambdaToAST(*function_capture, node.children);
+            {
+                ASTs captured_values;
+                for (const auto * child : node.children)
+                    captured_values.push_back(convertNodeToAST(*child));
+
+                return convertCapturedLambdaToAST(function_capture->getCapture(), function_capture->getAcionsDAG(), captured_values);
+            }
 
             auto function = make_intrusive<ASTFunction>();
             function->arguments = make_intrusive<ASTExpressionList>();

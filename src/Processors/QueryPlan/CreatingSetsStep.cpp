@@ -297,7 +297,11 @@ void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared
     if (!prepared_sets)
         return;
 
-    auto subqueries = prepared_sets->getSubqueries();
+    addDelayedCreatingSetsStep(query_plan, prepared_sets->getSubqueries(), std::move(context));
+}
+
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
+{
     if (subqueries.empty())
         return;
 

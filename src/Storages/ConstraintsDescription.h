@@ -58,6 +58,14 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
+    /// Reject `CHECK` constraint declarations whose expression contains a subquery (a direct subquery on the
+    /// set side of an `IN`-family operator is allowed, it becomes a lazily built set).  Such a constraint can
+    /// never be evaluated, so it must not be persisted into table metadata in the first place.  Called from the
+    /// DDL paths (`CREATE TABLE`, `ALTER TABLE ADD CONSTRAINT`, `ALTER TABLE MODIFY CONSTRAINT`) only, so that
+    /// tables whose metadata already contains such a constraint keep loading; for them the same check runs when
+    /// the constraint actions are compiled, see `getExpressions`.
+    static void validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context);
+
     /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
     /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked
     /// against another row's value, or - when the column ends up shorter than the block - past the end of
