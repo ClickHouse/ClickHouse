@@ -238,6 +238,8 @@ private:
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = compacting ? 65536 : 4096;
     /// A whole state merges eagerly while its buffer is at most this many times bigger than the incoming samples.
     static constexpr size_t MAX_EAGER_MERGE_RATIO = 16;
+    /// An unsorted tail whose sorted runs are shorter than this on average is sorted instead of merged run by run.
+    static constexpr size_t MIN_AVERAGE_RUN_LENGTH = 32;
 
     /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
     using Buffer = absl::InlinedVector<
@@ -280,12 +282,94 @@ private:
     {
         if constexpr (compacting)
         {
-            ::sort(buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
-            std::inplace_merge(buf.begin(), buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
+            if (!mergeTailRuns(buf, unsorted_begin))
+            {
+                ::sort(buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
+                std::inplace_merge(buf.begin(), buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
+            }
         }
         else
             ::sort(buf.begin(), buf.end(), lessByTimestamp);
         deduplicateSorted(buf);
+    }
+
+    /// Merges a tail made of long sorted runs (one per part read) into the buffer; returns false if the runs are short.
+    static bool mergeTailRuns(Buffer & buf, size_t unsorted_begin)
+    {
+        const size_t max_runs = (buf.size() - unsorted_begin) / MIN_AVERAGE_RUN_LENGTH + 1;
+        absl::InlinedVector<size_t, 16> bounds{unsorted_begin};
+        for (size_t i = unsorted_begin + 1; i < buf.size(); ++i)
+        {
+            if (buf[i].first >= buf[i - 1].first)
+                continue;
+            if (bounds.size() == max_runs)
+                return false;
+            bounds.push_back(i);
+        }
+        bounds.push_back(buf.size());
+
+        Buffer tmp;
+        mergeRuns(buf.data(), bounds.data(), bounds.size() - 1, tmp);
+        gallopMerge(buf.data(), buf.data() + unsorted_begin, buf.data() + buf.size(), tmp);
+        return true;
+    }
+
+    /// Merges the `count` adjacent sorted runs starting at `bounds[0..count)`, the last one ending at `bounds[count]`.
+    static void mergeRuns(Sample * data, const size_t * bounds, size_t count, Buffer & tmp)
+    {
+        if (count < 2)
+            return;
+        const size_t half = count / 2;
+        mergeRuns(data, bounds, half, tmp);
+        mergeRuns(data, bounds + half, count - half, tmp);
+        gallopMerge(data + bounds[0], data + bounds[half], data + bounds[count], tmp);
+    }
+
+    /// Merges the sorted ranges [first, middle) and [middle, last), moving each stretch of one side
+    /// that comes before the other side's next sample at once. Equal timestamps keep the left side first.
+    static void gallopMerge(Sample * first, Sample * middle, Sample * last, Buffer & tmp)
+    {
+        /// Samples that are already in place at either end are not moved.
+        first = std::upper_bound(first, middle, *middle, lessByTimestamp);
+        last = std::lower_bound(middle, last, middle[-1], lessByTimestamp);
+        if (first == middle || middle == last)
+            return;
+
+        tmp.assign(first, middle);
+        const Sample * left = tmp.data();
+        const Sample * left_end = left + tmp.size();
+        Sample * right = middle;
+        Sample * out = first;
+        while (true)
+        {
+            Sample * right_stop = gallop(right, last, [&](const Sample & sample) { return sample.first < left->first; });
+            out = std::copy(right, right_stop, out);
+            right = right_stop;
+            if (right == last)
+                break;
+            const Sample * left_stop = gallop(left, left_end, [&](const Sample & sample) { return sample.first <= right->first; });
+            out = std::copy(left, left_stop, out);
+            left = left_stop;
+            if (left == left_end)
+                return;
+        }
+        std::copy(left, left_end, out);
+    }
+
+    /// Returns the end of the prefix of [begin, end) where `pred` holds, knowing it holds for `*begin`.
+    /// Probes positions 1, 3, 7, 15, ... and then bisects, so a long stretch costs few comparisons.
+    template <typename Iterator, typename Pred>
+    static Iterator gallop(Iterator begin, Iterator end, Pred pred)
+    {
+        const size_t size = end - begin;
+        size_t low = 1;
+        size_t high = 2;
+        while (high <= size && pred(begin[high - 1]))
+        {
+            low = high;
+            high *= 2;
+        }
+        return std::partition_point(begin + low, begin + std::min(high - 1, size), pred);
     }
 
     bool isSorted() const { return unsorted_begin == 0; }
