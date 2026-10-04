@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-# A pooled worker that answers correctly and then, well after the server has stopped looking, writes
-# one stray byte to its `stdout`.
+# A pooled worker that answers correctly and then, once the server has stopped looking (`--go`, see
+# `go_signal.py`), writes one stray byte to its `stdout`.
 #
 # The pause is what makes it interesting. The server probes the worker's pipes when it takes it back
 # and refuses to pool one that left anything behind - but a probe is one instant, and this byte
@@ -22,7 +22,8 @@ import mmap
 import os
 import sys
 import threading
-import time
+
+from go_signal import wait_for_go
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
@@ -96,11 +97,12 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Long after the server has taken this worker back and pronounced it clean. The marker file
-        # is created after the byte is on the pipe, so a test that waits for it does not have to
-        # guess how long this takes on the machine it runs on.
+        # Once the server has taken this worker back and pronounced it clean. The marker file is
+        # created after the byte is on the pipe, so a test that waits for it does not have to guess
+        # how long this takes on the machine it runs on.
         def litter():
-            time.sleep(1)
+            if not wait_for_go():
+                return
             stdout.write(b"\x00")
             stdout.flush()
             with open(sys.argv[sys.argv.index("--marker") + 1], "w"):

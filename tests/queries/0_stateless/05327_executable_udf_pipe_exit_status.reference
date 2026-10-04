@@ -1,0 +1,30 @@
+--- stderr written on the way out fails the query, with or without the exit check
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+2
+--- a command that outlives its termination timeout on its way out is waited for
+Key 1
+Key 1
+--- a zero termination timeout does not turn the wait for the exit status into one probe
+Key 1
+Key 2
+Key 3
+--- a stray line on stdout after the rows does not hide the stderr after it
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+1
+--- with no grace and no exit check, a lingering command is not waited for
+Key 1
+--- a pooled worker that closed its stdout and lingers fails the query under the exit check
+error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
+Key 1
+Key 2
+1
+--- with no grace, such a worker fails the query at once and frees its slot
+error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
+error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
+2
+--- a pooled worker that is not going back to the pool sees the end of its stdin first
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+Key 1
+Key 2
+0

@@ -62,6 +62,10 @@ When `use_shared_memory` is disabled, the command must read arguments from `STDI
 
 `shared_memory_size` and `shared_memory_max_size` mean nothing without `use_shared_memory`, so a function that is not using the shared-memory transport must not spell them out at all: the configuration is rejected on the key being *present*, not on its value. `<shared_memory_size>0</shared_memory_size>` next to a disabled `use_shared_memory` is rejected exactly like a non-zero one would be - writing it down at its default value says just as clearly that its author believed the function used shared memory, and the function would silently have run over the pipes instead. `use_shared_memory` itself may of course be written out as `0`.
 
+### Functions without arguments {#executable-udf-without-arguments}
+
+A function declared without `argument` elements sends the command no data: its input has no columns, so the command reads an empty input (or, with `use_shared_memory`, a request with `size` `0`) and is not told how many rows the block it is called for holds. The command still has to answer with exactly one row per row of that block, so a function without arguments is only usable where the block holds a single row - a call without `FROM`, for example. Called over more rows, as in `SELECT f() FROM numbers(3)`, it fails with `wrong result, expected 3 row(s), actual 1` once the command answers with a single row. Pass a column as an argument when the function is to be evaluated over a table.
+
 ### Shared memory mode {#shared-memory-mode}
 
 By default the bulk data is exchanged with the command through the `stdin`/`stdout` pipes. When `use_shared_memory` is enabled, the bulk data is instead placed into a shared-memory region that both the server and the command `mmap`, while the pipes carry only small control commands. The server serializes the input straight into the region and parses the output where the command left it, so the data is written once and never copied, against the two copies and the per-pipeful syscalls a pipe costs. It is most useful with `executable_pool`, where the same process — and the same region — is reused across invocations.
@@ -92,7 +96,7 @@ For each chunk, `ClickHouse` serializes the input into the region in the configu
 | `offset`     | varint                   | Start offset of the serialized input (typically `0`)            |
 | `size`       | varint                   | Size of the serialized input in bytes                           |
 
-A function without arguments has nothing to serialize, and its request says so: `size` is `0` and the region holds no input. It is a request like any other - the command is being asked to produce rows - so the command must answer it, and a command that reads exactly `size` bytes of input handles it without a special case.
+A function without arguments has nothing to serialize, and its request says so: `size` is `0` and the region holds no input. It is a request like any other - the command is being asked to produce rows - so the command must answer it, and a command that reads exactly `size` bytes of input handles it without a special case. The request does not carry the number of rows it is made for, so such a function answers one row and is only usable where one is expected - see [Functions without arguments](#executable-udf-without-arguments).
 
 The command opens and `mmap`s the file at the given path (it may equally `mmap` the inherited descriptor directly), parses the input, computes the result, writes it into the shared memory (typically after the input data), and sends a **response** to its `STDOUT`:
 

@@ -1,16 +1,13 @@
 --- stderr of a fresh pooled worker at startup fails the query
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
 1
 --- stderr written just before exit still throws
 error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
 1
 --- stderr written on the way out still throws, with or without the exit code checked
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
 1
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
 1
 --- a command slow to exit is waited for
 Key 1
@@ -22,14 +19,9 @@ error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
 --- stderr written after closing stdout does not hang the reap
 Key 1
 --- a line on stderr with the answer under throw fails the query that caused it
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
-error:
-. (UNSUPPORTED_METHOD),. (UDF_EXECUTION_FAILED)
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
 1

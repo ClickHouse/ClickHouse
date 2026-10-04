@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Shared by the `executable_udf_shared_memory` stateless tests. Each scenario runs a `clickhouse-local`
+# Shared by the `executable_udf_shared_memory` and `executable_udf_pipe` stateless tests (the commands of
+# the latter are the `pipe_*` scripts here). Each scenario runs a `clickhouse-local`
 # of its own: a pool lives as long as the process does, so the queries of one scenario share its
 # workers, and every scenario starts from a process that holds no region and no charge at all.
 
@@ -40,8 +41,9 @@ function shm_functions()
 # every select - and `shm_pooled` - what pooled workers hold while idle, charged to the server.
 # An exception does not stop the queries after it, and is printed as `error:` and the names of the
 # error codes in its message - without the text of the query it failed, which is echoed after it and
-# ends with `;)` - so that a reference does not depend on the wording around them. What
-# the process logs goes to a file of its own, for `shm_log_contains`.
+# ends with `;)` - so that a reference does not depend on the wording around them. The output as it
+# was is kept for `shm_output_contains`, and what the process logs goes to a file of its own, for
+# `shm_log_contains`.
 function shm_local()
 {
     rm -f "$SHM_UDF_WORK/local.log"
@@ -53,14 +55,22 @@ function shm_local()
         $1" \
         -- --user_scripts_path="$SHM_UDF_SCRIPTS" \
         --user_defined_executable_functions_config="$SHM_UDF_WORK/shm_function.xml" 2>&1 \
+    | tee "$SHM_UDF_WORK/local.out" \
     | awk '
         /^Logging .* to / { next }
         /^Received exception:$/ { next }
         skipping_query { if (/;\)$/) skipping_query = 0; next }
         /^\(query: / { if (!/;\)$/) skipping_query = 1; next }
-        /^Code: / {
+        # A message spans several lines when what it quotes does (stderr of a command, for one): it
+        # is gathered up to the line that ends it with the name of its code.
+        /^Code: / { message = "" ; in_message = 1 }
+        in_message {
+            message = message " " $0
+            if (!/\([A-Z][A-Z_]+\)[.,]*$/)
+                next
+            in_message = 0
             codes = ""
-            line = $0
+            line = message
             while (match(line, /\([A-Z][A-Z_]+\)/))
             {
                 codes = codes " " substr(line, RSTART + 1, RLENGTH - 2)
@@ -70,6 +80,12 @@ function shm_local()
             next
         }
         { print }'
+}
+
+# How many lines of the last `shm_local`'s own output - exception messages included - contain the text.
+function shm_output_contains()
+{
+    grep -cF -- "$1" "$SHM_UDF_WORK/local.out"
 }
 
 # Whether the last `shm_local` logged the text: prints `1` or `0`.

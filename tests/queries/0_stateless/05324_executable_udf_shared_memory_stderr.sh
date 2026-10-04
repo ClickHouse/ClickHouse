@@ -19,6 +19,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/shm_udf_scripts/common.sh
 
 STRAY_BYTE_MARKER="$SHM_UDF_WORK/stray_byte_written"
+# The signal a command waits for before its late output (`go_signal.py`), sent with `shm_wait.sh touch`.
+GO="$SHM_UDF_WORK/go"
 
 function shm_function()
 {
@@ -29,19 +31,19 @@ function shm_function()
 }
 
 {
-    shm_function shm_late_exit executable_pool "<pool_size>1</pool_size><shared_memory_size>65536</shared_memory_size>" shm_udf_stderr_then_late_exit.py
+    shm_function shm_late_exit executable_pool "<pool_size>1</pool_size><shared_memory_size>65536</shared_memory_size>" "shm_udf_stderr_then_late_exit.py --go $GO"
     shm_function shm_chatty executable_pool "<pool_size>1</pool_size><shared_memory_size>4096</shared_memory_size>" shm_udf_chatty.py
     shm_function shm_flood_after_gap_throw executable_pool \
         "<pool_size>1</pool_size><stderr_reaction>throw</stderr_reaction><command_read_timeout>5000</command_read_timeout><shared_memory_size>4096</shared_memory_size>" \
-        "shm_udf_stderr_flood_after_gap.py --gap 2"
+        "shm_udf_stderr_flood_after_gap.py --go $GO"
     shm_function shm_flood_after_gap_none executable_pool \
         "<pool_size>1</pool_size><stderr_reaction>none</stderr_reaction><command_read_timeout>5000</command_read_timeout><shared_memory_size>4096</shared_memory_size>" \
-        shm_udf_stderr_flood_after_gap.py
+        "shm_udf_stderr_flood_after_gap.py --go $GO"
     shm_function shm_flood_none executable_pool \
         "<pool_size>1</pool_size><stderr_reaction>none</stderr_reaction><command_read_timeout>5000</command_read_timeout><shared_memory_size>4096</shared_memory_size>" \
         shm_udf_stderr_flood_none.py
     shm_function shm_stray_byte executable_pool "<pool_size>1</pool_size><shared_memory_size>12288</shared_memory_size>" \
-        "shm_udf_stray_byte_after_probe.py --marker $STRAY_BYTE_MARKER"
+        "shm_udf_stray_byte_after_probe.py --marker $STRAY_BYTE_MARKER --go $GO"
     shm_function shm_chatty_stderr_log executable_pool \
         "<pool_size>1</pool_size><stderr_reaction>log_last</stderr_reaction><shared_memory_size>16777216</shared_memory_size>" shm_udf_chatty_stderr.py
     shm_function shm_flooding_stdout executable_pool "<pool_size>1</pool_size><shared_memory_size>4096</shared_memory_size>" shm_udf_flooding_stdout.py
@@ -53,13 +55,14 @@ function shm_function()
 } | shm_functions
 
 echo "--- a worker that died in the pool has its last words reported"
-# It answers, waits out the hand-back probe, writes to stderr and exits. Nobody reads its pipes at
-# that point: the next borrow finds it dead, starts a replacement, and reports what it wrote. The
-# first call is made right where its pid is waited on: a worker that is about to die must not be
-# borrowed by anything else in between.
+# It answers, waits until the query it answered is over, writes to stderr and exits. Nobody reads
+# its pipes at that point: the next borrow finds it dead, starts a replacement, and reports what it
+# wrote.
 shm_local "
-    SELECT * FROM executable('shm_wait.sh exited', TSV, 'ok UInt8', (SELECT shm_late_exit(0)));
-    SELECT length(shm_late_exit(1)) > 0;
+    CREATE TABLE worker ENGINE = Memory AS SELECT shm_late_exit(number) AS pid FROM numbers(1);
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
+    SELECT * FROM executable('shm_wait.sh exited', TSV, 'ok UInt8', (SELECT pid FROM worker));
+    SELECT shm_late_exit(1) != (SELECT pid FROM worker);
     SELECT value FROM system.events WHERE event = 'ExecutableUDFSharedMemoryCalls';
 "
 shm_log_contains "exited while it was idle in the pool, after writing to its stderr"
@@ -81,6 +84,7 @@ echo "--- a byte written after the hand-back probe does not reach the next query
 shm_local "
     SELECT shm_stray_byte(1);
     CREATE TABLE regions_before ENGINE = Memory AS SELECT inode FROM shm_regions;
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
     SELECT * FROM executable('shm_wait.sh file $STRAY_BYTE_MARKER', TSV, 'ok UInt8', (SELECT 0));
     SELECT shm_stray_byte(2);
     SELECT value FROM system.events WHERE event = 'ExecutableUDFSharedMemoryDirtyChannelDiscards';
@@ -97,8 +101,10 @@ echo "--- stderr a previous borrow left is not thrown at the next query"
 shm_local "
     CREATE TABLE pids (n UInt8, pid String) ENGINE = Memory;
     INSERT INTO pids SELECT 0, shm_flood_after_gap_throw(0);
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
     SELECT * FROM executable('shm_wait.sh blocked', TSV, 'ok UInt8', (SELECT pid FROM pids WHERE n = 0));
     INSERT INTO pids SELECT 1, shm_flood_after_gap_throw(1);
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
     SELECT * FROM executable('shm_wait.sh blocked', TSV, 'ok UInt8', (SELECT pid FROM pids WHERE n = 1));
     INSERT INTO pids SELECT 2, shm_flood_after_gap_throw(2);
     SELECT count(), uniqExact(pid) FROM pids;
@@ -107,14 +113,16 @@ shm_local "
 shm_log_contains "had unread output on its stderr when it was borrowed under stderr_reaction 'throw'"
 
 echo "--- under none, a worker flooding stderr is never left blocked"
-# Whether the flood comes after a quiet gap longer than the hand-back drain, or right after the
-# answer. The read loop polls stderr alongside stdout, so the query waiting for a response drains the
-# command writing it; a worker left blocked in \`write\` would fail the query on its read timeout.
+# Whether the flood comes after the hand-back drain, or right after the answer. The read loop polls
+# stderr alongside stdout, so the query waiting for a response drains the command writing it; a
+# worker left blocked in \`write\` would fail the query on its read timeout.
 shm_local "
     CREATE TABLE pids (pid String) ENGINE = Memory;
     INSERT INTO pids SELECT shm_flood_after_gap_none(0);
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
     SELECT * FROM executable('shm_wait.sh blocked', TSV, 'ok UInt8', (SELECT any(pid) FROM pids));
     INSERT INTO pids SELECT shm_flood_after_gap_none(1);
+    SELECT * FROM executable('shm_wait.sh touch $GO', TSV, 'ok UInt8', (SELECT 0));
     SELECT * FROM executable('shm_wait.sh blocked', TSV, 'ok UInt8', (SELECT any(pid) FROM pids));
     INSERT INTO pids SELECT shm_flood_after_gap_none(2);
     SELECT count(), uniqExact(pid) FROM pids;

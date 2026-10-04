@@ -64,10 +64,14 @@ shm_local "
 echo "--- a function without arguments is still called"
 # Its input block has no columns and no rows, so there is nothing to serialize - the request carries
 # an empty payload, as the pipe transport does. Pooled, one worker and one region answer every call.
+# The request does not say how many rows it is made for, so over a block of three rows the command
+# answers one and the query fails - as over the pipes; the next call is answered as before.
 shm_local "
     SELECT shm_zero_arg();
     SELECT shm_zero_arg_pool(); SELECT shm_zero_arg_pool(); SELECT shm_zero_arg_pool();
     SELECT count() FROM shm_regions;
+    SELECT shm_zero_arg_pool() FROM numbers(3);
+    SELECT shm_zero_arg_pool();
 "
 
 echo "--- the region grows for the input and at the command's request"

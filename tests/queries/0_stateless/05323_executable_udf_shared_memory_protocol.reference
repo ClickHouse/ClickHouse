@@ -16,6 +16,8 @@ Key 3
 42
 42
 1
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+42
 --- the region grows for the input and at the command's request
 200
 200

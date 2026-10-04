@@ -1,0 +1,43 @@
+--- under none, a worker flooding stderr once it is back in the pool is never left blocked
+1
+1
+1
+1
+3	1
+--- under throw, stderr a previous borrow left is not thrown at the next query
+1
+1
+1
+1
+3	1
+1
+--- under throw, stderr written with the rows fails the query that caused it
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+1
+--- a worker that exited in the pool is replaced
+1
+1
+1
+1
+--- a worker that died in the pool has its last words reported
+1
+1
+1
+1
+1
+--- extra rows inside one Native block fail the query and cost the worker
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+error: UNSUPPORTED_METHOD UDF_EXECUTION_FAILED
+3
+--- a row written once the worker is back in the pool is not read by the next query
+1
+1
+1
+1	1
+1
+--- a byte written together with the rows does not cost the worker
+4	1
+--- under log_last, a line written after the rows is logged and the worker is kept
+4	1
+1

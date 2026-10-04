@@ -5,7 +5,7 @@
 # The byte arrives with the answer, so the server reads it into its own buffer along with the rows,
 # and it dies with that buffer: it never reaches the pipe the next borrower reads, and the worker is
 # still at a usable boundary. A byte written later, once the server has stopped reading, is the
-# other case - see `input_pool_late_stdout.py`.
+# other case - see `pipe_pool_late_stdout.py`.
 #
 # It answers with its own pid, so the test can tell a fresh worker from a reused one.
 

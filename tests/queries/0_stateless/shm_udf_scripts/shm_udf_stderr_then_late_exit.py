@@ -1,16 +1,15 @@
 #!/usr/bin/python3
-# A pooled shared-memory UDF that answers, waits out the hand-back probe, writes a diagnostic to
-# stderr and exits in the pool. See input_pool_stderr_then_late_exit.py for the pipe counterpart.
+# A pooled shared-memory UDF that answers, waits until the query it answered is over (`--go`, see
+# `go_signal.py`), writes a diagnostic to stderr and exits in the pool. See
+# `pipe_pool_stderr_then_late_exit.py` for the pipe counterpart.
 import mmap
 import os
 import sys
-import time
+
+from go_signal import wait_for_go
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
-
-QUIET_GAP_SECONDS = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 0.3
-
 
 def read_varint(stream):
     result = 0
@@ -79,9 +78,10 @@ def main():
     write_varint(stdout, len(output))
     stdout.flush()
 
-    # Wait out the hand-back probe of the query just served, then complain and go: the worker dies
-    # in the pool with its last words unread, and the next borrow has to report them.
-    time.sleep(QUIET_GAP_SECONDS)
+    # Once the query just served is over, complain and go: the worker dies in the pool with its
+    # last words unread, and the next borrow has to report them.
+    if not wait_for_go():
+        return
     stderr.write(b"last words of the worker\n")
     stderr.flush()
     os._exit(0)

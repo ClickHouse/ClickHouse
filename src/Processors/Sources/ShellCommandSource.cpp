@@ -1,5 +1,6 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
+#include <climits>
 #include <poll.h>
 #include <sys/ioctl.h>
 
@@ -550,14 +551,21 @@ public:
         const UInt64 deadline_ns = clock_gettime_ns() + static_cast<UInt64>(budget_milliseconds) * 1000000ULL;
 
         /// An empty pipe is answered at once: nothing pending, nothing to wait for. But a pipe
-        /// that had something in it may belong to a command in the middle of a burst - blocked in
-        /// `write` on a full pipe, and only now, with room made, being woken to write the rest.
-        /// That wake-up takes a moment, longer on a loaded machine, and a poll with no timeout
-        /// would find the pipe momentarily empty and declare the burst over, leaving its tail to
-        /// land in the middle of the next request. So once something has been read, each further
-        /// poll waits a little for the writer, up to the budget.
+        /// that was full may belong to a command in the middle of a burst - blocked in `write`,
+        /// and only now, with room made, being woken to write the rest. That wake-up takes a
+        /// moment, longer on a loaded machine, and a poll with no timeout would find the pipe
+        /// momentarily empty and declare the burst over, leaving its tail to land in the middle of
+        /// the next request. So once enough has been read that the writer may have been blocked,
+        /// each further poll waits a little for it, up to the budget.
+        ///
+        /// Only then: a command that wrote a log line and went back to waiting for its next
+        /// request is not blocked on anything, and waiting for it would put an idle window on
+        /// every pooled call that logs, which is the hot path of `executable_pool`. A writer can
+        /// be blocked only on a pipe without room for its write, and that leaves more than
+        /// `PIPE_BUF` bytes in it: far more with the default capacity of 64 KiB, and still more
+        /// with the two pages that a recent kernel gives a pipe over the per-user limit.
         static constexpr size_t wait_for_writer_ms = 20;
-        bool read_anything = false;
+        size_t bytes_read = 0;
 
         while (!stderr_is_done)
         {
@@ -566,12 +574,11 @@ public:
                 return;
 
             pfds[1].revents = 0;
-            const size_t wait_ms = read_anything ? std::min(remaining_ms, wait_for_writer_ms) : 0;
+            const size_t wait_ms = bytes_read > PIPE_BUF ? std::min(remaining_ms, wait_for_writer_ms) : 0;
             if (pollWithTimeout(&pfds[1], 1, wait_ms) <= 0 || pfds[1].revents == 0)
                 return;
 
-            readStderrOnce(with_reaction);
-            read_anything = true;
+            bytes_read += readStderrOnce(with_reaction);
         }
     }
 
@@ -638,20 +645,23 @@ private:
     /// for the command's next answer into a busy loop that spins a core and never reaches
     /// `command_read_timeout`. A command closing its own stderr is ordinary (see
     /// `shm_udf_quiet_stderr.py`), so this is not an error path.
-    void readStderrOnce(bool with_reaction = true)
+    ///
+    /// Returns the number of bytes read.
+    size_t readStderrOnce(bool with_reaction = true)
     {
         const ssize_t res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
         if (res > 0)
         {
             if (with_reaction)
                 consumeStderrChunk(std::string_view(stderr_read_buf.get(), static_cast<size_t>(res)));
-            return;
+            return static_cast<size_t>(res);
         }
 
         if (res < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-            return;
+            return 0;
 
         stopPollingStderr();
+        return 0;
     }
 
     void stopPollingStderr() noexcept
@@ -2072,7 +2082,7 @@ namespace
         /// to flush here. In particular the region must not grow from this method: `finalize`
         /// blocks memory-limit exceptions for its whole body, so a growth started here would commit
         /// its pages without `max_memory_usage` ever being enforced. Draining the spare byte is the
-        /// writer's job (any `next` does it, under the memory limit) - see serializeInto, which is
+        /// writer's job (any `next` does it, under the memory limit) - see serializeInput, which is
         /// also why this buffer is never finalized implicitly from a destructor.
         ///
         /// This only covers growth this buffer starts itself. A format that wraps this one
@@ -2080,7 +2090,8 @@ namespace
         /// `finalize`, under the same blocked limit, and a growth from there cannot be checked
         /// against `max_memory_usage` either - the bytes are still charged to the query, only the
         /// limit is not enforced for them. `ensureRegionFits` keeps that bounded by growing in a
-        /// small step instead of doubling whenever it sees the limit blocked.
+        /// small step instead of doubling whenever it sees the limit blocked, and serializeInput
+        /// enforces the limit once the format is done.
         void finalizeImpl() override
         {
             if (offset() != 0 && working_buffer.begin() == overflow.data())
@@ -2610,6 +2621,17 @@ namespace
             write_buffer.next();
             write_buffer.finalize();
 
+            /// A format that wraps this buffer (`WriteBufferValidUTF8`, `PeekableWriteBuffer`)
+            /// flushes what it still holds from its own `finalize` - inside `formatBlock`, when the
+            /// format finalizes its buffers - where memory-limit exceptions are blocked. A growth
+            /// from there is charged, but `max_memory_usage` is not enforced for it (see
+            /// `ensureRegionFits`), so it is enforced now that exceptions are allowed again.
+            if (memory_limit_check_pending)
+            {
+                memory_limit_check_pending = false;
+                CurrentMemoryTracker::check();
+            }
+
             return write_buffer.count();
         }
 
@@ -2976,7 +2998,10 @@ namespace
             /// doubling would put a whole region size past the limit. Take a modest step instead:
             /// what escapes the limit is then bounded by what the writer is actually flushing.
             if (LockMemoryExceptionInThread::isBlocked(VariableContext::Process, /*fault_injection=*/ false))
+            {
                 new_size = std::max(required, std::min(region.size() + UNENFORCED_GROWTH_STEP, shared_memory_max_size));
+                memory_limit_check_pending = true;
+            }
 
             /// What this growth commits, at most: the pages between the end of the file and
             /// `new_size`. `posix_fallocate` commits every page of the file that is not committed,
@@ -3788,6 +3813,10 @@ namespace
         /// and a cap of 16 bytes has to mean that page, not fail it on every borrow.
         size_t shared_memory_max_footprint;
         size_t query_memory_charge = 0;
+        /// Set by `ensureRegionFits` when it grew the region while memory-limit exceptions were
+        /// blocked, so the charge went through without `max_memory_usage` being checked; cleared
+        /// by `serializeInput` once it has checked it.
+        bool memory_limit_check_pending = false;
 
         std::unique_ptr<TimeoutReadBufferFromFileDescriptor> timeout_command_out;
         std::unique_ptr<TimeoutWriteBufferFromFileDescriptor> timeout_command_in;

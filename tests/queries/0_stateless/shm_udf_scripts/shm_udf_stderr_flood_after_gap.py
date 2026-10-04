@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-# A pooled worker that answers correctly, stays quiet for longer than the server spends draining its
-# `stderr` at hand-back, and only then writes far more than a pipe can hold - before going back to
-# read the next request.
+# A pooled worker that answers correctly, stays quiet until the query it answered is over - hand-back
+# drain and all (`--go`, see `go_signal.py`) - and only then writes far more than a pipe can hold,
+# before going back to read the next request.
 #
 # The gap is the point. A drain at the moment the worker is handed back sees an empty pipe and can
 # say nothing about what the command is going to write next; if that were the only thing standing
@@ -14,19 +14,14 @@
 import mmap
 import os
 import sys
-import time
+
+from go_signal import wait_for_go
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
 
 # Twice the 64 KiB a Linux pipe holds by default, so the command is provably blocked partway.
 CHATTER = b"e" * (128 * 1024)
-
-# Comfortably longer than the drain the server performs when it takes the worker back.
-# Overridable from the command line (`--gap SECONDS`): a test that needs the flood to start only
-# after the previous query is provably over, whatever the machine's speed, asks for a longer gap
-# and waits for the flood itself instead of sleeping.
-QUIET_GAP_SECONDS = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 0.3
 
 
 def read_varint(stream):
@@ -98,10 +93,10 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Quiet long enough for the hand-back drain to find nothing, then far too much to fit.
-        time.sleep(QUIET_GAP_SECONDS)
-        stderr.write(CHATTER)
-        stderr.flush()
+        # Quiet until the hand-back drain has found nothing, then far too much to fit.
+        if wait_for_go():
+            stderr.write(CHATTER)
+            stderr.flush()
 
 
 if __name__ == "__main__":
