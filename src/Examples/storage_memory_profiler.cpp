@@ -14,9 +14,11 @@
 #include <Examples/storage_memory_profiler.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <thread>
 #include <vector>
 #include <unistd.h>
 
@@ -74,6 +76,10 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
 extern const Metric MemoryTracking;
+extern const Metric BackgroundMergesAndMutationsPoolTask;
+extern const Metric BackgroundMovePoolTask;
+extern const Metric BackgroundFetchesPoolTask;
+extern const Metric BackgroundCommonPoolTask;
 }
 
 namespace DB
@@ -83,6 +89,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int SYSTEM_ERROR;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ServerSetting
@@ -466,6 +473,42 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
 }
 
 
+void StorageMemoryProfiler::waitForBackgroundTasks()
+{
+    /// `mutations_sync` waits for a mutation to be applied, not for the background task that ran it
+    /// to be released.
+    /// These metrics are decremented by ~TaskRuntimeData, after the task object is destroyed,
+    /// so zero means its memory is already freed.
+    static const std::array metrics{
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMovePoolTask,
+        CurrentMetrics::BackgroundFetchesPoolTask,
+        CurrentMetrics::BackgroundCommonPoolTask,
+    };
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (true)
+    {
+        bool idle = true;
+        for (auto metric : metrics)
+        {
+            if (CurrentMetrics::values[metric].load() != 0)
+            {
+                idle = false;
+                break;
+            }
+        }
+        if (idle)
+            return;
+        if (std::chrono::steady_clock::now() > deadline)
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Background tasks did not finish in 30 seconds; cannot take a stable heap measurement");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+
 int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
 {
     /// Parse command line arguments
@@ -579,6 +622,7 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         fmt::print(stdout, "\n#\ncheckpoint\tallocated_bytes\tdiff_from_start\tdiff_from_prev\n");
 
         /// Initial measurement
+        waitForBackgroundTasks();
         flushJemallocThreadCache();
         refreshJemallocEpoch();
         size_t initial_allocated = getJemallocAllocated();
@@ -599,6 +643,7 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
             executeQueriesFromFile(filepath);
 
             /// Measure memory after execution
+            waitForBackgroundTasks();
             flushJemallocThreadCache();
             refreshJemallocEpoch();
             size_t current_allocated = getJemallocAllocated();
