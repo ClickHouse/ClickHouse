@@ -26,11 +26,11 @@
 
 #include <Columns/IColumn.h>
 
-#include <Common/SipHash.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/Arena.h>
 #include <Common/PODArray.h>
 
 #include <limits>
+#include <string_view>
 #include <unordered_map>
 
 namespace DB
@@ -99,7 +99,10 @@ public:
 
         const auto & cte_name = recursive_cte_union_node_typed.getCTEName();
         recursive_table_nodes = collectTableNodesWithTemporaryTableName(cte_name, recursive_cte_union_node.get());
-        if (recursive_table_nodes.empty())
+        /// With USING KEY, the recursive members may read only the accumulated state `<cte_name>_settled`.
+        if (!recursive_cte_table->key_columns.empty())
+            settled_table_nodes = collectTableNodesWithTemporaryTableName(cte_name + "_settled", recursive_cte_union_node.get());
+        if (recursive_table_nodes.empty() && settled_table_nodes.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION query {} is not recursive", recursive_cte_union_node->formatASTForErrorMessage());
 
         size_t recursive_cte_union_node_queries_size = recursive_cte_union_node_typed.getQueries().getNodes().size();
@@ -169,7 +172,6 @@ public:
                     "Recursive CTE {} USING KEY columns were not resolved to projection columns",
                     recursive_cte_union_node->formatASTForErrorMessage());
 
-            settled_table_nodes = collectTableNodesWithTemporaryTableName(cte_name + "_settled", recursive_cte_union_node.get());
             accumulated_columns = header->cloneEmptyColumns();
         }
     }
@@ -414,9 +416,22 @@ private:
         explicit StepCandidates(MutableColumns columns_) : columns(std::move(columns_)) {}
 
         MutableColumns columns;
-        PaddedPODArray<UInt128> row_hashes;
-        std::unordered_map<UInt128, size_t, UInt128Hash> last_row_for_key;
+        /// Serialized key columns of the rows produced by the step, owned by `keys_arena`.
+        Arena keys_arena;
+        std::vector<std::string_view> row_keys;
+        std::unordered_map<std::string_view, size_t> last_row_for_key;
     };
+
+    /// Serializes the key columns of the row into a contiguous chunk of the arena. Lookups use the
+    /// serialized key itself rather than its hash, so distinct keys are never merged.
+    std::string_view serializeKey(const Columns & columns, size_t row, Arena & arena) const
+    {
+        const char * begin = nullptr;
+        size_t size = 0;
+        for (auto key_column_index : key_column_indices)
+            size += columns[key_column_index]->serializeValueIntoArena(row, arena, begin, /*settings*/ nullptr).size();
+        return {begin, size};
+    }
 
     void collectStepCandidates(const Chunk & chunk, StepCandidates & candidates)
     {
@@ -426,10 +441,7 @@ private:
 
         for (size_t row = 0; row < rows; ++row)
         {
-            SipHash key_hash;
-            for (auto key_column_index : key_column_indices)
-                chunk_columns[key_column_index]->updateHashWithValue(row, key_hash);
-            UInt128 key = key_hash.get128();
+            std::string_view key = serializeKey(chunk_columns, row, candidates.keys_arena);
 
             /// A row identical to the accumulated one does not change the state and is not propagated
             /// to the next step's working table. This is what terminates cycles and refutes re-derived
@@ -458,26 +470,30 @@ private:
             size_t new_row_index = candidates.columns[0]->size();
             for (size_t i = 0; i < columns_size; ++i)
                 candidates.columns[i]->insertFrom(*chunk_columns[i], row);
-            candidates.row_hashes.push_back(key);
+            candidates.row_keys.push_back(key);
             candidates.last_row_for_key[key] = new_row_index;
         }
     }
 
     void applyStepCandidates(const StepCandidates & candidates, MutableColumns & delta_columns)
     {
-        size_t rows = candidates.row_hashes.size();
+        size_t rows = candidates.row_keys.size();
         size_t columns_size = accumulated_columns.size();
 
         for (size_t row = 0; row < rows; ++row)
         {
-            const UInt128 & key = candidates.row_hashes[row];
+            std::string_view key = candidates.row_keys[row];
 
             /// Superseded by a later row with the same key within this step, possibly by a row identical
             /// to the accumulated one.
             if (candidates.last_row_for_key.at(key) != row)
                 continue;
 
+            size_t new_row_index = accumulated_columns[0]->size();
+
             /// The stored candidates differ from the accumulated row for their key, so the row replaces it.
+            /// The serialized key of a new key is copied from the step arena into `accumulated_keys_arena`.
+            std::string_view stored_key;
             auto it = accumulated_index.find(key);
             if (it != accumulated_index.end())
             {
@@ -487,17 +503,23 @@ private:
                     accumulated_live[existing_row] = static_cast<UInt8>(0);
                     ++accumulated_dead;
                 }
+
+                stored_key = it->first;
+                it->second = new_row_index;
+            }
+            else
+            {
+                stored_key = {accumulated_keys_arena.insert(key.data(), key.size()), key.size()};
+                accumulated_index.emplace(stored_key, new_row_index);
             }
 
-            size_t new_row_index = accumulated_columns[0]->size();
             for (size_t i = 0; i < columns_size; ++i)
             {
                 accumulated_columns[i]->insertFrom(*candidates.columns[i], row);
                 delta_columns[i]->insertFrom(*candidates.columns[i], row);
             }
-            accumulated_row_hashes.push_back(key);
+            accumulated_row_keys.push_back(stored_key);
             accumulated_live.push_back(static_cast<UInt8>(1));
-            accumulated_index[key] = new_row_index;
         }
 
         compactAccumulatedIfNeeded();
@@ -510,8 +532,8 @@ private:
             return;
 
         MutableColumns compacted_columns = header->cloneEmptyColumns();
-        PaddedPODArray<UInt128> compacted_row_hashes;
-        compacted_row_hashes.reserve(accumulated_size - accumulated_dead);
+        std::vector<std::string_view> compacted_row_keys;
+        compacted_row_keys.reserve(accumulated_size - accumulated_dead);
 
         accumulated_index.clear();
 
@@ -523,13 +545,13 @@ private:
             size_t new_row_index = compacted_columns[0]->size();
             for (size_t i = 0; i < compacted_columns.size(); ++i)
                 compacted_columns[i]->insertFrom(*accumulated_columns[i], row);
-            compacted_row_hashes.push_back(accumulated_row_hashes[row]);
-            accumulated_index[accumulated_row_hashes[row]] = new_row_index;
+            compacted_row_keys.push_back(accumulated_row_keys[row]);
+            accumulated_index[accumulated_row_keys[row]] = new_row_index;
         }
 
         accumulated_columns = std::move(compacted_columns);
-        accumulated_row_hashes = std::move(compacted_row_hashes);
-        accumulated_live.assign(accumulated_row_hashes.size(), static_cast<UInt8>(1));
+        accumulated_row_keys = std::move(compacted_row_keys);
+        accumulated_live.assign(accumulated_row_keys.size(), static_cast<UInt8>(1));
         accumulated_dead = 0;
     }
 
@@ -607,11 +629,13 @@ private:
 
     /// Accumulated keyed state: one live row per key. Updated rows are appended and the
     /// previous row is marked dead; compaction reclaims dead rows when they dominate.
+    /// The serialized key of every distinct key is stored once in `accumulated_keys_arena`.
     MutableColumns accumulated_columns;
-    PaddedPODArray<UInt128> accumulated_row_hashes;
+    Arena accumulated_keys_arena;
+    std::vector<std::string_view> accumulated_row_keys;
     IColumn::Filter accumulated_live;
     size_t accumulated_dead = 0;
-    std::unordered_map<UInt128, size_t, UInt128Hash> accumulated_index;
+    std::unordered_map<std::string_view, size_t> accumulated_index;
 
     bool keyed_evaluated = false;
     Columns keyed_result_columns;
