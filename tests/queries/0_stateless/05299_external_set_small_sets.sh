@@ -43,17 +43,17 @@ SETTINGS max_bytes_before_external_set = '1M', log_comment = 'threshold below th
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SetsSpilledToDisk']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment != ''
+WHERE type = 'QueryFinish' AND log_comment != '' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 
 -- The aggregations exceed the threshold.
 SELECT log_comment, memory_usage > 16000000
 FROM system.query_log
-WHERE type = 'QueryFinish' AND startsWith(log_comment, 'aggregation')
+WHERE type = 'QueryFinish' AND startsWith(log_comment, 'aggregation') AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 
 -- The set in memory lets the primary key select one mark.
 SELECT 'marks', ProfileEvents['SelectedMarks']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment = 'aggregation, small set';
+WHERE type = 'QueryFinish' AND log_comment = 'aggregation, small set' AND current_database = currentDatabase();
 SQL

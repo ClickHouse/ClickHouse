@@ -69,7 +69,7 @@ REPORT=$(cat <<'SQL'
 SYSTEM FLUSH LOGS query_log;
 SELECT 'report', extract(query, 'SELECT \'([^\']+)\'') AS label, ProfileEvents['SetsSpilledToDisk']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND query_kind = 'Select' AND label != ''
+WHERE type = 'QueryFinish' AND query_kind = 'Select' AND label != '' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 SQL
 )

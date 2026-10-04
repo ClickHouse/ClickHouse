@@ -79,13 +79,14 @@ ON l.number = r.n SETTINGS query_plan_convert_join_to_in = 1, log_comment = 'joi
 SQL
 )
 
-# For each form: the sets filled, how many spilled, and whether the lookups read the disk.
+# For each form: the sets filled, how many spilled, and whether the lookups read the disk. The refresh of
+# `atomic.rmv` runs in the database of the view.
 REPORT=$(cat <<'SQL'
 SYSTEM FLUSH LOGS query_log;
 SELECT 'report', log_comment, sum(ProfileEvents['SetsBuiltFromSubquery']), sum(ProfileEvents['SetsSpilledToDisk']),
     max(ProfileEvents['ExternalSetReadBlocks'] > 0)
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment != ''
+WHERE type = 'QueryFinish' AND log_comment != '' AND current_database IN (currentDatabase(), 'atomic')
 GROUP BY log_comment
 ORDER BY min(event_time_microseconds);
 SQL

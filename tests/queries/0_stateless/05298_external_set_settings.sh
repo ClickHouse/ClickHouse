@@ -97,7 +97,7 @@ SELECT log_comment, if(type = 'QueryFinish', 'finished', errorCodeToName(excepti
     ProfileEvents['SetsSpilledToDisk'], ProfileEvents['ExternalSetWritePart'] > 0, ProfileEvents['ExternalSetMerge'],
     ProfileEvents['ExternalSetReadBlocks'] > 0
 FROM system.query_log
-WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing') AND log_comment != ''
+WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing') AND log_comment != '' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 
 -- The temporary files of the set count in the events of external processing, and its runs merge once.
@@ -105,19 +105,19 @@ SELECT 'metrics', ProfileEvents['ExternalSetWritePart'] >= 2, ProfileEvents['Ext
     ProfileEvents['ExternalSetCompressedBytes'] >= 100000, ProfileEvents['ExternalSetUncompressedBytes'] >= 100000,
     ProfileEvents['ExternalProcessingFilesTotal'] = ProfileEvents['ExternalSetWritePart'], ProfileEvents['ExternalSortMerge'] = 0
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment = 'metrics';
+WHERE type = 'QueryFinish' AND log_comment = 'metrics' AND current_database = currentDatabase();
 
 -- Every set that reaches its limits in the `break` mode counts an overflow; only sets on disk read the whole
 -- subquery.
 SELECT log_comment, ProfileEvents['OverflowBreak'] > 0, read_rows = if(startsWith(log_comment, 'rows'), 40000, 400000)
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment LIKE '% break %'
+WHERE type = 'QueryFinish' AND log_comment LIKE '% break %' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 
 -- Every preliminary `DISTINCT` passes the keys through once the set spills, and none does in memory.
 SELECT log_comment, ProfileEvents['DistinctTransformsSwitchedToPassThrough']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND startsWith(log_comment, 'preliminary distinct')
+WHERE type = 'QueryFinish' AND startsWith(log_comment, 'preliminary distinct') AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 SQL
 
