@@ -2920,7 +2920,7 @@ static void removeStaleSplitFiles(const Strings & stale_paths, const std::functi
 
 /// The same for a table that does not know the names of the files of the previous insert - an `INSERT` into
 /// the `file` table function, or a table that was reloaded since then. The files are written with consecutive
-/// numbers starting from `numbered_paths.start_sequence_number`, so the removal stops at the first missing number.
+/// numbers starting from 1, so the removal stops at the first missing number.
 ///
 /// Such numbered names are not attributed to a particular table - the engine keeps no metadata about the files
 /// it has written. The removal is done only when the numbered names are unambiguously overwritten by this insert
@@ -2932,7 +2932,7 @@ static void removeStaleSplitFilesByNumber(const NumberedFileNames & numbered_pat
     if (allow_create_multiple_files)
         return;
 
-    size_t sequence_number = numbered_paths.start_sequence_number;
+    size_t sequence_number = 1;
     while (true)
     {
         String stale_path = numbered_paths.getName(sequence_number);
@@ -2979,7 +2979,7 @@ static void warnAboutForgottenSplitTail(
     if (current_paths.size() != 1)
         return;
 
-    const String forgotten_path = numbered_paths.getName(numbered_paths.start_sequence_number);
+    const String forgotten_path = numbered_paths.getName(1);
     if (!fs::exists(forgotten_path))
         return;
 
@@ -3317,7 +3317,7 @@ public:
         /// the path pattern rather than into the path of the partition, so that a partition id with a dot in it
         /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`.
         const NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
-        size_t sequence_number = numbered_paths.start_sequence_number;
+        size_t sequence_number = 1;
 
         /// The same handoff to a new file as in `StorageFile::write`: the data of a format that does not support
         /// appending cannot be added to a non-empty file, and with `engine_file_allow_create_multiple_files`
@@ -3458,9 +3458,8 @@ SinkToStoragePtr StorageFile::write(
     /// in it only after it has been written - see `StorageFileSink::PublishPathCallback`.
     bool first_path_is_published = true;
     /// When the data is split by size, the files after the first one are named `data.1.Parquet`, `data.2.Parquet`, ...
-    /// The numbering is derived per insert from the name of the file this insert starts with: the next files
-    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
-    /// had to step aside from a non-empty file into a numbered one.
+    /// The numbering is derived from the name of the file of the table: the next files are `data.tsv` -> `data.1.tsv`, ...,
+    /// and an insert that had to step aside from a non-empty file into a numbered one continues the numbering from there.
     NumberedFileNames numbered_paths;
     size_t sequence_number = 1;
     Strings current_paths = getPathsSnapshot();
@@ -3473,7 +3472,6 @@ SinkToStoragePtr StorageFile::write(
 
         path = current_paths.front();
         numbered_paths = getNumberedFileNames(path);
-        sequence_number = numbered_paths.start_sequence_number;
         fs::create_directories(fs::path(path).parent_path());
 
         std::error_code error_code;

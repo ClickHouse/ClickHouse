@@ -8,24 +8,19 @@ data.2.tsv	300	600	899
 data.3.tsv	100	900	999
 data.tsv	300	0	299
 1000	499500
---- The numbering continues from the number in the name of the first file
+--- A number in the name of the first file is not a sequence number
+data.1.5.tsv
+data.2.5.tsv
+data.3.5.tsv
 data.5.tsv
-data.6.tsv
-data.7.tsv
-data.8.tsv
---- The number can be in the name of the first file
-data.0.tsv
-data.1.tsv
-data.2.tsv
-data.3.tsv
 --- A non-numeric part of the name is not a sequence number
 data.1.v2.tsv
 data.2.v2.tsv
 data.3.v2.tsv
 data.v2.tsv
---- A new file on each insert continues the numbering as well
+--- A new file on each insert keeps the number in the name as well
+data.1.5.Parquet
 data.5.Parquet
-data.6.Parquet
 --- Without splitting everything goes into a single file
 data.tsv
 --- The files are truncated on the second insert with engine_file_truncate_on_insert

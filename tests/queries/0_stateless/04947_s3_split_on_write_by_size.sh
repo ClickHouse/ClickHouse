@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(x) FROM s3(s3_conn, filename='${PREFIX}/split/data*.tsv', format=TSV, structure='x UInt64');
 "
 
-echo '--- The numbering continues from the number in the key of the first object'
+echo '--- A number in the key of the first object is not a sequence number'
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename='${PREFIX}/offset/data.5.tsv', format=TSV, structure='x UInt64')
         SELECT number FROM numbers(1000) SETTINGS ${SETTINGS};

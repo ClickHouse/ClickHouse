@@ -937,11 +937,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// see below.
     String first_key = paths.front().path;
     /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
-    /// The numbering is derived per insert from the key of the object this insert starts with: the next objects
-    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
-    /// had to step aside from an existing object into a numbered key.
+    /// The numbering is derived from the key of the table: the next objects are `data.tsv` -> `data.1.tsv`, ...,
+    /// and an insert that had to step aside from an existing object into a numbered key continues the numbering from there.
     const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
-    size_t sequence_number = numbered_keys.start_sequence_number;
+    size_t sequence_number = 1;
     /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
     /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
     /// for the readers only after its object has been committed, and until then the object storage does not have
@@ -1154,7 +1153,7 @@ void StorageObjectStorage::truncate(
     if (paths.size() == 1)
     {
         const auto numbered_keys = getNumberedFileNames(paths.front().path);
-        const String forgotten_key = numbered_keys.getName(numbered_keys.start_sequence_number);
+        const String forgotten_key = numbered_keys.getName(1);
         if (object_storage->exists(StoredObject(forgotten_key)))
             LOG_WARNING(
                 log,

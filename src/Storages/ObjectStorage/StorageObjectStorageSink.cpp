@@ -245,7 +245,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`. An insert that has to step aside from
     /// an existing object into a numbered key continues the numbering from there.
     const NumberedFileNames numbered_keys = configuration->getNumberedPathsForWrite(partition_id, file_path);
-    size_t sequence_number = numbered_keys.start_sequence_number;
+    size_t sequence_number = 1;
 
     /// See the same reservation in `StorageObjectStorage::write`: a generated key is invisible both for the
     /// readers and in the object storage until the object is committed, so it is held against the concurrent

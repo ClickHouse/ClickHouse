@@ -185,7 +185,7 @@ void removeStaleSplitObjectsByNumber(
     if (create_new_file_on_insert)
         return;
 
-    size_t sequence_number = numbered_keys.start_sequence_number;
+    size_t sequence_number = 1;
     while (true)
     {
         String stale_key = numbered_keys.getName(sequence_number);

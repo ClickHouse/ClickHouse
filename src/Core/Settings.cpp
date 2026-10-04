@@ -743,7 +743,7 @@ If not zero, `INSERT` into an S3 engine table or into the [s3](/sql-reference/ta
 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
-If the key of the first object already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next objects are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first object as well.
+A number that is already in the key of the first object is not taken for a sequence number: for `data.5.Parquet` the next objects are `data.1.5.Parquet`, `data.2.5.Parquet`, etc.
 
 For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first object of every insert is generated anew, so the objects of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an object of a previous insert, and a truncating insert does not overwrite or delete the objects of the previous inserts - the `hive` layout is append-only, with or without splitting.
 
@@ -778,7 +778,7 @@ If not zero, `INSERT` into an Azure Blob Storage engine table or into the [azure
 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
-If the name of the first blob already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next blobs are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first blob as well.
+A number that is already in the name of the first blob is not taken for a sequence number: for `data.5.Parquet` the next blobs are `data.1.5.Parquet`, `data.2.5.Parquet`, etc.
 
 For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first blob of every insert is generated anew, so the blobs of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an blob of a previous insert, and a truncating insert does not overwrite or delete the blobs of the previous inserts - the `hive` layout is append-only, with or without splitting.
 
@@ -958,7 +958,7 @@ If not zero, `INSERT` into an HDFS engine table or into the [hdfs](/sql-referenc
 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
-If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+A number that is already in the name of the first file is not taken for a sequence number: for `data.5.Parquet` the next files are `data.1.5.Parquet`, `data.2.5.Parquet`, etc.
 
 For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first file of every insert is generated anew, so the files of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an file of a previous insert, and a truncating insert does not overwrite or delete the files of the previous inserts - the `hive` layout is append-only, with or without splitting.
 
@@ -7138,7 +7138,7 @@ If not zero, `INSERT` into a [File](/engines/table-engines/special/file) engine 
 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
-If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+A number that is already in the name of the first file is not taken for a sequence number: for `data.5.Parquet` the next files are `data.1.5.Parquet`, `data.2.5.Parquet`, etc.
 
 For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
 

@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(x) FROM azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', 'split/data*.tsv', 'TSV', 'auto', 'x UInt64');
 "
 
-echo '--- The numbering continues from the number in the name of the first blob'
+echo '--- A number in the name of the first blob is not a sequence number'
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', 'offset/data.5.tsv', 'TSV', 'auto', 'x UInt64')
         SELECT number FROM numbers(1000) SETTINGS ${SETTINGS};

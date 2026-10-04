@@ -108,7 +108,7 @@ void removeStaleSplitObjects(
 
 /// The same for a table that does not know the keys of the objects of the previous insert - an `INSERT` into
 /// a table function, or a table that was reloaded since then. The objects are written with consecutive numbers
-/// starting from `numbered_keys.start_sequence_number`, so the removal stops at the first missing number.
+/// starting from 1, so the removal stops at the first missing number.
 /// Nothing is removed if `create_new_file_on_insert` is enabled - see the comment in the implementation.
 /// A key that another insert into the table is still writing is skipped, like in `removeStaleSplitObjects`.
 void removeStaleSplitObjectsByNumber(

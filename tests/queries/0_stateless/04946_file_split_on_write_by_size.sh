@@ -24,17 +24,11 @@ ${CLICKHOUSE_LOCAL} --query "
     SELECT count(), sum(x) FROM file('${DIR}/split/data*.tsv', TSV, 'x UInt64');
 "
 
-echo '--- The numbering continues from the number in the name of the first file'
+echo '--- A number in the name of the first file is not a sequence number'
 ${CLICKHOUSE_LOCAL} --query "
     INSERT INTO FUNCTION file('${DIR}/offset/data.5.tsv', TSV, 'x UInt64') SELECT number FROM numbers(1000) SETTINGS ${SETTINGS};
 "
 ls "${DIR}/offset" | LC_ALL=C sort
-
-echo '--- The number can be in the name of the first file'
-${CLICKHOUSE_LOCAL} --query "
-    INSERT INTO FUNCTION file('${DIR}/numbered/data.0.tsv', TSV, 'x UInt64') SELECT number FROM numbers(1000) SETTINGS ${SETTINGS};
-"
-ls "${DIR}/numbered" | LC_ALL=C sort
 
 echo '--- A non-numeric part of the name is not a sequence number'
 ${CLICKHOUSE_LOCAL} --query "
@@ -42,7 +36,7 @@ ${CLICKHOUSE_LOCAL} --query "
 "
 ls "${DIR}/dotted" | LC_ALL=C sort
 
-echo '--- A new file on each insert continues the numbering as well'
+echo '--- A new file on each insert keeps the number in the name as well'
 ${CLICKHOUSE_LOCAL} --query "
     INSERT INTO FUNCTION file('${DIR}/multiple/data.5.Parquet', Parquet, 'x UInt64') SELECT 1;
     INSERT INTO FUNCTION file('${DIR}/multiple/data.5.Parquet', Parquet, 'x UInt64') SELECT 2 SETTINGS engine_file_allow_create_multiple_files = 1;

@@ -341,14 +341,12 @@ NumberedFileNames WildcardPartitionStrategy::getNumberedPathsForWrite(
     /// The number is placed into the path pattern, before the partition key is substituted into it. The partition
     /// key is data: with the number placed into the path of the partition instead, a key with a dot in it would
     /// shift the number into the middle of itself (`data_{_partition_id}.csv` with the key `a.b` would give
-    /// `data_a.1.b.csv`), and a key that ends with a number would be taken for a numbered file (the files of
-    /// the partition `a.5` would continue as `data_a.6.csv` - the name of the first file of the partition `a.6`).
+    /// `data_a.1.b.csv`).
     return {
         .getName = [prefix, partition_key](size_t sequence_number)
         {
-            return PartitionedSink::replaceWildcards(setSequenceNumberInFileName(prefix, sequence_number), partition_key);
+            return PartitionedSink::replaceWildcards(addSequenceNumberToFileName(prefix, sequence_number), partition_key);
         },
-        .start_sequence_number = getStartSequenceNumber(prefix, 1),
     };
 }
 
