@@ -768,6 +768,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
     /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns reading an EPHEMERAL column, with their readable dependencies. They are
+    /// skipped by the recompute, so they are checked for staleness after the graph is built.
+    std::vector<std::pair<String, Names>> ephemeral_reading_materialized;
 
     /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
     /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
@@ -803,16 +806,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (std::ranges::any_of(required_columns,
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
-                    /// Warn if the mutation also updates a non-ephemeral dependency
-                    /// of this MATERIALIZED column — the on-disk value will become stale.
-                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
-                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
-                        LOG_WARNING(logger,
-                            "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
-                            "columns that are being updated. Its value will NOT be recalculated "
-                            "during this mutation — the on-disk value may become inconsistent. "
-                            "To fix this, re-INSERT the affected rows.",
-                            column.name);
+                    /// Such a column is never recomputed, so its on-disk value goes stale as soon as
+                    /// one of its regular inputs changes. Collect it and warn below, once the readable
+                    /// dependency graph is complete: whether an input changed can only be answered
+                    /// over the transitive closure, and a hop of the chain may still be unvisited here.
+                    Names readable_dependencies;
+                    for (const auto & dep : required_columns)
+                        if (!ephemeral_columns.contains(dep))
+                            readable_dependencies.push_back(dep);
+                    ephemeral_reading_materialized.emplace_back(column.name, std::move(readable_dependencies));
                     continue;
                 }
 
@@ -881,6 +883,30 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         return affected;
     };
+
+    /// A MATERIALIZED column reading an EPHEMERAL column cannot be recomputed by a mutation, so if
+    /// any of its readable inputs is changed by this mutation — directly, or through another
+    /// MATERIALIZED hop that this mutation does recompute — its on-disk value becomes stale.
+    if (!ephemeral_reading_materialized.empty())
+    {
+        NameSet changed_base_columns = updated_columns;
+        changed_base_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        changed_base_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+
+        NameSet stale_columns = affected_materialized_closure(changed_base_columns);
+        stale_columns.insert(changed_base_columns.begin(), changed_base_columns.end());
+
+        for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        {
+            if (std::ranges::any_of(readable_dependencies, [&](const auto & dep) { return stale_columns.contains(dep); }))
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                    "columns that are being updated or cleared. Its value will NOT be "
+                    "recalculated during this mutation — the on-disk value may become "
+                    "inconsistent. To fix this, re-INSERT the affected rows.",
+                    name);
+        }
+    }
 
     /// Emit recompute stages for a set of affected MATERIALIZED columns. A MATERIALIZED
     /// column may read another affected MATERIALIZED column (e.g. m2 MATERIALIZED m1, where
