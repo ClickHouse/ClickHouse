@@ -230,7 +230,9 @@ private:
     /// Used in shutdown()
     void serialize() const;
     /// Used in FileSource closeFileAndStoreMeta(file_name).
-    void serialize(UInt64 inode, const FileMeta & file_meta, bool allow_lower_offset = false) const;
+    void serialize(UInt64 inode, const FileMeta & file_meta) const;
+    /// Writes the meta file of `file_meta` to a temporary path and returns that path.
+    String writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
     void checkOffsetIsValid(const String & filename, UInt64 offset) const;

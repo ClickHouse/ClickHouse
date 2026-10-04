@@ -368,15 +368,20 @@ void StorageFileLog::serialize() const
         serialize(inode, meta);
 }
 
-void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta, bool allow_lower_offset) const
+void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
     auto full_path = getFullMetaPath(file_meta.file_name);
-    if (!allow_lower_offset && disk->existsFile(full_path))
+    if (disk->existsFile(full_path))
     {
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
 
-    std::string tmp_path = full_path + TMP_SUFFIX;
+    disk->replaceFile(writeTemporaryMeta(inode, file_meta), full_path);
+}
+
+String StorageFileLog::writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const
+{
+    std::string tmp_path = getFullMetaPath(file_meta.file_name) + TMP_SUFFIX;
     disk->removeFileIfExists(tmp_path);
 
     try
@@ -393,7 +398,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta, bool al
         disk->removeFileIfExists(tmp_path);
         throw;
     }
-    disk->replaceFile(tmp_path, full_path);
+    return tmp_path;
 }
 
 void StorageFileLog::deserialize()
@@ -1292,22 +1297,26 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
 
         updateFileInfos();
 
-        auto set_read_position = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
+        struct Target
         {
-            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
-            FileMeta new_meta = meta;
+            String name;
+            FileContext * file_ctx;
+            FileMeta new_meta;
+        };
+        std::vector<Target> targets;
+
+        auto add_target = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
+        {
+            FileMeta new_meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             new_meta.last_writen_position = new_offset;
-            serialize(file_ctx.inode, new_meta, /* allow_lower_offset = */ true);
-            meta = std::move(new_meta);
-            file_ctx.status = FileStatus::UPDATED;
-            LOG_INFO(log, "File {} will be read from offset {}", name, new_offset);
+            targets.push_back({name, &file_ctx, std::move(new_meta)});
         };
 
         if (!file_name)
         {
             chassert(offset == 0);
             for (const auto & name : file_infos.file_names)
-                set_read_position(name, findInMap(file_infos.context_by_name, name), 0);
+                add_target(name, findInMap(file_infos.context_by_name, name), 0);
         }
         else
         {
@@ -1319,7 +1328,32 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
                 throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
             if (offset && *offset > *size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
-            set_read_position(*file_name, it->second, offset.value_or(*size));
+            add_target(*file_name, it->second, offset.value_or(*size));
+        }
+
+        /// Write every new meta file before publishing any of them, so that a failed write
+        /// (for example, a full metadata disk) leaves the whole table at its old position.
+        std::vector<String> tmp_paths;
+        tmp_paths.reserve(targets.size());
+        try
+        {
+            for (const auto & target : targets)
+                tmp_paths.push_back(writeTemporaryMeta(target.file_ctx->inode, target.new_meta));
+        }
+        catch (...)
+        {
+            for (const auto & tmp_path : tmp_paths)
+                disk->removeFileIfExists(tmp_path);
+            throw;
+        }
+
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            auto & target = targets[i];
+            disk->replaceFile(tmp_paths[i], getFullMetaPath(target.new_meta.file_name));
+            LOG_INFO(log, "File {} will be read from offset {}", target.name, target.new_meta.last_writen_position);
+            findInMap(file_infos.meta_by_inode, target.file_ctx->inode) = std::move(target.new_meta);
+            target.file_ctx->status = FileStatus::UPDATED;
         }
     }
     /// The background task may be waiting for a directory event or sleeping until its next poll.
