@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: `CREATE CLONE AS is not supported with Replicated databases`
+
 -- `CREATE TABLE ... AS` and `CLONE AS` copy the column codecs of the source table into a new definition,
 -- so the copied codecs have to pass the codec gates of the current session, like an explicit column list.
 
