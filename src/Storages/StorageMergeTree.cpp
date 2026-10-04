@@ -114,6 +114,8 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char alter_settings_throw_before_metadata_write[];
+    extern const char alter_settings_pause_before_metadata_write[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
@@ -597,6 +599,12 @@ void StorageMergeTree::alter(
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
                 startBackgroundWorkers(&started_workers);
 
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_settings_pause_before_metadata_commit);
             fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
             {
@@ -609,15 +617,23 @@ void StorageMergeTree::alter(
         catch (...)
         {
             /// Restore the settings and statistics metadata before propagating a failed commit.
+            /// The durable metadata was not written, so the in-memory settings must not stay ahead of it.
+            /// This matters for settings that gate the on-disk format, such as `persist_mutation_author`:
+            /// a query that returned an exception must not leave the table writing mutation entries in a
+            /// format that the metadata on disk does not announce.
             /// The worker lifecycle is restored too: the assignees that `startBackgroundWorkers`
             /// created for this `ALTER` are torn down again, so a table that was attached read-only
             /// does not keep `BackgroundJobsAssignee` tasks waking up on a durably read-only table,
             /// while the workers of a table that started writable, which the call found already
             /// running, are left as they were (disabled, see above). The cleanup thread is stopped
             /// as on a 0 -> 1 toggle: a read-only table never cleans its disk.
-            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            changeSettings(old_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
             if (statistics_changed)
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(old_metadata);
+            }
+
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
             {
                 cleanup_thread.stop();
@@ -1123,7 +1139,11 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /// An empty author keeps the mutation entry format byte-for-byte identical
+    /// to the one used by servers that do not know about the `author` field.
+    const String author = getMutationAuthor(query_context);
+
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, author, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1688,6 +1708,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast_text,
                 entry.create_time,
+                entry.author,
                 entry.finish_time,
                 block_numbers_map,
                 parts_in_progress_names,
