@@ -119,6 +119,8 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    NameSet columns_computed_by_mutation_steps;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };

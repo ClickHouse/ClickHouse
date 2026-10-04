@@ -1,0 +1,131 @@
+-- Tags: no-shared-catalog
+-- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will
+-- continue to merge and can materialize the mutation this test needs to stay pending
+-- Random settings limits: optimize_functions_to_subcolumns=(1, None); optimize_move_to_prewhere=(1, None); query_plan_optimize_prewhere=(1, None)
+
+-- A subcolumn that is stored in the part must answer with the pending UPDATE of its parent, and
+-- must give the same answer as it does once that mutation is materialized. Reading it straight
+-- from the part returns the pre-update value while the parent in the same SELECT is updated.
+
+SET alter_sync = 0, mutations_sync = 0;
+SET apply_mutations_on_fly = 1;
+
+SELECT 'array, nullable and tuple subcolumns in a compact part';
+
+DROP TABLE IF EXISTS t_stale_subcolumn;
+CREATE TABLE t_stale_subcolumn (id UInt8, a Array(UInt32), n Nullable(Int32), tup Tuple(s String, x UInt8), y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G';
+INSERT INTO t_stale_subcolumn VALUES (1, [1, 2], 1, ('old', 1), 0), (2, [1], 5, ('older', 2), 0);
+SYSTEM STOP MERGES t_stale_subcolumn;
+ALTER TABLE t_stale_subcolumn UPDATE a = [7, 8, 9], n = NULL, tup = ('new', 9) WHERE 1;
+SELECT 'pending', id, a, a.size0, length(a), n, n.null, isNull(n), tup.s FROM t_stale_subcolumn ORDER BY id;
+SELECT 'pending, prewhere', id FROM t_stale_subcolumn PREWHERE length(a) = 3 ORDER BY id;
+SELECT 'pending, prewhere on the parent', id, a.size0 FROM t_stale_subcolumn PREWHERE a = [7, 8, 9] ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn;
+ALTER TABLE t_stale_subcolumn UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a, a.size0, length(a), n, n.null, isNull(n), tup.s FROM t_stale_subcolumn ORDER BY id;
+SELECT 'materialized, prewhere', id FROM t_stale_subcolumn PREWHERE length(a) = 3 ORDER BY id;
+SELECT 'materialized, prewhere on the parent', id, a.size0 FROM t_stale_subcolumn PREWHERE a = [7, 8, 9] ORDER BY id;
+
+SELECT 'the same in a wide part';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_wide;
+CREATE TABLE t_stale_subcolumn_wide (id UInt8, a Array(UInt32), n Nullable(Int32), tup Tuple(s String, x UInt8), y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_stale_subcolumn_wide VALUES (1, [1, 2], 1, ('old', 1), 0), (2, [1], 5, ('older', 2), 0);
+SYSTEM STOP MERGES t_stale_subcolumn_wide;
+ALTER TABLE t_stale_subcolumn_wide UPDATE a = [7, 8, 9], n = NULL, tup = ('new', 9) WHERE 1;
+SELECT 'pending', id, a.size0, n.null, tup.s FROM t_stale_subcolumn_wide ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_wide;
+ALTER TABLE t_stale_subcolumn_wide UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a.size0, n.null, tup.s FROM t_stale_subcolumn_wide ORDER BY id;
+
+SELECT 'map and json subcolumns';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_map;
+SET enable_json_type = 1;
+CREATE TABLE t_stale_subcolumn_map (id UInt8, m Map(String, UInt32), data JSON, y UInt8)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_stale_subcolumn_map VALUES (1, map('k', 1), '{"f":"secret"}', 0);
+SYSTEM STOP MERGES t_stale_subcolumn_map;
+ALTER TABLE t_stale_subcolumn_map UPDATE m = map('z', 5), data = CAST('{"f":"public"}', 'JSON') WHERE 1;
+SELECT 'pending', id, m.keys, m.values, data.f FROM t_stale_subcolumn_map ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_map;
+ALTER TABLE t_stale_subcolumn_map UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, m.keys, m.values, data.f FROM t_stale_subcolumn_map ORDER BY id;
+
+SELECT 'with a lightweight delete pending as well';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_delete;
+CREATE TABLE t_stale_subcolumn_delete (id UInt8, a Array(UInt32), y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G';
+INSERT INTO t_stale_subcolumn_delete VALUES (1, [1, 2], 0), (2, [1], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_delete;
+SET lightweight_deletes_sync = 0;
+DELETE FROM t_stale_subcolumn_delete WHERE id = 2;
+ALTER TABLE t_stale_subcolumn_delete UPDATE a = [7, 8, 9] WHERE 1;
+SELECT 'pending', id, a.size0 FROM t_stale_subcolumn_delete ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_delete;
+SET lightweight_deletes_sync = 2;
+ALTER TABLE t_stale_subcolumn_delete UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a.size0 FROM t_stale_subcolumn_delete ORDER BY id;
+
+SELECT 'a subcolumn of a Nested element follows the update of that element';
+
+-- A wide part on purpose: the offsets of a Nested column are only read as a shared subcolumn there,
+-- so a compact part would not exercise this at all. The parent of `n.a.size0` is `n.a`, not `n`.
+DROP TABLE IF EXISTS t_stale_subcolumn_nested;
+CREATE TABLE t_stale_subcolumn_nested (id UInt8, n Nested(a Int32), v UInt32, y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_stale_subcolumn_nested VALUES (1, [1, 2, 3], 10, 0);
+SYSTEM STOP MERGES t_stale_subcolumn_nested;
+ALTER TABLE t_stale_subcolumn_nested UPDATE `n.a` = [7, 8, 9, 10], v = 99 WHERE 1;
+SELECT 'pending', id, n.a.size0, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_nested;
+ALTER TABLE t_stale_subcolumn_nested UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, n.a.size0, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
+
+SELECT 'a parent omitted from the part by skip_empty_columns_on_insert';
+
+-- An empty `a` is omitted from the part as a missing-column marker, whose frozen default must not win over the UPDATE.
+DROP TABLE IF EXISTS t_stale_subcolumn_missing;
+CREATE TABLE t_stale_subcolumn_missing (id UInt8, a Array(UInt32), y UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '10G', skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_stale_subcolumn_missing VALUES (1, [], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_missing;
+ALTER TABLE t_stale_subcolumn_missing UPDATE a = [7, 8, 9] WHERE 1;
+SELECT 'pending', id, a, a.size0, length(a) FROM t_stale_subcolumn_missing ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_missing;
+ALTER TABLE t_stale_subcolumn_missing UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a, a.size0, length(a) FROM t_stale_subcolumn_missing ORDER BY id;
+
+SELECT 'prewhere on a parent updated in only some rows';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_partial;
+CREATE TABLE t_stale_subcolumn_partial (id UInt8, a Array(UInt32), y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G';
+INSERT INTO t_stale_subcolumn_partial VALUES (1, [1, 2], 0), (2, [1], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_partial;
+ALTER TABLE t_stale_subcolumn_partial UPDATE a = [7, 8, 9] WHERE id = 1;
+SELECT 'pending', id, a.size0 FROM t_stale_subcolumn_partial PREWHERE a = [7, 8, 9] ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_partial;
+ALTER TABLE t_stale_subcolumn_partial UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a.size0 FROM t_stale_subcolumn_partial PREWHERE a = [7, 8, 9] ORDER BY id;
+
+SELECT 'lightweight updates older and newer than the pending UPDATE';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_patch;
+CREATE TABLE t_stale_subcolumn_patch (id UInt8, a Array(UInt32), y UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_stale_subcolumn_patch VALUES (1, [1, 2], 0), (2, [1], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_patch;
+UPDATE t_stale_subcolumn_patch SET a = [1, 1, 1, 1] WHERE id = 1;
+ALTER TABLE t_stale_subcolumn_patch UPDATE a = [7, 8, 9] WHERE 1;
+UPDATE t_stale_subcolumn_patch SET a = [5, 5] WHERE id = 2;
+SELECT 'pending', id, a, a.size0 FROM t_stale_subcolumn_patch ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_patch;
+ALTER TABLE t_stale_subcolumn_patch UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a, a.size0 FROM t_stale_subcolumn_patch ORDER BY id;
+
+DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map, t_stale_subcolumn_delete,
+    t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial, t_stale_subcolumn_patch;
