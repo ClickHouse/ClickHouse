@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/parseRemoteDescription.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -53,7 +54,10 @@ public:
     static constexpr auto type_name = "web";
     static constexpr auto engine_name = "URL";
 
-    StorageWebConfiguration() = default;
+    /// The defaults reproduce the `url` table function; the `URL` engine passes its own caller
+    /// descriptor so an over-limit wildcard expansion names the surface the user actually invoked.
+    StorageWebConfiguration();
+    explicit StorageWebConfiguration(RemoteDescriptionCaller glob_caller_);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -102,6 +106,7 @@ private:
     void initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments, ContextPtr context);
     void setNamespaceFromURL(ContextPtr context);
 
+    RemoteDescriptionCaller glob_caller;
     String raw_url;
     WebObjectStorage::URLShards url_shards;
     String namespace_prefix;

@@ -38,6 +38,9 @@ private:
     bool is_cluster_function;
     PreformattedMessage help_message;
     bool secure;
+    /// Names the invoked surface when the addresses expression exceeds the limit. It cannot be
+    /// derived from `name` at the point of use: `remoteSecure` shares `name == "remote"`.
+    RemoteDescriptionCaller glob_caller;
 
     ClusterPtr cluster;
     StorageID remote_table_id = StorageID::createEmpty();

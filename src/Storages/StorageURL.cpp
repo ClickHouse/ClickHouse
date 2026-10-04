@@ -180,14 +180,14 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-String getSampleURI(String uri, ContextPtr context)
+String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCaller & caller)
 {
     if (urlWithGlobs(uri))
     {
         /// Only the first address is needed, to read the hive partitioning and the virtual columns off
         /// its path, so the rest of the pattern is never generated and never counted against the limit.
         RemoteDescriptionGenerator generator(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
         String first_uri;
         if (generator.next(first_uri))
             return first_uri;
@@ -213,7 +213,8 @@ IStorageURLBase::IStorageURLBase(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    const RemoteDescriptionCaller & glob_caller_)
     : IStorage(table_id_)
     , uri(uri_)
     , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
@@ -223,6 +224,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
+    , glob_caller(glob_caller_)
 {
     if (format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
@@ -233,16 +235,18 @@ IStorageURLBase::IStorageURLBase(
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_);
+            std::tie(columns, format_name)
+                = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, glob_caller);
         else
-            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_, glob_caller);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_).second;
+            format_name
+                = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, glob_caller).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -257,7 +261,7 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
+    const auto sample_path = getSampleURI(uri, context_, glob_caller);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         sample_path,
@@ -309,9 +313,10 @@ namespace
         return headers;
     }
 
-    StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
+    StorageURLSource::FailoverOptions
+    getFailoverOptions(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
     {
-        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
+        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses, caller);
     }
 }
 
@@ -324,7 +329,7 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller)
         : max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
@@ -333,7 +338,7 @@ public:
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
         /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
         if (split_uris)
-            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, "url");
+            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, caller, '|');
         else
             single_uri = uri_;
 
@@ -539,8 +544,8 @@ private:
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context, caller)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -1415,8 +1420,9 @@ namespace
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
             const std::optional<FormatSettings> & format_settings_,
-            const ContextPtr & context_)
-            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            const ContextPtr & context_,
+            const RemoteDescriptionCaller & caller_)
+            : WithContext(context_), url_producer(std::move(url_producer_)), caller(caller_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
         {
             produceMoreURLs();
         }
@@ -1560,7 +1566,7 @@ namespace
 
             String url;
             while (url_options_to_check.size() - size_before < target && url_producer(url))
-                url_options_to_check.push_back(getFailoverOptions(url, max_addresses));
+                url_options_to_check.push_back(getFailoverOptions(url, max_addresses, caller));
 
             return url_options_to_check.size() != size_before;
         }
@@ -1645,6 +1651,7 @@ namespace
         }
 
         URLProducer url_producer;
+        const RemoteDescriptionCaller caller;
         std::vector<std::vector<String>> url_options_to_check;
         size_t current_index = 0;
         size_t scanned_options = 0;
@@ -1663,7 +1670,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
@@ -1679,7 +1687,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     if (urlWithGlobs(uri))
     {
         auto generator = std::make_shared<RemoteDescriptionGenerator>(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller, '|');
         url_producer = [generator](String & out) { return generator->next(out); };
     }
     else
@@ -1694,7 +1702,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
         };
     }
 
-    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context, caller);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1706,9 +1714,10 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
-    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context).first;
+    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context, caller).first;
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromData(
@@ -1716,9 +1725,10 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context);
+    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context, caller);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -1927,17 +1937,18 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     }
 
     size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const auto & glob_caller = storage->glob_caller;
     is_url_with_globs = urlWithGlobs(storage->uri);
 
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses, caller = storage->glob_caller]()
             {
                 auto task = callback();
                 if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(task->path, max_addresses);
+                return getFailoverOptions(task->path, max_addresses, caller);
             });
     }
     else
@@ -1945,7 +1956,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed URLs and make a source for each file. Even a URL
         /// without globs must go through this iterator: it applies a deferred `_path`
         /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context, glob_caller);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1954,13 +1965,22 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return;
         }
 
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
-        {
-            String next_uri = glob_iterator->next();
-            if (next_uri.empty())
-                return StorageURLSource::FailoverOptions{};
-            return getFailoverOptions(next_uri, max_addresses);
-        });
+        /// The generator only counts the URLs, and the failover options (`|`) of each of them are expanded
+        /// here, as the URL is taken. The limit is on the addresses of both stages together, as for
+        /// `remote`, so the options are counted as they are consumed: a query that stops early still
+        /// pays only for what it reads, and `example-{1,2}-{1|2}` is four addresses, not two.
+        auto consumed_addresses = std::make_shared<std::atomic<size_t>>(0);
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
+            [glob_iterator, max_addresses, caller = glob_caller, uri = storage->uri, with_globs = is_url_with_globs, consumed_addresses]()
+            {
+                String next_uri = glob_iterator->next();
+                if (next_uri.empty())
+                    return StorageURLSource::FailoverOptions{};
+                auto options = getFailoverOptions(next_uri, max_addresses, caller);
+                if (with_globs && consumed_addresses->fetch_add(options.size()) + options.size() > max_addresses)
+                    throwTooManyAddressesForDescription(uri, ',', '|', caller, max_addresses);
+                return options;
+            });
 
         num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
@@ -2175,7 +2195,8 @@ StorageURL::StorageURL(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    const RemoteDescriptionCaller & glob_caller_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -2189,7 +2210,8 @@ StorageURL::StorageURL(
         headers_,
         http_method_,
         partition_by_,
-        distributed_processing_)
+        distributed_processing_,
+        glob_caller_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
@@ -3194,7 +3216,8 @@ void registerStorageURL(StorageFactory & factory)
                     config.headers,
                     config.http_method,
                     partition_by,
-                    /* distributed_processing */ false);
+                    /* distributed_processing */ false,
+                    tableEngineURLCaller());
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -3220,7 +3243,7 @@ void registerStorageURL(StorageFactory & factory)
                 object_storage_args.push_back(engine_arg->clone());
             StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
-            auto configuration = std::make_shared<StorageWebConfiguration>();
+            auto configuration = std::make_shared<StorageWebConfiguration>(tableEngineURLCaller());
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

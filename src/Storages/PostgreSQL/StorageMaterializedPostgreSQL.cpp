@@ -719,7 +719,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr,
+            globCaller("Table engine 'MaterializedPostgreSQL'"));
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
