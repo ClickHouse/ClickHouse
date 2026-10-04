@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel -- uses a server-wide failpoint that would break the rollback of persistent `Join`
 # inserts of concurrently running tests.
 
