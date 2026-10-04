@@ -2427,6 +2427,17 @@ Enable the bulk filtering algorithm for indices. It is expected to be always bet
 )", 0, secondary_indices_enable_bulk_filtering, \
         {"26.10", true, true, "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}, \
         {"25.5", false, true, "A new algorithm for filtering by data skipping indices"}) \
+    DECLARE(Bool, use_minmax_index_bulk_filtering, false, R"(
+Evaluate minmax skip-index granules in vectorized chunks instead of one at a time. This benefits tables whose parts contain many minmax granules, where per-granule evaluation can dominate index analysis.
+
+Unsupported conditions fall back to per-granule evaluation.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, false, "New setting to evaluate minmax skip indexes in vectorized chunks."}) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \

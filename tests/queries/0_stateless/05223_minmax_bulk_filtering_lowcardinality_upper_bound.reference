@@ -1,0 +1,14 @@
+lc float upper bound	6
+lc float strict upper bound	2
+lc float reversed operands	11
+lc float equals	1
+lc float not equals	11
+lc constant on the right	6
+lc float upper bound parity	1	6
+Parts: 2 | Granules: 2
+Granules: 2/3
+lc int upper bound	3
+lc int lower bound	2
+lc int equals	1
+Parts: 1 | Granules: 1
+Granules: 1/2

@@ -1686,6 +1686,7 @@ The server successfully detected this situation and will download merged part fr
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
+    M(IndexBulkFilteringEvaluatedGranules, "Number of minmax skip-index granules evaluated by bulk filtering", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
     \
     M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins", ValueType::Number) \
