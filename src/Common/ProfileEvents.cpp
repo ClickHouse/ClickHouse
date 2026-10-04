@@ -377,6 +377,7 @@
     M(SelfDuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was self deduplicated.", ValueType::Number) \
     M(DuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was deduplicated.", ValueType::Number) \
     M(DuplicationElapsedMicroseconds, "Total time spent checking for duplication of INSERTed blocks to *MergeTree tables.", ValueType::Microseconds) \
+    M(InsertPipelineThrottled, "Number of times the INSERT pipeline was throttled due to high memory usage.", ValueType::Number) \
     M(DuplicationDataHashComputations, "Number of column-wise data-hash computations performed while deduplicating INSERTed blocks to *MergeTree tables (cache misses in the unified deduplication hash).", ValueType::Number) \
     \
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
