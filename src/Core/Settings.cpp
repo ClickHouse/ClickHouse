@@ -10144,6 +10144,8 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
+
+Functions `hasAnyTokenLike` and `hasAllTokenLike` read the text index only through this dictionary scan. With the setting disabled they skip no granules and are evaluated on the column, still with the tokenizer of the index, so the setting does not change their result.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
@@ -10153,15 +10155,32 @@ Patterns shorter than this threshold match too many dictionary tokens and are sk
 
 With the `array` tokenizer, where any pattern qualifies, the threshold is compared against the number of non-wildcard characters in the whole pattern.
 
+Does not apply to `hasAnyTokenLike` and `hasAllTokenLike`, whose dictionary scan is bounded by `text_index_like_max_matched_tokens` instead.
+
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 4, 4, "New setting"}) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+Applies to `LIKE`, `ILIKE`, `startsWith`, `endsWith`, `hasAnyTokenLike` and `hasAllTokenLike`.
+If more of them match, the dictionary scan is abandoned and the predicate is evaluated on the column.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 50, 50, "New setting"}) \
+    DECLARE(UInt64, text_index_like_max_matched_tokens, 20000, R"(
+Maximum number of distinct dictionary tokens that the patterns of `hasAnyTokenLike` and `hasAllTokenLike` may match
+in the text index dictionary scan of a data part, counting the tokens with small (embedded) postings that `text_index_like_max_postings_to_read` does not count.
+A token matched by several patterns counts once. Tokens matched only by `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not counted.
+If more tokens match, the scan of the part is abandoned and every pattern predicate on the index (a `LIKE` next to these functions included)
+is evaluated on the column, which is faster than collecting the postings of that many tokens. 0 means no limit.
+The scan is also skipped if it would read the whole dictionary of a part, and that holds more tokens than this number and than half the rows of the part.
+The default is the measured break-even: on a part of 10 million rows, the dictionary scan and the postings of about 20000 matching tokens
+cost as much as evaluating the predicate on the column with several threads, and a pattern that matches 1 million tokens is more than 30 times slower than the column scan.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0, \
+        {"26.10", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasAnyTokenLike` and `hasAllTokenLike` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
@@ -10176,6 +10195,7 @@ The negative tokens cache uses the text index tokens cache and avoids repeated d
     DECLARE(Bool, use_text_index_pattern_bypass_cache, true, R"(
 Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
 The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+It is not used for a query with `hasAnyTokenLike` or `hasAllTokenLike` on the index.
 )", 0, \
         {"26.10", false, true, "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
