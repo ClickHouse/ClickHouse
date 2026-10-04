@@ -98,7 +98,9 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    /// Whether the reader may skip rows of the file. The TopN filter skips row groups too, so the number
+    /// of rows read is not the number of rows in the file and must not be cached as such.
+    return filter_actions_dag != nullptr || top_k_filter != nullptr;
 }
 
 namespace
