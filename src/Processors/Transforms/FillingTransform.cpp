@@ -10,12 +10,16 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/arithmeticOverflow.h>
+#include <limits>
+#include <optional>
+#include <tuple>
 
 
 namespace DB
@@ -65,6 +69,33 @@ static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
     return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));
 }
 
+/** The calendar arithmetic of `Date` and `DateTime` returns the column's own storage type (`UInt16` / `UInt32`), so a
+  * step whose result does not fit it wraps around: `toDateTime('2100-01-01', 'UTC') + INTERVAL 10 YEAR` lands in
+  * 1973, and a step longer than the span of the type (`INTERVAL 150 YEAR` over `DateTime`) even wraps forward, to a
+  * value that is still ahead of the current one. Redo such a step in the wider calendar of `Date32` (day numbers)
+  * or `DateTime64(0)` (whole seconds), which agrees with the narrow one wherever the result fits, and return the
+  * result when it does not fit the storage type, so that the sequence stays monotonic: a border within the range of
+  * the type stops the filling there, and `FillingRow` rejects a value the column cannot hold instead of writing a
+  * wrapped-around one. Kinds whose result is not of the storage type (e.g. an hour step over `Date`) are left as is.
+  */
+template <typename Impl, typename T>
+static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, const DateLUTImpl & date_lut, const DateLUTImpl & utc_time_zone)
+{
+    using NativeResult = decltype(Impl::execute(value, delta, date_lut, utc_time_zone, UInt16{}));
+
+    Int64 result = 0;
+    if constexpr (std::is_same_v<T, UInt16> && std::is_same_v<NativeResult, UInt16>)
+        result = Impl::execute(static_cast<Int32>(value), delta, date_lut, utc_time_zone, 0);
+    else if constexpr (std::is_same_v<T, UInt32> && std::is_same_v<NativeResult, UInt32>)
+        result = Impl::execute(DateTime64(static_cast<Int64>(value)), delta, date_lut, utc_time_zone, 0).value;
+    else
+        return {};
+
+    if (result < 0 || result > static_cast<Int64>(std::numeric_limits<T>::max()))
+        return result;
+    return {};
+}
+
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
@@ -75,8 +106,12 @@ static FillColumnDescription::StepFunction getStepFunction(
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
-                field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), mulStepWrapping(step, jumps_count), date_lut, utc_time_zone, scale); };
+                const auto value = static_cast<T>(field.safeGet<T>()); \
+                const Int64 delta = mulStepWrapping(step, jumps_count); \
+                if (const auto out_of_storage_type = calendarStepOutOfStorageType<Add##NAME##sImpl>(value, delta, date_lut, utc_time_zone)) \
+                    field = *out_of_storage_type; \
+                else \
+                    field = Add##NAME##sImpl::execute(value, delta, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -148,6 +183,9 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
 {
+    descr.fill_column_type = type;
+    std::tie(descr.fill_representable_min, descr.fill_representable_max) = fillRepresentableRangeOfColumnType(*type);
+
     auto max_type = Field::Types::Null;
     WhichDataType which(type);
     DataTypePtr to_type;
@@ -219,6 +257,144 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
 
     return true;
+}
+
+/** A value that must be representable in the column type for filling under the given TO bound to behave - either
+  * a value the filling generates, or a bound it must be able to reach - or nullopt when no such value can be
+  * derived up front and the bound has to be accepted.
+  *
+  * Only a fill with FROM is judged here: it generates the same sequence regardless of the data (even for an empty
+  * input), so a wraparound is certain and rejecting it up front is exact. It also matters in practice: the per-value
+  * check in `FillingRow::next` would reject the query too, but only after generating every value up to the boundary
+  * of the column type - `WITH FILL FROM 0 TO 4294967297` over a DateTime column would first generate 2^32 rows.
+  *
+  * Filling starts at FROM and advances by STEP while it stays strictly before TO, so with a plain numeric step the
+  * last generated value is known up front and can be far below TO: `WITH FILL FROM 0 TO 257 STEP 3` stops at 255.
+  *
+  * Without FROM the sequence is anchored at a data value, so which values are generated is known only at execution
+  * time: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the data ends at 11 but reaches 256 when
+  * it ends at 13, and an empty input generates nothing at all. Such a fill is left to the per-value check in
+  * `FillingRow::next`, which rejects it exactly when it generates a value the column cannot hold.
+  *
+  * An INTERVAL step makes an out-of-range TO in the fill direction fatal, so TO itself is the value required to fit.
+  * Over Date and DateTime the step does not wrap around the storage type but continues in the wider calendar of
+  * Date32 / DateTime64 (see `calendarStepOutOfStorageType`), which does not stop anywhere near the boundary of the
+  * storage type, so the sequence always generates a value past that boundary before it could reach such a TO:
+  * `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01, 2070-01-01 and then 2170-01-01,
+  * which a Date column cannot hold. (A TO on the other side - out of range against the fill direction - cannot reach
+  * this check: the FROM would lie even further out of range and is rejected first.)
+  *
+  * For Date32 and DateTime64 the calendar arithmetic clamps at the boundaries of the representable calendar instead
+  * - the window [0000-01-01, 9999-12-31] of DateLUTImpl, which lies strictly inside the range of their storage type:
+  * adding an interval whose result would leave the calendar returns the value unchanged (see e.g.
+  * DateLUTImpl::addYearsOutOfRange). A step that no longer advances the value ends the filling (see
+  * `FillingRow::next`), so a TO beyond the calendar boundary simply lets the filling run up to the last value it can
+  * reach, and nothing is required to fit there.
+  */
+static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
+{
+    /// Every column type reaching this point is filled either through Int64 or, for DateTime64, through a Decimal64
+    /// of the column's scale, whose raw value is the Int64 tick count that the filling arithmetic advances. The
+    /// wider Int128/Int256 columns are filled through their own type, so their bounds have already been accepted
+    /// by the representability check. All the bounds share one carrier: `tryConvertFields` converts them to the
+    /// same type up front.
+    const auto raw_value = [](const Field & field) -> std::optional<Int64>
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>();
+        if (field.getType() == Field::Types::Decimal64)
+            return field.safeGet<DecimalField<Decimal64>>().getValue().value;
+        return {};
+    };
+
+    /// The result is wrapped back into the carrier of the bounds, so that the representability check sees a field
+    /// of the same kind as the bounds themselves (for DateTime64 a Decimal64 of the same scale, checked against
+    /// the calendar window in raw ticks).
+    const auto as_bound_field = [&](Int64 value) -> Field
+    {
+        if (descr.fill_to.getType() == Field::Types::Decimal64)
+            return DecimalField<Decimal64>(Decimal64(value), descr.fill_to.safeGet<DecimalField<Decimal64>>().getScale());
+        return value;
+    };
+
+    const auto to_raw = raw_value(descr.fill_to);
+    const auto from_raw = raw_value(descr.fill_from);
+    if (!to_raw || !from_raw)
+        return {};
+
+    const Int64 to = *to_raw;
+    const Int64 from = *from_raw;
+
+    if (descr.step_kind)
+    {
+        const WhichDataType which(descr.fill_column_type);
+        if (which.isDate32() || which.isDateTime64())
+            return {};
+
+        return descr.fill_to;
+    }
+
+    const auto step_raw = raw_value(descr.fill_step);
+    if (!step_raw)
+        return {};
+
+    const Int64 step = *step_raw;
+
+    /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
+    /// already checked when the fill description is built.
+    const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
+    if (span <= 0)
+        return as_bound_field(from); /// TO admits no filled value at all
+
+    const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
+    /// The result lies between FROM and TO, so it fits into Int64.
+    return as_bound_field(static_cast<Int64>(from + jumps * step));
+}
+
+/** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
+  * type - while the generated values are written into a column of the column's own type, which truncates whatever
+  * does not fit its range. A truncated value wraps around, so the generated sequence stops being monotonic, while
+  * the query plan keeps assuming that the stream is still sorted by the fill columns after WITH FILL. Downstream
+  * steps relying on that property then return wrong results: DISTINCT in order, for example, reads the stream as a
+  * sequence of sorted runs, so it deduplicates within wrong ranges (and hits the
+  * `Equal values are not contiguous within the range assumed to be sorted` assertion in a debug build).
+  * For the calendar-backed Date32 and DateTime64 the values between the calendar boundary and the boundary of
+  * the storage type do not wrap, but they are equally invalid: no conversion produces them (they all clamp at
+  * the calendar boundary), yet a FROM bound in that gap is materialized into the column as is and serialized
+  * as the clamped boundary date, indistinguishable from the genuine boundary value next to it.
+  * Reject such bounds instead of filling with wrapped-around or out-of-calendar values.
+  */
+static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
+{
+    /// `fillValueFitsColumnType` tests the range of the storage type and, for Date32 and DateTime64, the calendar
+    /// window; types that saturate instead of wrapping around (Float, Decimal) are not checked by it at all.
+    auto is_representable = [&](const Field & value) { return fillValueFitsColumnType(value, *type); };
+
+    if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL FROM value {} is out of range of the ORDER BY column type {}",
+            applyVisitor(FieldVisitorToString(), descr.fill_from),
+            type->getName());
+
+    /// TO is an exclusive bound, so it is enough that the last value filling can generate under it is
+    /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
+    /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
+    /// on the data (no FROM), the bound is accepted and the generated values are checked in `FillingRow::next`.
+    /// An INTERVAL step over Date or DateTime always passes the boundary of the column type before it could reach
+    /// a TO that is out of range in the fill direction, so there the bound itself is required to fit; over Date32
+    /// and DateTime64 it stops at the calendar boundary, so any TO is accepted.
+    if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
+    {
+        const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
+
+        if (required_value && !is_representable(*required_value))
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL TO value {} is out of range of the ORDER BY column type {}",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                type->getName());
+    }
 }
 
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
@@ -296,6 +472,8 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
+
+        checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
@@ -610,6 +788,8 @@ bool FillingTransform::generateSuffixIfNeeded(
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;
     }
+
+    filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
 
     Block interpolate_block;
     if (should_insert_first)
