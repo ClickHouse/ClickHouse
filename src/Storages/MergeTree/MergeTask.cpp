@@ -652,9 +652,33 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+
+    /// A part that stores a column without a calculated TTL for it adds nothing to the aggregated bound,
+    /// so the merged part gets no bound for that column rather than the bound of the other parts.
+    NameSet columns_without_ttl_info;
+    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
+    {
+        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
+        {
+            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
+                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
+                columns_without_ttl_info.insert(column);
+        }
+    }
+
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        if (columns_without_ttl_info.empty())
+        {
+            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        }
+        else
+        {
+            auto part_ttl_infos = part->ttl_infos;
+            for (const auto & column : columns_without_ttl_info)
+                part_ttl_infos.columns_ttl.erase(column);
+            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
+        }
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
