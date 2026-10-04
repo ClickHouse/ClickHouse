@@ -156,3 +156,13 @@ select 1 = isValidUTF8(repeat('a', 16) || '\xF0\x9F\x98\x80' || 'aa');
 -- Multibyte input from 8 to 62 bytes, well-formed and truncated at the end, so both arms below one block
 -- are exercised wherever their boundary sits.
 select n, 1 = isValidUTF8(repeat('\xD0\xB0', n)), 0 = isValidUTF8(repeat('\xD0\xB0', n) || '\xD0') from (select arrayJoin([4, 6, 7, 8, 10, 16, 24, 31]) as n) order by n;
+
+-- Rows of one block before, at and after the column's first non-ASCII byte, as String and FixedString.
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', '', 'cd', 'e\xC3\xA9', 'fg', '\xC3', 'hi', '']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', 'c\xC3', 'd']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', '\xC3\xA9', 'x']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['a\xC3', '\xA9b']) as s);
+select groupArray(isValidUTF8(toFixedString(s, 2))) from (select arrayJoin(['ab', 'c\xC3', '\xC3\xA9', 'de']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin([repeat('a', 100), repeat('b', 70) || '\xC3', 'z']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', 'cd\xA9', 'e']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin([repeat('a', 70) || '\xD0\xB0' || repeat('a', 70), 'x']) as s);
