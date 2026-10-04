@@ -1557,12 +1557,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             }
         }
 
+        /// Broken parts count too: an eagerly loaded index that no longer decodes is what broke such a part.
+        const auto & source_parts = global_ctx->future_part->parts;
+        const bool rebuild_stale_projection
+            = std::ranges::all_of(source_parts, [&](const auto & part) { return part->hasProjection(projection.name); })
+            && std::ranges::any_of(source_parts, [&](const auto & part) { return projection.isSortingKeyStaleInPart(*part); });
+
         if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
         {
             LOG_DEBUG(
                 ctx->log,
                 "Projection {} will be rebuilt because some projection parts miss columns the projection now expects",
                 projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (rebuild_stale_projection)
+        {
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because a source part was sorted under other key types", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else if (projection_parts.size() == global_ctx->future_part->parts.size())

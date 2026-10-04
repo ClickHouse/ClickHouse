@@ -102,10 +102,7 @@ NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
     return result;
 }
 
-namespace
-{
-
-/// Is a granule written with @from decoded identically when read back as @to?
+/// Is a value (a skip-index granule or a primary-index entry) written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
 /// it. That predicate answers "does ALTER have to rewrite the data?", which is a weaker question: a
@@ -187,6 +184,9 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         return false;
     }
 }
+
+namespace
+{
 
 /// Do two types that IDataType::equals() reports as equal still mean different things?
 ///

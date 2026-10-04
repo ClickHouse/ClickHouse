@@ -451,4 +451,7 @@ bool indexFileExistsInChecksums(
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
+
+/// Is a value serialized with @from decoded identically when read back as @to? Fail-closed.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
 }

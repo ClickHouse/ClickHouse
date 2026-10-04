@@ -1,0 +1,30 @@
+A part type	Wide
+A projection marks	4
+A projection	20000
+A table	20000
+A projection type	Nullable(UInt32)
+A2 part type	Compact
+A2 part stores v	1
+A2 projection	4
+A2 projection type	Nullable(UInt32)
+D pending	1
+D projection	1
+D mergeTreeProjection	1
+D projection type	Nullable(Int32)
+E1 killed	1
+E1 materialized	1
+E2 order	10
+E2 order	11
+E2 order	9
+E2 projection	1
+F1 projection	5
+F2 projection	19
+F2 table	19
+G table	1
+G default	1
+G materialized	1
+H broken	1
+H table	1
+H projection	1
+H2 projection	1
+H2 projection parts	1

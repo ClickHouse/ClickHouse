@@ -340,6 +340,9 @@ static bool projectionPartHasRequiredColumns(
     const StorageMetadataPtr & parent_metadata,
     const Names & required_column_names)
 {
+    if (projection.isSortingKeyStaleInPart(parent_part))
+        return false;
+
     const auto & parent_table_columns = parent_metadata->getColumns();
 
     for (const auto & name : required_column_names)

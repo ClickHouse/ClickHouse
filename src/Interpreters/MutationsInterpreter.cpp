@@ -1369,7 +1369,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 continue;
             }
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
+            const auto part = source.getMergeTreeDataPart();
+            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name)
+                || (part && projection.isSortingKeyStaleInPart(*part)))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
