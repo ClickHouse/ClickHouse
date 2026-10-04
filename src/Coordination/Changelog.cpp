@@ -141,6 +141,9 @@ constexpr auto DEFAULT_PREFIX = "changelog";
 /// `changelog_*` name only on flush. Startup never treats such objects as changelogs and removes them.
 constexpr auto S3_IN_PROGRESS_PREFIX = "s3_in_progress_";
 
+/// The S3 changelog writer starts merging the published objects once this many of them are not merged yet.
+constexpr ptrdiff_t S3_COMPACTION_BACKLOG_THRESHOLD = 16;
+
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -474,6 +477,8 @@ public:
             write_buffer->cancel();
             write_buffer.reset();
         }
+
+        removeRelinkedSources(/* force */ true);
     }
 
     ~S3ChangelogWriter() override
@@ -494,8 +499,12 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> s3_compaction_thread;
     std::atomic<bool> s3_compaction_shutdown;
     ConcurrentBoundedQueue<bool> s3_compaction_queue;
+    std::atomic<bool> s3_compaction_requested{false};
     std::mutex & writer_mutex;
     uint64_t last_merged_index;
+
+    /// Merges whose sources are not removed yet. Accessed only by the compaction thread, and by `finalize` after it is stopped.
+    std::vector<LogEntryStorage::ChangelogRelinkPtr> relinked_sources;
 
     /// Incremented whenever an already published object is reopened for append. Published objects are
     /// otherwise immutable, so an unchanged epoch proves that the sources of a merge were not rewritten.
@@ -519,6 +528,9 @@ private:
         bool dummy = false;
         while (!s3_compaction_shutdown && s3_compaction_queue.pop(dummy))
         {
+            s3_compaction_requested = false;
+            removeRelinkedSources(/* force */ false);
+
             std::vector<ChangelogFileDescriptionPtr> to_merge;
             std::vector<ChangelogFileDescriptionPtr> to_remove;
             ChangelogFileDescriptionPtr merged_changelog;
@@ -610,8 +622,11 @@ private:
             {
                 auto new_file = getDisk()->writeFile(merged_changelog->path);
 
+                auto relink = std::make_shared<LogEntryStorage::ChangelogRelink>();
+                relink->merged = merged_changelog;
                 for (const auto & changelog : to_merge)
                 {
+                    relink->sources.emplace_back(changelog, new_file->count());
                     auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
                     copyData(*reader, *new_file);
                 }
@@ -620,8 +635,8 @@ private:
                 new_file->finalize();
 
                 /// Publish the merged changelog and unlist the merged sources.
-                /// The actual `removeFile` runs unlocked below — readers that lost
-                /// the race will simply not find the path in `existing_changelogs`.
+                /// The sources are removed only after `entry_storage` stops pointing into them,
+                /// see `removeRelinkedSources`.
                 {
                     std::lock_guard<std::mutex> lock(writer_mutex);
 
@@ -665,9 +680,37 @@ private:
 
                     existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
                     last_merged_index = merged_changelog->to_log_index;
+
+                    /// `entry_storage` still locates the entries of the sources in the source objects, so they
+                    /// cannot be removed yet: the next `refreshCache` switches those locations to the merged object.
+                    entry_storage.scheduleRelink(relink);
+                    relinked_sources.push_back(relink);
                 }
 
-                for (const auto & changelog : to_remove)
+                LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while merging S3 changelogs");
+            }
+        }
+
+        LOG_INFO(log, "S3 compaction thread stopped");
+    }
+
+    /// Removes the sources of the merges whose locations were already switched to the merged object.
+    /// With `force` it removes all of them: used on shutdown, when nothing reads the changelog anymore,
+    /// so the next startup does not find both the merged object and its sources.
+    void removeRelinkedSources(bool force)
+    {
+        std::erase_if(
+            relinked_sources,
+            [&](const LogEntryStorage::ChangelogRelinkPtr & relink)
+            {
+                if (!force && !relink->applied)
+                    return false;
+
+                for (const auto & [changelog, offset] : relink->sources)
                 {
                     LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
 
@@ -690,19 +733,16 @@ private:
                         });
                 }
 
-                LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Error while merging S3 changelogs");
-            }
-        }
-
-        LOG_INFO(log, "S3 compaction thread stopped");
+                return true;
+            });
     }
 
     void triggerS3Compaction()
     {
+        /// One pending request is enough: the compaction thread looks at the whole backlog when it wakes up.
+        if (s3_compaction_requested.exchange(true))
+            return;
+
         if (!s3_compaction_queue.push(true))
             LOG_WARNING(log, "Failed to push to S3 compaction queue, queue might be full or shutdown");
     }
@@ -760,10 +800,20 @@ private:
             }
 
             /// A segment reopened by `writeAt` was published under its old name. The object at `new_path`
-            /// now holds all of its records plus the rewrite, so a stale copy left behind would compete with it
-            /// for the same start index on the next startup: its removal must not be best-effort.
-            if (current_file_description->path != new_path && disk->existsFile(current_file_description->path))
-                disk->removeFile(current_file_description->path);
+            /// now holds all of its records plus the rewrite, at the same positions. Switch the descriptor to it
+            /// under the exclusive lock, which waits out the readers of the old path, and only then remove the
+            /// old object. A stale copy left behind would compete with the new one for the same start index on
+            /// the next startup, so its removal must not be best-effort.
+            current_file_description->withWriteLock(
+                [&]
+                {
+                    const auto old_path = current_file_description->path;
+                    current_file_description->path = new_path;
+                    current_file_description->to_log_index = *last_index_written;
+
+                    if (old_path != new_path && disk->existsFile(old_path))
+                        disk->removeFile(old_path);
+                });
 
             /// The in-progress object is ignored and removed on startup, so leaving it behind is harmless.
             try
@@ -774,13 +824,6 @@ private:
             {
                 tryLogCurrentException(log, fmt::format("Failed to remove in-progress S3 changelog {}", in_progress_path));
             }
-
-            current_file_description->withWriteLock(
-                [&]
-                {
-                    current_file_description->path = new_path;
-                    current_file_description->to_log_index = *last_index_written;
-                });
 
             existing_changelogs[current_file_description->from_log_index] = current_file_description;
 
@@ -834,10 +877,11 @@ private:
         LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
         write_buffer = getDisk()->writeFile(getInProgressPath(s3_cur_path));
 
-        if (!(existing_changelogs.size() % log_file_settings.rotate_interval))
-        {
+        /// Every flush publishes a separate object, so compact once enough of them were published since the last merge.
+        /// `rotate_interval` bounds the number of entries in a merged object, not the number of objects.
+        const auto unmerged_objects = std::distance(existing_changelogs.upper_bound(last_merged_index), existing_changelogs.end());
+        if (unmerged_objects >= S3_COMPACTION_BACKLOG_THRESHOLD)
             triggerS3Compaction();
-        }
     }
 };
 
@@ -2346,6 +2390,51 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
         std::make_move_iterator(indices_with_log_locations.end()));
 }
 
+void LogEntryStorage::scheduleRelink(const ChangelogRelinkPtr & relink)
+{
+    /// No locations are kept with unlimited latest logs cache, so nothing points into the sources.
+    if (latest_logs_cache.hasUnlimitedSpace())
+    {
+        relink->applied = true;
+        return;
+    }
+
+    std::lock_guard lock(logs_location_mutex);
+    unapplied_relinks.push_back(relink);
+}
+
+void LogEntryStorage::applyRelink(ChangelogRelink & relink)
+{
+    auto & merged_runs = relink.merged->valid_runs;
+    merged_runs.clear();
+
+    for (const auto & [source, offset] : relink.sources)
+    {
+        for (uint64_t index = source->from_log_index; index <= source->to_log_index; ++index)
+        {
+            auto it = logs_location.find(index);
+            if (it == logs_location.end() || it->second.file_description != source)
+                continue;
+
+            it->second.file_description = relink.merged;
+            it->second.position += offset;
+        }
+
+        /// The sources are concatenated in index order, so their runs stay sorted by `first_index`.
+        const auto & source_runs = source->valid_runs;
+        for (const auto & run : source_runs.runs)
+            merged_runs.runs.push_back({.start_position = run.start_position + offset, .first_index = run.first_index});
+
+        if (source_runs.end_index != 0)
+        {
+            merged_runs.end_index = source_runs.end_index;
+            merged_runs.end_position = source_runs.end_position + offset;
+        }
+
+        source->valid_runs.clear();
+    }
+}
+
 void LogEntryStorage::refreshCache()
 {
     /// The only scan opportunity for deployments where serveReadAhead never runs (single-node,
@@ -2357,9 +2446,11 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
+    std::vector<ChangelogRelinkPtr> new_unapplied_relinks;
     {
         std::lock_guard lock(logs_location_mutex);
         new_unapplied_indices_with_log_locations.swap(unapplied_indices_with_log_locations);
+        new_unapplied_relinks.swap(unapplied_relinks);
     }
 
     for (auto & [index, log_location] : new_unapplied_indices_with_log_locations)
@@ -2370,6 +2461,22 @@ void LogEntryStorage::refreshCache()
         log_location.file_description->valid_runs.addLocatedRecord(index, log_location.position, log_location.size_in_file);
         logs_location.emplace(index, std::move(log_location));
         max_index_with_location = index;
+    }
+
+    /// The locations of the merged sources were added before their relink was scheduled,
+    /// so they are all in `logs_location` at this point.
+    if (!new_unapplied_relinks.empty())
+    {
+        /// In-flight plans and read-ahead cursors may still point into the sources, which are removed
+        /// right after the relink is applied. Make them stale, like a truncation does.
+        ++truncation_epoch;
+        closeAllReaders();
+
+        for (const auto & relink : new_unapplied_relinks)
+        {
+            applyRelink(*relink);
+            relink->applied = true;
+        }
     }
 
     if (logs_location.empty())

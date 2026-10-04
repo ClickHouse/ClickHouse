@@ -333,6 +333,20 @@ struct LogEntryStorage
 
     void addLogLocations(std::vector<IndexWithLogLocation> && indices_with_log_locations);
 
+    /// The S3 changelog compaction concatenated the objects of `sources` into `merged`, each source starting
+    /// at the paired byte offset. The locations pointing into the sources are switched to `merged` by the
+    /// next `refreshCache`, which runs under the exclusive changelog_lock; `applied` is set after that and
+    /// only then may the source objects be removed.
+    struct ChangelogRelink
+    {
+        std::vector<std::pair<ChangelogFileDescriptionPtr, size_t>> sources;
+        ChangelogFileDescriptionPtr merged;
+        std::atomic<bool> applied = false;
+    };
+    using ChangelogRelinkPtr = std::shared_ptr<ChangelogRelink>;
+
+    void scheduleRelink(const ChangelogRelinkPtr & relink);
+
     void refreshCache();
 
     /// Build a read plan for [start, end). Must be called under changelog_lock (shared). No disk I/O.
@@ -408,6 +422,9 @@ struct LogEntryStorage
 private:
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
+    /// Caller holds changelog_lock (exclusive).
+    void applyRelink(ChangelogRelink & relink);
+
     struct InMemoryCache
     {
         explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
@@ -453,6 +470,7 @@ private:
 
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
+    std::vector<ChangelogRelinkPtr> unapplied_relinks;
     std::unordered_map<uint64_t, LogLocation> logs_location;
     size_t max_index_with_location = 0;
     size_t min_index_with_location = 0;
