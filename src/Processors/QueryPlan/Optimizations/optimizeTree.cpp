@@ -97,6 +97,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.lower_array_join_function,
         optimization_settings.legacy_array_join_function_nondeterministic_evaluation,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 }
 
@@ -920,6 +921,13 @@ void optimizeTreeSecondPass(
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
+
+    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 }
 

@@ -99,6 +99,7 @@ struct Optimization
         bool lower_array_join_function = false;
         bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
+        bool filter_push_down_below_limit_by = true;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -233,6 +234,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
+/// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
+size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows

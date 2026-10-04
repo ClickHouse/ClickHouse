@@ -60,6 +60,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
@@ -90,6 +91,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
 
     /// If we can swap probe/build tables in join
