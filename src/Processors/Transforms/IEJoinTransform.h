@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <optional>
 
 #include <Columns/ColumnsNumber.h>
@@ -98,6 +99,13 @@ public:
     Status merge() override;
 
     MergedStats getMergedStats() const override;
+
+    /// The owning processor's cancellation flag, checked by the residual expression after each action.
+    void setCancellationFlag(const std::atomic<bool> * is_cancelled_) { is_cancelled = is_cancelled_; }
+    /// Interrupt the functions of the residual expression that may be executing right now.
+    void cancelResidual() noexcept;
+
+    bool isCancelled() const { return is_cancelled && is_cancelled->load(std::memory_order_acquire); }
 
 private:
     /// Stages of building the join state (the L1 union, the L2 permutation and the bit array),
@@ -255,6 +263,7 @@ private:
     std::array<KeyOrder, 2> key_order;
     /// The residual ON condition gating candidate pairs, if any.
     std::optional<IEJoinResidualCondition> residual;
+    const std::atomic<bool> * is_cancelled = nullptr;
     /// Header of the residual's input columns (in its required-columns order) and the
     /// precomputed input positions for `ExpressionActions::executeOnColumns`.
     Block residual_input_header;
@@ -384,6 +393,9 @@ public:
         size_t max_block_bytes);
 
     String getName() const override { return "IEJoinTransform"; }
+
+protected:
+    void onCancel() noexcept override;
 };
 
 }

@@ -800,7 +800,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 }
 
 void ExpressionActions::execute(
-    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, const std::atomic<bool> * is_cancelled) const
 {
     ExecutionContext execution_context
     {
@@ -843,7 +843,7 @@ void ExpressionActions::execute(
             throw;
         }
 
-        if (check_cancelled && check_cancelled())
+        if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
         {
             /// Return an empty block with the names and types of result columns
             block = sample_block.cloneWithColumns(sample_block.cloneEmptyColumns());
@@ -920,7 +920,7 @@ Columns ExpressionActions::executeOnColumns(
     const std::vector<ssize_t> & input_positions_for_header,
     size_t & num_rows,
     bool dry_run,
-    CheckCancelled check_cancelled) const
+    const std::atomic<bool> * is_cancelled) const
 {
     /// The chunk must match the fixed input header positionally. The block-based path validated this
     /// implicitly via `Block::cloneWithColumns`; keep the same guard here, because both `header.getByPosition`
@@ -963,7 +963,7 @@ Columns ExpressionActions::executeOnColumns(
             throw;
         }
 
-        if (check_cancelled && check_cancelled())
+        if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
         {
             num_rows = 0;
             auto empty = sample_block.cloneEmptyColumns();
@@ -996,11 +996,11 @@ Columns ExpressionActions::executeOnColumns(
     return res;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, const std::atomic<bool> * is_cancelled) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input, std::move(check_cancelled));
+    execute(block, num_rows, dry_run, allow_duplicates_in_input, is_cancelled);
 
     if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});

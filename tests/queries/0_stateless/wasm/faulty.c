@@ -2,6 +2,8 @@
 
 #define WASM_PAGE_SIZE (1 << 16)
 
+extern void _wasm_signal_ready(void);
+
 uint32_t huge_allocate(uint32_t s) {
     uint32_t i = 0;
     while (1) {
@@ -18,6 +20,19 @@ uint32_t infinite_loop(uint32_t s) {
         return 0;
     }
 
+    volatile uint32_t i = 0;
+    while (1) {
+        i++;
+    }
+    return i;
+}
+
+uint32_t infinite_loop_signal(uint32_t s) {
+    if (s == 0) {
+        return 0;
+    }
+
+    _wasm_signal_ready();
     volatile uint32_t i = 0;
     while (1) {
         i++;
