@@ -15,13 +15,18 @@ rm -rf "${TABLE_PATH}"
 # ClickHouse cannot parse used to dereference a disengaged std::optional in
 # getSortingKeyDescriptionFromMetadata and abort the whole server process.
 # The sort order must be dropped instead, so that the table stays readable.
-${CLICKHOUSE_CLIENT} --query "
+# The table is created with use_iceberg_metadata_files_cache = 0: IcebergMetadata
+# captures the metadata files cache into its persistent table components when
+# the table is constructed, and IcebergStorageSink reuses that pointer on every
+# INSERT regardless of the query settings. Without this, the INSERT below could
+# be served the old cached metadata.json and never see the rewritten transform.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
     CREATE TABLE ${TABLE} (x Int64, y String)
         ENGINE = IcebergLocal('${TABLE_PATH}')
         ORDER BY icebergTruncate(3, x)
         SETTINGS iceberg_format_version = 2;
 "
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (10, 'a'), (20, 'b')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --query "INSERT INTO ${TABLE} VALUES (10, 'a'), (20, 'b')"
 
 # Rewrite the transform in the latest metadata file to a value that
 # parseTransformAndArgument cannot handle ('bucket' with a non-numeric
