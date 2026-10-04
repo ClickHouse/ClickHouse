@@ -26,7 +26,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 1, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, -- only the OPTIMIZE below may merge these parts
+    shared_merge_tree_disable_merges_and_mutations_assignment = 1;
 
 INSERT INTO t_proj VALUES
     (1, 'eu', 101),
@@ -35,7 +37,7 @@ INSERT INTO t_proj VALUES
     (4, 'us', 106),
     (5, 'asia', 200);
 
-OPTIMIZE TABLE t_proj FINAL;
+OPTIMIZE TABLE t_proj FINAL SETTINGS optimize_throw_if_noop = 1;
 
 -- Pick projection based on both filters
 SELECT trimLeft(explain)
@@ -79,7 +81,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 16, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, -- only the OPTIMIZE below may merge these parts
+    shared_merge_tree_disable_merges_and_mutations_assignment = 1;
 
 INSERT INTO t_gran VALUES (0, 'top');
 INSERT INTO t_gran SELECT number + 1, 'other' FROM numbers(6);
@@ -90,7 +94,7 @@ INSERT INTO t_gran VALUES (15, 'bot');
 -- Extra data to ensure projection index is chosen
 INSERT INTO t_gran SELECT number + 100, 'zzz' FROM numbers(1000);
 
-OPTIMIZE TABLE t_gran FINAL;
+OPTIMIZE TABLE t_gran FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT trimLeft(explain)
 FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'top')
