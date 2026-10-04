@@ -168,8 +168,8 @@ def test_cluster_function_positional_compression(started_cluster):
 
     # No compression argument: the forwarded query carries the `auto` placeholder.
     # An explicit `auto`, in any case, is accepted as well.
-    for extra in ["", ", 'Parquet', 'auto'", ", 'Parquet', 'AUTO'"]:
-        query_id = f"{table_name}_{len(extra)}"
+    for i, extra in enumerate(["", ", 'Parquet', 'auto'", ", 'Parquet', 'AUTO'"]):
+        query_id = f"{table_name}_{i}"
         # Not `count()`: it can be answered from the table metadata without
         # sending the query to the other nodes.
         assert 15 == int(
