@@ -41,8 +41,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
-#include <Poco/String.h>
-
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
