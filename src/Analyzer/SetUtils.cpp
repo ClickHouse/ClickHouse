@@ -853,4 +853,9 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         rhs_type->getName());
 }
 
+bool constantIsReadAsSingleSetMember(const DataTypePtr & expression_type, const DataTypePtr & constant_type)
+{
+    return getCompoundTypeDepth(*expression_type) == getCompoundTypeDepth(*constant_type);
+}
+
 }
