@@ -42,6 +42,14 @@ std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const c
 std::vector<Document>
 getWriteBatch(const std::vector<OpMessageSection> & sections, const char * field_name, const char * command);
 
+/** Rejects a write command whose `ordered` flag is `false`. The `delete` and `update` handlers
+  * apply their specs one after another and stop at the first error, i.e. they implement only the
+  * ordered semantics, the Mongo default. An unordered batch asks for the opposite - every spec is
+  * attempted regardless of the errors of the others - so it is an error rather than being
+  * silently executed as an ordered one.
+  */
+void rejectUnorderedWriteBatch(const Document & command, const char * command_name);
+
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped
   * to ClickHouse databases, so collections with the same name in different Mongo databases
@@ -55,6 +63,12 @@ struct CollectionRef
     /// A quoted `database`.`collection` identifier that is safe to embed into a query.
     String getQualifiedName() const;
 };
+
+/** Checks a Mongo database name taken from the `$db` of a command. Every command validates it
+  * the same way, so that the wire endpoint cannot create a namespace that a later command, such as
+  * `dropDatabase`, or the dialect would reject.
+  */
+void validateMongoDatabaseName(const String & database, const String & command_name);
 
 /** Extracts the target of a command, e.g. for `{"find": "users", "$db": "app"}` and
   * `command_name` = `find` it returns the collection `users` of the database `app`.

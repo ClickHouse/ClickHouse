@@ -43,6 +43,7 @@ String serializeRequiredMember(const rapidjson::Value & json, const char * name)
 std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(sections[0].documents[0], "update");
+    rejectUnorderedWriteBatch(sections[0].documents[0], "update");
 
     /// The specs come either as an `updates` document sequence or as the `updates` array of the
     /// command body itself, see `getWriteBatch`.

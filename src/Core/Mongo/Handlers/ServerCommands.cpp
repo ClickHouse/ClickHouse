@@ -3,7 +3,6 @@
 #include <Core/Mongo/Handlers/ServerCommands.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
 
@@ -38,11 +37,7 @@ String databaseName(const Document & command, const String & command_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
 
     String database = database_it->value.GetString();
-    if (database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Mongo database name in the command '{}'", command_name);
-    for (char symbol : database)
-        if (!isWordCharASCII(symbol) && symbol != '-')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo database name '{}'", database);
+    validateMongoDatabaseName(database, command_name);
     return database;
 }
 

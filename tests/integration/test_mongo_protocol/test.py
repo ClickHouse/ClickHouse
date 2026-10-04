@@ -1602,9 +1602,10 @@ def test_aggregation_regex_options_are_applied(started_cluster):
 
 def test_aggregate_of_a_missing_collection_is_empty(started_cluster):
     """`aggregate` honors the same missing-namespace contract as the other read commands: a
-    collection that does not exist is read as empty rather than as a missing-table error. A
-    malformed pipeline is still an error, and a pipeline that unions another collection cannot
-    be answered without the aggregated one, so it is rejected explicitly."""
+    collection that does not exist is read as empty rather than as a missing-table error, and so
+    is a missing collection of a `$unionWith`. A malformed pipeline is still an error, and a
+    pipeline that unions an existing collection cannot be answered without the aggregated one,
+    so it is rejected explicitly."""
     client = make_client()
     collection = client["db"]["never_created_aggregate"]
     collection.drop()
@@ -1621,6 +1622,16 @@ def test_aggregate_of_a_missing_collection_is_empty(started_cluster):
     with pytest.raises(pymongo.errors.OperationFailure) as error:
         list(collection.aggregate([{"$unionWith": {"coll": "never_created_aggregate_other"}}]))
     assert "does not exist" in str(error.value)
+
+    # A `$unionWith` of a missing collection contributes nothing, whether or not the aggregated
+    # collection exists.
+    assert list(collection.aggregate([{"$unionWith": "never_created_aggregate"}])) == []
+    assert [
+        document["id"]
+        for document in other.aggregate(
+            [{"$unionWith": {"coll": "never_created_aggregate", "pipeline": [{"$match": {"id": 1}}]}}]
+        )
+    ] == [1]
 
     other.drop()
 
@@ -1930,6 +1941,27 @@ def test_an_ordered_bulk_write_keeps_the_writes_before_the_error(started_cluster
 
     assert wait_for(lambda: collection.count_documents({"k": 20}) == 1)
     assert collection.count_documents({"k": 3}) == 1
+
+    # Only ordered batches are implemented, so an unordered one is rejected rather than executed
+    # with the opposite semantics, and a delete spec without the required `limit` is malformed
+    # rather than a `deleteMany`.
+    for command in [
+        {"delete": "ordered_bulk_write", "deletes": [{"q": {"k": 3}, "limit": 0}], "ordered": False},
+        {
+            "update": "ordered_bulk_write",
+            "updates": [{"q": {"k": 3}, "u": {"$set": {"k": 30}}, "multi": True}],
+            "ordered": False,
+        },
+        {"delete": "ordered_bulk_write", "deletes": [{"q": {"k": 3}}]},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command(command)
+    assert collection.count_documents({"k": 3}) == 1
+
+    # A database name that `dropDatabase` would reject is rejected by the collection commands too.
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        client["foo+bar"]["ordered_bulk_write"].insert_one({"id": 1})
+    assert "Invalid Mongo database name" in str(error.value)
 
     collection.drop()
 

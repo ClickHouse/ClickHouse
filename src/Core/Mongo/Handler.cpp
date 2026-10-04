@@ -798,9 +798,28 @@ getWriteBatch(const std::vector<OpMessageSection> & sections, const char * field
     return batch;
 }
 
+void rejectUnorderedWriteBatch(const Document & command, const char * command_name)
+{
+    auto json = command.getRapidJSONRepresentation();
+    if (!getBoolOption(json, "ordered", command_name).value_or(true))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The '{}' command supports only ordered batches; 'ordered: false' is not supported",
+            command_name);
+}
+
 String CollectionRef::getQualifiedName() const
 {
     return backQuoteIfNeed(database) + "." + backQuoteIfNeed(collection);
+}
+
+void validateMongoDatabaseName(const String & database, const String & command_name)
+{
+    if (database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Mongo database name in the command '{}'", command_name);
+    for (char symbol : database)
+        if (!isWordCharASCII(symbol) && symbol != '-')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo database name '{}' in the command '{}'", database, command_name);
 }
 
 CollectionRef getCollectionRef(const Document & command, const String & command_name)
@@ -825,6 +844,8 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
             command_name,
             result.database,
             result.collection);
+
+    validateMongoDatabaseName(result.database, command_name);
 
     return result;
 }

@@ -34,6 +34,7 @@ std::vector<Document> ListCollectionsHandler::handle(
         if (database_it == json.MemberEnd() || !database_it->value.IsString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'listCollections' command does not contain the '$db' database name");
         database = database_it->value.GetString();
+        validateMongoDatabaseName(database, "listCollections");
         name_filter = getNameFilter(json, "listCollections");
         name_only = getBoolOption(json, "nameOnly", "listCollections").value_or(false);
     }

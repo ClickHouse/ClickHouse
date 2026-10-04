@@ -24,6 +24,7 @@ namespace DB::MongoProtocol
 std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
+    rejectUnorderedWriteBatch(documents[0].documents[0], "delete");
 
     /// The specs come either as a `deletes` document sequence or as the `deletes` array of the
     /// command body itself, see `getWriteBatch`.
@@ -79,9 +80,12 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
             if (filter_it == json_representation.MemberEnd())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
 
+            /// `limit` is a required field of a delete spec: a spec without it is malformed rather
+            /// than a `deleteMany`, so it must not be widened into a destructive delete.
             auto limit_it = json_representation.FindMember("limit");
-            if (limit_it != json_representation.MemberEnd()
-                && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
+            if (limit_it == json_representation.MemberEnd())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'limit' field");
+            if (!(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not supported");
