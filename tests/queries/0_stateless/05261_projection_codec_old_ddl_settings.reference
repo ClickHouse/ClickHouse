@@ -9,10 +9,10 @@ alter_add rejected
 create_v2_without_codec_setting rejected
 1
 1
+1
+1
 copy_v2_without_codec_setting rejected
 0
-1
-1
 1
 1
 1
