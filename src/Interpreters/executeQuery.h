@@ -162,7 +162,8 @@ void logQueryException(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
     bool log_as_internal,
-    bool log_error);
+    bool log_error,
+    bool charge_quota_profile_events = true);
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
@@ -172,7 +173,8 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal,
-    bool log_as_internal);
+    bool log_as_internal,
+    bool charge_quota_profile_events = true);
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();

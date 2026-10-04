@@ -6,8 +6,8 @@ namespace DB
 {
 bool operator ==(const Quota::Limits & lhs, const Quota::Limits & rhs)
 {
-    return boost::range::equal(lhs.max, rhs.max) && (lhs.duration == rhs.duration)
-        && (lhs.randomize_interval == rhs.randomize_interval);
+    return boost::range::equal(lhs.max, rhs.max) && (lhs.profile_events_max == rhs.profile_events_max)
+        && (lhs.duration == rhs.duration) && (lhs.randomize_interval == rhs.randomize_interval);
 }
 
 
