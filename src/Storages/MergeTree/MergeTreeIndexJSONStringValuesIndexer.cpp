@@ -132,7 +132,7 @@ void JSONStringValuesIndexer::processObject(
 
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
+    const size_t start = row == 0 ? 0 : shared_data_offsets[row - 1];
     const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
     for (size_t j = start; j != end; ++j)
         visit(shared_data_paths->getDataAt(j), [&](std::string_view full_path)
