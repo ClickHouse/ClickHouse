@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -51,17 +49,24 @@ def mount_read_only(instance, path):
     # `user="root"`, because mounting needs it and the container uid follows the uid
     # running the tests, which is not root outside CI.
     instance.exec_in_container(["mount", "--bind", path, path], user="root")
-    # The disk checker writes a probe file into the root, so a remount can lose the
-    # race against it and report EBUSY.
-    for _ in range(10):
+
+    def remount():
         try:
             instance.exec_in_container(
                 ["mount", "-o", "remount,ro,bind", path], user="root"
             )
-            return
-        except Exception:
-            time.sleep(0.5)
-    raise AssertionError(f"could not remount {path} read-only")
+            return None
+        except Exception as e:
+            return str(e)
+
+    # The disk checker writes a probe file into the root, so a remount can lose the
+    # race against it and report EBUSY.
+    wait_condition(
+        func=remount,
+        condition=lambda error: error is None,
+        max_attempts=10,
+        delay=0.5,
+    )
 
 
 def unmount(instance, path):
@@ -343,26 +348,19 @@ def test_freeze_recovery_skips_broken_disk(started_cluster):
 
 
 def test_freeze_recovery_scans_path_wrapping_disk(started_cluster):
-    # The recovery scan walks every configured disk, and a wrapping disk such as
-    # DiskEncrypted reports its DELEGATE's already-wrapped path from
-    # iterateDirectory. Feeding that path back to the same disk wraps it a second
-    # time (`inner/outer/inner/outer/...`), so the lookup addresses a path that
-    # does not exist and a real backup stops counting toward the bound. The next
-    # unnamed FREEZE would then hand out an identifier that is already taken.
-    # Entries must therefore be addressed in the disk's own logical namespace.
+    # The recovery scan walks every configured disk, including a wrapping disk such
+    # as a nested DiskEncrypted, whose entries must be addressed in that disk's own
+    # logical namespace. A backup it holds must still count toward the bound, or the
+    # next unnamed FREEZE would hand out an identifier that is already taken.
     try:
         node.query("DROP TABLE IF EXISTS t_plain SYNC")
 
-        # A table on the doubly-wrapped encrypted disk, holding a high numeric
-        # backup, and a table on the default disk to run recovery from.
+        # A table on the default disk to run recovery from.
         node.query("CREATE TABLE t_plain (id UInt64) ENGINE = MergeTree ORDER BY id")
         node.query("INSERT INTO t_plain VALUES (1), (2), (3)")
 
-        # Plant the numeric backup directory on the wrapping disk directly rather
-        # than through FREEZE: a nested encrypted disk currently cannot complete a
-        # FREEZE at all (its setReadOnly wraps the path once per level and then
-        # addresses `inner/outer/inner/outer/...`), which is a separate defect. The
-        # scan under test only reads directory names, so the directory alone is the
+        # Plant the numeric backup directory on the wrapping disk directly: the scan
+        # under test only reads directory names, so the directory alone is the
         # relevant state.
         node.exec_in_container(
             [

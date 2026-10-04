@@ -7,10 +7,8 @@
                 <type>local</type>
                 <path>/var/lib/clickhouse/cold/</path>
             </cold>
-            <!-- Nested encryption with non-empty wrapper paths on both levels.
-                 Such a disk reports its delegate's already-wrapped path from
-                 iterateDirectory, so the recovery scan must address entries by
-                 the disk's own logical namespace instead. -->
+            <!-- Nested encryption with non-empty wrapper paths on both levels, so the
+                 recovery scan must address entries in the disk's own logical namespace. -->
             <enc_base>
                 <type>local</type>
                 <path>/var/lib/clickhouse/enc_base/</path>

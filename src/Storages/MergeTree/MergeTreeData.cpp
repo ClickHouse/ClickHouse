@@ -13404,11 +13404,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 /// files, so the name alone does not identify one. Counting a numeric
                 /// file would raise the bound over identifiers that are still free,
                 /// and one named the counter's maximum would refuse every recovery.
-                ///
-                /// The path is rebuilt from the name rather than taken from the
-                /// iterator: a wrapping disk such as `DiskEncrypted` yields its
-                /// delegate's already-wrapped path, which `existsDirectory` would wrap
-                /// a second time and report absent, hiding a real backup.
                 for (auto it = disk->iterateDirectory(shadow_relative); it->isValid(); it->next())
                     if (auto value = numeric_dir_value(it->name());
                         value && disk->existsDirectory(fs::path(shadow_relative) / it->name()))
