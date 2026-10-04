@@ -246,6 +246,12 @@ private:
 
     ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
+    bool expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
+
+    bool expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
+
+    bool expandProjectionMatchers(QueryNode & query_node, IdentifierResolveScope & scope);
+
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
     ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node,
@@ -317,6 +323,12 @@ private:
 
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
+
+    /** The query whose projection matchers are expanded for the second time under `group_by_use_nulls`,
+      * see `resolveQuery`. Its other clauses were already rewritten by the `REPLACE` transformers,
+      * so `resolveMatcher` rewrites only the projection.
+      */
+    const IQueryTreeNode * query_with_replaced_clauses = nullptr;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
