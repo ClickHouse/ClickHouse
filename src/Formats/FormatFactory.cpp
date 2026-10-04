@@ -21,6 +21,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -465,6 +466,42 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     }
 
     return format_settings;
+}
+
+UInt64 getFormatSettingsHash(const Settings & settings)
+{
+    /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
+    /// added there is covered without anyone remembering this place, plus the core settings it reads
+    /// besides.
+    ///
+    /// A format setting is hashed only when its effective value differs from the declared default, so a
+    /// session that spells a default explicitly shares the hash of a session that left it alone, and
+    /// sessions at the defaults all share one hash. The `changed` flag is checked first, so only the
+    /// few settings a session actually set are compared. The order is the declaration order, so the
+    /// hash does not depend on the order the session set them in.
+    SipHash hash;
+#define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    if (const auto & field = settings[Setting::NAME]; field.changed) \
+    { \
+        String value = field.toString(); \
+        if (value != SettingField##TYPE{DEFAULT}.toString()) \
+        { \
+            hash.update(std::string_view(#NAME)); \
+            hash.update(value); \
+        } \
+    }
+    /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
+    /// field as its setting anyway).
+    FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)
+#undef HASH_FORMAT_SETTING_IF_NOT_DEFAULT
+
+    /// The core settings `getFormatSettings` reads besides; keep in step with the function above.
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    hash.update(settings[Setting::allow_special_serialization_kinds_in_output_formats].value);
+    hash.update(settings[Setting::enable_nullable_tuple_type].value);
+    hash.update(settings[Setting::http_write_exception_in_output_format].value);
+    hash.update(settings[Setting::max_parser_depth].value);
+    return hash.get64();
 }
 
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
