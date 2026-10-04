@@ -1,0 +1,50 @@
+<clickhouse>
+    <keeper_server>
+        <use_cluster>false</use_cluster>
+        <tcp_port>9181</tcp_port>
+        <server_id>3</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <!-- No snapshot on exit, so a restart has local logs to replay. -->
+        <create_snapshot_on_exit>false</create_snapshot_on_exit>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <!-- No automatic snapshots, so no compaction; the last test takes one with `csnp`, and then
+                 almost nothing is kept, so node2 can only catch up by installing it. -->
+            <snapshot_distance>1000000</snapshot_distance>
+            <reserved_log_items>1</reserved_log_items>
+            <!-- A short heartbeat makes the leader reconnect often, as in the incident but faster. -->
+            <heart_beat_interval_ms>100</heart_beat_interval_ms>
+            <raft_limits_reconnect_limit>1</raft_limits_reconnect_limit>
+            <!-- With a reconnect limit of 1 the wait here is zero. -->
+            <raft_limits_response_limit>2</raft_limits_response_limit>
+            <election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>
+            <startup_timeout>180000</startup_timeout>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+                <priority>3</priority>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>node2</hostname>
+                <port>9234</port>
+                <priority>1</priority>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>9234</port>
+                <priority>2</priority>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

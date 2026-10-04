@@ -130,6 +130,41 @@ TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
     EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
+TEST(CoordinationKeeperContext, WaitLocalLogsPreprocessedOrShutdown)
+{
+    const auto make_context = []
+    { return std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>()); };
+
+    /// The caller is a thread of the Raft event loop, so the wait has to end on its own deadline
+    /// and report that the logs are still not preprocessed.
+    {
+        auto ctx = make_context();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(50));
+        EXPECT_GE(watch.elapsedMilliseconds(), 50);
+    }
+
+    /// Already preprocessed: returns without waiting, and says so.
+    {
+        auto ctx = make_context();
+        ctx->setLocalLogsPreprocessed();
+        Stopwatch watch;
+        EXPECT_TRUE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+
+    /// Shutdown ends the wait as well, but that is not the same thing as the logs being
+    /// preprocessed: reporting true here would have the caller log `preprocessed=true` for a
+    /// replay that never finished.
+    {
+        auto ctx = make_context();
+        ctx->setShutdownCalled();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+}
+
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 {
     auto load = [](const std::string & xml)
