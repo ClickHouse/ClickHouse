@@ -814,13 +814,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
-    if (!isPatchPartitionId(partition_id) && global_settings[Setting::optimize_on_insert] && metadata_snapshot->hasRowsTTL())
-    {
-        removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
-        if (block.rows() == 0)
-            return temp_part;
-    }
-
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -920,6 +913,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+    }
+
+    if (!isPatchPartitionId(new_part_info.getPartitionId())
+        && global_settings[Setting::optimize_on_insert]
+        && metadata_snapshot->hasRowsTTL())
+    {
+        removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
     }
 
     ColumnsStatistics statistics;
