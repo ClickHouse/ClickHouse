@@ -22,9 +22,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
-static bool dependsOnItsBlock(const ActionsDAG & actions)
+bool dependsOnItsBlock(const ActionsDAG & actions)
 {
     for (const auto & node : actions.getNodes())
         if (node.type == ActionsDAG::ActionType::FUNCTION

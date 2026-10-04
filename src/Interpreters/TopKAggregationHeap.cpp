@@ -5,6 +5,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
+#include <Processors/TopKThresholdTracker.h>
 
 namespace DB
 {
@@ -158,6 +160,21 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
 void TopKAggregationHeapBase::initBoundary()
 {
     withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
+    boundary_changed = true;
+}
+
+void TopKAggregationHeapBase::publishBoundary()
+{
+    boundary_changed = false;
+
+    if (!threshold_tracker || !heap_column || boundary_row == invalid_row)
+        return;
+
+    const IColumn & first_column = is_composite ? assert_cast<const ColumnTuple &>(*heap_column).getColumn(0) : *heap_column;
+
+    Field boundary_value;
+    first_column.get(boundary_row, boundary_value);
+    threshold_tracker->testAndSet(boundary_value);
 }
 
 void TopKAggregationHeapBase::trimToK()
@@ -171,6 +188,7 @@ void TopKAggregationHeapBase::trimToK()
     {
         std::nth_element(heap_indices.begin(), heap_indices.begin() + k - 1, heap_indices.end(), cmp);
         boundary_row = heap_indices[k - 1];
+        boundary_changed = true;
 
         const auto tied_with_boundary
             = [&](size_t idx) { return !cmp(idx, boundary_row) && !cmp(boundary_row, idx); };
