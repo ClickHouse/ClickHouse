@@ -1,0 +1,13 @@
+-- histogram-only series
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3)	Float64
+[('job','a')]	1970-01-01 00:02:00.000	110
+[('job','a')]	100
+-- mixed series: the newest sample is a float, then a histogram
+[('job','b')]	110
+[('job','c')]	115
+-- the newest sample is a stale histogram or a stale float: no sample
+[('job','d')]	100
+-- range query
+[('job','a')]	[(100000,100),(110000,110),(120000,110)]
+[('job','d')]	[(100000,100)]

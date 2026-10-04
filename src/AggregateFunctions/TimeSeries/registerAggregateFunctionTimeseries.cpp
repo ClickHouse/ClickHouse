@@ -18,6 +18,8 @@ void registerAggregateFunctionTimeseriesPresentToGrid(AggregateFunctionFactory &
 void registerAggregateFunctionTimeseriesQuantileToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMadToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesVariance(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesHistogramLastToGrid(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesHistogramRates(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & factory);
@@ -39,6 +41,8 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     registerAggregateFunctionTimeseriesQuantileToGrid(factory);
     registerAggregateFunctionTimeseriesMadToGrid(factory);
     registerAggregateFunctionTimeseriesVariance(factory);
+    registerAggregateFunctionTimeseriesHistogramLastToGrid(factory);
+    registerAggregateFunctionTimeseriesHistogramRates(factory);
     registerAggregateFunctionLast2Samples(factory);
     registerAggregateFunctionTimeseriesGroupArray(factory);
     registerAggregateFunctionTimeSeriesTopKMasks(factory);
