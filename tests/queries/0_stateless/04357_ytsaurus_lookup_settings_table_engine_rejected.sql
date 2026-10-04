@@ -14,6 +14,13 @@ SETTINGS lookup_throttler_max_requests_per_second = 100; -- { serverError BAD_AR
 CREATE TABLE t_yt_lookup_2 (x UInt64) ENGINE = YTsaurus('http://localhost:8000', '//tmp/t', 'token')
 SETTINGS lookup_max_rows_per_query = 10; -- { serverError BAD_ARGUMENTS }
 
+-- They are rejected even when set to their default values: presence in the `SETTINGS` clause is what matters.
+CREATE TABLE t_yt_lookup_3 (x UInt64) ENGINE = YTsaurus('http://localhost:8000', '//tmp/t', 'token')
+SETTINGS lookup_throttler_max_requests_per_second = 200000; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_yt_lookup_4 (x UInt64) ENGINE = YTsaurus('http://localhost:8000', '//tmp/t', 'token')
+SETTINGS lookup_max_rows_per_query = 0; -- { serverError BAD_ARGUMENTS }
+
 -- A genuine table-engine setting is still accepted (CREATE does not connect to YTsaurus).
 CREATE TABLE t_yt_ok (x UInt64) ENGINE = YTsaurus('http://localhost:8000', '//tmp/t', 'token')
 SETTINGS max_streams = 8;
@@ -26,3 +33,6 @@ SELECT * FROM ytsaurus('http://localhost:8000', '//tmp/t', 'token', 'x UInt64',
 
 SELECT * FROM ytsaurus('http://localhost:8000', '//tmp/t', 'token', 'x UInt64',
     SETTINGS lookup_max_rows_per_query = 10); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM ytsaurus('http://localhost:8000', '//tmp/t', 'token', 'x UInt64',
+    SETTINGS lookup_max_rows_per_query = 0); -- { serverError BAD_ARGUMENTS }
