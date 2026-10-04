@@ -258,11 +258,17 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
+        UnorderedSetWithMemoryTracking<std::string> result_column_names;
         for (const auto & column : actions.getResultColumns())
         {
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);
+
+            if (!result_column_names.emplace(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' is an output of the interpolate expression more "
+                    "than once", column.name);
 
             /// Each output is `insertFrom`-ed into the header column of the same name, so their types have
             /// to agree; the planner casts the interpolate expression to that column's type for this reason.
@@ -274,6 +280,14 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
             result_columns_order.push_back(column.name);
         }
+
+        /// `FillingTransform` finds these columns in its input header by name, so each must be there once.
+        UnorderedSetWithMemoryTracking<std::string> interpolate_header_columns;
+        for (const auto & column : input_header)
+            if ((result_column_names.contains(column.name) || required_columns_map.contains(column.name))
+                && !interpolate_header_columns.emplace(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' is present in the input header more than once", column.name);
 
         interpolate_description = std::make_shared<InterpolateDescription>(
             std::move(actions), std::move(required_columns_map), std::move(result_columns_order));

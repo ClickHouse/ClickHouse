@@ -77,3 +77,23 @@ CREATE TABLE t_inter_02233 (n Int32) ENGINE = MergeTree ORDER BY n;
 INSERT INTO t_inter_02233 VALUES (1),(3),(3),(6),(6),(6);
 SELECT n, count() AS m FROM t_inter_02233 GROUP BY n ORDER BY n WITH FILL INTERPOLATE ( m AS m + 1 );
 DROP TABLE IF EXISTS t_inter_02233;
+
+# Test the same column as INTERPOLATE output twice - should produce error
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 11.51 STEP 0.5 INTERPOLATE (inter AS inter, inter AS inter); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+# Test the same column as INTERPOLATE output twice with different expressions - should produce error
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 11.51 STEP 0.5 INTERPOLATE (inter AS inter + 1, inter AS inter + 2); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+# Test the same column as INTERPOLATE output twice with const expressions - should produce error
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 11.51 STEP 0.5 INTERPOLATE (inter AS 42, inter AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+# Test INTERPOLATE with two distinct output columns
+SELECT n, inter, inter2 FROM (
+    SELECT toFloat32(number) AS n, number AS inter, number + 100 AS inter2 FROM numbers(3) WHERE number != 1
+) ORDER BY n WITH FILL FROM 0 TO 3 STEP 1 INTERPOLATE (inter AS inter, inter2 AS inter2 + 1);
