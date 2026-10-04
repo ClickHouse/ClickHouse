@@ -123,8 +123,9 @@ INSERT INTO t_bf_null_in_ty SELECT toString(number) FROM numbers(1000);
 
 SELECT 'Type mismatch: String index vs integer set does not prune with transform_null_in=1';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in_ty WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
-SELECT 'Type mismatch: query still raises the conversion error with transform_null_in=1';
-SELECT count() FROM t_bf_null_in_ty WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT 'Type mismatch: the query returns the same rows with and without transform_null_in=1';
+SELECT count() FROM t_bf_null_in_ty WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1;
+SELECT count() FROM t_bf_null_in_ty WHERE x IN (SELECT toUInt8(1));
 
 DROP TABLE t_bf_null_in_ty;
 

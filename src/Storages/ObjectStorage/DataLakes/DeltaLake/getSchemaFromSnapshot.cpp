@@ -516,9 +516,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             DB::WhichDataType which(field.type);
             /// Compute full ancestor paths for this field so children at any
             /// depth use the complete logical/physical path as the map key/value.
-            const std::string field_logical_path = parent_logical_path.empty()
-                ? field.name
-                : parent_logical_path + "." + field.name;
+            const std::string field_logical_path = appendToLogicalPath(parent_logical_path, field.name);
             const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
                 ? parent_physical_path + "." + field.physical_name
                 : field.physical_name;
@@ -568,9 +566,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             /// replaceTypeNamesToPhysicalRecursively work at any nesting depth.
             /// key:   "grandparent.parent.field"  (full logical path)
             /// value: "grandparent_phys.parent_phys.field_phys" (full physical path)
-            const std::string logical_path = parent_logical_path.empty()
-                ? field.name
-                : parent_logical_path + "." + field.name;
+            const std::string logical_path = appendToLogicalPath(parent_logical_path, field.name);
             const std::string physical_path = parent_physical_path.empty()
                 ? field.physical_name
                 : parent_physical_path + "." + field.physical_name;
