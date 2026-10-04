@@ -270,7 +270,9 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
             if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
                 return true;
         }
-        else if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+        /// Check the target is an integer before asking its size: `getSizeOfValueInMemory` throws
+        /// for types without a fixed size, such as `Nullable`, which the unwrapping below handles.
+        else if ((which_to.isInt() || which_to.isUInt()) && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
         {
             if (which_to.isInt())
                 return true;
