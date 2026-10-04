@@ -4,10 +4,15 @@
 
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVariant.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -24,6 +29,7 @@ namespace
 /// (from_type, value, to_type, strict, convert_inexact_floats), the column twin returns null iff the
 /// Field version returns a Null Field, and otherwise its single value equals the Field result. This
 /// pins the contract so column-native fast paths can replace the delegation without changing results.
+/// A `Variant` target is the one deliberate exception, asserted separately by `VariantTargetKeepsAlternative`.
 struct Case
 {
     const char * from_type;
@@ -192,10 +198,71 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
+
+        /// Two tuples that both name their elements are paired by name by `CAST` and positionally by
+        /// `convertFieldToType`, so a target that names the same elements in another order must keep going
+        /// through the `Field` fallback: the alternative-by-type path would silently reorder the value.
+        {"Tuple(a UInt64, b UInt64)", Field(Tuple{UInt64(1), UInt64(2)}), "Tuple(b Variant(Date, UInt64), a UInt64)"},
     };
 
     for (const auto & c : cases)
         checkEquivalent(c);
+}
+
+/// A value keeps the `Variant` alternative its type names, and the `Field` twin does not: it cannot
+/// record the alternative, so `ColumnVariant::tryInsert` picks the first one that accepts the value.
+/// Both sides are asserted, because the point of the column-native path is the difference between them.
+TEST(ConvertColumnToType, VariantTargetKeepsAlternative)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from = type_factory.get("UInt64");
+    const auto to = type_factory.get("Variant(Date, UInt64)");
+    const auto & to_variant = assert_cast<const DataTypeVariant &>(*to);
+
+    auto column = from->createColumn();
+    column->insert(Field(UInt64(1)));
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*column, from, to, {}, /*strict=*/true);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    EXPECT_EQ(
+        assert_cast<const ColumnVariant &>(*converted).globalDiscriminatorAt(0),
+        to_variant.tryGetVariantDiscriminator("UInt64").value());
+
+    const Field field_converted = convertFieldToType(Field(UInt64(1)), *to, from.get());
+    auto field_column = to->createColumn();
+    field_column->insert(field_converted);
+    EXPECT_EQ(
+        assert_cast<const ColumnVariant &>(*field_column).globalDiscriminatorAt(0),
+        to_variant.tryGetVariantDiscriminator("Date").value());
+}
+
+/// `CAST` converts an `Array` element-wise, so a `Variant` under one is chosen by type as well.
+TEST(ConvertColumnToType, VariantTargetUnderArrayKeepsAlternative)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from = type_factory.get("Array(UInt64)");
+    const auto to = type_factory.get("Array(Variant(Date, UInt64))");
+    const auto & to_variant
+        = assert_cast<const DataTypeVariant &>(*assert_cast<const DataTypeArray &>(*to).getNestedType());
+
+    auto column = from->createColumn();
+    column->insert(Field(Array{UInt64(1)}));
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*column, from, to, {}, /*strict=*/true);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    const auto & elements = assert_cast<const ColumnVariant &>(assert_cast<const ColumnArray &>(*converted).getData());
+    ASSERT_EQ(elements.size(), 1u);
+    EXPECT_EQ(elements.globalDiscriminatorAt(0), to_variant.tryGetVariantDiscriminator("UInt64").value());
+
+    const Field field_converted = convertFieldToType(Field(Array{UInt64(1)}), *to, from.get());
+    auto field_column = to->createColumn();
+    field_column->insert(field_converted);
+    const auto & field_elements
+        = assert_cast<const ColumnVariant &>(assert_cast<const ColumnArray &>(*field_column).getData());
+    ASSERT_EQ(field_elements.size(), 1u);
+    EXPECT_EQ(field_elements.globalDiscriminatorAt(0), to_variant.tryGetVariantDiscriminator("Date").value());
 }
 
 TEST(ConvertColumnToType, OrThrow)
