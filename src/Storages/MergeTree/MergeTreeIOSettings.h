@@ -68,6 +68,11 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// If the query condition cache should serve conditions involving the current time by deriving
+    /// deterministic conditions from them (rounding time constants onto a grid).
+    bool use_query_condition_cache_for_time_conditions = false;
+    /// Grid step for the above, as a fraction of the distance between the constant and the current time.
+    double query_condition_cache_time_condition_grid_factor = 1.0;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
     /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running

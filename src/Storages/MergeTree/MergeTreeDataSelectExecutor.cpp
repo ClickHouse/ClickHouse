@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -115,6 +116,8 @@ namespace Setting
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -1633,11 +1636,16 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
-static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
+/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal
+/// TopK nodes before probing reuse. `__topKFilter` is merged into the PREWHERE after the pass that
+/// builds this DAG, so the shapes stripped here no longer originate from that optimizer path.
+/// Returns the predicate-only node; the caller turns it into a cache key (which, for a condition
+/// involving the current time, is the hash of the derived deterministic condition, not the node's
+/// own hash).
+static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::Node * node)
 {
     if (!node)
-        return std::nullopt;
+        return nullptr;
 
     if (node->type == ActionsDAG::ActionType::FUNCTION
         && node->function_base && node->function_base->getName() == "and")
@@ -1651,10 +1659,10 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         }
 
         if (where_children.empty())
-            return std::nullopt;
+            return nullptr;
 
         if (where_children.size() == node->children.size())
-            return node->getHash();
+            return node;
 
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
@@ -1664,14 +1672,14 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         /// skip the cross-query reuse (a plain multi-conjunct `WHERE` is keyed on its own single
         /// `and(a, b, ...)` node, which we do not have here).
         if (where_children.size() != 1)
-            return std::nullopt;
-        return where_children.front()->getHash();
+            return nullptr;
+        return where_children.front();
     }
 
     if (isTopKFilterFunction(node))
-        return std::nullopt;
+        return nullptr;
 
-    return node->getHash();
+    return node;
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
@@ -1753,9 +1761,36 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
+        /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
+        /// non-deterministic and its own hash changes with every query, so probing it would always
+        /// miss. Probe the deterministic condition derived from it instead (issue #115504). Since
+        /// this is the consult side, the derivation must *weaken* the condition: "no rows of this
+        /// granule match the weakened condition" implies "no rows match the actual condition", so
+        /// skipping the granule is sound. The write sides store entries under the strengthened
+        /// variant, which coincides with the weakened one for grid-aligned constants and equals the
+        /// weakened variant of the next grid cell otherwise.
+        const time_t current_time = time(nullptr);
+        auto derive = [&](const ActionsDAG::Node * node) -> std::optional<DeterministicTimeCondition>
+        {
+            if (!settings[Setting::use_query_condition_cache_for_time_conditions])
+                return std::nullopt;
+            return deriveDeterministicTimeCondition(
+                node,
+                TimeConditionRounding::Weaken,
+                static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                current_time);
+        };
+
+        /// The WHERE writers of a TopK read never store entries under a derived condition (see
+        /// `deriveDeterministicTimeCondition`), so the TopK-salted WHERE key is not derived either;
+        /// such a read only reuses plain entries through the predicate-only hash below. The TopK-salted
+        /// PREWHERE key is derived like its writer in `MergeTreeSelectProcessor` does.
+        const bool is_top_k_where_key = apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info;
+        std::optional<DeterministicTimeCondition> derived = is_top_k_where_key ? std::nullopt : derive(dag);
+
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = queryConditionCacheHash(dag->getHash(), settings_salt);
+        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), settings_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         if (apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
@@ -1763,9 +1798,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// Only reuse when stripping actually recovered a predicate-only hash. Otherwise the hash
             /// would still carry `__topKFilter` (matching neither a plain `WHERE` entry nor the salted
             /// TopK entry), so probing it would just be wasted cache lookups per part.
-            if (auto stripped = getTopKReusePredicateOnlyConditionHash(dag))
+            if (const auto * stripped = getTopKReusePredicateOnlyNode(dag))
             {
-                topk_reuse_predicate_only_hash = queryConditionCacheHash(*stripped, settings_salt);
+                /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
+                /// the derived deterministic condition when it involves the current time.
+                auto stripped_derived = derive(stripped);
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }
