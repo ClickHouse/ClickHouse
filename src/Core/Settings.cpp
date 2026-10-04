@@ -9342,6 +9342,24 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0, \
         {"25.8", false, true, "New setting."}) \
+    DECLARE(Bool, semi_join_include_columns_from_both_sides, true, R"(
+When enabled (the default), `SEMI` JOIN keeps columns from both sides accessible in the joined result, and `SELECT *` returns columns from both sides. This is the legacy ClickHouse behavior.
+When disabled, the analyzer restricts `SEMI` JOIN column access to the preserved side in accordance with the SQL standard.
+For `LEFT SEMI JOIN` only left table columns are accessible, for `RIGHT SEMI JOIN` only right table columns.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
+The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
+    )", 0, \
+        {"26.10", true, true, "New setting. Disable it to restrict `SEMI JOIN` column access to the preserved side except in `JOIN ON` expressions"}) \
+    DECLARE(Bool, anti_join_include_columns_from_both_sides, true, R"(
+When enabled (the default), `ANTI` JOIN keeps columns from both sides accessible in the joined result, and `SELECT *` returns columns from both sides. This is the legacy ClickHouse behavior.
+When disabled, the analyzer restricts `ANTI` JOIN column access to the preserved side in accordance with the SQL standard.
+For `LEFT ANTI JOIN` only left table columns are accessible, for `RIGHT ANTI JOIN` only right table columns.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
+The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
+    )", 0, \
+        {"26.10", true, true, "New setting. Disable it to restrict `ANTI JOIN` column access to the preserved side except in `JOIN ON` expressions"}) \
     DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
 When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the query analysis that ClickHouse used before v24.3. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the behaviour of that older analysis. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
 )", 0, \
