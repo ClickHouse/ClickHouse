@@ -1,0 +1,26 @@
+<test>
+    <create_query>
+        CREATE TABLE lg_num (a Nullable(UInt32), b Nullable(UInt32), c Nullable(UInt32), an UInt32, bn UInt32, cn UInt32) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO lg_num
+        SELECT
+            if(number % 7 = 0, NULL, number % 65535),
+            if(number % 11 = 0, NULL, (number + 1) % 65535),
+            if(number % 13 = 0, NULL, (number + 2) % 65535),
+            number % 65535,
+            (number + 1) % 65535,
+            (number + 2) % 65535
+        FROM numbers(20000000)
+    </fill_query>
+
+    <query>SELECT sum(least(a, b)) FROM lg_num</query>
+    <query>SELECT sum(greatest(a, b)) FROM lg_num</query>
+    <query>SELECT sum(least(a, bn)) FROM lg_num</query>
+    <query>SELECT sum(least(a, b, c)) FROM lg_num</query>
+    <query>SELECT sum(greatest(a, b, c)) FROM lg_num</query>
+    <query>SELECT sum(least(an, bn, cn)) FROM lg_num</query>
+    <query>SELECT sum(greatest(an, bn, cn, an)) FROM lg_num</query>
+
+    <drop_query>DROP TABLE IF EXISTS lg_num</drop_query>
+</test>
