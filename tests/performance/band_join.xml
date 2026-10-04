@@ -1,0 +1,23 @@
+<test>
+    <settings>
+        <join_algorithm>direct,parallel_hash,hash,band_join</join_algorithm>
+    </settings>
+
+    <create_query>CREATE TABLE band_events (id UInt64, start UInt64, end UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE band_points (id UInt64, ts UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <fill_query>INSERT INTO band_events SELECT number, intHash64(number) % 100000000, intHash64(number) % 100000000 + 10 + number % 100 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO band_points SELECT number, intHash64(number + 7) % 100000000 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE band_events FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE band_points FINAL</fill_query>
+
+    <!-- Point side on the left: build the interval index, stream the points (about 1.2
+         matches per point). -->
+    <query>SELECT count() FROM band_points p JOIN band_events e ON p.ts >= e.start AND p.ts &lt;= e.end FORMAT Null</query>
+    <!-- Point side on the right: the swapped orientation with the column-order restore. -->
+    <query>SELECT count() FROM band_events e JOIN band_points p ON p.ts >= e.start AND p.ts &lt;= e.end FORMAT Null</query>
+    <!-- LEFT exercises the inline unmatched-row padding. -->
+    <query>SELECT count() FROM band_points p LEFT JOIN band_events e ON p.ts > e.start AND p.ts &lt; e.end FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS band_events</drop_query>
+    <drop_query>DROP TABLE IF EXISTS band_points</drop_query>
+</test>
