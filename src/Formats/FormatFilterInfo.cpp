@@ -74,14 +74,12 @@ FormatFilterInfo::FormatFilterInfo(
     bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
     if (use_query_condition_cache && filter_actions_dag)
     {
-        /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
-        /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
-        /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
+        /// A row group PREWHERE empties is recorded as not matching the hashed condition, so PREWHERE must be covered by it.
         bool prewhere_covered = true;
         if (prewhere_info)
         {
             const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-            prewhere_covered = prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node);
+            prewhere_covered = prewhere_node && VirtualColumnUtils::isCoveredByFilter(*prewhere_node, *filter_actions_dag, /*allow_top_k_filter=*/ false);
         }
 
         const auto & outputs = filter_actions_dag->getOutputs();

@@ -2,13 +2,15 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests that a join runtime filter sitting in a read step's PREWHERE does not populate the query
--- condition cache, and that the two filters which legitimately may sit there still do.
+-- condition cache, and that the two filters which legitimately may sit there still do. Same for a
+-- condition derived from a join's ON clause that reaches PREWHERE without being in the read's WHERE.
 
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 1;
 
 DROP VIEW IF EXISTS v_tab;
+DROP TABLE IF EXISTS tab_late;
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_topk;
 DROP TABLE IF EXISTS dim;
@@ -125,6 +127,59 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'qcc_jrf_index_scan' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+SELECT '-- a condition derived from ON in PREWHERE must not populate the cache';
+-- Through `tab_late.v = a.v`, the ON condition `tab_late.v + a.v >= 2048` becomes `v + v >= 2048` in
+-- the subquery's PREWHERE, which the subquery's WHERE does not contain. Every granule mixes even rows,
+-- which that PREWHERE removes, with odd rows, which pass it and fail `v + w < 100`, so each granule
+-- looks empty to that WHERE, and the plain read below, which adds `v > 5`, would lose the even rows.
+CREATE TABLE tab_late (k UInt64, v Int64, w Int64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 64, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO tab_late SELECT number, if(number % 2 = 0, number % 64, 1024 + number), number % 5 FROM numbers(2000);
+-- The derived condition in the subquery's PREWHERE, and the residual filter above that read.
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0
+    SELECT count() FROM tab_late RIGHT JOIN (SELECT * FROM tab_late WHERE v + w < 100) AS a
+        ON tab_late.v = a.v AND tab_late.v + a.v >= 2048 WHERE tab_late.v > 5
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+             join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+             query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1, query_plan_max_step_description_length = 1000)
+WHERE explain ILIKE '%prewhere filter column: %greaterOrEquals(plus(%v, %v), 2048\_%'
+  AND explain NOT ILIKE '%\_\_applyFilter%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0
+    SELECT count() FROM tab_late RIGHT JOIN (SELECT * FROM tab_late WHERE v + w < 100) AS a
+        ON tab_late.v = a.v AND tab_late.v + a.v >= 2048 WHERE tab_late.v > 5
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+             join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+             query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1, query_plan_max_step_description_length = 1000)
+WHERE trimLeft(explain) ILIKE 'Filter column: %less(plus(%v, %w), 100\_%';
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_late RIGHT JOIN (SELECT * FROM tab_late WHERE v + w < 100) AS a
+    ON tab_late.v = a.v AND tab_late.v + a.v >= 2048 WHERE tab_late.v > 5
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+         join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+         query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+         query_plan_optimize_prewhere = 1;
+SELECT count() FROM tab_late WHERE v + w < 100 AND v > 5 SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM tab_late WHERE v + w < 100 AND v > 5 SETTINGS use_query_condition_cache = 0;
+-- The same kind of join still populates the cache when the subquery's PREWHERE comes from its own
+-- WHERE, here an `IN`. The one row it keeps fails `v + w < 100`, so the join writes an entry for that
+-- WHERE, and the plain read of the same WHERE hits it.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM tab_late JOIN (SELECT * FROM tab_late WHERE v + w < 100 AND v IN (3001, 3025)) AS a
+    ON tab_late.v = a.v
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+         join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
+         query_plan_convert_outer_join_to_inner_join = 1, optimize_move_to_prewhere = 1,
+         query_plan_optimize_prewhere = 1;
+SELECT count() FROM tab_late WHERE v + w < 100 AND v IN (3001, 3025)
+SETTINGS use_query_condition_cache = 1, log_comment = 'qcc_jrf_late_covered';
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = 'qcc_jrf_late_covered' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
 -- The PREWHERE below matches every row, so the only thing that can prune marks on the second run is
 -- the cache entry the WHERE filter wrote. Both runs return 1 row; only the second one prunes.
 SELECT '-- a deterministic PREWHERE must not stop the WHERE filter from populating the cache';
@@ -167,6 +222,7 @@ FORMAT Null;
 SELECT count() > 0 FROM system.query_condition_cache;
 
 DROP VIEW v_tab;
+DROP TABLE tab_late;
 DROP TABLE dim;
 DROP TABLE tab_topk;
 DROP TABLE tab;
