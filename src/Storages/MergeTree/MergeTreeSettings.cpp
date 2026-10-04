@@ -2017,6 +2017,10 @@ in the merge has a lightweight delete. Any other TTL merge stays horizontal.
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_merges_ms, 1ULL * 60 * 1000, R"(
+The maximum postpone time for failed merges of a non-replicated table. Set to 0 to retry a failed merge without any delay.
+)", 0, \
+        {"26.10", 0, 60000, "New setting to postpone failed merges of a non-replicated table with exponential backoff. The previous value disables the backoff, restoring the pre-26.10 behavior of retrying a failed merge immediately."}) \
     \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
 Maximum exponential backoff, in milliseconds, before retrying a failed `GET_PART` task in a `ReplicatedMergeTree` replication queue. The delay increases after repeated failures and is capped by this value. Set to `0` to disable postponement.
