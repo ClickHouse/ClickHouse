@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- Both byte bounds below rely on granules of at least the default size: a lazy read pulls in whole
+-- granules, so with small ones it reads little more than its own rows and no longer crosses the bound.
+
 -- Automatic parallel replicas only considers a query whose every plan step can collect dataflow
 -- statistics, so a step that cannot takes every query containing it out of consideration. Lazy
 -- materialization puts such a step in the plan: `LazilyReadFromMergeTree` reads the lazy columns
