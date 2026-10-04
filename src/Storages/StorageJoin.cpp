@@ -14,6 +14,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/quoteString.h>
@@ -159,7 +161,12 @@ void StorageJoin::rebuildLiveStateIfLost(const String & exclude_file_name)
     if (!live_state_lost)
         return;
 
-    join = buildFromBackups(exclude_file_name);
+    auto rebuilt_join = buildFromBackups(exclude_file_name);
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(rebuilt_join);
+    }
     live_state_lost = false;
     LOG_INFO(getLogger("StorageJoin"), "Rebuilt the in-memory state of table {} from the backup files", getStorageID().getNameForLogs());
 }
@@ -231,7 +238,11 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -252,7 +263,10 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    }
     live_state_lost = false;
 }
 
@@ -405,7 +419,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
             /// The mutation is committed. Publish it before removing the old generation, so that a
             /// failure of the cleanup cannot leave the live state behind the directory.
-            join = std::move(new_data);
+            {
+                MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+                join = std::move(new_data);
+            }
+            setCurrentQueryMemoryDriftExpected();
             live_state_lost = false;
 
             /// The superseded backups are outside of the set of restored files already, so a
@@ -430,7 +448,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
     }
 
-    join = std::move(new_data);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     live_state_lost = false;
 }
 
@@ -599,7 +621,11 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault during the rollback of a failed INSERT into a Join");
             });
-            join = buildFromBackups(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+            auto rebuilt_join = buildFromBackups(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+            {
+                MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+                join = std::move(rebuilt_join);
+            }
             live_state_lost = false;
             disk->removeFileIfExists(backup_file_path);
         }
