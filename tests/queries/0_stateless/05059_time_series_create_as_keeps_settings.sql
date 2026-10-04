@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
+-- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- The clause `AS <other_table>` copies the settings of the other table and merges them with the `SETTINGS` clause
 -- written in the query; the merge rules are covered by the unit test gtest_normalize_time_series_definition.cpp.
 -- This test checks the parts which need a server: the engine inherited by `AS` without `ENGINE`,

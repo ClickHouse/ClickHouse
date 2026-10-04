@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-parallel-replicas
 # Tag no-replicated-database: the test creates an Ordinary database.
+# Tag no-parallel-replicas: the initiator sends the argument of `timeSeriesMetricFamilies` to the replicas unqualified,
+# so they look the table up in the `default` database, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 #
 # The "metrics" target of a TimeSeries table is named "metric families" since version 4 of the table engine:
 # the keyword is `METRIC FAMILIES` (`METRICS` is kept as an alias), the table function is `timeSeriesMetricFamilies`
