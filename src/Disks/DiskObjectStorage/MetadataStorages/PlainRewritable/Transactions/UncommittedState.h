@@ -21,6 +21,7 @@ public:
     void moveDirectory(const std::string & path_from, const std::string & path_to);
 
     std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
+    bool existsFileOrDirectory(const std::string & path) const;
     std::shared_ptr<Preconditions> getTxPreconditions() const;
 
 private:
