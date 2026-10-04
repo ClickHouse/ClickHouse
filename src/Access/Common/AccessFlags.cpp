@@ -255,12 +255,12 @@ namespace
             std::unordered_map<std::string_view, Node *> nodes;
             size_t next_flag = 0;
 
-#           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name, is_obsolete) \
+#           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
                 NodeDescriptor{AccessType::name, #name, aliases, node_type, #parent_group_name},
 
             static constexpr std::array node_descriptors
             {
-                APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
+                APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE, MAKE_ACCESS_FLAGS_NODE)
             };
 
 #           undef MAKE_ACCESS_FLAGS_NODE

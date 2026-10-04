@@ -61,10 +61,10 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
     {
         std::vector<std::pair<String, Int16>> res;
 
-#define ADD_ACCESS_TYPE_ENUM_VALUE(name, aliases, node_type, parent_group_name, is_obsolete) \
+#define ADD_ACCESS_TYPE_ENUM_VALUE(name, aliases, node_type, parent_group_name) \
         res.emplace_back(toString(AccessType::name), static_cast<size_t>(AccessType::name));
 
-        APPLY_FOR_ACCESS_TYPES(ADD_ACCESS_TYPE_ENUM_VALUE)
+        APPLY_FOR_ACCESS_TYPES(ADD_ACCESS_TYPE_ENUM_VALUE, ADD_ACCESS_TYPE_ENUM_VALUE)
 #undef ADD_ACCESS_TYPE_ENUM_VALUE
 
         return res;
@@ -152,12 +152,15 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
         column_is_obsolete.push_back(is_obsolete);
     };
 
-#define STORAGE_SYSTEM_PRIVILEGES_ADD_ROW(name, aliases, node_type, parent_group_name, is_obsolete) \
-    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name, is_obsolete);
+#define STORAGE_SYSTEM_PRIVILEGES_ADD_ROW(name, aliases, node_type, parent_group_name) \
+    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name, false);
+#define STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW(name, aliases, node_type, parent_group_name) \
+    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name, true);
 
-    APPLY_FOR_ACCESS_TYPES(STORAGE_SYSTEM_PRIVILEGES_ADD_ROW)
+    APPLY_FOR_ACCESS_TYPES(STORAGE_SYSTEM_PRIVILEGES_ADD_ROW, STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW)
 
 #undef STORAGE_SYSTEM_PRIVILEGES_ADD_ROW
+#undef STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW
 }
 
 }
