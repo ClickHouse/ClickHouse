@@ -35,6 +35,11 @@ struct SizeAdaptivePacking
 /// It is used to write: one column, skip index or all columns (in compact format).
 struct MergeTreeWriterStream
 {
+    /// The size the marks file of every stream is opened with (marks are a few dozen bytes per granule, so
+    /// the file buffer is kept small). The merge memory estimate (CompactionStatistics) prices this buffer
+    /// per stream, so keep the two in sync through this constant.
+    static constexpr size_t MARKS_FILE_BUFFER_SIZE = 4096;
+
     MergeTreeWriterStream(
         const String & escaped_column_name_,
         const MutableDataPartStoragePtr & data_part_storage,

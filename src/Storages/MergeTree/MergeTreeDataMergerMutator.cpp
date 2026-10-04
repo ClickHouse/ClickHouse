@@ -488,6 +488,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     StorageMetadataPtr metadata_snapshot,
+    MergeTreeSettingsPtr data_settings,
     MergeList::Entry * merge_entry,
     std::unique_ptr<MergeListElement> projection_merge_list_element,
     TableLockHolder & holder,
@@ -530,7 +531,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         &data,
         this,
         &merges_blocker,
-        &ttl_merges_blocker);
+        &ttl_merges_blocker,
+        std::move(data_settings));
 }
 
 MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
