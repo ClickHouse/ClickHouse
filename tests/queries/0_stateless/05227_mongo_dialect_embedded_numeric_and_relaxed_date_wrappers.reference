@@ -1,0 +1,15 @@
+-- malformed wrappers of an embedded document are an error, not a stored `$`-named field
+Code: 36. The value of '$numberLong' is not a number: 'not a number'
+Code: 36. The value of '$numberInt' is not a number: '5000000000'
+Code: 36. The value 'Infinity' of '$numberDouble' of the field 'events' cannot be stored in a document: only a finite number can
+Code: 36. The value 'not a date' of '$date' of the field 'events' is not a date
+-- the stored documents
+1	[['d','i','n']]
+2	[['d','i','n']]
+3	[['when'],['when'],['n','when']]
+1	[{'d':'Float64','i':'Int64','n':'Int64'}]
+2	[{'d':'Float64','i':'Int64','n':'Int64'}]
+3	[{'when':'DateTime64(9)'},{'when':'DateTime64(9)'},{'n':'Int64','when':'DateTime64(9)'}]
+{"id":1,"events":[{"d":2.5,"i":-7,"n":5000000000}]}
+{"id":2,"events":[{"d":1e300,"i":8,"n":42}]}
+{"id":3,"events":[{"when":"2019-01-01 00:00:00.000000000"},{"when":"2019-01-01 10:30:00.250000000"},{"n":-1,"when":"2020-02-29 23:59:59.000000000"}]}

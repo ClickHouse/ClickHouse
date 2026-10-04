@@ -164,6 +164,8 @@
     {"MemoryThreadStacksVirtual", "Approximate virtual size of pthread stacks, summed from `Size:` of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it is summed from the sizes of the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."},
     {"MemoryVirtual", "The size of the virtual address space allocated by the server process, in bytes. The size of the virtual address space is usually much greater than the physical memory consumption, and should not be used as an estimate for the memory consumption. The large values of this metric are totally normal, and makes only technical sense."},
     {"MissingBlobsQueueEstimate", "Estimated number of blobs awaiting replication to other locations of the disk (the blob manager missing queue), keyed by the disk name. Disks without blob replication report 0."},
+    {"MongoRejectedConnections", "Number of rejected connections for the MongoDB compatibility protocol."},
+    {"MongoThreads", "Number of threads in the server of the MongoDB compatibility protocol."},
     {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."},
     {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."},
     {"NetworkReceiveBytes", "Number of bytes received via every network interface. The keys are the names of the network interfaces. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."},
