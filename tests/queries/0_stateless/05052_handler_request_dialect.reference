@@ -1,0 +1,14 @@
+=== created ===
+created
+=== the request dialect is in effect for a request-owned query ===
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+=== invoked over HTTP with the same request dialects ===
+stored	1
+stored	2
+stored	3
+stored	4
+stored	5
+stored	6
+=== request-controlled construction settings still use the request settings ===
+TOO_DEEP_RECURSION
