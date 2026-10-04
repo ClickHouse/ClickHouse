@@ -7554,6 +7554,11 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(Bool, query_plan_optimize_read_in_order_skip_offset, true, R"(
+When reading a `MergeTree` table in primary key order with an `OFFSET`, skip reading leading granules entirely consumed by the offset.
+Only takes effect if setting [`optimize_read_in_order`](#optimize_read_in_order) is 1.
+)", 0, \
+        {"26.10", false, true, "New setting that skips reading leading granules entirely consumed by `OFFSET` when reading a `MergeTree` table in primary key order."}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
