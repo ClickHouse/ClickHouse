@@ -215,6 +215,8 @@ Chunk DistributedQueryStatusSource::generate()
         bool node_exists = false;
         Strings tmp_hosts;
         Strings tmp_active_hosts;
+        std::map<String, String> tmp_finished_data;
+        bool tmp_finished_data_available = false;
 
         auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
@@ -224,7 +226,19 @@ Chunk DistributedQueryStatusSource::generate()
                 {
                     auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
                     Strings paths = getNodesToWait();
-                    auto res = zookeeper->tryGetChildren(paths);
+                    /// Ask for the finished nodes' data in the same listing when the subclass needs it and the
+                    /// Keeper supports it, so a finished node's status is read atomically with the listing instead
+                    /// of a separate get that could race the cleaner. Otherwise keep the plain listing.
+                    /// with_data needs all three flags: MULTI_READ keeps tryGetChildren on the atomic direct multi
+                    /// path (otherwise it falls back to per-path asyncTryGetChildren), and ZooKeeperImpl::list
+                    /// rejects with_data unless both LIST_WITH_STAT_AND_DATA and FILTERED_LIST are enabled. Keeper
+                    /// feature flags are independently configurable, so require all three or keep the plain listing.
+                    const bool with_data = wantsFinishedNodeData()
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA)
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::FILTERED_LIST)
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
+                    auto res = zookeeper->tryGetChildren(
+                        paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ with_data);
                     for (size_t i = 0; i < res.size(); ++i)
                         if (res[i].error != Coordination::Error::ZOK && res[i].error != Coordination::Error::ZNONODE)
                             throw Coordination::Exception::fromPath(res[i].error, paths[i]);
@@ -236,10 +250,19 @@ Chunk DistributedQueryStatusSource::generate()
                     tmp_hosts = res[0].names;
                     tmp_active_hosts = res[1].names;
 
+                    tmp_finished_data.clear();
+                    tmp_finished_data_available = with_data && res[0].error == Coordination::Error::ZOK;
+                    if (tmp_finished_data_available)
+                        for (size_t i = 0; i < res[0].names.size() && i < res[0].data.size(); ++i)
+                            tmp_finished_data.emplace(res[0].names[i], res[0].data[i]);
+
                     if (only_running_hosts)
                         offline_hosts = getOfflineHosts(waiting_hosts, zookeeper);
                 });
         }
+
+        finished_node_data = std::move(tmp_finished_data);
+        finished_node_data_available = tmp_finished_data_available;
 
         if (!node_exists)
         {
