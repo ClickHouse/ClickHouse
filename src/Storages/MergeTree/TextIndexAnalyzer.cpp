@@ -175,6 +175,8 @@ FlatPostingsPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
+    bool all_patterns_have_automata = true;
+    bool has_general_pattern = false;
 
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
@@ -188,8 +190,42 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         }
 
         for (const auto & pattern : query->getPatterns())
+        {
             queries_by_pattern[&pattern].insert(hash);
+            has_general_pattern |= pattern.getMatchKind() == RegexpMatchKind::General;
+        }
+        for (const auto & automaton : query->getPatternAutomata())
+        {
+            if (automaton)
+                pattern_cursors.emplace_back(*automaton);
+            else
+                all_patterns_have_automata = false;
+        }
     }
+
+    /// Prefix and exact literals already have a cheaper contiguous block-range scan.
+    /// Infix patterns without a rejecting prefix retain the SIMD literal filter.
+    if (!all_patterns_have_automata || !has_general_pattern)
+        pattern_cursors.clear();
+}
+
+TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & lower_bound)
+{
+    using Result = TextIndexDictionaryDFA::Cursor::Result;
+    bool found = false;
+    String candidate;
+    for (auto & cursor : pattern_cursors)
+    {
+        auto result = cursor.next(token, candidate);
+        if (result == Result::Match)
+            return Result::Match;
+        if (result == Result::Seek && (!found || candidate < lower_bound))
+        {
+            lower_bound = candidate;
+            found = true;
+        }
+    }
+    return found ? Result::Seek : Result::Exhausted;
 }
 
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
