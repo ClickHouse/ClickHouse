@@ -178,6 +178,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.custom.allow_variable_number_of_columns = settings[Setting::input_format_custom_allow_variable_number_of_columns];
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
+    format_settings.date_time_overflow_behavior_use_local_timezone = settings[Setting::date_time_overflow_behavior_use_local_timezone];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
     format_settings.read_datetime_number_as_raw_value = settings[Setting::input_format_read_datetime_number_as_raw_value];
     format_settings.interval_output_format = settings[Setting::interval_output_format];
