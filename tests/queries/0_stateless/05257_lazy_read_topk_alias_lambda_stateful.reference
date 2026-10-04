@@ -1,3 +1,13 @@
+lifted_shape
+1
+pure_lambda_lazy
+1
+pure_lambda_topk
+1
+row_sensitive_lambda_lazy
+0
+row_sensitive_lambda_topk
+0
 lazy_lambda_result_matches
 1
 topk_lambda_result_matches
