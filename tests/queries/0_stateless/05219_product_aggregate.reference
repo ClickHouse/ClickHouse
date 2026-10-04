@@ -1,0 +1,67 @@
+basic product
+12	Nullable(Float64)
+negative values and zero
+-6
+0
+empty and nullable input
+\N	Nullable(Float64)
+Nullable(Float64)	\N
+Nullable(Float64)	\N
+Nullable(Float64)	3
+Nullable(Float64)	\N
+filtered input
+8
+\N
+nullable and filtered input
+10
+1
+filtered non-finite values
+0	6
+non-finite result semantics
+1
+1
+1
+0	1
+partial states
+120
+6
+1
+ordered input
+1
+window aggregation
+2
+6
+24
+numeric result types
+Nullable(Float64)	Nullable(Float64)	Nullable(Float64)	Nullable(Float64)	Nullable(Float64)
+bounded floating point batch reduction
+1
+floating point range
+1
+1
+batch boundaries
+1
+1
+1
+decimal values
+1
+1
+Float64 input arithmetic
+1	1
+0
+0	0
+1	0
+0	0
+0	0	0
+1	0	0
+Sparse
+0
+0	0
+1	0
+0	0
+0	0	0
+1	0	0
+0	0
+0
+0	0	0
+1	0	0
