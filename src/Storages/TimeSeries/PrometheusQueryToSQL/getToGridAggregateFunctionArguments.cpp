@@ -87,6 +87,16 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
                             getPromQLText(range_vector, context));
         }
 
+        case StoreMethod::HISTOGRAM_RAW_DATA:
+        case StoreMethod::HISTOGRAM_GRID:
+        {
+            /// A `timeSeries*ToGrid` function takes float samples, so the callers must reduce a range vector carrying
+            /// native histograms with `dropHistogramSamples` first.
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "getToGridAggregateFunctionArguments: Expression {} still carries native histograms (store method {})",
+                            getPromQLText(range_vector, context), range_vector.store_method);
+        }
+
         case StoreMethod::CONST_STRING:
         {
             /// Can't get in here because the store method CONST_STRING is incompatible with a range vector.
