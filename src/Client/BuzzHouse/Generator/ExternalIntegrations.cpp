@@ -8,6 +8,7 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
+#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -1503,6 +1504,8 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
 
     /// Build PUT request
     Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
+    /// Resolve through the DNS cache instead of letting Poco resolve the host on connect.
+    session.setResolvedHost(DB::DNSResolver::instance().resolveHost(uri.getHost()).toString());
     Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     req.setContentType("application/json");
     req.setContentLength(static_cast<int>(body.size()));
@@ -1527,6 +1530,9 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     catch (const std::exception & e)
     {
         LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", path, e.what());
+        /// Remove this possibly stale entry from the DNS cache: there is no `DNSCacheUpdater` here,
+        /// so nothing else would ever refresh it, and every later request would try the same address.
+        DB::DNSResolver::instance().removeHostFromCache(sc.server_hostname);
         return false;
     }
 }
