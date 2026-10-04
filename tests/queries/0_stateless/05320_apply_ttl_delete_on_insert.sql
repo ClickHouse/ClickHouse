@@ -3,6 +3,7 @@
 DROP TABLE IF EXISTS t_ttl_insert;
 DROP TABLE IF EXISTS t_ttl_insert_where;
 DROP TABLE IF EXISTS t_ttl_insert_replicated;
+DROP TABLE IF EXISTS t_ttl_insert_mixed;
 
 CREATE TABLE t_ttl_insert (d DateTime, x UInt64, c UInt64 TTL d + INTERVAL 1 DAY)
 ENGINE = MergeTree PARTITION BY toYYYYMMDD(d) ORDER BY x TTL d + INTERVAL 1 DAY;
@@ -31,6 +32,14 @@ ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY DELETE WHERE x % 2 = 0;
 INSERT INTO t_ttl_insert_where SELECT now() - INTERVAL number DAY, number FROM numbers(6) SETTINGS apply_ttl_delete_on_insert = 1;
 SELECT 'where', arraySort(groupArray(x)) FROM t_ttl_insert_where;
 
+-- When the unconditional rule expires all the rows, the `DELETE WHERE` predicate is not evaluated,
+-- so it cannot throw for the rows which are discarded anyway.
+CREATE TABLE t_ttl_insert_mixed (d DateTime, s String)
+ENGINE = MergeTree ORDER BY d TTL d + INTERVAL 365 DAY DELETE, d + INTERVAL 30 DAY DELETE WHERE toUInt32(s) > 0;
+
+INSERT INTO t_ttl_insert_mixed SELECT now() - INTERVAL 2 YEAR, 'abc' SETTINGS apply_ttl_delete_on_insert = 1;
+SELECT 'mixed', count() FROM t_ttl_insert_mixed;
+
 -- The same for `ReplicatedMergeTree`.
 CREATE TABLE t_ttl_insert_replicated (d DateTime, x UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_ttl_insert_replicated', 'r1') PARTITION BY toYYYYMMDD(d) ORDER BY x TTL d + INTERVAL 1 DAY;
@@ -42,3 +51,4 @@ SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND
 DROP TABLE t_ttl_insert;
 DROP TABLE t_ttl_insert_where;
 DROP TABLE t_ttl_insert_replicated;
+DROP TABLE t_ttl_insert_mixed;

@@ -372,9 +372,13 @@ void updateTTL(
 /// The other kinds of TTL (`GROUP BY`, `RECOMPRESS`, moves and column TTLs) are not applied.
 void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
 {
-    TTLDescriptions delete_ttls = metadata_snapshot.getRowsWhereTTLs();
+    /// The unconditional rule goes first: if it expires all the rows, the `DELETE WHERE` predicates are not evaluated at all,
+    /// so they cannot throw for rows that would be discarded anyway.
+    TTLDescriptions delete_ttls;
     if (metadata_snapshot.hasRowsTTL())
         delete_ttls.push_back(metadata_snapshot.getRowsTTL());
+    for (const auto & ttl_entry : metadata_snapshot.getRowsWhereTTLs())
+        delete_ttls.push_back(ttl_entry);
 
     const size_t num_rows = block.rows();
     if (delete_ttls.empty() || num_rows == 0)
@@ -384,9 +388,13 @@ void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMet
     const auto & date_lut = DateLUT::instance();
     IColumn::Filter filter(num_rows, 1);
     PaddedPODArray<Int64> timestamps;
+    size_t num_kept_rows = num_rows;
 
     for (const auto & ttl_entry : delete_ttls)
     {
+        if (num_kept_rows == 0)
+            break;
+
         auto expr_and_set = ttl_entry.buildExpression(context);
         for (auto & subquery : expr_and_set.sets->getSubqueries())
             subquery->buildSetInplace(context);
@@ -412,9 +420,10 @@ void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMet
             if (expired && (!where_column || where_column->getBool(i)))
                 filter[i] = 0;
         }
+
+        num_kept_rows = countBytesInFilter(filter);
     }
 
-    size_t num_kept_rows = countBytesInFilter(filter);
     if (num_kept_rows == num_rows)
         return;
 
