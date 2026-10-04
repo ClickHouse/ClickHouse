@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS mv_comment_src;
 DROP TABLE IF EXISTS mv_comment_inner;
+DROP TABLE IF EXISTS mv_comment_two;
 DROP TABLE IF EXISTS mv_comment_view;
 DROP TABLE IF EXISTS mv_comment_to;
 DROP TABLE IF EXISTS mv_comment_target;
@@ -21,6 +22,12 @@ ATTACH TABLE mv_comment_inner;
 SELECT 'modify column', comment FROM system.columns
 WHERE database = currentDatabase() AND table = 'mv_comment_inner' AND name = 'id';
 
+-- MODIFY QUERY rebuilds the view's columns from the query, which carries no comments; the ones the
+-- inner table holds have to come back onto the view.
+ALTER TABLE mv_comment_inner MODIFY QUERY SELECT id FROM mv_comment_src WHERE id > 0;
+SELECT 'modify query', comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_inner' AND name = 'id';
+
 -- A rejected ALTER must not reach the inner table either: a comment left there would surface on the
 -- view at its next ALTER. A Replicated database refuses the mixed statement before the storage sees
 -- it, hence the second error code.
@@ -28,6 +35,22 @@ ALTER TABLE mv_comment_inner COMMENT COLUMN id 'not stored', MODIFY QUERY SELECT
 ALTER TABLE mv_comment_inner MODIFY COMMENT 'unrelated';
 SELECT 'after rejected alter', comment FROM system.columns
 WHERE database = currentDatabase() AND table = 'mv_comment_inner' AND name = 'id';
+
+-- An empty comment is a comment too: it has to reach the inner table and win on the view.
+ALTER TABLE mv_comment_inner COMMENT COLUMN id '';
+SELECT 'cleared comment', empty(comment) FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_inner' AND name = 'id';
+
+-- Only the column the statement names takes its comment from the view; the other keeps the inner
+-- table's, also through the MODIFY QUERY that rebuilds the view's columns without any.
+CREATE MATERIALIZED VIEW mv_comment_two (a UInt64 COMMENT 'a0', b UInt64 COMMENT 'b0')
+    ENGINE = MergeTree ORDER BY a AS SELECT id AS a, id AS b FROM mv_comment_src;
+ALTER TABLE mv_comment_two COMMENT COLUMN a 'a1';
+SELECT 'two columns', name, comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_two' ORDER BY name;
+ALTER TABLE mv_comment_two MODIFY QUERY SELECT id AS a, id AS b FROM mv_comment_src WHERE id > 0;
+SELECT 'two columns after modify query', name, comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_two' ORDER BY name;
 
 -- A regular view has no inner table, so nothing replaces its column descriptions.
 CREATE VIEW mv_comment_view (id UInt64 COMMENT 'initial') AS SELECT id FROM mv_comment_src;
@@ -60,5 +83,6 @@ DROP TABLE mv_comment_dest;
 DROP TABLE mv_comment_to;
 DROP TABLE mv_comment_target;
 DROP TABLE mv_comment_view;
+DROP TABLE mv_comment_two;
 DROP TABLE mv_comment_inner;
 DROP TABLE mv_comment_src;
