@@ -7,8 +7,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -110,15 +108,11 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
+std::map<String, Documentation> ParserWithElement::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementWith(StatementFactory & factory)
-{
-    factory.registerStatement("WITH",
+    documentation["WITH"] =
     {
         .description = R"DOCS_MD(
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
@@ -190,7 +184,7 @@ Materializing ensures all references see the same data.
 - The CTE involves **expensive computations** (aggregations, joins, large scans) that should not be repeated.
 
 <Tip>
-If a materialized CTE is only referenced once, ClickHouse automatically inlines it back into a regular subquery to avoid unnecessary overhead.
+If a materialized CTE is only referenced once, ClickHouse automatically inlines it back into a regular subquery to avoid unnecessary overhead. The exception is a reference from a recursive member of a [recursive](#recursive-queries) CTE: the member is re-executed on every recursion step, so the materialized CTE is kept and evaluated once before the recursion starts.
 </Tip>
 
 ### Examples {#materialized-common-table-expressions-examples}
@@ -278,7 +272,7 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### Restrictions {#materialized-cte-restrictions}
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. If it is disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
-- **The recursive CTE itself cannot be materialized**: `MATERIALIZED` on the self-referencing CTE of a `WITH RECURSIVE` query is not allowed and results in an `UNSUPPORTED_METHOD` exception. Other, non-recursive CTEs of the same `WITH RECURSIVE` clause may be materialized: they are evaluated once and every recursive step reads the snapshot.
+- **The recursive CTE itself cannot be materialized**: in a `WITH RECURSIVE` clause, `MATERIALIZED` is allowed only on helper CTEs that do not reference themselves. A helper referenced from a recursive member is materialized once before the recursion starts and every recursion step reads the same snapshot, so such a helper cannot read the recursive CTE. Marking the recursive CTE itself as `MATERIALIZED` results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
@@ -729,7 +723,9 @@ WITH RECURSIVE <identifier> USING KEY (<key columns>) AS <subquery expression>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
-    });
+    };
+
+    return documentation;
 }
 
 }
