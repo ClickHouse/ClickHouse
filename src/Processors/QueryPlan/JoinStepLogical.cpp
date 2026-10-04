@@ -2025,6 +2025,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         for (const auto & expression : used_expressions)
             used_nodes.insert(expression.getNode());
 
+        std::unordered_set<const ActionsDAG::Node *> visited;
         std::stack<const ActionsDAG::Node *> stack;
         for (const auto * node : used_nodes)
             for (const auto * child : node->children)
@@ -2033,6 +2034,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             const auto * node = stack.top();
             stack.pop();
+            if (!visited.insert(node).second)
+                continue;
             if (node->type == ActionsDAG::ActionType::INPUT)
             {
                 if (!used_nodes.contains(node))

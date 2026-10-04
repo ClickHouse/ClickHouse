@@ -604,39 +604,56 @@ static bool nullExtensionIsNull(const DataTypePtr & type)
 /// Recurses only through null-propagating functions; any other node is opaque and contributes {}.
 static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
-    switch (node->type)
+    BitSet result;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{node};
+
+    while (!stack.empty())
     {
-        case ActionsDAG::ActionType::INPUT:
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            if (!nullExtensionIsNull(node->result_type))
-                return {};
-            /// A leaf column reference is null exactly on its own relation.
-            return JoinActionRef(node, actions).getSourceRelations();
-        case ActionsDAG::ActionType::ALIAS:
-            return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
-        case ActionsDAG::ActionType::FUNCTION:
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(current).second)
+            continue;
+
+        switch (current->type)
         {
-            if (!node->function_base || !isNullPropagatingFunction(*node))
-                return {};
-            BitSet result;
-            for (const auto * child : node->children)
-                result |= strictOnRelations(child, actions);
-            return result;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A leaf column reference is null exactly on its own relation.
+                if (nullExtensionIsNull(current->result_type))
+                    result |= JoinActionRef(current, actions).getSourceRelations();
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                if (!current->children.empty())
+                    stack.push_back(current->children.front());
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (current->function_base && isNullPropagatingFunction(*current))
+                    stack.insert(stack.end(), current->children.begin(), current->children.end());
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                break;
         }
-        case ActionsDAG::ActionType::COLUMN:
-        case ActionsDAG::ActionType::ARRAY_JOIN:
-            return {};
     }
-    return {};
+
+    return result;
 }
+
+using NullRejectingRelationsCache = std::unordered_map<const ActionsDAG::Node *, BitSet>;
+
+static const BitSet & predicateNullRejectingRelations(
+    const ActionsDAG::Node * node, const JoinExpressionActions & actions, NullRejectingRelationsCache & cache);
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
 /// (null-rejecting). Conservative: when unsure it returns a subset of the true answer, which only
 /// tightens the reordering constraints downstream and so stays correct.
-static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
+static BitSet doPredicateNullRejectingRelations(
+    const ActionsDAG::Node * node, const JoinExpressionActions & actions, NullRejectingRelationsCache & cache)
 {
     if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        return predicateNullRejectingRelations(node->children.front(), actions);
+        return predicateNullRejectingRelations(node->children.front(), actions, cache);
 
     if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
     {
@@ -646,15 +663,15 @@ static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, con
         {
             BitSet result;
             for (const auto * child : node->children)
-                result |= predicateNullRejectingRelations(child, actions);
+                result |= predicateNullRejectingRelations(child, actions, cache);
             return result;
         }
         /// OR is rejecting on R only if both disjuncts are.
         if (name == "or" && !node->children.empty())
         {
-            BitSet result = predicateNullRejectingRelations(node->children.front(), actions);
+            BitSet result = predicateNullRejectingRelations(node->children.front(), actions, cache);
             for (size_t i = 1; i < node->children.size(); ++i)
-                result = result & predicateNullRejectingRelations(node->children[i], actions);
+                result = result & predicateNullRejectingRelations(node->children[i], actions, cache);
             return result;
         }
     }
@@ -662,6 +679,21 @@ static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, con
     /// Otherwise the predicate is rejecting wherever it becomes NULL (its false path is ignored,
     /// which is the safe under-approximation). Covers comparisons and bare nullable-bool columns.
     return strictOnRelations(node, actions);
+}
+
+static const BitSet & predicateNullRejectingRelations(
+    const ActionsDAG::Node * node, const JoinExpressionActions & actions, NullRejectingRelationsCache & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    return cache.emplace(node, doPredicateNullRejectingRelations(node, actions, cache)).first->second;
+}
+
+static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
+{
+    NullRejectingRelationsCache cache;
+    return predicateNullRejectingRelations(node, actions, cache);
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)

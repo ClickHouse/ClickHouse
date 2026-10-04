@@ -122,6 +122,8 @@ public:
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
         void updateHash(SipHash & hash_state) const;
+        /// Hashes the node's own fields, not its children.
+        void updateHashWithoutChildren(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
