@@ -693,8 +693,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            std::optional<size_t> file_size;
+            if (object.bytes_size != StoredObject::UnknownSize)
+                file_size = object.bytes_size;
+
             return createReadBufferFromFileBase(
-                s.path, settings, s.read_hint);
+                s.path, settings, s.read_hint, file_size);
         },
         [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
