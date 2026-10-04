@@ -337,6 +337,15 @@ static bool hasEquiConditions(const JoinCondition & condition)
     return false;
 }
 
+static bool hasPreJoinCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
+{
+    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
+    {
+        JoinActionRef action(conjunct, expression_actions);
+        return action.fromLeft() || action.fromRight() || action.fromNone();
+    });
+}
+
 
 static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
 {
@@ -421,7 +430,16 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
                 // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
                 size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
-                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
+                /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
+                /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
+                if (with_key_expression == 0 && builder_context.join_operator.strictness == JoinStrictness::All)
+                    plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
+                    {
+                        return hasPreJoinCondition(clause, builder_context.expression_actions);
+                    });
+
+                if (result.size() > 1 && plan_as_single_clause)
                 {
                     result.clear();
                     buildJoinCondition(node, builder_context, result.emplace_back());
