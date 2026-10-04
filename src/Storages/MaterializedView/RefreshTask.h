@@ -354,6 +354,10 @@ private:
         /// and count 20 seconds from that. This is where we store it.
         std::unordered_map<String, std::chrono::sys_time<std::chrono::nanoseconds>> seen_dep_refresh_times;
 
+        /// Start of the latest refresh attempt on this replica, at full precision. A dependency refresh that
+        /// finished before it was already tried by that attempt (see `determineNextRefreshTime`).
+        std::chrono::system_clock::time_point last_attempt_start_time {};
+
         /// Used in tests. If not INT64_MIN, we pretend that this is the current time, instead of calling system_clock::now().
         std::atomic<Int64> fake_clock {INT64_MIN};
     };

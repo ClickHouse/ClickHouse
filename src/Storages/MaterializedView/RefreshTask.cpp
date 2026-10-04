@@ -1383,6 +1383,7 @@ void RefreshTask::executeRefresh()
     bool on_dependency_cycle = !new_table_uuid.has_value() && dependsOnItselfUnlocked(deps);
     lock.lock();
 
+    scheduling.last_attempt_start_time = execution.start_time;
     auto start_time_seconds = std::chrono::floor<std::chrono::seconds>(execution.start_time);
     auto now = currentTime();
     auto end_time_seconds = std::chrono::floor<std::chrono::seconds>(now);
@@ -1871,10 +1872,11 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
                 /// After the retries ran out, a view on a DEPENDS ON cycle keeps the dependency refreshes it
                 /// failed to process (see `executeRefresh`). Retry them, but not more often than
                 /// `refresh_retry_max_backoff_ms`. A dependency refresh that finished after the failed
-                /// attempt is new, so it is not delayed.
-                if (retries_exhausted && max_time <= znode.last_attempt_time)
-                    when = std::max<std::chrono::system_clock::time_point>(
-                        when, znode.last_attempt_time + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]));
+                /// attempt started is new, so it is not delayed. (`last_attempt_time` is rounded down to
+                /// seconds, too coarse for both.)
+                if (retries_exhausted && max_time <= scheduling.last_attempt_start_time)
+                    when = std::max(
+                        when, scheduling.last_attempt_start_time + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]));
             }
         }
     }
