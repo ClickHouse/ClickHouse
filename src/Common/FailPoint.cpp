@@ -270,6 +270,8 @@ static struct InitFiu
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
+    ONCE(iceberg_metadata_commit_response_lost) \
+    REGULAR(iceberg_metadata_commit_reconcile_fail) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \

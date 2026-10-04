@@ -16,6 +16,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
@@ -51,8 +52,13 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
+/// True for the exception thrown when the commit's outcome cannot be established. A caller must not delete
+/// its staged files on it: they may belong to the snapshot the table now points at.
+bool isCommitStateUnknown(const DB::Exception & e);
+
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Maybe return false if failed to write metadata.json
+/// Returns false only when the commit is known not to have taken effect; an outcome that cannot be established
+/// throws `UNKNOWN_STATUS_OF_TRANSACTION`.
 /// Will try to write hint multiple times, but will not report failure to write hint.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
