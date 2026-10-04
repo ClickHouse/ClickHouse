@@ -307,6 +307,11 @@ namespace
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
+                        // Subjects are extracted with their exact bytes, so an embedded NUL byte survives. No valid
+                        // hostname or URI contains one, and '*' must not match a span like "evil\0" in
+                        // "evil\0.corp.example.com", so such a subject never matches a wildcard.
+                        if (certificate_subject.contains('\0'))
+                            continue;
                         // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
                         if (certificate_subject.size() < prefix.size() + suffix.size())
                             continue;

@@ -727,6 +727,7 @@ To write log messages additionally to syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -743,6 +744,7 @@ Keys for `<syslog>`:
 | `hostname` | The name of the host from which logs are send (optional).                                                                                                                                                                                                      |
 | `facility` | The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a "LOG_" prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.                                           |
 | `format`   | Log message format. Possible values: `bsd` and `syslog.`                                                                                                                                                                                                       |
+| `programname` | Program name used in syslog messages: the local syslog ident, or the `APP-NAME` for remote syslog with `format=syslog`. No effect with `format=bsd`. 1 to 48 printable ASCII characters without spaces. Default: the command name for local syslog, unset for remote syslog. |
 
 **Log formats**
 
