@@ -1,7 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
@@ -482,10 +482,7 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     SortedKeyRuns key_runs(normalized_keys.size());
     while (run_start < num_rows)
     {
-        const UInt64 run_end = key_runs.findRunEnd(
-            run_start,
-            num_rows,
-            [&](size_t i, size_t from, size_t bound) { return normalized_keys[i]->getEqualRangeEndAssumeSorted(from, bound, 1); });
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
         append_run(run_start, run_end - run_start);
 

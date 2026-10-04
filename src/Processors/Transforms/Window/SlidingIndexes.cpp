@@ -22,11 +22,12 @@ std::vector<bool> markKeyChanges(const Columns & columns, size_t rows_count, con
     std::vector<bool> changes(rows_count, false);
     changes[0] = !previous_key || !haveSameKeys(*previous_key, 0, columns, 0, key_indices);
 
-    size_t next_change = getEqualRangeEndAssumeSorted(columns, key_indices, 0, rows_count, /*nan_direction_hint=*/1);
+    SortedKeyRuns key_runs(key_indices.size());
+    size_t next_change = getEqualRangeEndAssumeSorted(key_runs, columns, key_indices, 0, rows_count, /*nan_direction_hint=*/1);
     while (next_change < rows_count)
     {
         changes[next_change] = true;
-        next_change = getEqualRangeEndAssumeSorted(columns, key_indices, next_change, rows_count, /*nan_direction_hint=*/1);
+        next_change = getEqualRangeEndAssumeSorted(key_runs, columns, key_indices, next_change, rows_count, /*nan_direction_hint=*/1);
     }
 
     return changes;

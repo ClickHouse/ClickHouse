@@ -357,6 +357,8 @@ public:
         /// We use zero position as 'is first range in block' detector
         if (position())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor is expected to have initial position 0");
+
+        key_runs.reset(impl.sort_columns.size());
     }
 
     size_t position() const { return impl.getPos(); }
@@ -419,6 +421,7 @@ public:
 private:
     SortCursorImpl impl;
     Columns column_holder;
+    SortedKeyRuns key_runs;
     bool has_left_nullable = false;
     bool has_right_nullable = false;
 
@@ -464,7 +467,7 @@ private:
     size_t getEqualLength()
     {
         const size_t base_pos = impl.getPos();
-        return getEqualRangeEndAssumeSorted(impl.sort_columns, base_pos, impl.rows, 1) - base_pos;
+        return getEqualRangeEndAssumeSorted(key_runs, impl.sort_columns, base_pos, impl.rows, 1) - base_pos;
     }
 };
 
