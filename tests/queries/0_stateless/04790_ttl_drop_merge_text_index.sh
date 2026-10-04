@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The expired rows must reach the TTLDrop merge, which is what this test is about.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --optimize_on_insert=0"
+
 # A TTLDrop merge takes the short-circuit that skips the read pipeline. Every index the
 # resulting empty part must still carry has to be handled there, because the builders that
 # normally produce them live inside the skipped pipeline.

@@ -1,0 +1,18 @@
+-- optimize_on_insert = 1: expired rows are not written, one part for the live rows
+3
+4
+1
+-- a block of only expired rows writes no part
+2
+1
+-- optimize_on_insert = 0: expired rows are written and wait for a merge
+3
+4
+7
+8
+3
+3
+4
+-- TTL DELETE WHERE is not applied on insert
+1
+2

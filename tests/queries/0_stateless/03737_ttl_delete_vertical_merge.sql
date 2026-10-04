@@ -3,6 +3,8 @@
 
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 1;
+-- The expired rows must reach the merge, which is what these tests exercise.
+SET optimize_on_insert = 0;
 
 -- Test 1: Basic TTL delete with vertical merge (mix of expired and non-expired rows)
 DROP TABLE IF EXISTS t_ttl_vert_1;

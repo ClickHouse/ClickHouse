@@ -2150,6 +2150,8 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 Data with an expired `TTL` is removed when ClickHouse merges data parts.
 
+When the setting [optimize_on_insert](/reference/settings/session-settings/optimize#optimize_on_insert) is enabled (the default), an `INSERT` also applies the whole-table `TTL ... DELETE` expression to the inserted block, so a row that is already expired at insert time is not written. Only this form of TTL is applied on insert; `TTL ... DELETE WHERE`, `GROUP BY`, `RECOMPRESS`, `TO DISK`/`TO VOLUME`, and column TTLs are applied during merges only.
+
 When ClickHouse detects that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/reference/statements/optimize) query before `SELECT`.

@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -q '
 '
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now(), 1, 'username1');"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');"
+${CLICKHOUSE_CLIENT} --optimize_on_insert=0 -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');"
 
 # Wait for the merge itself to be logged. Waiting for the parts to be merged into a single active part would
 # take much longer: the TTL merge produces an empty part, which stays active until the cleanup thread drops it.

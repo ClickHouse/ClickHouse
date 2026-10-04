@@ -15,6 +15,8 @@ TTL column_comment + INTERVAL 2 MONTH;
 
 SHOW CREATE TABLE prop_table;
 
+-- The inserted dates are already past the table TTL. The rows have to survive the insert.
+SET optimize_on_insert = 0;
 SYSTEM STOP TTL MERGES prop_table;
 
 INSERT INTO prop_table (column_codec, column_comment, column_ttl) VALUES ('str', toDate('2019-10-01'), 1);

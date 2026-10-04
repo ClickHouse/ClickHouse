@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# The expired rows must reach the TTLDrop merge, which is what this test is about.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --optimize_on_insert=0"
+
 TABLE=t_ttl_drop_not_vertical
 
 function wait_for_ttl_drop_merge()

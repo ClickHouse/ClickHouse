@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS optimize_on_insert = 0, ttl_only_drop_parts = 0, merge_with_ttl_timeout = 10000"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM STOP TTL MERGES t_ttl_aborted_start"
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_ttl_aborted_start VALUES (1, now() - INTERVAL 1 DAY), (2, now() + INTERVAL 1 DAY)"
+$CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO t_ttl_aborted_start VALUES (1, now() - INTERVAL 1 DAY), (2, now() + INTERVAL 1 DAY)"
 
 cleanup() {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT mt_fail_selected_merge_before_start_once" 2>/dev/null

@@ -126,7 +126,7 @@ def gen_triplet_records(num, v_partition, f_gen_string_field, f_gen_datetime_fie
         yield f'({v_partition},{v_string_field},{v_datetime_field})'
 
 
-def populate_with_records(node, table_name, generators):
+def populate_with_records(node, table_name, generators, settings=None):
     print(f'INSTER1 t={datetime.datetime.now()}, {time.time()}')
     for g in generators:
         insert_query = "INSERT INTO {} VALUES {}".format(
@@ -134,7 +134,7 @@ def populate_with_records(node, table_name, generators):
             ','.join(g)
         )
         print(insert_query)
-        node.query(insert_query)
+        node.query(insert_query, settings=settings)
 
 def drop_if_exists(node, table_name):
     try:
@@ -586,6 +586,8 @@ def test_delete(started_cluster, engine, ttl_rule, request):
         node1.query(f"SYSTEM STOP MERGES {table_name}")
         node1.query(f"SYSTEM STOP MOVES {table_name}")
 
+        # `optimize_on_insert` deletes already expired rows on `INSERT`.
+        # This test checks that the merge deletes them.
         populate_with_records(
             node=node1,
             table_name=table_name,
@@ -596,7 +598,8 @@ def test_delete(started_cluster, engine, ttl_rule, request):
                 gen_pair_records(10, F_SMALL_STRING, F_SOON_TO_EXPIRE_DATETIME),
                 gen_pair_records(10, F_SMALL_STRING, F_NEVER_EXPIRE_DATETIME),
                 gen_pair_records(10, F_SMALL_STRING, F_NEVER_EXPIRE_DATETIME),
-            ]
+            ],
+            settings={"optimize_on_insert": 0},
         )
         # Check 1. All records are in place
         assert node1.query(f"SELECT count() FROM {table_name}").strip() == "60"

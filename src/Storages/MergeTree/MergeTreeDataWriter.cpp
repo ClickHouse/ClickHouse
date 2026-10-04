@@ -42,6 +42,7 @@
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
@@ -363,6 +364,20 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info);
+}
+
+/// Removes the rows that the whole-table TTL DELETE has already expired, as a merge would.
+/// The returned info is the TTL of the rows that remain.
+IMergeTreeDataPart::TTLInfo removeExpiredRows(const ContextPtr & context, const TTLDescription & rows_ttl, Block & block)
+{
+    auto expr_and_set = rows_ttl.buildExpression(context);
+    for (auto & subquery : expr_and_set.sets->getSubqueries())
+        subquery->buildSetInplace(context);
+
+    TTLDeleteAlgorithm algorithm(
+        TTLExpressions{expr_and_set.expression, nullptr}, rows_ttl, IMergeTreeDataPart::TTLInfo{}, time(nullptr), /*force_=*/ true);
+    algorithm.execute(block);
+    return algorithm.getNewTTLInfo();
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -815,32 +830,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (patch_part_index && !patch_part_index->empty())
         new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
-    String part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
-        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
-
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-
-        auto min_month = date_lut.toNumYYYYMM(min_date);
-        auto max_month = date_lut.toNumYYYYMM(max_date);
-
-        if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
-
-        part_name = new_part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        part_name = new_part_info.getPartNameV1();
-
-    std::string temp_prefix = "tmp_insert_";
-    const auto & temp_postfix = data.getPostfixForTempInsertName();
-    if (!temp_postfix.empty())
-        temp_prefix += temp_postfix + "_";
-
-    std::string part_dir = temp_prefix + part_name;
-
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
         global_settings[Setting::materialize_skip_indexes_on_insert],
@@ -902,6 +891,28 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
 
+    std::optional<IMergeTreeDataPart::TTLInfo> rows_ttl_info;
+    if (!isPatchPartitionId(new_part_info.getPartitionId())
+        && global_settings[Setting::optimize_on_insert]
+        && metadata_snapshot->hasRowsTTL())
+    {
+        /// writeWithPermutation still applies this permutation, so materialize it before rows disappear.
+        if (perm_ptr)
+        {
+            for (auto & column : block)
+                column.column = column.column->permute(*perm_ptr, 0);
+            perm_ptr = nullptr;
+        }
+
+        const size_t rows_before = block.rows();
+        rows_ttl_info = removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
+        if (block.rows() != rows_before && block.rows() != 0)
+        {
+            minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+            minmax_idx->update(block, minmax_columns);
+        }
+    }
+
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
@@ -929,6 +940,32 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// part only contains empty tuples. As a result, check rows instead.
     if (block.rows() == 0)
         return temp_part;
+
+    String part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
+
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+        auto min_month = date_lut.toNumYYYYMM(min_date);
+        auto max_month = date_lut.toNumYYYYMM(max_date);
+
+        if (min_month != max_month)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
+
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartNameV1();
+
+    std::string temp_prefix = "tmp_insert_";
+    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    if (!temp_postfix.empty())
+        temp_prefix += temp_postfix + "_";
+
+    std::string part_dir = temp_prefix + part_name;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
@@ -1049,7 +1086,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         sync_guard = disk->getDirectorySyncGuard(data_part_storage->getFullPath());
     }
 
-    if (metadata_snapshot->hasRowsTTL())
+    if (rows_ttl_info)
+    {
+        new_data_part->ttl_infos.table_ttl = *rows_ttl_info;
+        new_data_part->ttl_infos.updatePartMinMaxTTL(*rows_ttl_info);
+    }
+    else if (metadata_snapshot->hasRowsTTL())
         updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())

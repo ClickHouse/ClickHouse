@@ -3,6 +3,8 @@
 
 SET session_timezone = 'UTC';
 SET async_insert = 0;
+-- Keep the expired rows in the inserted parts, so that their TTL info and the later merge can be checked.
+SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS t_cast;
 DROP TABLE IF EXISTS t_nullable_ttl;
