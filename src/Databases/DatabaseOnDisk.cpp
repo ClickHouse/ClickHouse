@@ -4,6 +4,8 @@
 #include <iterator>
 #include <memory>
 #include <span>
+#include <unordered_map>
+#include <unordered_set>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
@@ -22,6 +24,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -830,6 +833,58 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     std::sort(metadata_files.begin(), metadata_files.end());
     metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()), metadata_files.end());
+
+    auto table_name_of = [](const String & file_name) { return unescapeForFileName(file_name.substr(0, file_name.size() - 4)); };
+
+    /// A temporary table of `CREATE OR REPLACE` is only moved away from its name: renamed to the target or dropped.
+    /// Where a move is a copy followed by a removal, an interrupted one leaves the source as an exact copy of the destination.
+    std::vector<String> temporary_files;
+    for (const auto & [file_name, is_sql] : metadata_files)
+        if (is_sql && TemporaryReplaceTableName::fromString(table_name_of(file_name)))
+            temporary_files.push_back(file_name);
+
+    if (!temporary_files.empty())
+    {
+        const String database = getDatabaseName();
+        std::unordered_map<String, std::vector<String>> paths_by_name_hash;
+        for (const auto & [file_name, is_sql] : metadata_files)
+            if (is_sql)
+                paths_by_name_hash[TemporaryReplaceTableName::calculateHash(database, table_name_of(file_name))].push_back(
+                    getMetadataPath() + file_name);
+
+        std::unordered_set<String> stale_files;
+        for (const auto & file_name : temporary_files)
+        {
+            const String table_name = table_name_of(file_name);
+            const String path = getMetadataPath() + file_name;
+            const String content = readMetadataFile(db_disk, path);
+
+            std::vector<String> destinations;
+            if (auto it = paths_by_name_hash.find(TemporaryReplaceTableName::fromString(table_name)->name_hash);
+                it != paths_by_name_hash.end())
+                destinations = it->second;
+            if (auto ast = parseQueryFromMetadata(nullptr, getContext(), path, content, /*throw_on_error=*/false))
+                if (UUID uuid = ast->as<ASTCreateQuery &>().uuid; uuid != UUIDHelpers::Nil)
+                    destinations.push_back(DatabaseCatalog::instance().getPathForDroppedMetadata(StorageID(database, table_name, uuid)));
+
+            auto copy = std::ranges::find_if(
+                destinations,
+                [&](const String & destination)
+                { return destination != path && db_disk->existsFile(destination) && readMetadataFile(db_disk, destination) == content; });
+            if (copy == destinations.end())
+                continue;
+
+            stale_files.insert(file_name);
+            if (db_disk->isReadOnly())
+            {
+                LOG_WARNING(log, "Skipping {}: it is a copy of {}", path, *copy);
+                continue;
+            }
+            LOG_WARNING(log, "Removing {}: it is a copy of {}", path, *copy);
+            db_disk->removeFileIfExists(path);
+        }
+        std::erase_if(metadata_files, [&](const auto & file) { return file.second && stale_files.contains(file.first); });
+    }
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
