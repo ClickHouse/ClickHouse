@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, zookeeper, no-shared-merge-tree, no-replicated-database
-# Tag no-replicated-database: lightweight `UPDATE` runs on every replica of the shard and creates two patch parts, https://github.com/ClickHouse/ClickHouse/issues/122285
+# Tags: no-parallel, no-fasttest, zookeeper, no-shared-merge-tree
 # no-parallel: uses failpoints that would intersect with concurrent tests
 # no-fasttest: needs the s3 disk (minio) for a remote read
 # zookeeper: the second stanza needs ReplicatedMergeTree for the broken-part callback
