@@ -249,6 +249,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     if (db)
     {
+        /// The database-level `DDLGuard` taken above only serializes this query against other
+        /// database-level DDL (`CREATE`, `DROP`, `RENAME DATABASE`). Table-level DDL takes the shared
+        /// side of `database_ddl_mutex`, so the exclusive side is what excludes a concurrent
+        /// `CREATE TABLE` / `ATTACH TABLE`: the rename re-keys every table of the database, and
+        /// `renameDatabase` validates and rewrites the exact set of tables it sees under this lock.
+        /// The same lock is held by `CREATE DATABASE` and `DROP DATABASE`.
+        auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
+
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
     }
