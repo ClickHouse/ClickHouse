@@ -16,6 +16,13 @@ namespace DB
 
 class Context;
 
+#if defined(OS_LINUX)
+class ErrnoException;
+
+/// Whether reading a procfs file of a thread failed because the thread has exited:
+/// open() fails with ENOENT or ESRCH, read() of an already opened file with ESRCH.
+bool isThreadExitedError(const ErrnoException & e);
+#endif
 
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
