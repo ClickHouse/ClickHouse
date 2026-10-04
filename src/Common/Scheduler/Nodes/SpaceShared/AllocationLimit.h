@@ -32,11 +32,18 @@ public:
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
     bool setDecrease(DecreaseRequest * new_decrease);
+    bool isTopLevelLimit() const;
+    ResourceCost getOrdinaryLimit(const ResourceAllocation & allocation) const;
+    ResourceCost getEffectiveLimit(const IncreaseRequest & request) const;
 
     ResourceCost max_allocated = default_max_allocated;
 
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
+
+    /// The top-level allocation currently allowed to use the withheld recovery reserve.
+    /// The slot stays occupied until aggregate allocation returns below the ordinary limit.
+    ResourceAllocation * recovery_reserve_owner = nullptr;
 
     SpaceSharedNodePtr child;
 };

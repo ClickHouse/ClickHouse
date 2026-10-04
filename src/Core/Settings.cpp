@@ -4481,6 +4481,12 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
+    DECLARE(Bool, memory_reservation_protect_from_eviction, false, R"(
+Allow regular memory growth of this query to use the reserved memory-recovery capacity before eviction. Only one protected request at a time receives the reserved-capacity retry. If it still does not fit at the resource limit, the existing eviction path is used. Initial and pending admission keep the existing behavior.
+This setting takes effect only if a MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting enabling opt-in reserved-capacity retry before memory-reservation eviction."}, \
+        {"26.9", false, false, "New setting enabling opt-in reserved-capacity retry before memory-reservation eviction."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

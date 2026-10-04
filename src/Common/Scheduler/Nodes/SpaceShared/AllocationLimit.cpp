@@ -31,6 +31,8 @@ void AllocationLimit::updateLimit(UInt64 new_max_allocated)
     if (!child)
         return;
     child->updateMinMaxAllocated(std::min(min_max_allocated, max_allocated));
+    if (recovery_reserve_owner && allocated <= getOrdinaryLimit(*recovery_reserve_owner))
+        recovery_reserve_owner = nullptr;
     // WARNING: We do not force eviction here in cases there is no pending increase request to simplify logic.
     // WARNING: Eventually on the first increase request the limit will be applied.
     if (setIncrease(child->increase, true))
@@ -97,7 +99,15 @@ void AllocationLimit::approveDecrease()
     SCHED_DBG("{} -- approveDecrease({})", getPath(), decrease->allocation.id);
 
     chassert(decrease);
+    ResourceAllocation & decreased_allocation = decrease->allocation;
+    const bool removes_reserve_owner
+        = recovery_reserve_owner == &decreased_allocation && decrease->removing_allocation;
+
     apply(*decrease);
+
+    if (recovery_reserve_owner
+        && (removes_reserve_owner || allocated <= getOrdinaryLimit(*recovery_reserve_owner)))
+        recovery_reserve_owner = nullptr;
 
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
@@ -118,7 +128,23 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
+    bool detached_reserve_owner = false;
+    if (update.detached && recovery_reserve_owner)
+    {
+        for (ISchedulerNode * node = &recovery_reserve_owner->queue; node; node = node->parent)
+        {
+            if (node == update.detached)
+            {
+                detached_reserve_owner = true;
+                break;
+            }
+        }
+    }
+
     apply(update);
+    if (detached_reserve_owner)
+        recovery_reserve_owner = nullptr;
+
     bool reapply_constraint = false;
     if (update.attached)
         reapply_constraint = true;
@@ -167,58 +193,106 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     if (!new_increase)
     {
         // There is no increase request to satisfy anymore, so forget any victim we were
-        // reclaiming from. The killer increase that selected `allocation_to_kill` is gone — its
-        // requester finished, was killed, or (for a never-admitted self-kill, e.g. a query with no
-        // `reserve_memory` that hits the limit on its first increase) was removed via the local
-        // path in `AllocationQueue::processActivation`, which never drives a `removing_allocation`
-        // decrease up to `approveDecrease`. Leaving the pointer set would make the next over-limit
-        // increase see a non-null `allocation_to_kill`, skip issuing a fresh kill, and block forever
-        // (observed as a 600s timeout in `test_scheduler_memory::test_max_memory_limit`). This must
-        // run before the early return below, because in the self-kill case both `increase` and
-        // `new_increase` are already `nullptr`. Any previously-issued `killAllocation` is harmless
-        // if its target has already cleaned up.
+        // reclaiming from. A previously issued kill remains harmless if its target has cleaned up.
         allocation_to_kill = nullptr;
     }
 
     if (!reapply_constraint && increase == new_increase)
         return false;
+
     IncreaseRequest * old_increase = increase;
-    if (new_increase)
+    if (!new_increase)
     {
-        if (allocated + new_increase->size > max_allocated)
+        increase = nullptr;
+        return increase != old_increase;
+    }
+
+    ResourceCost effective_limit = getEffectiveLimit(*new_increase);
+    const ResourceCost requested_total = allocated + new_increase->size;
+
+    if (requested_total > effective_limit)
+    {
+        const bool can_use_recovery_reserve
+            = isTopLevelLimit()
+            && new_increase->kind == IncreaseRequest::Kind::Regular
+            && new_increase->allocation.isProtectedFromEviction()
+            && new_increase->allocation.getRecoveryReservedBytes() != 0;
+
+        if (can_use_recovery_reserve)
+        {
+            if (!recovery_reserve_owner)
+                recovery_reserve_owner = &new_increase->allocation;
+
+            if (recovery_reserve_owner != &new_increase->allocation)
+            {
+                /// Another protected query is still using the reserve. Keep this increase pending
+                /// until a decrease returns that capacity to the ordinary pool.
+                increase = nullptr;
+                return increase != old_increase;
+            }
+
+            /// The reserve owner may use the full resource limit. Beyond that point the existing
+            /// eviction policy is the only fallback.
+            effective_limit = max_allocated;
+        }
+
+        if (requested_total > effective_limit)
         {
             // Limit would be violated, so we have to reclaim resource.
-            // Do not select a victim while a decrease is pending below: `allocated` still contains
-            // memory that is about to be released, so the eviction may be unnecessary. The increase
-            // stays blocked, and every decrease approval re-runs this via `reapply_constraint`; once
-            // the releases prove insufficient and no decrease is pending, the eviction fires.
+            // Do not select a victim while a decrease is pending below: allocated still contains
+            // memory that is about to be released, so the eviction may be unnecessary.
             if (!allocation_to_kill && decrease == nullptr)
             {
                 String details;
-                allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
+                allocation_to_kill = selectAllocationToKill(*new_increase, effective_limit, details);
                 if (allocation_to_kill)
                 {
                     SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
-                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
+                        getPath(), allocated, new_increase->size, effective_limit, new_increase->allocation.id, allocation_to_kill->id);
                     allocation_to_kill->killAllocation(std::make_exception_ptr(
                         Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
                             "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
 
-                    // Introspection
                     new_increase->allocation.queue.countKiller(*this);
                     allocation_to_kill->queue.countVictim(*this);
                 }
             }
-            // Block until there is enough resource to process child's increase request
             increase = nullptr;
         }
         else
-            increase = child->increase; // Can safely process child's increase request
+            increase = child->increase;
     }
     else
-        increase = nullptr; // No more increase requests
+        increase = child->increase;
 
     return increase != old_increase;
+}
+
+bool AllocationLimit::isTopLevelLimit() const
+{
+    for (ISchedulerNode * node = parent; node; node = node->parent)
+    {
+        if (node->getTypeName() == "allocation_limit")
+            return false;
+    }
+    return true;
+}
+
+ResourceCost AllocationLimit::getOrdinaryLimit(const ResourceAllocation & allocation) const
+{
+    const UInt64 reserved = allocation.getRecoveryReservedBytes();
+    if (reserved == 0)
+        return max_allocated;
+    if (reserved >= static_cast<UInt64>(max_allocated))
+        return 0;
+    return max_allocated - static_cast<ResourceCost>(reserved);
+}
+
+ResourceCost AllocationLimit::getEffectiveLimit(const IncreaseRequest & request) const
+{
+    if (!isTopLevelLimit() || recovery_reserve_owner == &request.allocation)
+        return max_allocated;
+    return getOrdinaryLimit(request.allocation);
 }
 
 bool AllocationLimit::setDecrease(DecreaseRequest * new_decrease)
