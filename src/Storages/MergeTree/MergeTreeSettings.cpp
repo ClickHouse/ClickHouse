@@ -2014,6 +2014,15 @@ merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and on
 in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0, \
         {"26.3", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"}) \
+    DECLARE(Bool, vertical_merge_read_in_separate_thread, false, R"(
+If true, a Vertical merge reads and gathers each column in a separate thread, while the thread of the merge
+writes the column. This makes merges of wide columns faster, for example of `JSON` columns, but a merge uses
+two threads instead of one, and it keeps up to two more blocks of the column in memory.
+
+The threads are limited by the server setting [max_merge_helper_threads](/reference/settings/server-settings/settings/max#max_merge_helper_threads).
+If all of them are used, the merge reads the column in its own thread.
+)", 0, \
+        {"26.10", false, false, "New setting to read and gather the columns of a Vertical merge in a separate thread"}) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 )", 0) \
