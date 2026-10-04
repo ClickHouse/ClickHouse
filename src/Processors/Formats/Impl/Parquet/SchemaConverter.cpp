@@ -997,6 +997,10 @@ void SchemaConverter::processPrimitiveColumn(
         /// outside that window, and inside it the day number is the output value.
         const bool date_range_checked
             = converter.date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore;
+        /// `Bool` holds only 0 and 1 (a cast maps every nonzero integer to 1), so the endpoints of a
+        /// non-BOOLEAN column do not bound it.
+        if (type != parq::Type::BOOLEAN && get_output_type().getName() == "Bool")
+            return false;
         if (which.isNativeInteger() || which_is_enum)
         {
             converter.field_signed = which.isNativeInt() || which_is_enum;
