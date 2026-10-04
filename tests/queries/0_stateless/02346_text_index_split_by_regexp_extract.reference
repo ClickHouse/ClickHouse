@@ -16,6 +16,10 @@ nogroup: tokens of each row
 nogroup: hasAnyTokens([22]) -> 1
 1
 nogroup: hasAnyTokens([a]) -> (none, letters are never matches)
+extract phrase: a String phrase extracts no tokens -> (none)
+extract phrase: an Array phrase is taken verbatim -> 1
+1
+1
 DDL validation
 bool literal: hasAnyTokens([green]) -> 1
 1

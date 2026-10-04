@@ -311,6 +311,20 @@ namespace
         }
     };
 
+    /// A protobuf map has no order, so `profile` goes first for its constraints to bind the other settings.
+    SettingsChanges settingsChangesFromMap(const google::protobuf::Map<std::string, std::string> & map)
+    {
+        SettingsChanges changes;
+        for (const auto & [key, value] : map)
+        {
+            if (key == "profile")
+                changes.insert(changes.begin(), {key, value});
+            else
+                changes.push_back({key, value});
+        }
+        return changes;
+    }
+
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
     {
@@ -663,7 +677,7 @@ namespace
     class ReadBufferFromCallback : public ReadBuffer
     {
     public:
-        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>()> & callback_)
             : ReadBuffer(nullptr, 0), callback(callback_) {}
 
     private:
@@ -678,7 +692,7 @@ namespace
             return true;
         }
 
-        std::function<std::pair<const void *, size_t>(void)> callback;
+        std::function<std::pair<const void *, size_t>()> callback;
     };
 
 
@@ -723,7 +737,7 @@ namespace
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
-        void start(const std::function<void(void)> & on_finish_call_callback);
+        void start(const std::function<void()> & on_finish_call_callback);
 
     private:
         void run();
@@ -834,7 +848,7 @@ namespace
             call_thread.join();
     }
 
-    void Call::start(const std::function<void(void)> & on_finish_call_callback)
+    void Call::start(const std::function<void()> & on_finish_call_callback)
     {
         auto runner_function = [this, on_finish_call_callback]
         {
@@ -946,12 +960,7 @@ namespace
 
         query_context = session->makeQueryContext(std::move(client_info));
 
-        /// Prepare settings.
-        SettingsChanges settings_changes;
-        for (const auto & [key, value] : query_info.settings())
-        {
-            settings_changes.push_back({key, value});
-        }
+        auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
@@ -1278,9 +1287,7 @@ namespace
                     {
                         temp_context = Context::createCopy(query_context);
                         external_table_context = temp_context;
-                        SettingsChanges settings_changes;
-                        for (const auto & [key, value] : external_table.settings())
-                            settings_changes.push_back({key, value});
+                        auto settings_changes = settingsChangesFromMap(external_table.settings());
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
