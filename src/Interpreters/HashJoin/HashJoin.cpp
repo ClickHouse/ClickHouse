@@ -963,16 +963,25 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             }
             else
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
-
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
 
                 /// Intersect with the original selector to keep only rows that
                 /// both belong to this partition and have a non-NULL ASOF key
-                for (size_t r : selector)
-                    if (!asof_column_nullable[r])
-                        new_selector_data.push_back(r);
+                if (const auto * asof_column_nullable = checkAndGetColumn<ColumnNullable>(asof_column.column.get()))
+                {
+                    const auto & null_map = asof_column_nullable->getNullMapData();
+                    for (size_t r : selector)
+                        if (!null_map[r])
+                            new_selector_data.push_back(r);
+                }
+                else
+                {
+                    /// A right-side column can carry the lazy replication wrapper, whose isNullAt() resolves the logical row.
+                    for (size_t r : selector)
+                        if (!asof_column.column->isNullAt(r))
+                            new_selector_data.push_back(r);
+                }
 
                 selector = ScatteredBlock::Selector(std::move(new_selector));
             }
