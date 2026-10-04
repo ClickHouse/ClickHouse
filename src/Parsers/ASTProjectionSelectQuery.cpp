@@ -225,7 +225,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     auto setExpr = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
     {
-        auto child = r.readChild(key);
+        auto child = r.readExpressionChild(key);
         if (child)
             this->setExpression(expr, std::move(child));
     };
@@ -234,7 +234,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `as<ASTExpressionList &>()`, so reject a non-list node from malformed `clickhouse_json`.
     auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr, bool require_nonempty)
     {
-        if (auto child = r.readCommaSeparatedExpressionListChild(key, require_nonempty))
+        if (auto child = r.readCommaSeparatedExpressionListChild(key, require_nonempty, /* screen_expressions = */ true))
             this->setExpression(expr, std::move(child));
     };
 
@@ -242,7 +242,8 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `formatImpl` always formats the SELECT expression list and unconditionally
     /// casts it to `ASTExpressionList`, so it must be present and of the right type.
-    auto select_child = r.readCommaSeparatedExpressionListChild("select", /* require_nonempty = */ true);
+    auto select_child = r.readCommaSeparatedExpressionListChild(
+        "select", /* require_nonempty = */ true, /* screen_expressions = */ true);
     if (!select_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
     setExpression(Expression::SELECT, std::move(select_child));
@@ -257,7 +258,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `ASTExpressionList` or a sort-wrapper node. Such shapes would format as an ordinary
     /// `ORDER BY a, b` but later fail in projection analysis when `cloneToASTSelect` splices the
     /// node into the synthetic `SELECT` list, so reject them at the JSON boundary.
-    if (auto order_by_child = r.readChild("order_by"))
+    if (auto order_by_child = r.readExpressionChild("order_by"))
     {
         if (order_by_child->as<ASTExpressionList>() || order_by_child->as<ASTOrderByElement>()
             || order_by_child->as<ASTStorageOrderByElement>())

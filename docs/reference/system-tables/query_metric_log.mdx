@@ -821,6 +821,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/reference/data-types/int-uint)) — Number of times the global memory limit was exceeded.
 - `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/reference/data-types/int-uint)) — Number of times memory has been allocated without checking for memory constraints.
 - `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of bytes that has been allocated without checking for memory constraints.
+- `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/reference/data-types/int-uint)) — Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.
+- `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/reference/data-types/int-uint)) — Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.
 - `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/reference/data-types/int-uint)) — Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.
 - `ProfileEvent_AzureGetObject` ([UInt64](/reference/data-types/int-uint)) — Number of Azure API GetObject calls.
 - `ProfileEvent_AzureUpload` ([UInt64](/reference/data-types/int-uint)) — Number of Azure blob storage API Upload calls
@@ -971,6 +973,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.
 - `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
 - `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
+- `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
