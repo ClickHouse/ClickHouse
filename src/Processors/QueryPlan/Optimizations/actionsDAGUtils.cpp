@@ -743,7 +743,9 @@ bool allOutputsDependsOnlyOnAllowedNodes(
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
-                UNREACHABLE();
+                /// An exploded array element is not a per-row function of its source row, so the key
+                /// value it feeds is not determined by the allowed nodes.
+                break;
             case ActionsDAG::ActionType::COLUMN:
                 /// Constants doesn't matter, so let's always consider them matched.
                 res = true;
