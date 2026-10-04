@@ -415,7 +415,7 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
     return false;
 }
 
-NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
+NameAndTypePair chooseColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -445,9 +445,23 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     };
 
     std::vector<ColumnWithSize> columns_with_sizes;
+    auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+
+    bool has_allowed_physical_column = false;
+    if (!column_names_allowed_to_select.empty())
+    {
+        has_allowed_physical_column = std::any_of(
+            column_names_and_types.begin(),
+            column_names_and_types.end(),
+            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
+    }
+
+    /// This column is only an internal row-count carrier. Its values are not exposed to the user,
+    /// so it does not need to be one of the columns granted by a column-level SELECT privilege.
+    if (auto column_for_row_count = storage->getColumnForRowCount(storage_snapshot))
+        return *column_for_row_count;
 
     auto column_sizes = storage->getColumnSizes();
-    auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
     if (!column_names_allowed_to_select.empty())
     {
@@ -458,11 +472,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         /// physical columns: reading any of them just to determine the number of rows for a trivial query
         /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
         /// reading its physical source columns anyway and no column values are exposed to the user.
-        bool has_allowed_physical_column = std::any_of(
-            column_names_and_types.begin(),
-            column_names_and_types.end(),
-            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
-
         if (has_allowed_physical_column)
         {
             auto it = column_names_and_types.begin();
@@ -845,7 +854,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
+            additional_column_to_read = chooseColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
         }
         else if (query_node || union_node)
         {
@@ -872,7 +881,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
-            table_expression_data.addColumn(additional_column_to_read, column_identifier);
+            table_expression_data.addColumn(additional_column_to_read, column_identifier, /* is_selected_column */ false);
             table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
         }
     }

@@ -1,0 +1,18 @@
+restore into a new table
+1	11	22
+2	12	24
+3	13	26
+4	100	200
+restore into a non-empty table
+1	11	22
+1	11	22
+2	12	24
+2	12	24
+3	13	26
+3	13	26
+4	100	200
+4	100	200
+5	50	500
+9	25	322	1044
+restore into a table with a different default
+0

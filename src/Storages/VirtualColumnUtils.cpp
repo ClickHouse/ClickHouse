@@ -932,7 +932,8 @@ Names filterVirtualColumns(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const VirtualsKind & kind_to_filter,
-    const VirtualsMaterializationPlace & place_to_filter)
+    const VirtualsMaterializationPlace & place_to_filter,
+    const std::optional<NameAndTypePair> & column_to_read_if_empty)
 {
     Names result;
     result.reserve(column_names.size());
@@ -948,8 +949,12 @@ Names filterVirtualColumns(
     /// If all requested columns were common virtuals, we still need at least one
     /// physical column so the storage has something to read.
     if (result.empty())
-        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+    {
+        if (column_to_read_if_empty)
+            result.push_back(column_to_read_if_empty->name);
+        else if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
             result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+    }
 
     return result;
 }
@@ -971,7 +976,10 @@ NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & co
     return result;
 }
 
-std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::optional<NameAndTypePair> & column_to_read_if_empty)
 {
     Names physical_names;
     Names virtual_names;
@@ -990,8 +998,13 @@ std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_
     /// We must always read at least one physical column to determine the number of rows.
     if (physical_names.empty())
     {
-        auto smallest = ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical());
-        physical_names.push_back(smallest.name);
+        if (column_to_read_if_empty)
+            physical_names.push_back(column_to_read_if_empty->name);
+        else
+        {
+            auto smallest = ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical());
+            physical_names.push_back(smallest.name);
+        }
     }
 
     return {std::move(physical_names), std::move(virtual_names)};
