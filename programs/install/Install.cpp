@@ -940,7 +940,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 if (users_config_files.front().is_relative())
                 {
                     const fs::path first_users_config = users_config_files.front().lexically_normal();
-                    if (first_users_config == "users.xml" || first_users_config == "users.yaml" || first_users_config == "users.yml")
+                    /// The extension is compared case-insensitively, like `ConfigProcessor::parseConfig` does.
+                    std::string first_users_config_extension = first_users_config.extension().string();
+                    toLowerASCII(first_users_config_extension);
+                    const bool is_stock_users_config = !first_users_config.has_parent_path() && first_users_config.stem() == "users"
+                        && (first_users_config_extension == ".xml" || first_users_config_extension == ".yaml"
+                            || first_users_config_extension == ".yml");
+                    if (is_stock_users_config)
                         users_config_files.front() = (config_dir / first_users_config).lexically_normal();
                     else
                         unresolved_users_config_file = users_config_files.front();
