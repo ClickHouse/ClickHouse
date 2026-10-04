@@ -1,0 +1,5 @@
+10
+0
+1
+Aggregating Join ReadFromMergeTree Union ReadFromMergeTree ReadFromParallelReplicas
+Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
