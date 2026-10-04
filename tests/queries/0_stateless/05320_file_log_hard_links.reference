@@ -1,0 +1,80 @@
+app.log	1
+app.log	2
+-- a hard link is not read
+app.log	3
+-- a write through the other name is read under the read name
+app.log	4
+-- the read name is removed, and the other name is linked again and then removed: read on, not from the start
+new.log	5
+-- the same name is linked again
+6
+-- link and unlink: the only other name reads on
+next.log	7
+-- a hard link renamed into the directory is not read
+next.log	8
+-- the read name is replaced by another file: the other name reads on, the new file is read from the start
+keep.log	10
+next.log	9
+-- a hard link re-linked to another file: a write through it is read under that file
+keep.log	12
+keep.log	13
+next.log	14
+-- a hard link made while the table is detached
+keep.log	11
+-- hard links and a symbolic link that exist when the table is created
+a.log	1
+a.log	2
+-- a symbolic link that exists when the table is created
+a.log	1
+-- hard links and symbolic links to a read file are not read
+a.log	2
+-- the read name is removed: a hard link reads on, not a symbolic link
+b.log	3
+-- symbolic links that no longer point to the file do not keep it: a file linked back from outside the directory is read from the start
+v.log	1
+v.log	2
+v.log	3
+v.log	4
+-- a symbolic link to a file outside the directory is read
+z.log	5
+-- a hard link to a file read under a symbolic link reads it on
+y.log	6
+-- the hard link is removed: the symbolic link reads on
+z.log	7
+-- a symbolic link that no longer points to the file does not keep it either when it is the read name
+w.log	5
+w.log	6
+w.log	7
+w.log	8
+-- a symbolic link renamed over the read name: a hard link of the file reads on, also after the link target is removed
+h.log	9
+k.log	10
+-- the read name is removed: a hard link reads on before a symbolic link to the file outside the directory
+m.log	11
+-- a symbolic link to the read name does not keep the file: the name re-created with the same inode is read from the start
+r.log	20
+r.log	21
+r.log	22
+r.log	23
+-- a symbolic link out of the directory that no longer points to the file does not keep it: the name linked back is read from the start
+m.log	10
+m.log	11
+m.log	12
+m.log	5
+m.log	6
+m.log	7
+m.log	8
+m.log	9
+-- a symbolic link to a symbolic link out of the directory follows that name: the name re-created is read from the start
+q.log	30
+q.log	31
+q.log	32
+q.log	33
+-- symbolic links made while the table is detached: the link out of the directory is read, and the link to it follows its name
+u.log	40
+u.log	41
+u.log	42
+u.log	43
+-- a symbolic link out of the directory renamed over the read name: a hard link of the file reads on
+e.log	50
+f.log	51

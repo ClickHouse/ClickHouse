@@ -76,9 +76,16 @@ public:
     {
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
+        bool is_symlink = false;
         std::optional<std::ifstream> reader = std::nullopt;
         /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
         bool open_failed = false;
+    };
+
+    struct OtherName
+    {
+        UInt64 inode = 0;
+        bool is_symlink = false;
     };
 
     struct FileMeta
@@ -98,6 +105,8 @@ public:
         FileNameToContext context_by_name;
         /// File names without path.
         Names file_names;
+        /// Names in the directory (hard links, symbolic links) of files read under another name; they are not read.
+        std::unordered_map<String, OtherName> other_names;
     };
 
     auto & getFileInfos() { return file_infos; }
@@ -213,13 +222,28 @@ private:
     /// Apply a "file `file_name` now refers to a regular file with `inode`" event
     /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
     /// If the name was previously tracked with a different inode (delete+recreate
-    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
-    /// stale on-disk meta file, guarded by filename ownership: we only drop the
-    /// stale entry if it still claims this `file_name`, so that a rename pair
+    /// or rename-over), releases the stale inode with `releaseInode`, which only
+    /// acts if its meta still claims this `file_name`, so that a rename pair
     /// re-assigning the old inode to a different filename earlier in the batch
     /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
     /// and pushes the name into `file_names` exactly once.
-    void onFileAppeared(const String & file_name, UInt64 inode);
+    void onFileAppeared(const String & file_name, UInt64 inode, bool is_symlink);
+
+    /// Whether `file_name` provably no longer refers to `inode`.
+    bool isGone(const String & file_name, UInt64 inode) const;
+    /// Whether resolving the symbolic link `file_name` goes through a name directly in the watched directory.
+    bool resolvesIntoDirectory(const String & file_name) const;
+    /// Handles a new name of a file read under another name; returns whether the event is fully handled.
+    bool addOtherName(const String & file_name, UInt64 inode, bool is_symlink);
+    /// The other name of `inode` that takes the file over, and whether it is gone.
+    std::optional<std::pair<String, bool>> findOtherName(UInt64 inode);
+    /// `file_name` no longer has `inode`: hands the file over to one of its other names, or drops its meta.
+    void releaseInode(const String & file_name, UInt64 inode);
+    /// Stops reading `file_name`, releasing its inode first.
+    void untrackReadName(const String & file_name);
+    /// Marks the name `inode` is read under as updated, unless it is removed or no longer has the file.
+    void markReadNameUpdated(UInt64 inode);
+    void moveMetaFile(const String & from, const String & to) const;
 
     size_t getTableDependentCount() const;
 

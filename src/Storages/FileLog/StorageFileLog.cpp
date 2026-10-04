@@ -34,6 +34,7 @@
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
+#include <cerrno>
 #include <sys/stat.h>
 
 namespace DB
@@ -85,6 +86,13 @@ namespace
         new_context->setSetting("input_format_tsv_detect_header", false);
         new_context->setSetting("input_format_custom_detect_header", false);
         return new_context;
+    }
+
+    /// An `lstat` error counts as a symbolic link, so that such a name is checked with `stat`.
+    bool isSymlink(const String & path)
+    {
+        struct stat st{};
+        return lstat(path.c_str(), &st) != 0 || S_ISLNK(st.st_mode);
     }
 }
 
@@ -314,11 +322,43 @@ void StorageFileLog::loadFiles()
     }
 
     /// Get files inode
+    std::vector<UInt64> inodes;
+    std::vector<bool> symlinks;
+    std::vector<bool> follows;
+    inodes.reserve(file_infos.file_names.size());
+    symlinks.reserve(file_infos.file_names.size());
+    follows.reserve(file_infos.file_names.size());
     for (const auto & file : file_infos.file_names)
     {
-        auto inode = getInode(getFullDataPath(file));
-        file_infos.context_by_name.emplace(file, FileContext{.inode = inode});
+        inodes.push_back(getInode(getFullDataPath(file)));
+        symlinks.push_back(isSymlink(getFullDataPath(file)));
+        follows.push_back(symlinks.back() && resolvesIntoDirectory(file));
     }
+
+    /// A file with several names is read under one of them: a hard link, then a symbolic link that does not resolve through another name in the directory, then the name in its meta, then the smallest.
+    auto read_key = [&](size_t i)
+    {
+        auto meta = file_infos.meta_by_inode.find(inodes[i]);
+        const bool is_meta_name = meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_infos.file_names[i];
+        return std::tuple<bool, bool, bool, const String &>(symlinks[i], follows[i], !is_meta_name, file_infos.file_names[i]);
+    };
+    std::unordered_map<UInt64, size_t> read_index_by_inode;
+    for (size_t i = 0; i < inodes.size(); ++i)
+    {
+        auto [it, inserted] = read_index_by_inode.emplace(inodes[i], i);
+        if (!inserted && read_key(i) < read_key(it->second))
+            it->second = i;
+    }
+
+    for (size_t i = 0; i < inodes.size(); ++i)
+    {
+        const auto & file = file_infos.file_names[i];
+        if (read_index_by_inode.at(inodes[i]) == i)
+            file_infos.context_by_name.emplace(file, FileContext{.inode = inodes[i], .is_symlink = symlinks[i]});
+        else
+            file_infos.other_names.emplace(file, OtherName{.inode = inodes[i], .is_symlink = symlinks[i]});
+    }
+    std::erase_if(file_infos.file_names, [&](const String & file) { return file_infos.other_names.contains(file); });
 
     /// Update file meta or create file meta
     for (const auto & [file, ctx] : file_infos.context_by_name)
@@ -418,7 +458,14 @@ void StorageFileLog::deserialize()
         if (!metadata)
             continue;
 
-        file_infos.meta_by_inode.emplace(inode, metadata);
+        /// Meta files of one inode under several names describe the same file; the larger offset is how far it was read.
+        auto [it, inserted] = file_infos.meta_by_inode.emplace(inode, metadata);
+        if (!inserted)
+        {
+            if (it->second.last_writen_position < metadata.last_writen_position)
+                std::swap(it->second, metadata);
+            files_to_remove.push_back(getFullMetaPath(metadata.file_name));
+        }
     }
 
     for (const auto & file : files_to_remove)
@@ -1030,7 +1077,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links, or symbolic links to it) is read once, under one of its names. When that name is removed, the file is read on from the same position under another of its names that the table has already seen. If there is none, a later name of the file counts as a new file and is read from the beginning. A symbolic link that resolves through another name in the directory follows that name and does not keep the file once that name is removed.
 
 A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
@@ -1100,25 +1147,199 @@ Unlike the message-broker engines, `FileLog` cannot be protected against this by
             .related = {"Kafka", "RabbitMQ", "NATS"}});
 }
 
-void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
+void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode, bool is_symlink)
 {
     auto it = file_infos.context_by_name.find(file_name);
     if (it == file_infos.context_by_name.end())
     {
         file_infos.file_names.push_back(file_name);
-        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode, .is_symlink = is_symlink});
         return;
     }
     if (it->second.inode != inode)
+        releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+    file_infos.context_by_name[file_name] = FileContext{.inode = inode, .is_symlink = is_symlink};
+}
+
+bool StorageFileLog::isGone(const String & file_name, UInt64 inode) const
+{
+    const String full_path = getFullDataPath(file_name);
+    struct stat st{};
+    if (stat(full_path.c_str(), &st) != 0)
+        return errno == ENOENT || errno == ENOTDIR || errno == ELOOP; /// Another error proves nothing.
+    return st.st_ino != inode;
+}
+
+bool StorageFileLog::resolvesIntoDirectory(const String & file_name) const
+{
+    std::error_code ec;
+    const auto root = std::filesystem::canonical(root_data_path, ec);
+    if (ec)
+        return false;
+    std::filesystem::path link = getFullDataPath(file_name);
+    /// At most as many links as Linux follows.
+    for (size_t hops = 0; hops < 40 && FS::isSymlinkNoThrow(link); ++hops)
     {
-        if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
-            meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+        std::filesystem::path target;
+        try
         {
-            file_infos.meta_by_inode.erase(meta);
-            disk->removeFileIfExists(getFullMetaPath(file_name));
+            target = FS::readSymlink(link);
+        }
+        catch (const std::filesystem::filesystem_error &)
+        {
+            return false;
+        }
+        if (target.is_relative())
+            target = link.parent_path() / target;
+        const auto dir = std::filesystem::canonical(target.parent_path(), ec);
+        if (ec)
+            return false;
+        if (dir == root)
+            return true;
+        link = dir / target.filename();
+    }
+    return false;
+}
+
+bool StorageFileLog::addOtherName(const String & file_name, UInt64 inode, bool is_symlink)
+{
+    file_infos.other_names.erase(file_name);
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end())
+        return false;
+
+    /// A symbolic link is not the read name while the file has a hard link in the directory, or while it resolves through another name in the directory.
+    bool only_other_name = false;
+    if (is_symlink)
+    {
+        auto other = findOtherName(inode);
+        only_other_name = resolvesIntoDirectory(file_name)
+            || (other && !other->second && !file_infos.other_names.at(other->first).is_symlink);
+    }
+
+    if (!only_other_name)
+    {
+        if (meta->second.file_name == file_name)
+            return false;
+        auto read = file_infos.context_by_name.find(meta->second.file_name);
+        if (read == file_infos.context_by_name.end() || read->second.inode != inode || read->second.status == FileStatus::REMOVED)
+            return false;
+
+        if (read->second.is_symlink)
+        {
+            /// A symbolic link can stop pointing to the file with no event, so the file is read under the new name.
+            if (isGone(read->first, inode))
+            {
+                read->second.status = FileStatus::REMOVED; /// The cleanup loop drops it; the new name is handled as a new one.
+                return false;
+            }
+            const String link = read->first;
+            untrackReadName(file_name);
+            /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
+            file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
+            moveMetaFile(link, file_name);
+            file_infos.other_names.erase(file_name);
+            file_infos.context_by_name.erase(link);
+            std::erase(file_infos.file_names, link);
+            file_infos.other_names.emplace(link, OtherName{.inode = inode, .is_symlink = true});
+            onFileAppeared(file_name, inode, is_symlink);
+            file_infos.meta_by_inode.at(inode).file_name = file_name;
+            return true;
         }
     }
-    it->second = FileContext{.inode = inode};
+
+    untrackReadName(file_name);
+    file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
+    /// The watcher keeps one modification event per name and batch, so a write through this name may have none.
+    markReadNameUpdated(inode);
+    return true;
+}
+
+std::optional<std::pair<String, bool>> StorageFileLog::findOtherName(UInt64 inode)
+{
+    /// A hard link is a name of the file until its removal event is processed, so a gone one is kept. A symbolic link is dropped when gone, or when it resolves through another name in the directory, which has its own events.
+    std::optional<std::tuple<bool, bool, String>> best; /// (gone, is_symlink, name)
+    for (auto it = file_infos.other_names.begin(); it != file_infos.other_names.end();)
+    {
+        if (it->second.inode != inode)
+        {
+            ++it;
+            continue;
+        }
+        const bool gone = isGone(it->first, inode);
+        if (it->second.is_symlink && (gone || resolvesIntoDirectory(it->first)))
+        {
+            it = file_infos.other_names.erase(it);
+            continue;
+        }
+        std::tuple<bool, bool, String> candidate{gone, it->second.is_symlink, it->first};
+        if (!best || candidate < *best)
+            best = std::move(candidate);
+        ++it;
+    }
+    if (!best)
+        return std::nullopt;
+    return std::pair{std::get<2>(*best), std::get<0>(*best)};
+}
+
+void StorageFileLog::moveMetaFile(const String & from, const String & to) const
+{
+    if (disk->existsFile(getFullMetaPath(from)))
+        disk->replaceFile(getFullMetaPath(from), getFullMetaPath(to));
+    else
+        disk->removeFileIfExists(getFullMetaPath(to)); /// A meta file under `to` belongs to another file.
+}
+
+void StorageFileLog::releaseInode(const String & file_name, UInt64 inode)
+{
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end() || meta->second.file_name != file_name)
+        return;
+    /// The meta file is moved or removed before the maps change, so that a throw leaves them as they were.
+    auto other = findOtherName(inode);
+    if (!other)
+    {
+        disk->removeFileIfExists(getFullMetaPath(file_name));
+        file_infos.meta_by_inode.erase(meta);
+        return;
+    }
+    const auto & [other_name, gone] = *other;
+    moveMetaFile(file_name, other_name);
+    const bool is_symlink = file_infos.other_names.at(other_name).is_symlink;
+    file_infos.other_names.erase(other_name);
+    meta->second.file_name = other_name;
+    /// A gone name is not read: its pending removal hands the file on.
+    file_infos.context_by_name.emplace(
+        other_name, FileContext{.status = gone ? FileStatus::NO_CHANGE : FileStatus::OPEN, .inode = inode, .is_symlink = is_symlink});
+    file_infos.file_names.push_back(other_name);
+}
+
+void StorageFileLog::untrackReadName(const String & file_name)
+{
+    auto it = file_infos.context_by_name.find(file_name);
+    if (it == file_infos.context_by_name.end())
+        return;
+    releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+    file_infos.context_by_name.erase(file_name);
+    std::erase(file_infos.file_names, file_name);
+}
+
+void StorageFileLog::markReadNameUpdated(UInt64 inode)
+{
+    auto meta = file_infos.meta_by_inode.find(inode);
+    if (meta == file_infos.meta_by_inode.end())
+        return;
+    auto read = file_infos.context_by_name.find(meta->second.file_name);
+    if (read == file_infos.context_by_name.end() || read->second.status == FileStatus::REMOVED)
+        return;
+    /// A hard link that no longer has the file has a pending event that hands the file over; a symbolic link has none.
+    if (isGone(read->first, inode))
+    {
+        if (read->second.is_symlink)
+            read->second.status = FileStatus::REMOVED;
+        return;
+    }
+    read->second.status = FileStatus::UPDATED;
 }
 
 bool StorageFileLog::updateFileInfos()
@@ -1179,8 +1400,30 @@ bool StorageFileLog::updateFileInfos()
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+                    const bool is_symlink = isSymlink(file_path);
 
-                    onFileAppeared(file_name, inode);
+                    if (addOtherName(file_name, inode, is_symlink))
+                        break;
+
+                    /// The file kept another name in the directory, so it is not new: it is read on like a renamed one.
+                    const bool kept_other_name = file_infos.meta_by_inode.contains(inode) && findOtherName(inode).has_value();
+
+                    if (kept_other_name)
+                    {
+                        if (const String read_name = file_infos.meta_by_inode.at(inode).file_name; read_name != file_name)
+                        {
+                            untrackReadName(file_name);
+                            /// Until its meta file has moved, `file_name` is another name of the file, so a failed move leaves it tracked.
+                            file_infos.other_names.emplace(file_name, OtherName{.inode = inode, .is_symlink = is_symlink});
+                            moveMetaFile(read_name, file_name);
+                            file_infos.other_names.erase(file_name);
+                        }
+                        onFileAppeared(file_name, inode, is_symlink);
+                        file_infos.meta_by_inode.at(inode).file_name = file_name;
+                        break;
+                    }
+
+                    onFileAppeared(file_name, inode, is_symlink);
 
                     /// An added file is read from offset 0, so any on-disk meta
                     /// under this name is stale. Drop it to stay consistent with
@@ -1204,6 +1447,8 @@ bool StorageFileLog::updateFileInfos()
                 /// skip it, the file info will be handled in DW_ITEM_ADDED case.
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::UPDATED;
+                else if (auto other = file_infos.other_names.find(file_name); other != file_infos.other_names.end())
+                    markReadNameUpdated(other->second.inode);
                 break;
             }
 
@@ -1211,6 +1456,7 @@ bool StorageFileLog::updateFileInfos()
             /// The file **left** the directory
             case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
             {
+                file_infos.other_names.erase(file_name);
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                     it->second.status = FileStatus::REMOVED;
                 break;
@@ -1223,8 +1469,12 @@ bool StorageFileLog::updateFileInfos()
                 if (std::filesystem::is_regular_file(file_path))
                 {
                     auto inode = getInode(file_path);
+                    const bool is_symlink = isSymlink(file_path);
 
-                    onFileAppeared(file_name, inode);
+                    if (addOtherName(file_name, inode, is_symlink))
+                        break;
+
+                    onFileAppeared(file_name, inode, is_symlink);
 
                     /// File has been renamed, we should also rename meta file
                     if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
@@ -1235,8 +1485,7 @@ bool StorageFileLog::updateFileInfos()
                         /// std::filesystem would resolve them against the process CWD and silently skip
                         /// the rename, leaving a stale meta file that collides when the name is reused
                         /// (e.g. a logrotate rename chain processed in one batch).
-                        if (disk->existsFile(getFullMetaPath(old_name)))
-                            disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        moveMetaFile(old_name, file_name);
                     }
                     /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
@@ -1246,34 +1495,39 @@ bool StorageFileLog::updateFileInfos()
             }
         }
     }
-    std::vector<String> valid_files;
+    Names names;
+    /// Rebuilt below: a removed name can hand its file over to another name, which is appended to `file_names`.
+    names.swap(file_infos.file_names);
 
     /// Remove file infos with REMOVE status
-    for (const auto & file_name : file_infos.file_names)
+    size_t i = 0;
+    try
     {
-        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+        for (; i < names.size(); ++i)
         {
-            if (it->second.status == FileStatus::REMOVED)
+            const String & file_name = names[i];
+            auto it = file_infos.context_by_name.find(file_name);
+            if (it == file_infos.context_by_name.end())
+                continue;
+            if (it->second.status != FileStatus::REMOVED)
             {
-                /// We need to check that this inode does not hold by other file(mv),
-                /// otherwise, we can not destroy it.
-                auto inode = it->second.inode;
-                /// If it's now hold by other file, than the file_name should has
-                /// been changed during updating file_infos
-                if (auto meta = file_infos.meta_by_inode.find(inode);
-                    meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
-                    file_infos.meta_by_inode.erase(meta);
-
-                disk->removeFileIfExists(getFullMetaPath(file_name));
-                file_infos.context_by_name.erase(it);
+                file_infos.file_names.push_back(file_name);
+                continue;
             }
-            else
-            {
-                valid_files.push_back(file_name);
-            }
+            /// If the inode is now held by another name (mv), its meta names that one and is kept.
+            releaseInode(file_name, it->second.inode); /// May rehash `context_by_name`, so `it` is invalid after it.
+            file_infos.context_by_name.erase(file_name);
+            disk->removeFileIfExists(getFullMetaPath(file_name));
         }
     }
-    file_infos.file_names.swap(valid_files);
+    catch (...)
+    {
+        /// A name whose release failed is still tracked: it and the names after it stay, and the next call retries.
+        for (; i < names.size(); ++i)
+            if (file_infos.context_by_name.contains(names[i]))
+                file_infos.file_names.push_back(names[i]);
+        throw;
+    }
 
     /// These file infos should always have same size(one for one)
     chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
