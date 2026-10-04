@@ -1071,7 +1071,7 @@ namespace
             const auto * array_column = assert_cast<const ColumnArray *>(column.get());
             const auto & nested_column = array_column->getDataPtr();
             const auto & offsets = array_column->getOffsets();
-            auto offset = offsets[row_num - 1];
+            auto offset = offsets[static_cast<ssize_t>(row_num) - 1];
             UInt32 size = static_cast<UInt32>(offsets[row_num] - offset);
 
             if (!field_builder)

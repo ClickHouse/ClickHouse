@@ -152,7 +152,7 @@ void SerializationStringSize::deserializeWithStringData(
     const auto & offsets = assert_cast<const ColumnString &>(*string_column).getOffsets();
     size_t prev_size = offsets.size() - num_read_rows;
     for (size_t i = prev_size; i != offsets.size(); ++i)
-        sizes_data.push_back(offsets[i] - offsets[i - 1]);
+        sizes_data.push_back(offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
 }
 
 void SerializationStringSize::deserializeWithoutStringData(

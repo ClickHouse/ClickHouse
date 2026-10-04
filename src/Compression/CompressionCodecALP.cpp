@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -702,6 +703,7 @@ private:
         return total_size;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt8 calculateEncodeBits(const Int64 min_value, const Int64 max_value)
     {
         if (unlikely(min_value > max_value))

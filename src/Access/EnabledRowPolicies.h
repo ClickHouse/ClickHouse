@@ -12,6 +12,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -76,6 +77,7 @@ private:
 
     struct Hash
     {
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         size_t operator()(const MixedFiltersKey & key) const;
     };
 

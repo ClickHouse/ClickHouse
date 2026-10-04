@@ -62,7 +62,7 @@ namespace DB
                 String id_name = id->name();
 
                 size_t dot_pos = id_name.find('.');
-                if (id_name.find('.', dot_pos + 1) != String::npos)
+                if (dot_pos != String::npos && id_name.find('.', dot_pos + 1) != String::npos)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "There are more than one dot");
                 if (dot_pos != String::npos)
                 {

@@ -636,7 +636,7 @@ private:
     {
         const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
 
-        size_t begin = array_col.getOffsets()[i - 1];
+        size_t begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t end = array_col.getOffsets()[i];
         size_t size = end - begin;
 
@@ -657,7 +657,7 @@ private:
         size_t i) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
-        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t rings_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -667,7 +667,7 @@ private:
 
         for (size_t j = rings_begin; j < rings_end; ++j)
         {
-            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t begin = nested_array_col.getOffsets()[static_cast<ssize_t>(j) - 1];
             size_t end = nested_array_col.getOffsets()[j];
 
             if (j == rings_begin)
@@ -688,7 +688,7 @@ private:
     bool isInsideMultiPolygon(Float64 point_x, Float64 point_y, const IColumn & multi_polygon_column, size_t i) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(multi_polygon_column);
-        size_t polys_begin = array_col.getOffsets()[i - 1];
+        size_t polys_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t polys_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -730,7 +730,7 @@ private:
     void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t begin = array_col.getOffsets()[i - 1];
+        size_t begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t end = array_col.getOffsets()[i];
 
         const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
@@ -743,7 +743,7 @@ private:
     void parseConstPolygonWithHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t rings_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -753,7 +753,7 @@ private:
 
         for (size_t j = rings_begin; j < rings_end; ++j)
         {
-            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t begin = nested_array_col.getOffsets()[static_cast<ssize_t>(j) - 1];
             size_t end = nested_array_col.getOffsets()[j];
 
             if (out_polygon.outer().empty())

@@ -24,7 +24,7 @@ struct LengthImpl
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            res[i] = offsets[i] - offsets[i - 1];
+            res[i] = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
     }
 
     static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res, size_t)
@@ -44,7 +44,7 @@ struct LengthImpl
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            res[i] = offsets[i] - offsets[i - 1];
+            res[i] = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)

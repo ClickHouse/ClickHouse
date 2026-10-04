@@ -308,10 +308,12 @@ public:
             auto left_bracket_pos = tail.find_first_of('{');
             auto right_bracket_pos = tail.find_first_of('}');
 
+            /// Compare the positions instead of their difference: a `}` before the `{`, as in `}a{`,
+            /// makes the subtraction wrap, and only the size of the wrapped value keeps the answer right.
             auto is_this_enum_of_one_char =
                 left_bracket_pos != std::string_view::npos
                 && right_bracket_pos != std::string_view::npos
-                && (right_bracket_pos - left_bracket_pos) == 2;
+                && right_bracket_pos == left_bracket_pos + 2;
 
             definitely_no_selector_globs = !is_this_enum_of_one_char;
         }
@@ -488,8 +490,9 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
         result.push_back(std::move(expanded));
 
         /// The last glob changes fastest, so that the paths are generated in the order of the pattern.
-        for (size_t i = globs.size(); i-- > 0;)
+        for (size_t pos = globs.size(); pos > 0; --pos)
         {
+            const size_t i = pos - 1;
             if (++alternative_indices[i] < globs[i].alternatives.size())
                 break;
             alternative_indices[i] = 0;

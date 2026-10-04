@@ -273,7 +273,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto current = offsets[i];
-                auto previous = i == 0 ? 0 : offsets[i - 1];
+                auto previous = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
                 if (current - previous != array_partial_offsets_size)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

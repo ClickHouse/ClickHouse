@@ -803,7 +803,10 @@ String getActionUnavailableReason(SeccompMode mode)
         begin = end + 1;
     }
 
-    const std::string_view listed = std::string_view{available}.substr(0, available.find_last_not_of(" \t\n") + 1);
+    /// `find_last_not_of` answers `npos` if everything is a separator, and the `+ 1` would wrap.
+    const size_t last_listed = available.find_last_not_of(" \t\n");
+    const std::string_view listed
+        = std::string_view{available}.substr(0, last_listed == std::string::npos ? 0 : last_listed + 1);
     return fmt::format("the only seccomp actions the kernel implements are: {}", listed);
 }
 

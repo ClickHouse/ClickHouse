@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <base/MemorySanitizer.h>
+#include <base/sanitizer_defs.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -56,11 +57,13 @@ std::string_view ecbEquivalentCipherName(std::string_view mode);
 
 /// Constant-time byte comparisons for PKCS#7 padding validation: 0xFF when the condition
 /// holds, 0 otherwise, with no data-dependent branches.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline UInt8 constantTimeGE(UInt8 a, UInt8 b)
 {
     return static_cast<UInt8>(~((static_cast<unsigned int>(a) - b) >> 8));
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline UInt8 constantTimeEQ(UInt8 a, UInt8 b)
 {
     return static_cast<UInt8>((static_cast<unsigned int>(a ^ b) - 1) >> 8);

@@ -216,7 +216,7 @@ private:
 
                 if (!arg.is_const)
                 {
-                    offset = arg.key_offsets[i - 1];
+                    offset = arg.key_offsets[static_cast<ssize_t>(i) - 1];
                     len = arg.key_offsets[i] - offset;
 
                     if (arg.val_offsets[i] != arg.key_offsets[i])

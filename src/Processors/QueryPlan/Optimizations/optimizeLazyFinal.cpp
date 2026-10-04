@@ -412,8 +412,9 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// steps in between). Such a limit lets the query stop reading early, which the set-building
     /// phase would defeat. Any other step consumes the whole stream and stops the search.
     size_t limit_above_reading = 0;
-    for (size_t i = stack.size() - 1; i-- > 0;)
+    for (size_t j = stack.size() - 1; j > 0; --j)
     {
+        const size_t i = j - 1;
         auto * step = stack[i].node->step.get();
         if (const auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {

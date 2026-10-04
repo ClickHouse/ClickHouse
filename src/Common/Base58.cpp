@@ -734,8 +734,9 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         } while (top > 0);
         idx = top_base + top_digits;
 
-        for (size_t i = word_count - 1; i-- > 0;)
+        for (size_t i = word_count - 1; i > 0;)
         {
+            --i;
             UInt64 word = loadWord(words, i);
             for (size_t d = 0; d < BASE58_ENCODE_WORD_DIGITS; ++d)
             {

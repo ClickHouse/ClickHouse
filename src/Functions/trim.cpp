@@ -166,7 +166,7 @@ private:
             /// i is the start of a run of untrimmed rows; j walks over them with a cheap
             /// boundary-byte check, copying their offsets verbatim (shifted by the bytes
             /// trimmed so far). The whole run is flushed in one memcpy when it ends.
-            const size_t batch_input_begin = i == 0 ? 0 : input_offsets[i - 1];
+            const size_t batch_input_begin = i == 0 ? 0 : input_offsets[static_cast<ssize_t>(i) - 1];
             size_t row_begin = batch_input_begin;
             size_t j = i;
             while (j < input_rows_count)

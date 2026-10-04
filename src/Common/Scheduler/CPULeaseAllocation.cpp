@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <utility>
+#include <base/sanitizer_defs.h>
 
 #ifdef SCHEDULER_DEBUG
 #define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
@@ -317,6 +318,7 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
 {
     if (!shutdown_)
@@ -333,6 +335,8 @@ void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
         --threads.running_count;
         if (threads.last_running == thread_num)
         {
+            /// Scan down for the next leased thread. Reaching zero wraps the counter around to
+            /// `npos`, which is exactly the "no running thread" value it is initialised with.
             while (threads.last_running-- > 0)
             {
                 if (threads.leased[threads.last_running] && !threads.preempted[threads.last_running])
@@ -348,6 +352,7 @@ void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
     LOG_EVENT(D);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void CPULeaseAllocation::setPreempted(size_t thread_num)
 {
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlPreemptions);
@@ -361,6 +366,7 @@ void CPULeaseAllocation::setPreempted(size_t thread_num)
     --threads.running_count;
     if (threads.last_running == thread_num)
     {
+        /// See the same scan in `downscale`: the wraparound to `npos` is the sentinel.
         while (threads.last_running-- > 0)
         {
             if (threads.leased[threads.last_running] && !threads.preempted[threads.last_running])

@@ -416,8 +416,11 @@ struct SimdJSONParser
         {
             chassert(index < size());
             auto it = object.begin();
-            while (index--)
+            while (index != 0)
+            {
+                --index;
                 ++it;
+            }
             const auto & res = *it;
             return {res.key, res.value};
         }

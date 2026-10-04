@@ -4,6 +4,7 @@
 #include <boost/range/algorithm/copy.hpp>
 
 #include <utility>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ bool RowPolicyFilter::isAlwaysFalse() const
     return expression && (tryGetLiteralBool(expression.get(), value) && !value);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
 {
     return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);

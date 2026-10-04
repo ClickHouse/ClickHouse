@@ -7,6 +7,7 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -265,21 +266,25 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size + first_delta_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
     const auto double_delta_write_spec = getDeltaMaxWriteSpecByteSize(data_bytes_size);
 
     const UInt32 max_item_size_bits = double_delta_write_spec.prefix_bits + double_delta_write_spec.data_bits;
 
-    // + 8 is to round up to next byte.
-    auto result = (items_count * max_item_size_bits + 7) / 8;
-
-    return result;
+    // + 7 is to round up to next byte. The bit count wraps `UInt32` for a large enough block, and
+    // that wrap is load-bearing: `getCheckedReserveSize` in `CompressionCodecMultiple` rejects an
+    // oversized codec chain precisely by noticing that a codec reserved less than its own input.
+    // Widening the arithmetic moves the stage at which a chain is rejected, which
+    // `04812_codec_chain_reserve_overflow` pins.
+    return (items_count * max_item_size_bits + 7) / 8;
 }
 
+/// Double delta coding is modular arithmetic by definition: the deltas wrap around, and the
+/// decoder recovers the original values by wrapping back.
 template <typename ValueType>
-UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
@@ -325,7 +330,9 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         prev_value = curr_value;
     }
 
-    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
+    const UInt32 bit_packed_size
+        = source_size > sizeof(ValueType) * 2 ? static_cast<UInt32>(source_size - sizeof(ValueType) * 2) : 0;
+    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), bit_packed_size));
 
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
@@ -366,7 +373,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename ValueType>
-UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;

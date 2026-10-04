@@ -2248,7 +2248,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
               const uint32_t ncols = this->width >= this->fc.max_width
                   ? 0
-                  : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
+                  : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->remainingWidth()));
               const bool is_nullable = rg.nextSmallNumber() < 4;
 
               if (tt)
@@ -2284,7 +2284,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
               const uint32_t ncols
                   = (this->width >= this->fc.max_width ? 0
-                                                       : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width)))
+                                                       : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->remainingWidth())))
                   + UINT32_C(1);
 
               this->depth++;
@@ -2304,7 +2304,10 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               /// Nested
               std::vector<NestedSubType> subtypes;
               NestedTypeDef * nt = tp ? tp->mutable_nested() : nullptr;
-              const uint32_t ncols = (rg.nextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
+              const uint32_t ncols
+                  = (this->width >= this->fc.max_width ? 0
+                                                       : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->remainingWidth())))
+                  + UINT32_C(1);
 
               this->depth++;
               for (uint32_t i = 0; i < ncols; i++)

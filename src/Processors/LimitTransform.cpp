@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -144,6 +145,7 @@ LimitTransform::Status LimitTransform::prepare()
     return prepare({ports_data.front().input_port}, {ports_data.front().output_port});
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 {
     auto & output = *data.output_port;

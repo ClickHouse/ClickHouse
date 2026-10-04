@@ -55,6 +55,7 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
 #include <Core/UUID.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -1504,6 +1505,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.

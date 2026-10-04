@@ -110,7 +110,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
 
                 digits += places;
                 if (after_point)
-                    exponent -= places;
+                    exponent -= static_cast<int32_t>(places);
 
                 // TODO: accurate shift10 for big integers
                 x *= intExp10OfSize<typename T::NativeType>(places);
@@ -197,7 +197,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
         return ReturnType(true);
     }
 
-    scale += exponent;
+    scale = static_cast<uint32_t>(static_cast<int32_t>(scale) + exponent);
     return ReturnType(true);
 }
 

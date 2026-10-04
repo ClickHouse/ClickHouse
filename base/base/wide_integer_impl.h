@@ -285,7 +285,9 @@ struct common_type<Arithmetic, wide::integer<Bits, Signed>> : common_type<wide::
 
 }
 
-#pragma clang attribute push (__attribute__((no_sanitize("undefined"))), apply_to=function)
+/// Both the signed and the unsigned overflow checks have to be off: every operation on a wide
+/// integer is a chain of wrapping additions and multiplications of 64-bit limbs.
+#pragma clang attribute push (__attribute__((no_sanitize("undefined", "unsigned-integer-overflow"))), apply_to=function)
 namespace wide
 {
 

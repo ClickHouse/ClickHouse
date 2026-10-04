@@ -47,6 +47,7 @@ public:
 
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
     void moveDirectory(const std::string & from, const std::string & to);
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void removeDirectory(const std::string & path);
 
     /// File Write Methods

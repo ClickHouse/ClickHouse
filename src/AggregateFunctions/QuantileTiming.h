@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <base/defines.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -265,7 +266,7 @@ namespace detail
         {
             return static_cast<UInt16>(
                 (i * BIG_PRECISION) + SMALL_THRESHOLD
-                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2)));    /// A small randomization so that it is not noticeable that all the values are even.
+                + common::subIgnoreOverflow(intHash32<0>(i) % BIG_PRECISION, BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
         }
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -320,23 +321,26 @@ namespace detail
 
         void insertWeighted(UInt64 x, size_t weight) noexcept
         {
-            count += weight;
+            count = common::addIgnoreOverflow(count, weight);
 
             if (x < SMALL_THRESHOLD)
-                count_small[x] += weight;
+                count_small[x] = common::addIgnoreOverflow(count_small[x], weight);
             else if (x < BIG_THRESHOLD)
-                count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION] += weight;
+            {
+                UInt64 & bucket = count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+                bucket = common::addIgnoreOverflow(bucket, weight);
+            }
         }
 
         void merge(const QuantileTimingLarge & rhs) noexcept
         {
-            count += rhs.count;
+            count = common::addIgnoreOverflow(count, rhs.count);
 
             for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-                count_small[i] += rhs.count_small[i];
+                count_small[i] = common::addIgnoreOverflow(count_small[i], rhs.count_small[i]);
 
             for (size_t i = 0; i < BIG_SIZE; ++i)
-                count_big[i] += rhs.count_big[i];
+                count_big[i] = common::addIgnoreOverflow(count_big[i], rhs.count_big[i]);
         }
 
         void serialize(WriteBuffer & buf) const

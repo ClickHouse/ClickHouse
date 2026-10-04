@@ -69,7 +69,7 @@ struct CountSubstringsImpl
         /// count only the bytes newly traversed since the previous match, visiting every byte at most once.
         /// `counted_row_begin` identifies the row the cursor belongs to: only a row containing a match sets
         /// the cursor, and such a row is non-empty (the index scan below leaves
-        /// `haystack_offsets[i - 1] <= pos < haystack_offsets[i]`), so two of them always differ in start offset.
+        /// `haystack_offsets[static_cast<ssize_t>(i) - 1] <= pos < haystack_offsets[i]`), so two of them always differ in start offset.
         const UInt8 * counted_row_begin = nullptr;
         const UInt8 * counted_up_to = nullptr;
         size_t chars_before = 0;
@@ -103,7 +103,7 @@ struct CountSubstringsImpl
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() <= begin + haystack_offsets[i])
             {
-                const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                const UInt8 * const row_begin = begin + haystack_offsets[static_cast<ssize_t>(i) - 1];
                 if (counted_row_begin != row_begin)
                 {
                     /// The cursor belongs to an earlier row: restart it at the beginning of this one.

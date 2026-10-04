@@ -177,6 +177,7 @@
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 
 #include <algorithm>
 #include <atomic>
@@ -12205,6 +12206,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return commit(lock);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
@@ -14196,6 +14198,7 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
     increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
     increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);

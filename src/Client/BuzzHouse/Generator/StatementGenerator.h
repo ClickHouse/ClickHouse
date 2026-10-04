@@ -201,6 +201,13 @@ private:
 
     uint32_t depth = 0;
     uint32_t width = 0;
+
+    /// Width budget left for the current statement. A nested generator can push `width` past
+    /// `max_width`, so the subtraction has to saturate at zero: wrapping it turns the budget into a
+    /// huge number and every `std::min` against it stops clamping, which is how generated statements
+    /// grew wider than `max_width` was asking for.
+    uint32_t remainingWidth() const { return this->fc.max_width > this->width ? this->fc.max_width - this->width : 0; }
+
     uint32_t database_counter = 0;
     uint32_t table_counter = 0;
     uint32_t function_counter = 0;

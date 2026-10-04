@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -267,15 +268,20 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 }
                 else if (index < 0)
                 {
-                    if (end - begin + index > 0)
-                        local_begin = end - begin + index;
-                    else
-                        local_begin = 0;
+                    const UInt64 offset_from_end = common::negateIgnoreOverflow(static_cast<UInt64>(index));
+                    const size_t size = end - begin;
 
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    /// An index pointing before the array start selects an empty range, the same as
+                    /// `arraySlice` does: `arraySlice([1, 2, 3], -5, 2)` is `[]`.  Both bounds stay
+                    /// at zero in that case.
+                    if (offset_from_end <= size)
+                    {
+                        local_begin = size - offset_from_end;
+                        if (local_begin + length < size)
+                            local_end = local_begin + length;
+                        else
+                            local_end = size;
+                    }
                 }
             }
 
@@ -311,7 +317,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
                         size_t place_offset = 0;
                         if (level)
-                            place_offset = place_offsets[level - 1];
+                            place_offset = place_offsets[static_cast<ssize_t>(level) - 1];
 
                         true_func->merge(place, places[place_offset + (place_curr >> level)], arena.get());
                         place_curr += 1 << level;

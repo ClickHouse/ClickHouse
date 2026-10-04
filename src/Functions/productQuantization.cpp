@@ -42,7 +42,7 @@ void readVectorRow(const ColumnArray & col_arr, size_t row, VectorWithMemoryTrac
 {
     const IColumn & array_data = col_arr.getData();
     const auto & array_offsets = col_arr.getOffsets();
-    const size_t begin = row == 0 ? 0 : array_offsets[row - 1];
+    const size_t begin = row == 0 ? 0 : array_offsets[static_cast<ssize_t>(row) - 1];
     const size_t size = array_offsets[row] - begin;
     result.resize(size);
 

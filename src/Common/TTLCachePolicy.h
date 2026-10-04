@@ -270,8 +270,11 @@ public:
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
 
-        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - old_size_in_bytes);
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - old_size);
+        /// Both operands have to be cast: with an unsigned right-hand side the subtraction happens
+        /// in `size_t` and only the conversion of the wrapped result back to `Int64` makes a shrinking
+        /// cache report a negative delta.
+        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - static_cast<Int64>(old_size));
     }
 
     std::vector<KeyMapped> dump() const override

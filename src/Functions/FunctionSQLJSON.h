@@ -340,7 +340,7 @@ public:
                 const auto & array_path = assert_cast<const ColumnArray &>(path_data);
                 auto & dest_array = assert_cast<ColumnArray &>(dest);
 
-                size_t offset = index == 0 ? 0 : array_path.getOffsets()[index - 1];
+                size_t offset = index == 0 ? 0 : array_path.getOffsets()[static_cast<ssize_t>(index) - 1];
                 size_t array_size = array_path.getOffsets()[index] - offset;
 
                 PlanNode node;

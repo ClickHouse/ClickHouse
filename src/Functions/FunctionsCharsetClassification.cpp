@@ -96,8 +96,8 @@ struct CharsetClassificationImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1];
+            const UInt8 * str = data.data() + offsets[static_cast<ssize_t>(i) - 1];
+            const size_t str_len = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             HashMapWithStackMemory<UInt16, UInt64, DefaultHash<UInt16>, 4> model;
             calculateStats(str, str_len, model);

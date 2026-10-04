@@ -235,7 +235,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     executeMethodImpl(offsets_by_depth, data_columns, arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
-    for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
+    for (ssize_t depth = static_cast<ssize_t>(arrays_depths.max_array_depth) - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(result_nested_array, offsetsptr_by_depth[depth]);
 
     return result_nested_array;
@@ -365,7 +365,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
-            for (ssize_t depth = depth_to_look - 1; depth >= 0; --depth)
+            for (ssize_t depth = static_cast<ssize_t>(depth_to_look) - 1; depth >= 0; --depth)
             {
                 /// Skipping offsets for empty arrays
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])

@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <base/int8_to_string.h>
+#include <base/sanitizer_defs.h>
 
 #include <Common/DateLUT.h>
 
@@ -87,6 +88,7 @@ public:
     }
 
     template <typename T, typename ColVecType, typename ResCol>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void execute(const ColVecType & col, ResCol & result_column, size_t rows_count) const
     {
         const auto & src_data = col.getData();

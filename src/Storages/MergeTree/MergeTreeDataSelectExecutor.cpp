@@ -63,6 +63,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace CurrentMetrics
@@ -1103,8 +1104,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     r_index_priority = 0;
 #endif
                 // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
+                const auto neg_l_granularity = -static_cast<Int64>(l_index->getGranularity());
+                const auto neg_r_granularity = -static_cast<Int64>(r_index->getGranularity());
 
                 const auto l_size = idx_sizes[l];
                 const auto r_size = idx_sizes[r];
@@ -2096,14 +2097,16 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks)
 {

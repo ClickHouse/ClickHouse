@@ -11,6 +11,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -164,7 +165,7 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
             /// Avoid signed overflow during conversion (e.g. -INT64_MIN overflows Int64).
             /// Instead, cast to UInt64 first (preserving the bit pattern), then negate in
             /// unsigned arithmetic where overflow is well-defined.
-            return {UInt64(0) - static_cast<UInt64>(step_val), true};
+            return {common::negateIgnoreOverflow(static_cast<UInt64>(step_val)), true};
         }
         return {static_cast<UInt64>(step_val), false};
     }

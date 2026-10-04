@@ -7,7 +7,12 @@ size_t getTotalSize(const StoredObjects & objects)
 {
     size_t size = 0;
     for (const auto & object : objects)
+    {
+        /// The total of objects one of which has an unknown size is unknown too, as in `OffsetMap`.
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return StoredObject::UnknownSize;
         size += object.bytes_size;
+    }
     return size;
 }
 

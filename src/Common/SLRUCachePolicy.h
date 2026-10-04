@@ -233,7 +233,8 @@ public:
         current_size_in_bytes += cell.size;
         current_protected_size += cell.is_protected ? cell.size : 0;
 
-        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(
+            current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
         CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);

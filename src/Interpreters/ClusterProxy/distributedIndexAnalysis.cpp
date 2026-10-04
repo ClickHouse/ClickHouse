@@ -199,7 +199,7 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
     for (size_t i = 0; i < col_part_name.size(); ++i)
     {
         auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
-        for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
+        for (size_t range_i = col_ranges_array_offsets[static_cast<ssize_t>(i) - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
             ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
     }
 }

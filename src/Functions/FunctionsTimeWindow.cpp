@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
 #include <Common/IntervalKind.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -385,6 +386,7 @@ struct TimeWindowImpl<HOP>
     }
 
     template <typename ToType, IntervalKind::Kind kind>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static ColumnPtr
     executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
     {

@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -823,7 +824,7 @@ static Field coerceStringFieldLikeSearchFunction(
         if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
             return {};
 
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
     }
 
     if (fixed_string_type)

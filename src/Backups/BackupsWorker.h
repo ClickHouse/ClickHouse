@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <base/sanitizer_defs.h>
 
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -162,6 +163,7 @@ private:
     /// Stores the settings effectively used by the backup engine's reader/writer for the given operation.
     void setEngineSettings(const BackupOperationID & id, std::map<String, String> engine_settings);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,

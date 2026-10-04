@@ -9,6 +9,7 @@
 #include <Common/HashTable/Prefetching.h>
 
 #include <cstring>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -53,7 +54,8 @@ struct LastElementCacheStats
 
     void update(size_t num_tries, size_t num_misses)
     {
-        hits += num_tries - num_misses;
+        /// A caller may report more misses than tries; the counter is a running total modulo 2^64.
+        hits = common::addIgnoreOverflow(hits, common::subIgnoreOverflow(num_tries, num_misses));
         misses += num_misses;
     }
 };

@@ -214,10 +214,12 @@ public:
     /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
     {
-        used_bytes += size;
+        /// Counted only once the memory is there: `addMemoryChunk` throws for a size it cannot
+        /// serve, and a count bumped before that would stay wrong for the life of the arena.
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
+        used_bytes += size;
         char * res = head.pos;
         head.pos += size;
         ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
@@ -227,7 +229,6 @@ public:
     /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
-        used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size, alignment);
 
@@ -241,6 +242,7 @@ public:
             {
                 head.pos = static_cast<char *>(head_pos);
                 head.pos += size;
+                used_bytes += size;
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }

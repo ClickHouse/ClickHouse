@@ -32,7 +32,7 @@ public:
 
 private:
     PODArray<char> chars;
-    /// End offsets of strings in chars: i-th string is chars[offsets[i - 1], offsets[i]).
+    /// End offsets of strings in chars: i-th string is chars[offsets[static_cast<ssize_t>(i) - 1], offsets[i]).
     BitPackedUInt64Array offsets;
 };
 

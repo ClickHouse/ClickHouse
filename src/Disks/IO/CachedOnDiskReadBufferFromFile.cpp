@@ -19,6 +19,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace ProfileEvents
@@ -2043,7 +2044,11 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
         if (whence == SEEK_CUR)
         {
-            new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+            /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+            off_t target = 0;
+            if (common::addOverflow(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos), offset, target) || target < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", file_offset_of_buffer_end - (working_buffer.end() - pos), offset);
+            new_pos = static_cast<size_t>(target);
         }
 
         if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)

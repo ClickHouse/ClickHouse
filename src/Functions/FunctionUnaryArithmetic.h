@@ -353,7 +353,7 @@ public:
                             for (size_t i = 0; i < size; ++i)
                             {
                                 vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
+                                    chars.data() + offsets[static_cast<ssize_t>(i) - 1], chars.data() + offsets[i]);
                             }
                             result_column = std::move(col_res);
                             return true;

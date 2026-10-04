@@ -1477,7 +1477,14 @@ static NameToNameVector collectFilesForRenames(
                     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
 
                     /// Delete files if they are no longer shared with another column.
-                    if (stream_name && --stream_counts[*stream_name] == 0)
+                    /// `operator[]` would insert a 0 for a stream that is not in the map and wrap it
+                    /// to `SIZE_MAX`, so look the stream up and keep the decrement out of the condition.
+                    auto stream_it = stream_name ? stream_counts.find(*stream_name) : stream_counts.end();
+                    if (stream_it == stream_counts.end() || stream_it->second == 0)
+                        return;
+
+                    --stream_it->second;
+                    if (stream_it->second == 0)
                     {
                         add_rename(*stream_name + ".bin", "");
                         add_rename(*stream_name + mrk_extension, "");
@@ -1561,7 +1568,18 @@ static NameToNameVector collectFilesForRenames(
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
-                    if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
+                    if (new_streams.contains(old_stream))
+                        continue;
+
+                    /// Every such command walks all streams of the source part, so with several of them
+                    /// the count of a stream can already have reached zero (and the stream been removed)
+                    /// on behalf of an earlier command. Do not decrement it below zero.
+                    auto stream_it = stream_counts.find(old_stream);
+                    if (stream_it == stream_counts.end() || stream_it->second == 0)
+                        continue;
+
+                    --stream_it->second;
+                    if (stream_it->second == 0)
                     {
                         add_rename(old_stream + ".bin", "");
                         add_rename(old_stream + mrk_extension, "");
@@ -3137,7 +3155,8 @@ private:
         ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
-        (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
+        (*ctx->mutate_entry)->columns_written
+            = ctx->storage_columns.size() - std::min(ctx->storage_columns.size(), ctx->updated_header.columns());
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;

@@ -53,8 +53,11 @@ namespace
         Poco::URI url2{url};
         String path = url2.getPath();
         size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
+        /// A path with no separator is all file name and leaves an empty directory part. That is
+        /// what `npos + 1 == 0` used to produce by wrapping around; spell it out instead.
+        const size_t file_name_pos = slash_pos == String::npos ? 0 : slash_pos + 1;
+        String file_name = path.substr(file_name_pos);
+        path.resize(file_name_pos);
         url2.setPath(path);
         url = url2.toString();
         return file_name;
