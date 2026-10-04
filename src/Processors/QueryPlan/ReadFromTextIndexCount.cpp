@@ -248,6 +248,7 @@ UInt64 computeCountForPart(
                 substreams[2],
                 reader_settings,
                 estimatePostingListBufferSize(*token_info)));
+
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
                 *token_info,
@@ -257,11 +258,7 @@ UInt64 computeCountForPart(
 
         /// The folded small postings join the intersection or union as one more cursor over a flat array.
         if (query_builder.postings && !query_builder.postings->isEmpty())
-        {
-            auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
-            query_builder.postings->toUint32Array(flat->data());
-            cursors.push_back(std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat))));
-        }
+            cursors.push_back(std::make_shared<PostingListCursor>(query_builder.getFlatPostings()));
 
         /// `rows_range` is the hull of the tokens' rows for `Any` and their overlap for `All`; an empty overlap fails the query.
         chassert(query_builder.rows_range);
