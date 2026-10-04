@@ -98,6 +98,11 @@ def arrow_to_iceberg_schema(data: pa.Table) -> Schema:
 class CatalogManager(ABC):
     """Unified interface for DataLakeCatalog e2e test backends."""
 
+    # Table engine whose object storage matches the locations this catalog
+    # assigns to new tables, and one that deliberately does not match it.
+    table_engine: str = "IcebergS3"
+    mismatched_table_engine: str = "IcebergAzure"
+
     @classmethod
     @abstractmethod
     def from_env(cls) -> "CatalogManager":
@@ -119,6 +124,27 @@ class CatalogManager(ABC):
     ) -> str:
         """Create a table from Arrow data. Returns a short table name."""
         ...
+
+    # The three methods below are only needed by tests of `CREATE TABLE` without table
+    # engine arguments, so they are not abstract: a backend that no such test covers
+    # stays instantiable, and one that is covered fails loudly instead of silently.
+
+    def create_namespace_with_location(self) -> str:
+        """Return a namespace whose location is known to the catalog.
+
+        `CREATE TABLE` without table engine arguments works only when the
+        catalog can tell where to place a new table, which for the catalogs
+        covered here means the namespace carries a location."""
+        raise NotImplementedError
+
+    def track_table(self, namespace: str, table_name: str) -> None:
+        """Register a table created outside this manager, so that
+        `cleanup_table` / `cleanup_all` remove it."""
+        raise NotImplementedError
+
+    def metadata_location(self, namespace: str, table_name: str) -> str:
+        """Return the metadata location the catalog holds for a table."""
+        raise NotImplementedError
 
     def resolve_table_name(
         self, node, database_name: str, short_name: str, retries: int = 5, delay: float = 3.0
