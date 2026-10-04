@@ -235,7 +235,7 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query) const
+StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const
 {
     /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
@@ -243,11 +243,11 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
     /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting takes precedence over
     /// `storage_policy`.
     ///
-    /// Returns nullptr for a table on an inline `disk(...)` definition: resolving it would instantiate the
-    /// custom disk, and this runs for every `MergeTree` table during the metadata scan, before the flag is
-    /// known to exist - with `lazy_load_tables` that would create the disk (and fail on an unavailable
-    /// `include` or `from_zk`) for a table that is otherwise deferred until first access. The conversion
-    /// by flag is not supported for such tables.
+    /// An inline `disk(...)` definition is resolved only with `create_custom_disk`, because resolving it
+    /// instantiates the custom disk. Without `lazy_load_tables` the table is loaded right after the metadata
+    /// scan, which creates the same disk anyway, so it costs nothing. With `lazy_load_tables` it would create
+    /// the disk (and fail on an unavailable `include` or `from_zk`) for a table that is otherwise deferred
+    /// until first access, so nullptr is returned instead and the flag is not looked for.
     if (create_query.storage)
     {
         if (auto * query_settings = create_query.storage->settings)
@@ -257,7 +257,14 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
                 CustomType custom;
                 if (disk_setting->tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
                     && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
-                    return nullptr;
+                {
+                    if (!create_custom_disk)
+                        return nullptr;
+
+                    SettingChange change{"disk", *disk_setting};
+                    MergeTreeSettings::resolveDiskSetting(change, getContext(), /* is_loading_from_existing_metadata = */ true);
+                    return getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
+                }
                 return getContext()->getStoragePolicyFromDisk(disk_setting->safeGet<String>());
             }
 
@@ -294,7 +301,10 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         return;
 
     /// Get table's storage policy
-    auto policy = getStoragePolicyFromCreateQuery(create_query);
+    /// A table on an inline `disk(...)` definition in a database with `lazy_load_tables` is not looked at:
+    /// the second phase reports the flag if the table is ever loaded eagerly with it.
+    auto policy = getStoragePolicyFromCreateQuery(
+        create_query, /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
     if (!policy)
         return;
 
@@ -691,8 +701,9 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     {
         if (auto create_query = getCreateQueryFromMetadata(name.table, /* throw_on_error = */ false))
         {
-            storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>());
-            /// A table on an inline `disk(...)` definition is never converted by the first phase.
+            /// A stand-in exists only with `lazy_load_tables`, where the first phase does not resolve an
+            /// inline `disk(...)` definition and so never converts such a table.
+            storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false);
             if (!storage_policy)
                 return;
         }
@@ -713,7 +724,17 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     /// to be there.
     auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
     if (!rmt)
+    {
+        /// The first phase left the table alone: it would have `table_readonly`, or it is on an inline
+        /// `disk(...)` definition in a database with `lazy_load_tables`. Say so instead of ignoring the
+        /// flag silently; it is kept, so the conversion runs on a later start once the cause is gone.
+        LOG_WARNING(
+            log,
+            "Table {} has the {} flag, but it was not converted to ReplicatedMergeTree. The flag is kept.",
+            backQuote(name.getFullName()),
+            CONVERT_TO_REPLICATED_FLAG_NAME);
         return;
+    }
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO

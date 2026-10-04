@@ -147,6 +147,42 @@ def test_modify_engine_on_restart_with_lazy_load_tables_and_disk_setting(
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
 
 
+def test_modify_engine_on_restart_with_inline_disk(started_cluster):
+    # A table on an inline `disk(...)` definition keeps its flag on that custom disk. Without
+    # `lazy_load_tables` the table is loaded right after the metadata scan anyway, so the first phase
+    # creates the custom disk to look for the flag there instead of ignoring it.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name} ENGINE = Atomic")
+
+    q(
+        ch1,
+        """
+        CREATE TABLE mt_inline_disk ( A Int64, D Date ) ENGINE = MergeTree() ORDER BY A
+        SETTINGS disk = disk(type = local, path = '/var/lib/clickhouse/disks/modify_engine_inline/');
+        """,
+    )
+    q(ch1, "INSERT INTO mt_inline_disk SELECT number, today() FROM numbers(100);")
+
+    set_convert_flags(ch1, database_name, ["mt_inline_disk"])
+
+    ch1.restart_clickhouse()
+
+    check_flags_deleted(ch1, database_name, ["mt_inline_disk"])
+
+    assert (
+        q(
+            ch1,
+            f"SELECT engine FROM system.tables WHERE database = '{database_name}' AND name = 'mt_inline_disk'",
+        ).strip()
+        == "ReplicatedMergeTree"
+    )
+
+    q(ch1, "INSERT INTO mt_inline_disk SELECT number, today() FROM numbers(100, 100);")
+    assert q(ch1, "SELECT count() FROM mt_inline_disk").strip() == "200"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
 def test_restore_replica_with_lazy_load_tables(started_cluster):
     # After a restart a table of a `lazy_load_tables` database is a stand-in until it is first accessed.
     # `SYSTEM RESTORE REPLICA` has to see through it to the real `ReplicatedMergeTree`, otherwise it
