@@ -1,0 +1,48 @@
+-- quantile without(point)(0, data)
+[('test','NaN sample')]	nan
+[('test','only NaN')]	nan
+[('test','three samples')]	0
+[('test','two NaN')]	nan
+[('test','two samples')]	0
+-- quantile without(point)(0.2, data)
+[('test','NaN sample')]	nan
+[('test','only NaN')]	nan
+[('test','three samples')]	0.3999999999999999
+[('test','two NaN')]	nan
+[('test','two samples')]	0.19999999999999996
+-- quantile without(point)(0.5, data)
+[('test','NaN sample')]	0
+[('test','only NaN')]	nan
+[('test','three samples')]	1
+[('test','two NaN')]	nan
+[('test','two samples')]	0.5
+-- quantile without(point)(0.8, data)
+[('test','NaN sample')]	0.6000000000000001
+[('test','only NaN')]	nan
+[('test','three samples')]	1.6
+[('test','two NaN')]	nan
+[('test','two samples')]	0.8
+-- quantile without(point)(1, data)
+[('test','NaN sample')]	1
+[('test','only NaN')]	nan
+[('test','three samples')]	2
+[('test','two NaN')]	3
+[('test','two samples')]	1
+-- quantile without(point)(scalar(foo), data)
+[('test','NaN sample')]	0.6000000000000001
+[('test','only NaN')]	nan
+[('test','three samples')]	1.6
+[('test','two NaN')]	nan
+[('test','two samples')]	0.8
+-- quantile without(point)(scalar(foo) - 1, data)
+[('test','NaN sample')]	-inf
+[('test','only NaN')]	-inf
+[('test','three samples')]	-inf
+[('test','two NaN')]	-inf
+[('test','two samples')]	-inf
+-- quantile(0.5, series), range
+[]	[('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',2)]
+-- quantile by (point) (0.5, series), range
+[('point','a')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:01:50.000',nan),('1970-01-01 00:02:00.000',3)]
+[('point','b')]	[('1970-01-01 00:01:40.000',2),('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',2)]
+[('point','c')]	[('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',nan)]
