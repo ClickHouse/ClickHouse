@@ -1198,7 +1198,9 @@ struct EndpointPoolKey
                    proxy_config.protocol,
                    proxy_config.tunneling,
                    proxy_config.original_request_protocol,
-                   proxy_config.no_proxy_hosts)
+                   proxy_config.no_proxy_hosts,
+                   proxy_config.username,
+                   proxy_config.password)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -1209,7 +1211,9 @@ struct EndpointPoolKey
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
                    rhs.proxy_config.original_request_protocol,
-                   rhs.proxy_config.no_proxy_hosts);
+                   rhs.proxy_config.no_proxy_hosts,
+                   rhs.proxy_config.username,
+                   rhs.proxy_config.password);
     }
 };
 
@@ -1227,6 +1231,8 @@ struct Hasher
         s.update(k.proxy_config.protocol);
         s.update(k.proxy_config.tunneling);
         s.update(k.proxy_config.original_request_protocol);
+        s.update(k.proxy_config.username);
+        s.update(k.proxy_config.password);
         return s.get64();
     }
 };
