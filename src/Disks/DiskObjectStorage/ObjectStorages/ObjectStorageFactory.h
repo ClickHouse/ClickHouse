@@ -14,7 +14,8 @@ public:
         const std::string & config_prefix,
         const ContextPtr & context,
         bool run_access_check,
-        bool run_local_paths_check)>;
+        bool run_local_paths_check,
+        bool attach)>;
 
     static ObjectStorageFactory & instance();
 
@@ -26,7 +27,8 @@ public:
         const std::string & config_prefix,
         const ContextPtr & context,
         bool run_access_check,
-        bool run_local_paths_check) const;
+        bool run_local_paths_check,
+        bool attach) const;
 
     void clearRegistry();
 

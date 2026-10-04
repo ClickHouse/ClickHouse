@@ -84,6 +84,12 @@ public:
     bool isReadOnly() const override { return true; }
     bool isRemote() const override { return true; }
     bool areBlobPathsRandom() const override { return false; }
+
+    /// `getPath()` returns an empty placeholder root -- there is no real directory behind it, just
+    /// like `MetadataStorageInMemory`. Callers that do raw filesystem I/O outside the
+    /// `IMetadataStorage` API (e.g. `StorageDistributed`'s local insert queue) must check this and
+    /// fail closed instead of using `getPath()` as a real path.
+    bool isPathOnLocalFilesystem() const override { return false; }
 };
 
 }

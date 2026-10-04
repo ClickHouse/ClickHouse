@@ -625,6 +625,10 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
 fi
 
 ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
+# The `borrow_from_cache` object storage type is unknown to older servers (upgrade and compatibility checks).
+if check_clickhouse_version 26.10; then
+    ln -sf $SRC_PATH/config.d/storage_conf_borrow_from_cache.xml $DEST_SERVER_PATH/config.d/
+fi
 
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/

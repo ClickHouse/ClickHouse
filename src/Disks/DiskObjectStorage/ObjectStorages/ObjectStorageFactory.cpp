@@ -18,7 +18,10 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+
+#include <Interpreters/FileCache/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -73,7 +76,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const std::string & config_prefix,
     const ContextPtr & context,
     bool run_access_check,
-    bool run_local_paths_check) const
+    bool run_local_paths_check,
+    bool attach) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -93,7 +97,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, attach);
 }
 
 #if USE_AWS_S3
@@ -134,7 +138,8 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -165,7 +170,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const std::string & config_prefix,
            const ContextPtr & context,
            bool /* run_access_check */,
-           bool /* run_local_paths_check */) -> ObjectStoragePtr
+           bool /* run_local_paths_check */,
+           bool /* attach */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -189,7 +195,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -228,7 +235,8 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -256,7 +264,8 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool run_local_paths_check) -> ObjectStoragePtr
+        bool run_local_paths_check,
+        bool /* attach */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
@@ -280,6 +289,46 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
 
+static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
+{
+    factory.registerObjectStorageType("borrow_from_cache", [](
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & context,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
+        bool attach) -> ObjectStoragePtr
+    {
+        auto cache_name = config.getString(config_prefix + ".cache_name");
+
+        /// The cache is resolved lazily (see `BorrowFromCacheObjectStorage`). On a fresh `CREATE`
+        /// the referenced cache must already exist, so fail loudly if it is missing. On `ATTACH`
+        /// (server restart or an explicit `ATTACH`) the cache may not be registered yet: custom
+        /// DDL disks are materialized lazily and in an unspecified order, so the cache-creating
+        /// disk can load after this one, or it may have been dropped entirely. A `borrow_from_cache`
+        /// table is ephemeral by design -- its data lives only in node-local cache segments that do
+        /// not survive a restart -- so the reattached table is necessarily empty. Bringing the disk
+        /// up read-only when the cache is absent (instead of throwing) lets the empty table load
+        /// without aborting server startup; the disk becomes writable once the cache appears.
+        ///
+        /// Disks defined in the server configuration are created by `DiskSelector` with
+        /// `attach = false` even during server startup, but they need the same leniency: the
+        /// cache-defining part of the configuration may have been removed while the disk (and
+        /// tables on it) remained, and aborting `DiskSelector::initialize` would prevent the
+        /// server from starting at all. While the server is starting, treat a missing cache like
+        /// an `ATTACH`; strict validation applies to disks created on a running server (a fresh
+        /// custom DDL disk, or a new disk added by a configuration reload).
+        bool server_is_starting = context->getApplicationType() == Context::ApplicationType::SERVER
+            && !context->isServerCompletelyStarted();
+        if (!attach && !server_is_starting && !FileCacheFactory::instance().tryGet(cache_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Filesystem cache '{}' not found for borrow_from_cache object storage '{}'", cache_name, name);
+
+        return std::make_shared<BorrowFromCacheObjectStorage>(name, cache_name);
+    });
+}
+
 void registerObjectStorages();
 
 void registerObjectStorages()
@@ -300,6 +349,7 @@ void registerObjectStorages()
 
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
+    registerBorrowFromCacheObjectStorage(factory);
 }
 
 void ObjectStorageFactory::clearRegistry()
