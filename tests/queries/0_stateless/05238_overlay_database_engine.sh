@@ -92,5 +92,14 @@ $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p_${CLICKHOUSE_DATABASE} ON ${db1}.t US
 $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.t ORDER BY x"
 $CLICKHOUSE_CLIENT -q "DROP ROW POLICY p_${CLICKHOUSE_DATABASE} ON ${db1}.t"
 
+echo "--- a table that is hidden in a source is resolved in the next source"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${db2}.t (s String) ENGINE = Memory; INSERT INTO ${db2}.t VALUES ('second')"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON ${db1}.t FROM ${user}; GRANT SELECT ON ${db2}.t TO ${user}"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT name FROM system.tables WHERE database = '${ov}' ORDER BY name"
+$CLICKHOUSE_CLIENT --user "${user}" -q "EXISTS TABLE ${ov}.t"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.t"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SHOW CREATE TABLE ${ov}.t" | sed "s/${CLICKHOUSE_DATABASE}/db/g"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM ${ov}.t ORDER BY x"
+
 echo "--- clickhouse-local keeps the actual table engines in its default database"
 $CLICKHOUSE_LOCAL -q "CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x; SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't'"

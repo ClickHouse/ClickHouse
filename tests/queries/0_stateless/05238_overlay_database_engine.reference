@@ -41,5 +41,14 @@ UNKNOWN_TABLE
 --- row policies of the source table apply
 3
 4
+--- a table that is hidden in a source is resolved in the next source
+t
+1
+second
+CREATE TABLE db_ov.t\nENGINE = Alias(\'db_src2\', \'t\')
+1
+2
+3
+4
 --- clickhouse-local keeps the actual table engines in its default database
 MergeTree

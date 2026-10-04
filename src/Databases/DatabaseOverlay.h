@@ -146,8 +146,7 @@ private:
     /// Whether the caller can see the table of the source database, i.e. has `SHOW_TABLES` on it.
     static bool isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context);
 
-    /// The name of the first source database that has the table, or an empty string,
-    /// also when the caller cannot see the table in that source.
+    /// The name of the first source database that has the table visible to the caller, or an empty string.
     String findSourceDatabase(const String & table_name, ContextPtr context) const;
 
     const Strings source_databases;

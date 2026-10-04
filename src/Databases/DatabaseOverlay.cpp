@@ -647,14 +647,13 @@ String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, Co
 {
     for (const auto & source : source_databases)
     {
+        /// A table of a source that the caller cannot see is skipped, and the name is resolved in the next source.
+        /// The result depends only on what the caller can see: stopping at a hidden table would reveal that it exists,
+        /// and some sources (e.g. `Remote`) do not report a hidden table as existing at all.
+        if (!isSourceTableVisible(source, table_name, context_))
+            continue;
         if (auto database = tryGetOverlaySource(source); database && database->isTableExist(table_name, context_))
-        {
-            /// A table of a source that the caller cannot see is hidden, as in the source database itself.
-            /// It does not fall through to the next source, which would reveal that the hidden table exists.
-            if (!isSourceTableVisible(source, table_name, context_))
-                return {};
             return source;
-        }
     }
     return {};
 }
@@ -693,7 +692,7 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
         for (auto it = database->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter); it->isValid(); it->next())
         {
             const String & name = it->name();
-            if (seen.insert(name).second && isSourceTableVisible(source, name, context_))
+            if (isSourceTableVisible(source, name, context_) && seen.insert(name).second)
                 tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
         }
     }
@@ -719,7 +718,7 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
             continue;
         for (auto & table : database->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
         {
-            if (seen.insert(table.name).second && isSourceTableVisible(source, table.name, context_))
+            if (isSourceTableVisible(source, table.name, context_) && seen.insert(table.name).second)
                 result.push_back(std::move(table));
         }
     }
@@ -803,7 +802,8 @@ An `Overlay` database cannot be used as a source of another `Overlay` database.
 ## Access control {#access-control}
 
 As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
-A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both). A table that is hidden in the first source database that has it does not fall through to the next source.
+A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both).
+A name is resolved in the first source database where the user can see a table with this name: a table that is hidden from the user is skipped, as if it did not exist.
 )DOCS_MD",
         .syntax = "ENGINE = Overlay(db1[, db2, ...])",
         .examples = {{

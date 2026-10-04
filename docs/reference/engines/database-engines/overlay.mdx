@@ -26,7 +26,8 @@ An `Overlay` database cannot be used as a source of another `Overlay` database.
 ## Access control {#access-control}
 
 As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
-A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both). A table that is hidden in the first source database that has it does not fall through to the next source.
+A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both).
+A name is resolved in the first source database where the user can see a table with this name: a table that is hidden from the user is skipped, as if it did not exist.
 
 ## Example {#example}
 
