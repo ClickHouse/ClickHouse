@@ -180,6 +180,15 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    /// We are under the database lock here, so do not load the table just for this check. If it is not loaded yet,
+    /// there is nothing to ask.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
     {
         getNested()->checkTableSizeBelowDropLimit(query_context);

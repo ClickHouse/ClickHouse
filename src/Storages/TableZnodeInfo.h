@@ -5,6 +5,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 
 #include <memory>
+#include <optional>
 
 namespace zkutil
 {
@@ -44,6 +45,11 @@ struct TableZnodeInfo
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro.
     RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
+
+    /// If the path or the replica name still contained `{database}` when the table was loaded, this is the database
+    /// name it was expanded with. Such a table would get a different path after a rename of its database,
+    /// see `checkTableCanBeRenamedByDatabaseRename`.
+    std::optional<String> expanded_database_name;
 
     /// Information to save in table metadata and send to replicas (if ON CLUSTER or DatabaseReplicated).
     /// Has some macros expanded (e.g. {table}), others left unexpanded (e.g. {replica}).
