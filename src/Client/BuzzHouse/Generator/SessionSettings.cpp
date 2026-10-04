@@ -412,8 +412,10 @@ std::unordered_map<String, CHSetting> performanceSettings
                      "ie_join",
                      "parallel_full_sorting_merge",
                      "parallel_hash",
+                     "parallel_sorted_merge",
                      "partial_merge",
-                     "prefer_partial_merge"});
+                     "prefer_partial_merge",
+                     "sorted_merge"});
                 /// `ie_join` only handles an `ON` with two inequality comparisons, so on its own it
                 /// makes every ordinary join fail to plan. Add a fallback when the combination has
                 /// none; `grace_hash` and `parallel_hash` serve just as well, hence the substring test
@@ -433,6 +435,8 @@ std::unordered_map<String, CHSetting> performanceSettings
              "'auto'",
              "'full_sorting_merge'",
              "'parallel_full_sorting_merge'",
+             "'sorted_merge, hash'",
+             "'parallel_sorted_merge, hash'",
              "'prefer_partial_merge'"},
             false)},
        {"join_runtime_filter_from_fixed_hash_table", trueOrFalseSetting},

@@ -1,0 +1,6 @@
+local_sorted_merge_selected	1
+join_stays_local_with_distributed_read	Join ReadFromMergeTree ReadFromParallelReplicas ReadFromMergeTree
+parallel_replicas_falls_through_to_hash	1
+parallel_replicas_no_full_sorts	1
+8000	54988000
+8000	54988000

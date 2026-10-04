@@ -104,6 +104,18 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     return false;
 }
 
+/// Under `join_use_nulls` the right key of a `LEFT` / `FULL` join is `toNullable(x)` when the query also
+/// selects `x` (see `preferNullableRightKey` in `JoinStepLogical.cpp`). `toNullable` keeps every value, and
+/// a primary key column that the sharding reads is never `Nullable` (`isSafePrimaryDataKeyType`), so such a
+/// key compares exactly like `x` and can be matched against the primary key through its argument.
+static const ActionsDAG::Node * skipToNullable(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::FUNCTION && node->children.size() == 1 && node->function_base
+        && node->function_base->getName() == "toNullable")
+        node = node->children.front();
+    return node;
+}
+
 /// This function finds the common prefix of PK for left and right tables,
 /// which is also used in JOIN equality condition.
 ///
@@ -193,8 +205,8 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
                 continue;
 
             /// Check if both keys any match the PK expression.
-            auto lhs_match = lhs_matches.find(it->second);
-            auto rhs_match = rhs_matches.find(jt->second);
+            auto lhs_match = lhs_matches.find(skipToNullable(it->second));
+            auto rhs_match = rhs_matches.find(skipToNullable(jt->second));
             if (lhs_match == lhs_matches.end() || rhs_match == rhs_matches.end())
                 continue;
 
@@ -353,8 +365,38 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 /// * can be enforced for fill_sorting_merge JOIN and Sorting step added for it
 ///
 /// The algorithm finds as many JOIN steps as it can and apply optimization for the minimum possible prefix.
-void optimizeJoinByShards(QueryPlan::Node & root)
+///
+/// With `only_parallel_sorted_merge` the pass is restricted to joins whose selected algorithm is
+/// `parallel_sorted_merge`. That algorithm is parallelized exactly by this sharding, so the pass must run
+/// for it even when the general opt-in (`query_plan_join_shard_by_pk_ranges`) is off; but then other joins
+/// (`hash`, `full_sorting_merge`, ...) must keep their plans unchanged.
+void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merge)
 {
+    if (only_parallel_sorted_merge)
+    {
+        /// In the restricted mode the pass is a no-op unless some join actually selected
+        /// `parallel_sorted_merge`, while the traversal below builds expression DAGs along every step
+        /// chain. Pre-scan cheaply and bail out for the common case.
+        bool has_parallel_sorted_merge = false;
+        std::stack<const QueryPlan::Node *> prescan;
+        prescan.push(&root);
+        while (!prescan.empty() && !has_parallel_sorted_merge)
+        {
+            const auto * node = prescan.top();
+            prescan.pop();
+            if (const auto * join_step = typeid_cast<const JoinStep *>(node->step.get()))
+            {
+                const auto * merge_join = typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get());
+                if (merge_join && merge_join->getSelectedAlgorithm() == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+                    has_parallel_sorted_merge = true;
+            }
+            for (const auto * child : node->children)
+                prescan.push(child);
+        }
+        if (!has_parallel_sorted_merge)
+            return;
+    }
+
     /// The algorithm is basically DFS which build the Result structure for the every child step,
     /// And then update the Result for the current step or apply the optimization.
     struct Result
@@ -398,6 +440,14 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
             bool is_algo_supported = hash_join || concurrent_hash_join || full_sorting_merge_join;
+            if (only_parallel_sorted_merge)
+                is_algo_supported = full_sorting_merge_join
+                    && full_sorting_merge_join->getSelectedAlgorithm() == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+            else if (full_sorting_merge_join && full_sorting_merge_join->getSelectedAlgorithm() == JoinAlgorithm::SORTED_MERGE)
+                /// `sorted_merge` is the explicitly single-stream variant: the algorithm name encodes the
+                /// parallelism choice, so the blanket `query_plan_join_shard_by_pk_ranges` opt-in must not
+                /// turn it into `parallel_sorted_merge`.
+                is_algo_supported = false;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
@@ -420,9 +470,11 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
 
-                /// Note: join_use_nulls is not supported.
-                /// This is because we append toNullable function.
-                /// We can remove this function from the DAG or mark is as identity later.
+                /// Note: `join_use_nulls` does not defeat the matcher: the `toNullable` conversion of the
+                /// visible output columns mostly belongs to the actions after the join step, and where it
+                /// becomes the right join key instead, `findCommonPrimaryKeyPrefixByJoinKey` looks through
+                /// it (`skipToNullable`). The sharding applies for the OUTER kinds and for `USING` alike
+                /// (covered by 04760_sorted_merge_join_use_nulls).
 
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
@@ -451,8 +503,14 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
                 frame.results.back() = std::nullopt;
             }
-            else if (can_split_left_table)
+            else if (can_split_left_table && !full_sorting_merge_join)
             {
+                /// A hash join keeps its probe streams one-to-one (`keepLeftPipelineInOrder`), so a sharding
+                /// that a join above applies to the left subtree survives it. An unsharded merge join does
+                /// not: it joins one stream per side and gives one stream back, so the sharding of its left
+                /// subtree would be lost below it and the streams above it would no longer be the shards the
+                /// join above pairs positionally with its other input. The chain stops at such a join; the
+                /// joins collected below it are sharded on their own (`apply` below).
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
                 result->joins.joins_to_keep_in_order.emplace_back(join_step);

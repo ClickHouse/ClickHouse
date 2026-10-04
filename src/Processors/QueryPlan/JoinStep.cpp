@@ -6,6 +6,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -41,9 +42,8 @@ std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
     if (!use_sharding)
         return join.getAlgorithm();
 
-    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
-    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
-        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+    if (const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join))
+        return full_sorting_merge_join->getShardedAlgorithm();
 
     return join.getAlgorithm();
 }
@@ -170,6 +170,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+    sharding_fell_back = !primary_key_sharding.empty() && !use_sharding;
 
     QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
 
@@ -177,9 +178,59 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
+            /// A merge join consumes one sorted stream per side, but an input can arrive as several
+            /// streams that are each sorted by the join keys (its pre-join sort is always a sort by them, so
+            /// there is no other kind of multi-stream input here):
+            ///  - the plan sharded this join by primary-key ranges, but the stream counts diverged at
+            ///    pipeline-building time (e.g. a data-dependent `PREWHERE` pruned one side down to a single
+            ///    empty stream), so the per-shard pipeline cannot be built;
+            ///  - the input is a join below that was sharded, while this one was not, and the sharding pass
+            ///    left the pre-join sort partitioned per shard (`PartitionedFinishSorting`).
+            /// Degrade to the single-stream merge join instead of failing: merging the streams preserves
+            /// the order the merge join requires.
+            if (join->getTableJoin().kind() != JoinKind::Paste)
+            {
+                auto merge_to_single_sorted_stream = [&](QueryPipelineBuilder & pipeline, const Names & key_names)
+                {
+                    if (pipeline.getNumStreams() <= 1)
+                        return;
+
+                    SortDescription sort_description;
+                    sort_description.reserve(key_names.size());
+                    for (const auto & key_name : key_names)
+                        sort_description.emplace_back(key_name);
+
+                    auto transform = std::make_shared<MergingSortedTransform>(
+                        pipeline.getSharedHeader(),
+                        pipeline.getNumStreams(),
+                        sort_description,
+                        max_block_size,
+                        /*max_block_size_bytes=*/ 0,
+                        /*max_dynamic_subcolumns_=*/ std::nullopt,
+                        SortingQueueStrategy::Default);
+
+                    /// Report the merge under this step so that `EXPLAIN PIPELINE` lists it.
+                    transform->setQueryPlanStep(this, static_cast<size_t>(JoinStage::Default));
+                    processors.emplace_back(transform);
+                    pipeline.addTransform(std::move(transform));
+                };
+
+                const auto & on_clause = join->getTableJoin().getOnlyClause();
+                merge_to_single_sorted_stream(*pipelines[0], on_clause.key_names_left);
+                merge_to_single_sorted_stream(*pipelines[1], on_clause.key_names_right);
+            }
+
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
                 std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
-            joined_pipeline->resize(max_streams);
+
+            /// Spread the single output stream over `max_streams` for the steps above - unless a step above
+            /// consumes the stream as it is: a merge join above that inherits this join's output order
+            /// (`keepLeftPipelineInOrder`, it would only merge the streams back into one), or, when this join
+            /// was sharded but had to degrade, a step above that pairs the streams positionally with the
+            /// shards of another input. A resize hands out chunks arbitrarily, so `max_streams` streams of it
+            /// must never be mistaken for `max_streams` shards.
+            if (primary_key_sharding.empty() && !keep_left_read_in_order)
+                joined_pipeline->resize(max_streams);
         }
         else
         {
@@ -437,7 +488,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
     }
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
-    if (!primary_key_sharding.empty())
+    if (!primary_key_sharding.empty() && !sharding_fell_back)
     {
         settings.out << prefix << "Sharding: [";
         bool first = true;
@@ -466,7 +517,7 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
-    if (!primary_key_sharding.empty())
+    if (!primary_key_sharding.empty() && !sharding_fell_back)
     {
         auto array = std::make_unique<JSONBuilder::JSONArray>();
         for (const auto & [lhs, rhs] : primary_key_sharding)
