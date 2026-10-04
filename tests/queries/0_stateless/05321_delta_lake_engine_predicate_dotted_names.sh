@@ -17,12 +17,13 @@ mkdir -p "$DIR/_delta_log"
 
 # Data files use the physical names. The two files have disjoint values, so a skipped file is visible.
 STRUCTURE='`c-id` Int32, `c-ab` Nullable(Int32), `c-a` Tuple(`c-a-b` Nullable(Int32)), `c-xy` Nullable(Int32),
-    `c-d` Tuple(`c-d-xy` Nullable(Int32)), `c-s` Tuple(`c-s-x` Nullable(Int32)), `c-fg` Nullable(Bool)'
+    `c-d` Tuple(`c-d-xy` Nullable(Int32)), `c-s` Tuple(`c-s-x` Nullable(Int32)), `c-fg` Nullable(Bool),
+    `c-pq` Tuple(`c-pq-r` Nullable(Int32))'
 $CLICKHOUSE_LOCAL -q "
 INSERT INTO FUNCTION file('$DIR/lo.parquet', Parquet, '$STRUCTURE')
-    VALUES (1, 100, (1), 10, (20), (30), true), (2, 101, (2), 11, (21), (31), true);
+    VALUES (1, 100, (1), 10, (20), (30), true, (40)), (2, 101, (2), 11, (21), (31), true, (41));
 INSERT INTO FUNCTION file('$DIR/hi.parquet', Parquet, '$STRUCTURE')
-    VALUES (3, 300, (3), 12, (22), (32), false), (4, 301, (4), 13, (23), (33), false);
+    VALUES (3, 300, (3), 12, (22), (32), false, (42)), (4, 301, (4), 13, (23), (33), false, (43));
 "
 
 python3 - "$DIR" <<'EOF'
@@ -38,7 +39,7 @@ def struct(*fields):
     return {"type": "struct", "fields": list(fields)}
 
 # `a.b` is a column and also the path of the field `b` of the struct `a`. `x.y` and `f.g` are only columns, `d` has a
-# field `x.y`, and `s.x` is a nested field without dots in its names.
+# field `x.y`, `s.x` is a nested field without dots in its names, and the struct `p.q` has a field `r`.
 schema = struct(
     field("id", "integer", 1, "c-id"),
     field("a.b", "integer", 2, "c-ab"),
@@ -47,10 +48,12 @@ schema = struct(
     field("d", struct(field("x.y", "integer", 7, "c-d-xy")), 6, "c-d"),
     field("s", struct(field("x", "integer", 9, "c-s-x")), 8, "c-s"),
     field("f.g", "boolean", 10, "c-fg"),
+    field("p.q", struct(field("r", "integer", 12, "c-pq-r")), 11, "c-pq"),
 )
 
-def values(id_, ab, a_b, xy, d_xy, s_x):
-    return {"c-id": id_, "c-ab": ab, "c-a": {"c-a-b": a_b}, "c-xy": xy, "c-d": {"c-d-xy": d_xy}, "c-s": {"c-s-x": s_x}}
+def values(id_, ab, a_b, xy, d_xy, s_x, p_q_r):
+    return {"c-id": id_, "c-ab": ab, "c-a": {"c-a-b": a_b}, "c-xy": xy, "c-d": {"c-d-xy": d_xy}, "c-s": {"c-s-x": s_x},
+            "c-pq": {"c-pq-r": p_q_r}}
 
 def add(path, min_values, max_values):
     null_count = {k: {kk: 0 for kk in v} if isinstance(v, dict) else 0 for k, v in min_values.items()}
@@ -62,9 +65,9 @@ actions = [
     {"protocol": {"minReaderVersion": 2, "minWriterVersion": 5}},
     {"metaData": {"id": "t", "format": {"provider": "parquet", "options": {}}, "schemaString": json.dumps(schema),
                   "partitionColumns": [], "createdTime": 1700000000000,
-                  "configuration": {"delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "10"}}},
-    add("lo.parquet", values(1, 100, 1, 10, 20, 30), values(2, 101, 2, 11, 21, 31)),
-    add("hi.parquet", values(3, 300, 3, 12, 22, 32), values(4, 301, 4, 13, 23, 33)),
+                  "configuration": {"delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "12"}}},
+    add("lo.parquet", values(1, 100, 1, 10, 20, 30, 40), values(2, 101, 2, 11, 21, 31, 41)),
+    add("hi.parquet", values(3, 300, 3, 12, 22, 32, 42), values(4, 301, 4, 13, 23, 33, 43)),
 ]
 with open(os.path.join(directory, "_delta_log", "00000000000000000000.json"), "w") as log:
     for action in actions:
@@ -128,6 +131,7 @@ check 'NOT `f.g`'
 check 's.x.null = 0'
 check 's.x = 32'
 check 's.x = 32 AND `a.b` = 300'
+check '`p.q`.r = 42'
 
 # Prints the matching ids of a change data feed query.
 check_cdf() {

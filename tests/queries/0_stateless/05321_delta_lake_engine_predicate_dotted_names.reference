@@ -29,6 +29,9 @@ files: 1
 s.x = 32 AND `a.b` = 300
 3
 files: 1
+`p.q`.r = 42
+3
+files: 2
 cdf: `x.y` = 11
 2
 cdf: s.x.null = 0
