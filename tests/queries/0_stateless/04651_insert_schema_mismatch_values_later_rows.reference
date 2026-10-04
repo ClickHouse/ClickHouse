@@ -1,0 +1,6 @@
+-- the failing row itself mismatches; a later row does not hide the explanation
+insert failed as expected
+explanation present
+-- the failing row matches the expected structure; a later row does not create a false positive
+insert failed as expected
+explanation missing

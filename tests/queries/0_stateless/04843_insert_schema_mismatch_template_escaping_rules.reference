@@ -1,0 +1,10 @@
+-- Template, homogeneous Quoted rules: a bare number for a String column is a genuine structure mismatch
+explanation present
+-- Template, homogeneous Quoted rules: a quoted value for a String column is valid (no false positive)
+explanation missing
+-- Template, mixed Quoted and Escaped rules: no single value-form contract, the diagnostic stays conservative
+explanation missing
+-- Template, homogeneous JSON rules: a number token for a String column is a genuine structure mismatch when input_format_json_read_numbers_as_strings = 0
+explanation present
+-- Template, homogeneous JSON rules: a number token for a String column is valid when input_format_json_read_numbers_as_strings = 1 (no false positive)
+explanation missing

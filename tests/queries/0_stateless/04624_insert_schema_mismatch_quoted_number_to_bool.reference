@@ -1,0 +1,15 @@
+-- JSONEachRow, quoted numeric string into Bool (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, quoted zero into Bool (genuine mismatch)
+insert failed as expected
+explanation present
+-- CSV, quoted numeric string into Bool (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONStringsEachRow, quoted numeric string into Bool plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONCompactStringsEachRow, quoted numeric string into Bool plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing

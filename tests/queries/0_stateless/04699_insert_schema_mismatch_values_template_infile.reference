@@ -1,0 +1,6 @@
+-- the error comes from the batched evaluation of the first block; only the first two rows are sampled
+insert failed as expected
+explanation present
+-- the first two rows match the expected structure (no false positive)
+insert failed as expected
+explanation missing
