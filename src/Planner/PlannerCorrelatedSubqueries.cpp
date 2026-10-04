@@ -1224,7 +1224,10 @@ QueryPlan decorrelateQueryPlan(
             input_header,
             limit_step->getLimit(),
             limit_step->getOffset(),
-            std::move(limit_by_columns));
+            std::move(limit_by_columns),
+            /// Keep draining the input after the limit is reached when the original `LIMIT` did so
+            /// (for `exact_rows_before_limit` and `WITH TOTALS`).
+            limit_step->alwaysReadTillEnd());
         result_step->setStepDescription("LIMIT BY for decorrelated correlated subquery");
 
         decorrelated_query_plan.addStep(std::move(result_step));
