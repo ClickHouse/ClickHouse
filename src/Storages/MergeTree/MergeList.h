@@ -189,15 +189,14 @@ public:
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
-        /// The flag is set before iterating the list, and `insert` checks it after linking
-        /// the new entry into the list under the mutex, so an entry is either cancelled by
-        /// the loop below or observes the flag in `insert` - none can escape.
+        /// The flag is set before cancelCurrent(); insert checks it after linking
+        /// a new entry, so none can escape.
         all_cancelled = true;
         cancelCurrent();
     }
 
     /// Cancel all current merges and mutations.
-    /// Users on OOM Canary, when we want to free resources
+    /// Used by the OOM canary to free resources (does not reject future merges).
     void cancelCurrent()
     {
         std::lock_guard lock{mutex};

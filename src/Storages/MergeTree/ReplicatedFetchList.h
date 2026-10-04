@@ -112,7 +112,7 @@ public:
         cancelCurrent();
     }
 
-    /// Cancel all current and fetches.
+    /// Cancel all current fetches.
     void cancelCurrent()
     {
         std::lock_guard lock{mutex};
