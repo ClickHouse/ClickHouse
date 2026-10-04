@@ -52,25 +52,42 @@ public:
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
     static void setLastIsDelimiter(bool flag);
 
-    /// Set text to be prepopulated in the next readLine call
-    void setInitialText(const String & text) override;
+    bool inAIMode() const override { return ai_mode; }
+
+    void addQueryToHistory(const String & query) override;
 private:
     InputStatus readOneLine(const String & prompt) override;
-    void addToHistory(const String & line) override;
-    int executeEditor(const std::string & path);
-    void openEditor(bool format_query);
 
-    /// Run a history-navigation action with the hint suppression armed (see
-    /// `suppress_hints_once`): the entry it recalls must not pop hints by itself.
+    /// The prompt shown while in AI-chat mode: the display name plus a magenta `:?`.
+    std::string aiModePrompt() const;
+
+    /// Run a history-recall action (navigation, search, restore) while keeping AI-chat mode in
+    /// sync with the entries. Entries for AI questions are stored with a `? ` prefix; the
+    /// editable line shows the question without it. Before the action, the prefix is restored on
+    /// the current line so replxx saves the entry in its stored form; after it, the recalled
+    /// entry sets the mode (AI vs SQL) and the prefix is stripped from the editable line again.
+    /// The hint suppression is armed around the action as well (see `suppress_hints_once`): the
+    /// entry it recalls is a line displayed programmatically and must not pop hints by itself.
     replxx::Replxx::ACTION_RESULT historyNavigate(replxx::Replxx::ACTION action, char32_t code);
-
-    /// Run a history-search action with the hint suppression armed (see
-    /// `suppress_hints_once`): a selected entry must not pop hints by itself.
-    replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
+    void restoreHistoryPrefix();
+    void syncModeFromHistory();
 
     /// After a line was displayed programmatically, pin its text so that any hint regeneration
     /// for it shows nothing (see `suppress_hints_for_text`).
     void suppressHintsForDisplayedLine();
+    void addToHistory(const String & line) override;
+
+    /// Add one entry to the history in the form it is stored in (`? `-prefixed for an AI question)
+    /// and persist it. `is_sql` also feeds the identifiers of the entry to the completion.
+    void appendHistoryEntry(const String & entry, bool is_sql);
+
+    int executeEditor(const std::string & path);
+    void openEditor(bool format_query);
+
+    /// Run a history-search action: a selected entry needs exactly the treatment a recalled one
+    /// gets, so this goes through `historyNavigate`. C-R, C-S, Meta-R and the ClickHouse regular
+    /// history-search binding all use this wrapper.
+    replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
@@ -103,6 +120,13 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    /// AI-chat mode state. Entered by typing a leading `?` on an empty line (which switches the
+    /// prompt to `:?` instead of inserting the character) and left by pressing Backspace on the
+    /// empty `:?` line. Persists across readLine() calls until left. `sql_prompt` remembers the
+    /// normal prompt so it can be restored when leaving the mode.
+    bool ai_mode = false;
+    std::string sql_prompt;
 
     /// As-you-type hint state (input-thread only). `hints_visible` is whether a hint with
     /// something to complete is currently shown. `hint_count` is how many hints are shown and

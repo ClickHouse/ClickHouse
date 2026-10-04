@@ -1,0 +1,281 @@
+# A name says nothing about what reading it reaches, and neither does the statement it is written
+# in. Every unconfirmed read of the agent resolves the database it names against
+# `system.databases` and refuses one that is not a plain database of this server, and every
+# statement kind that can name a table or a database carries its target to that check:
+# `SELECT ... FROM`, `SHOW CREATE`, `EXISTS`, `SHOW COLUMNS` (whose target is in plain strings
+# rather than in the AST children) and `SHOW TABLES FROM` (which names a database and no table,
+# and which `InterpreterShowTablesQuery` deliberately makes visible even to a remote database).
+#
+# `Filesystem` stands in for the externally-backed database engines here: like `MySQL`,
+# `PostgreSQL` and the data-lake catalogs it resolves names this server does not own, and unlike
+# them it needs nothing running to be created.
+import json
+import os
+import pty
+import select
+import shlex
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script. Writing anywhere else means the trace of a failure in
+# CI is collected and then never shown, which is the only record of what the client did.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone. Every later read then
+# returns at once and every write is silently discarded, so without noticing it the test runs to
+# the end and reports every expectation as unmet, saying nothing about the client having died.
+client_gone = False
+
+FINAL_ANSWER = "MOCK-DONE"
+
+# The statement the agent is made to run, and whether the read-only tool should accept it. The
+# engine of the database (and of the table) decides; the name and the statement kind never do.
+CASES = [
+    ("select_local", "SELECT count() FROM default.plain", True),
+    ("select_foreign_database", "SELECT count() FROM fs_db.anything", False),
+    ("show_tables_local", "SHOW TABLES FROM default", True),
+    ("show_tables_current", "SHOW TABLES", True),
+    ("show_tables_foreign_database", "SHOW TABLES FROM fs_db", False),
+    ("show_dictionaries_foreign_database", "SHOW DICTIONARIES FROM fs_db", False),
+    ("show_create_local", "SHOW CREATE TABLE default.plain", True),
+    ("show_create_foreign_database", "SHOW CREATE TABLE fs_db.anything", False),
+    ("exists_local", "EXISTS TABLE default.plain", True),
+    ("exists_foreign_database", "EXISTS TABLE fs_db.anything", False),
+    ("show_columns_local", "SHOW COLUMNS FROM plain FROM default", True),
+    ("show_columns_foreign_database", "SHOW COLUMNS FROM anything FROM fs_db", False),
+    ("system_tables", "SELECT count() FROM system.tables", True),
+    ("show_databases", "SHOW DATABASES", True),
+]
+
+SETUP = [
+    "CREATE TABLE default.plain (x UInt32) ENGINE = MergeTree ORDER BY x AS SELECT 1",
+    "CREATE DATABASE fs_db ENGINE = Filesystem('"
+    + os.path.join(os.environ["CLICKHOUSE_TMP"], "05112_fs_db")
+    + "')",  # noqa: the path is created in main()
+]
+
+# The last request the mock provider received: it carries the results of every tool call.
+last_request = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider. It answers with one `run_readonly_query` tool call per
+    case, in order, and finishes with a plain text message."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        request = json.loads(self.rfile.read(length))
+        last_request["value"] = request
+
+        # The number of tool calls already made is the number of tool results in the history.
+        done = sum(1 for m in request["messages"] if m.get("role") == "tool")
+        if done < len(CASES):
+            name, query, _ = CASES[done]
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call_{name}",
+                        "type": "function",
+                        "function": {
+                            "name": "run_readonly_query",
+                            "arguments": json.dumps({"query": query}),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": FINAL_ANSWER}
+            finish_reason = "stop"
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [
+                    {"index": 0, "message": message, "finish_reason": finish_reason}
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials come
+    from the configuration and not from the environment, so the agent does not ask for the
+    confirmation of using an API key found there. `max_steps` must cover every tool call."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            f"<max_steps>{len(CASES) + 5}</max_steps>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone. The expected output has no such line, so it
+    shows up in the diff of the failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+FS_DB_PATH = os.path.join(os.environ["CLICKHOUSE_TMP"], "05112_fs_db")
+
+
+def main():
+    # A `Filesystem` database needs its directory to exist before it can be attached.
+    os.makedirs(FS_DB_PATH, exist_ok=True)
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
+    argv = base + [
+        "--config-file",
+        make_config(server.server_port),
+        "--history_file=/dev/null",
+        "--path",
+        os.path.join(os.environ["CLICKHOUSE_TMP"], "05112_local_db"),
+    ]
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(base[0], argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        # The temporary tables must be created in the same session the agent runs in. Every
+        # statement waits for the timing line the interactive client prints when a query is done:
+        # `replxx` submits everything that is already buffered when it starts reading as a single
+        # statement, so typing ahead would merge the statements with the question that follows
+        # them and the `?` would never start the agent. Waiting for the prompt would not prevent
+        # it: `replxx` repaints the prompt while the line is being typed, so it is back in the
+        # output before the statement has been submitted, let alone run.
+        for statement in SETUP:
+            os.write(master, statement.encode() + b"\n")
+            read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
+
+        os.write(master, b"? read the tables\n")
+        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
+
+        # Every tool call is answered in the history of the last request, keyed by its id.
+        results = {}
+        for message in last_request.get("value", {}).get("messages", []):
+            if message.get("role") == "tool":
+                results[message.get("tool_call_id")] = str(message.get("content"))
+
+        for name, _, should_be_allowed in CASES:
+            answer = results.get(f"call_{name}")
+            if answer is None:
+                print(f"{name}: NO RESULT")
+                continue
+            # The tool reports a refusal as an error; an accepted query reports its outcome.
+            allowed = '"success":true' in answer.replace(" ", "")
+            if allowed == should_be_allowed:
+                print(f"{name}: {'OK' if allowed else 'BLOCKED'}")
+            else:
+                print(f"{name}: UNEXPECTED {answer[:200]}")
+    finally:
+        os.write(master, b"exit\n")
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()

@@ -262,6 +262,14 @@ LineReader::LineReader
     /// FIXME: check extender != delimiter
 }
 
+bool LineReader::isAIChatLine(std::string_view text)
+{
+    size_t i = 0;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t'))
+        ++i;
+    return i < text.size() && text[i] == '?';
+}
+
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
     String line;
@@ -303,7 +311,11 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        /// AI-chat input (the `?` mode or an inline `? ...` line) is natural language rather than
+        /// SQL. In particular, it has no SQL delimiter, so pressing Enter in `--multiline` mode must
+        /// dispatch the question instead of opening the SQL continuation prompt.
+        const bool is_ai_chat = inAIMode() || (line.empty() && isAIChatLine(input));
+        need_next_line = !is_ai_chat && (has_extender || (multiline && !has_delimiter) || hasInputData());
 
         if (has_extender)
         {

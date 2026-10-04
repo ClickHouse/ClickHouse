@@ -88,13 +88,39 @@ std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input)
     return message;
 }
 
+bool isClientSlashCommand(std::string_view trimmed_input)
+{
+    for (const auto & command : clientSlashCommands())
+    {
+        if (equalsCaseInsensitive(trimmed_input, command.name))
+            return true;
+        if (command.takes_argument && trimmed_input.size() > command.name.size()
+            && startsWithCaseInsensitive(trimmed_input, command.name) && isWhitespaceASCII(trimmed_input[command.name.size()]))
+            return true;
+    }
+    return false;
+}
+
 ClientSlashCommandMatch matchClientSlashCommandPrefix(std::string_view text_before_cursor)
 {
     size_t pos = 0;
-    /// Deliberately not skipping newlines: a `/` on a continuation line of a multiline query is a
-    /// part of the query, not a command.
-    while (pos < text_before_cursor.size() && isWhitespaceASCIIOneLine(text_before_cursor[pos]))
+    auto skip_blanks = [&]
+    {
+        /// Deliberately not skipping newlines: a `/` on a continuation line of a multiline query is
+        /// a part of the query, not a command.
+        while (pos < text_before_cursor.size() && isWhitespaceASCIIOneLine(text_before_cursor[pos]))
+            ++pos;
+    };
+
+    skip_blanks();
+
+    /// The inline form of the AI chat (`? /help`) runs the command as well, so a leading `?` is
+    /// skipped. In the `?` mode of the line editor the marker is not a part of the input at all.
+    if (pos < text_before_cursor.size() && text_before_cursor[pos] == '?')
+    {
         ++pos;
+        skip_blanks();
+    }
 
     if (pos >= text_before_cursor.size() || text_before_cursor[pos] != '/')
         return {};

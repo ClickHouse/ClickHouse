@@ -2,32 +2,37 @@
 slug: /use-cases/AI/ai-powered-sql-generation
 sidebarTitle: 'AI-powered SQL generation'
 title: 'AI-powered SQL generation'
-description: 'This guide explains how to use AI to generate SQL queries in ClickHouse Client or clickhouse-local.'
-keywords: ['AI', 'SQL generation']
+description: 'This guide explains how to use the AI assistant of ClickHouse Client and clickhouse-local to explore data and generate and run SQL queries from natural language.'
+keywords: ['AI', 'SQL generation', 'AI assistant', 'agent']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-Starting from ClickHouse 25.7, [ClickHouse Client](/concepts/features/interfaces/client) and [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) include [AI-powered functionality](/concepts/features/interfaces/client#ai-sql-generation) that converts natural language descriptions into SQL queries. This feature allows you to describe your data requirements in plain text, which the system then translates into corresponding SQL statements.
+[ClickHouse Client](/concepts/features/interfaces/client) and [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) include an [AI assistant](/concepts/features/interfaces/client#ai-sql-generation) that turns questions in natural language into SQL queries, runs them on your connection, and answers from their results. You ask a question by prefixing it with `?` at the interactive prompt.
 
-This capability is particularly useful if you're not familiar with complex SQL syntax or need to quickly generate queries for exploratory data analysis. The feature works with standard ClickHouse tables and supports common query patterns including filtering, aggregation, and joins.
+The assistant is an agent: rather than generating one query blindly, it works towards the answer step by step with the help of the following tools:
 
-It does this with help from the following in-built tools/functions:
+* `list_databases` - list the databases of the server
+* `list_tables` - list the tables of a database
+* `show_create_table` - read the `CREATE TABLE` statement of a table
+* `consult_documentation` - look an entity up in the embedded documentation (the `system.documentation` table)
+* `read_query_log` - read your earlier queries from `system.user_query_log`
+* `run_readonly_query` - run a read-only query without asking, under a sandbox (`readonly = 1`, a 30-second and a 10 GiB limit)
+* `run_query` - run any other query, after you confirm it
 
-* `list_databases` - List all available databases in the ClickHouse instance
-* `list_tables_in_database` - List all tables in a specific database
-* `get_schema_for_table` - Get the `CREATE TABLE` statement (schema) for a specific table
+It is also given the last queries you ran in the session, with their results truncated and their error messages, so you can ask about "my last query" or "that error". The queries it runs are displayed and executed in your terminal exactly as if you typed them. See the [reference](/concepts/features/interfaces/client#ai-sql-generation-usage) for what exactly each tool is allowed to do.
 
 ## Prerequisites {#prerequisites}
 
-We'll need to add an Anthropic or OpenAI key as an environment variable:
+The assistant needs a model provider. The quickest way is an Anthropic or OpenAI key in an environment variable:
 
 ```bash
 export ANTHROPIC_API_KEY=your_api_key
+# or
 export OPENAI_API_KEY=your_api_key
 ```
 
-Alternatively, you can [provide a configuration file](/concepts/features/interfaces/client#ai-sql-generation-configuration).
+Alternatively, you can [provide a configuration file](/concepts/features/interfaces/client#ai-sql-generation-configuration). When neither is set, the assistant uses the [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to, if its administrator has enabled AI functions - see [providers](/concepts/features/interfaces/client#ai-sql-generation-providers).
 
 ## Connecting to the ClickHouse SQL playground {#connecting-to-the-clickhouse-sql-playground}
 
@@ -50,66 +55,33 @@ We'll assume you have ClickHouse installed, but if not, refer to the [installati
 
 Now it's time to start asking some questions!
 
-The text to SQL feature is effectively a one-shot query generation tool. Since it doesn't maintain conversation history, include as much useful context as possible in your question. Be specific about:
-
-Time periods or date ranges
-The type of analysis you want (averages, totals, rankings, etc.)
-Any filtering criteria
-
 ### Finding expensive housing markets {#finding-expensive-housing-markets}
 
-Let's start by asking a question about house prices. The SQL playground contains a UK house prices dataset, which the AI will automatically discover:
+Let's start by asking a question about house prices. The SQL playground contains a UK house prices dataset, which the assistant discovers on its own:
 
 ```sql
-?? Can you tell me the most expensive place to buy a house in 2021?;
+? Can you tell me the most expensive place to buy a house in 2021?
 ```
 
-Once we press enter, we'll see the thought process of the AI as it tries to answer our question.
+Once we press enter, the assistant prints its tool calls and its thoughts as it works. The output looks like this (shortened):
 
 ```text
-• Starting AI SQL generation with schema discovery...
-─────────────────────────────────────────────────
-🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
-🔧 Calling: list_databases [toolu_01...]
-🧠 thinking✓ list_databases completed
-  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
-🔧 Calling: list_databases [toolu_01...]
-✓ list_databases completed
-  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
-🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
-🔧 Calling: list_tables_in_database [toolu_01...]
-  └─ Args: {"database":"uk"}
-🧠 thinking.✓ list_tables_in_database completed
-  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
-🔧 Calling: list_tables_in_database [toolu_01...]
-  └─ Args: {"database":"uk"}
-✓ list_tables_in_database completed
-  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
-🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
-🔧 Calling: get_schema_for_table [toolu_01...]
-  └─ Args: {"database":"uk","table":"uk_price_paid"}
-✓ get_schema_for_table completed
-  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
-🔧 Calling: get_schema_for_table [toolu_01...]
-  └─ Args: {"database":"uk","table":"uk_price_paid"}
-🧠 thinking..✓ get_schema_for_table completed
-  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
-🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
-─────────────────────────────────────────────────
-• ✨ SQL query generated successfully!
-:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
-```
+⚙ list_databases
+  ✓ amazon, bluesky, country, covid, default, dns, ...
+⚙ list_tables (database: uk)
+  ✓ uk_codes, uk_postcode_to_iso, uk_price_paid, ...
+⚙ show_create_table (database: uk, table: uk_price_paid)
+  ✓ CREATE TABLE uk.uk_price_paid (`price` UInt32, `date` Date, `postcode1` LowCardinality(String), ...
+The uk_price_paid table has the prices and the locations. Let me average the prices per town for 2021.
 
-The AI follows these steps:
+:) SELECT town, district, county, round(avg(price), 2) AS avg_price, count() AS total_sales
+   FROM uk.uk_price_paid
+   WHERE date >= '2021-01-01' AND date <= '2021-12-31'
+   GROUP BY town, district, county
+   HAVING total_sales >= 10
+   ORDER BY avg_price DESC
+   LIMIT 10
 
-1. Schema discovery - Explores available databases and tables
-2. Table analysis - Examines the structure of relevant tables
-3. Query generation - Creates SQL based on your question and the discovered schema
-
-We can see that it did find the `uk_price_paid` table and generated a query for us to run.
-If we run that query, we'll see the following output:
-
-```text
 ┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
 │ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
 │ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
@@ -122,59 +94,37 @@ If we run that query, we'll see the following output:
 │ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
 │ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
 └────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+
+Ilkley had the highest average price in 2021, but from only 10 sales. Among places with many sales,
+the City of London stands out at about £4.0 million on average over 311 sales.
 ```
 
-If we want to ask follow up questions, we need to ask our question from scratch.
+The assistant followed these steps:
 
-### Finding expensive properties in Greater London {#finding-expensive-properties-in-greater-london}
+1. Schema discovery - it explored the databases and the tables of the relevant one
+2. Table analysis - it read the structure of the `uk_price_paid` table
+3. Query execution - it ran a query built from your question and the schema it discovered. The query only reads an ordinary table, so it ran as a read-only query without asking, and its result is displayed as if you had typed it
+4. Answer - it read the result and answered the question
 
-Since the feature doesn't maintain conversation history, each query must be self-contained. When asking follow-up questions, you need to provide the full context rather than referring to previous queries.
-For example, after seeing the previous results, we might want to focus specifically on Greater London properties. Rather than asking "What about Greater London?", we need to include the complete context:
+### Asking follow-up questions {#finding-expensive-properties-in-greater-london}
+
+The conversation keeps its context between questions in the same session, so a follow-up does not have to repeat what was already said, and the assistant does not have to discover the schema again:
 
 ```sql
-?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+? What about Greater London, across the years?
 ```
 
-Notice that the AI goes through the same discovery process, even though it just examined this data:
-
 ```text
-• Starting AI SQL generation with schema discovery...
-─────────────────────────────────────────────────
-🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
-🔧 Calling: list_databases [toolu_01...]
-✓ list_databases completed
-  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
-🔧 Calling: list_databases [toolu_01...]
-🧠 thinking.✓ list_databases completed
-  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
-🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
-🔧 Calling: list_tables_in_database [toolu_01...]
-  └─ Args: {"database":"uk"}
-🧠 thinking..✓ list_tables_in_database completed
-  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
-🔧 Calling: list_tables_in_database [toolu_01...]
-  └─ Args: {"database":"uk"}
-✓ list_tables_in_database completed
-  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
-🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
-🔧 Calling: get_schema_for_table [toolu_01...]
-  └─ Args: {"database":"uk","table":"uk_price_paid"}
-🧠 thinking.✓ get_schema_for_table completed
-  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
-🔧 Calling: get_schema_for_table [toolu_01...]
-  └─ Args: {"database":"uk","table":"uk_price_paid"}
-✓ get_schema_for_table completed
-  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
-🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
-─────────────────────────────────────────────────
-• ✨ SQL query generated successfully!
-:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
-```
+The same table has the county. Let me break the Greater London prices down by district and year.
 
-This generates a more targeted query that filters specifically for Greater London and breaks down results by year.
-The output of the query is shown below:
+:) SELECT district, toYear(date) AS year, round(avg(price), 2) AS avg_price, count() AS total_sales
+   FROM uk.uk_price_paid
+   WHERE county = 'GREATER LONDON'
+   GROUP BY district, year
+   HAVING total_sales >= 10
+   ORDER BY avg_price DESC
+   LIMIT 10
 
-```text
 ┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
 │ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
 │ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
@@ -187,6 +137,19 @@ The output of the query is shown below:
 │ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
 │ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
 └─────────────────────┴──────┴─────────────┴─────────────┘
+
+The City of London is the most expensive district of Greater London in almost every year,
+peaking in 2019 at about £14.5 million on average.
 ```
 
-The City of London consistently appears as the most expensive district! You'll notice the AI created a reasonable query, though the results are ordered by average price rather than chronologically. For a year-over-year analysis, we might refine your question to ask specifically for "the most expensive district each year" to get results grouped differently.
+To start a fresh conversation, type `? clear`.
+
+### Queries that change data {#queries-that-change-data}
+
+The assistant runs only read-only queries on its own. Anything else - writes, DDL, `SET`, or a read that can reach outside of the server, such as a table function or a table of an external engine - is shown at the prompt first, and runs only after you confirm it:
+
+```text
+Run this query? [Y/n]
+```
+
+The assistant acts with the permissions of your connection, so it cannot do anything you could not do yourself. On the SQL playground the `demo` user is read-only, so such queries fail there even when confirmed.

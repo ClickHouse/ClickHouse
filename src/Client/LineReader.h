@@ -6,6 +6,7 @@
 #include <atomic>
 #include <vector>
 #include <optional>
+#include <string_view>
 #include <unordered_set>
 #include <replxx.hxx>
 
@@ -86,8 +87,20 @@ public:
     virtual void enableBracketedPaste() {}
     virtual void disableBracketedPaste() {}
 
-    /// Set text to be prepopulated in the next readLine call
-    virtual void setInitialText(const String &) {}
+    /// Whether the reader is currently in AI-chat mode (entered by a leading `?`): the next
+    /// line read should be sent to the AI agent rather than executed as SQL. Only the
+    /// interactive replxx reader supports this; other readers are never in AI mode.
+    virtual bool inAIMode() const { return false; }
+
+    /// Whether the input is an inline AI-chat line (the interactive `?` / `??` command). Such a
+    /// line is a natural-language question, not SQL: it has no SQL delimiter, and SQL identifier
+    /// hints and completions are noise for it.
+    static bool isAIChatLine(std::string_view text);
+
+    /// Append a query to the history as if the user had typed it. Used for the queries the AI
+    /// agent runs on the user's connection: they are echoed like typed ones, and the user may
+    /// want to recall one with the history navigation and edit it into their own query.
+    virtual void addQueryToHistory(const String &) {}
 
     bool hasInputData() const;
 
