@@ -7855,7 +7855,13 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         }
     }
 
-    if (recursive_cte_table && isStorageUsedInTree(recursive_cte_table->storage, union_node.get()))
+    /// With USING KEY, reading the accumulated state `<cte_name>_settled` from a recursive member
+    /// is a self-reference too, even if the working table itself is not read.
+    bool is_recursive_cte = recursive_cte_table
+        && (isStorageUsedInTree(recursive_cte_table->storage, union_node.get())
+            || (recursive_cte_table->settled_storage && isStorageUsedInTree(recursive_cte_table->settled_storage, union_node.get())));
+
+    if (is_recursive_cte)
     {
         if (union_node_typed.getUnionMode() != SelectUnionMode::UNION_ALL)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
