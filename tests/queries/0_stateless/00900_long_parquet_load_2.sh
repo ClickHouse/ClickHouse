@@ -59,6 +59,11 @@ EXCLUDE=(
     04065_optional_map_wrapper_required_value.parquet
     04065_optional_struct_under_list.parquet
     04065_optional_struct_nullable_leaf_under_list.parquet
+    # More 04065 fixtures. All three hold a nullable struct, so what they load as depends on whether
+    # Nullable(Tuple) inference is enabled, and the all-nullable one is refused outright when it is.
+    04065_clickhouse_written_ambiguous_all_nullable.parquet
+    04065_clickhouse_written_ambiguous_nullable_tuple_levels.parquet
+    04065_optional_struct_array_between_nullable_groups.parquet
     # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
     04654_bloom_filter_bitset_out_of_bounds.parquet
     # Hand-crafted DELTA_BYTE_ARRAY files for the 05035 malformed-input test. The first one is

@@ -35,11 +35,19 @@ struct SchemaConverter
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;
-    /// >0 while recursing inside a physically-nullable Tuple group (OPTIONAL group requested as
-    /// Nullable(Tuple(...)) and eligible for lossless reading). Leaves under it get
-    /// PrimitiveColumnInfo::group_nullable set: their definition-level null map equals the group
-    /// null map, so we keep it and later wrap the assembled ColumnTuple in ColumnNullable.
-    size_t nullable_tuple_group_depth = 0;
+    /// Definition levels of the Tuple groups currently being recursed into that are read as
+    /// Nullable(Tuple(...)), outermost first. Copied onto every leaf below
+    /// (PrimitiveColumnInfo::nullable_group_defs), which is what lets the reader derive one null map
+    /// per group from that leaf's definition levels.
+    std::vector<UInt8> nullable_group_defs;
+
+    /// Whether a null Nullable(Tuple(...)) group in this file can be trusted to be encoded at the
+    /// group's own definition level. True for any producer other than ClickHouse, and for ClickHouse
+    /// files carrying the `clickhouse.nullable_group_def_levels` key. False for older ClickHouse
+    /// files, whose leaves with a nullable or repeated path under the group recorded a null group as
+    /// a present group with a null element; such a group is only readable through a leaf whose path
+    /// under it adds no definition level, and is refused when none is read.
+    bool nullable_group_levels_trusted = true;
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
@@ -144,6 +152,10 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
+
+    /// Fills PrimitiveColumnInfo::derive_group_defs once the whole traversal is done and every
+    /// group's null-map source leaf is known.
+    void planGroupNullMapDerivation();
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,

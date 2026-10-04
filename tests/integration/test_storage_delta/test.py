@@ -4316,7 +4316,7 @@ def test_subcolumns(started_cluster, column_mapping):
     )
     assert (
         "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
-        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6, \\'UTC\\')),\\n    col_x2D5 Nullable(DateTime64(6, \\'UTC\\')))\t\t\t\t\t\n"
+        "col_x2D2\tNullable(Tuple(col_x2D3 Nullable(String), col_x2D4 Nullable(DateTime64(6, \\'UTC\\')), col_x2D5 Nullable(DateTime64(6, \\'UTC\\'))))\t\t\t\t\t\n"
         "col_x2D6\tNullable(Int64)" == node.query(f"describe table {func}").strip()
     )
 
