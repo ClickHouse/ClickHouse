@@ -531,6 +531,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
         }
+        /// The supplier is the discriminator: only a storage that registers `_headers` as the
+        /// response-header `Map` fills `virtual_values.headers` (`url` family, `Web` object storage).
+        /// `isMap` only guards, since a Hive key of that name (branch below) can also infer as `Map`.
+        else if (virtual_column.name == "_headers" && virtual_values.headers && isMap(virtual_column.type))
+        {
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
+        }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
             if (virtual_values.data_lake_snapshot_version)
