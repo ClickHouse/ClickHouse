@@ -121,10 +121,12 @@ DROP TABLE t_compact_stripes;
 
 -- A part with enough granules (at least `merge_tree_compact_parts_min_granules_to_multibuffer_read`, or at least as many as
 -- the columns to read) is read with a buffer per column. The number of created read buffers (one per column, plus one for
--- the marks) shows which reader is used.
+-- the marks) shows which reader is used. The tables are on a local disk, because the buffers of a remote disk with a
+-- cache are counted differently.
 CREATE TABLE t_compact_stripes (a UInt64, b UInt64, s String, json JSON)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
+    storage_policy = 'default';
 
 SYSTEM STOP MERGES t_compact_stripes;
 INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', number % 7), concat('{"k":', toString(number), ',"n":{"m":"', toString(number % 3), '"}}')::JSON FROM numbers(40);
@@ -143,7 +145,8 @@ DROP TABLE t_compact_stripes;
 -- A part with fewer granules than columns to read is read with a single buffer.
 CREATE TABLE t_compact_stripes (a UInt64, b UInt64, s String, json JSON)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
+    storage_policy = 'default';
 
 SYSTEM STOP MERGES t_compact_stripes;
 INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', number % 7), concat('{"k":', toString(number), ',"n":{"m":"', toString(number % 3), '"}}')::JSON FROM numbers(4);
@@ -159,7 +162,8 @@ DROP TABLE t_compact_stripes;
 -- in both layouts), so the stripes are detected by the marks of the first substreams of the first two columns.
 CREATE TABLE t_compact_stripes (arr Array(UInt64), a UInt64, s String)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
+    storage_policy = 'default';
 
 SYSTEM STOP MERGES t_compact_stripes;
 INSERT INTO t_compact_stripes SELECT range(number % 4), number, repeat('x', number % 7) FROM numbers(40);
@@ -177,7 +181,7 @@ DROP TABLE t_compact_stripes;
 CREATE TABLE t_compact_stripes (a UInt64, b UInt64, s String)
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 2, min_bytes_for_wide_part = '1G', ratio_of_defaults_for_sparse_serialization = 1.0,
-    compact_parts_max_bytes_to_buffer = 1000, merge_max_block_size = 2;
+    compact_parts_max_bytes_to_buffer = 1000, merge_max_block_size = 2, storage_policy = 'default';
 
 SYSTEM STOP MERGES t_compact_stripes;
 INSERT INTO t_compact_stripes SELECT number, number * 10, repeat('x', 1000) FROM numbers(2);
