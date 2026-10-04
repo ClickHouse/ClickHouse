@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS time_decay_sparse_serialization;
 CREATE TABLE time_decay_sparse_serialization
 (
     id UInt64,
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -16,7 +16,7 @@ SELECT
     if(
         number = 0,
         exponentialTimeDecaying(10)(1., 0.),
-        defaultValueOfTypeName('ExponentialTimeDecaying(10)'))
+        defaultValueOfTypeName('ExponentialTimeDecaying64(10)'))
 FROM numbers(1000);
 
 SELECT serialization_kind
