@@ -133,6 +133,10 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// All mark ranges the query reads from this part.
+    MarkRangesPtr read_request_map;
+    /// The same for each of `patch_parts`; empty = the whole patch parts.
+    std::vector<MarkRangesPtr> patch_read_request_maps;
 
     /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
     ConstDeleteBitmapPtr delete_bitmap;
@@ -164,6 +168,7 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
+        void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
     };
 
     struct BlockSizeParams
@@ -234,11 +239,14 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
+    /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
+        const std::vector<MarkRanges> & patches_ranges,
+        const MarkRangesPtr & read_request_map = nullptr,
+        const std::vector<MarkRangesPtr> & patch_read_request_maps = {});
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
