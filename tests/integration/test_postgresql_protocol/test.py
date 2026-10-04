@@ -3638,26 +3638,26 @@ def test_catalog_table_oids_differ_across_databases(started_cluster):
     for database in databases:
         cur.execute(f"DROP DATABASE IF EXISTS {database}")
         cur.execute(f"CREATE DATABASE {database}")
-        cur.execute(f"CREATE TABLE {database}.events (id Int32) ENGINE = Memory")
+        cur.execute(f"CREATE TABLE {database}.oid_probe (id Int32) ENGINE = Memory")
     ch.close()
 
     # `pg_class` lists the tables of every database; the one an unqualified name refers to is the
     # visible one, which is in the current database.
-    visible_events = "SELECT oid FROM pg_class WHERE relname = 'events' AND pg_table_is_visible(oid)"
+    visible_probe = "SELECT oid FROM pg_class WHERE relname = 'oid_probe' AND pg_table_is_visible(oid)"
 
     ch = connect(databases[0])
     cur = ch.cursor()
-    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'oid_probe'")
     oids = [int(row[0]) for row in cur.fetchall()]
     assert len(oids) == 2
     assert oids[0] != oids[1]
 
     # Inside a single session that switches the database with `USE`, the oid remembered before the
     # switch must not name the other table after it.
-    cur.execute(visible_events)
+    cur.execute(visible_probe)
     remembered = int(cur.fetchall()[0][0])
     cur.execute(f"USE {databases[1]}")
-    cur.execute(visible_events)
+    cur.execute(visible_probe)
     after_switch = int(cur.fetchall()[0][0])
     ch.close()
 
