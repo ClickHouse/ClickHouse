@@ -1873,6 +1873,25 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
+/// holds for a `FixedString` nested in an `Array`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
+static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to))
+        return false;
+
+    auto contains = [](const IDataType & type, auto predicate)
+    {
+        bool found = predicate(type);
+        type.forEachChild([&](const IDataType & child) { found |= predicate(child); });
+        return found;
+    };
+    return contains(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); })
+        && contains(*to, [](const IDataType & type) { return isString(type); });
+}
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -1904,6 +1923,9 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    if (castMayDropFixedStringPadding(result_type, in_argument_type))
+        return false;
+
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2438,6 +2460,9 @@ static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input
 /// Cast column to target_type and fail if the cast introduces NULLs.
 static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
 {
+    if (castMayDropFixedStringPadding(type, target_type))
+        return false;
+
     if (canBeSafelyCast(type, target_type))
     {
         column = castColumnAccurate({column, type, ""}, target_type);
@@ -3148,6 +3173,9 @@ static bool tryPrepareSetColumnsForIndex(
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
+
+        if (castMayDropFixedStringPadding(set_element_type, key_column_type))
+            return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
