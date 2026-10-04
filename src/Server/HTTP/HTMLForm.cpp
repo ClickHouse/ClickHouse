@@ -344,6 +344,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
     chassert(!found_last_boundary);
 
     boundary_hit = false;
+    previous_line_empty = false;
 
     while (!in.eof())
     {
@@ -353,6 +354,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
             set(in.position(), 0);
             next();  /// We need to restrict our buffer to size of next available line.
             found_last_boundary = startsWith(line, boundary + "--");
+            first_line_of_part = !found_last_boundary;
             return !found_last_boundary;
         }
     }
@@ -360,10 +362,12 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
     return false;
 }
 
-std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
+std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf, bool content_if_starts_with_crlf)
 {
     std::string line;
     char ch = 0;  // silence "uninitialized" warning from gcc-*
+    /// Whether the line is part content; decided once the first two bytes are read.
+    bool content = reading_content;
 
     /// A line is buffered in memory in full, so its size must be bounded; over-limit input is
     /// rejected as soon as the line outgrows the limit instead of being accumulated until the next
@@ -373,10 +377,30 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
     /// part headers are bounded by the (typically larger) structural HTTP limit, so that a small
     /// content limit does not reject a valid request whose boundary or header line is longer than
     /// the limit.
-    auto check_line_size = [this, &line]
+    /// Whether the line was already checked against the structural limit while reading content.
+    bool syntax_limit_checked = false;
+
+    auto check_line_size = [this, &line, &syntax_limit_checked, &content]
     {
-        if (reading_content)
+        if (content)
         {
+            /// A line starting with the boundary line "\r\n--<boundary>" terminates the part: it is
+            /// request syntax rather than content, so it is bounded by the structural limit even while
+            /// it is within the content limit. Whether the line is a boundary line is decided by its
+            /// prefix, which does not change as the line grows, so it's enough to check it once, when
+            /// the line first outgrows the structural limit.
+            if (max_syntax_line_size && !syntax_limit_checked && line.size() > max_syntax_line_size)
+            {
+                syntax_limit_checked = true;
+                bool is_boundary_line = line.size() <= boundary_line.size()
+                    ? boundary_line.starts_with(line)
+                    : line.starts_with(boundary_line);
+                if (is_boundary_line)
+                    throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                                    "Too long boundary or header line in a multipart/form-data message. "
+                                    "This limit can be tuned by the 'http_max_request_header_size' setting");
+            }
+
             if (!max_content_line_size || line.size() <= max_content_line_size)
                 return;
 
@@ -399,18 +423,12 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
                 is_boundary_line_prefix = line.size() > boundary_line.size()
                     || line.back() == boundary_line[line.size() - 1];
 
+            /// A boundary line past the structural limit was already rejected above.
             if (!is_boundary_line_prefix)
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                                 "Too long line in a multipart/form-data part: it exceeds the maximum size "
                                 "of multipart/form-data content. This limit can be tuned by the "
                                 "'http_max_multipart_form_data_size' setting");
-
-            /// A boundary line is request syntax rather than content; its trailer (the "--" of
-            /// the last boundary, transport padding) is bounded by the structural limit.
-            if (max_syntax_line_size && line.size() > max_syntax_line_size)
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                                "Too long boundary or header line in a multipart/form-data message. "
-                                "This limit can be tuned by the 'http_max_request_header_size' setting");
         }
         else
         {
@@ -428,6 +446,8 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
         line += ch;
     if (append_crlf && line == "\r\n")
         return line;
+    if (content_if_starts_with_crlf && line == "\r\n")
+        content = true;
 
     while (!in.eof())
     {
@@ -472,7 +492,9 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     ///        since it may store different data parts in different sub-buffers,
     ///        anyway calling makeContinuousMemoryFromCheckpointToPos() will also make an extra copy.
     /// According to RFC2046 the preceding CRLF is a part of boundary line.
-    std::string line = readLine(false);
+    std::string line = readLine(false, first_line_of_part || previous_line_empty);
+    first_line_of_part = false;
+    previous_line_empty = line == "\r\n";
     boundary_hit = startsWith(line, "\r\n" + boundary);
     bool has_next = !boundary_hit && !line.empty();
 

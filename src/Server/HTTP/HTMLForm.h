@@ -193,10 +193,19 @@ private:
     /// Maximum size of a buffered boundary or header line, 0 means no limit.
     const size_t max_syntax_line_size;
     bool reading_content = false;
+    /// The header parser peeks past the empty line that ends the headers of a part, so the first
+    /// line of the content is buffered before readMultipart switches to |reading_content|. These
+    /// track where the next line starts, so that such a line is still bounded as content: it is
+    /// the line after the empty one, or, for a part without headers, the first line of the part
+    /// when it starts with the CRLF of the empty line.
+    bool first_line_of_part = false;
+    bool previous_line_empty = false;
     bool boundary_hit = true;
     bool found_last_boundary = false;
 
-    std::string readLine(bool append_crlf);
+    /// |content_if_starts_with_crlf|: bound the line as content if it starts with CRLF, even when
+    /// not |reading_content|.
+    std::string readLine(bool append_crlf, bool content_if_starts_with_crlf = false);
 
     bool nextImpl() override;
 };
