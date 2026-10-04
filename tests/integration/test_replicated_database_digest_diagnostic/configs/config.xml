@@ -1,0 +1,10 @@
+<clickhouse>
+    <database_atomic_delay_before_drop_table_sec>10</database_atomic_delay_before_drop_table_sec>
+    <allow_moving_table_directory_to_trash>1</allow_moving_table_directory_to_trash>
+    <merge_tree>
+        <initialization_retry_period>10</initialization_retry_period>
+    </merge_tree>
+    <max_database_replicated_create_table_thread_pool_size>50</max_database_replicated_create_table_thread_pool_size>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
