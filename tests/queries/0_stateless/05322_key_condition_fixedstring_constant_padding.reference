@@ -1,0 +1,15 @@
+-- { echo }
+
+SELECT count() FROM t_monotonic WHERE s <= toFixedString('abc', 4);
+3
+SELECT count() FROM t_deterministic WHERE s = toFixedString('abc', 4);
+3
+SELECT count() FROM t_deterministic WHERE s IN (SELECT toFixedString('abc', 4));
+3
+SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
+3
+SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
+3
+DROP TABLE t_monotonic;
+DROP TABLE t_deterministic;
+DROP TABLE t_bare;

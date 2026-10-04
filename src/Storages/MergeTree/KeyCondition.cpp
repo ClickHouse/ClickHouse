@@ -1873,6 +1873,12 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/// A cast of a `FixedString` to another type drops its trailing zero bytes, which changes how it compares.
+static bool castDropsFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    return isFixedString(removeLowCardinalityAndNullable(from_type)) && !isFixedString(removeLowCardinalityAndNullable(to_type));
+}
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -1904,6 +1910,9 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    if (castDropsFixedStringPadding(result_type, in_argument_type))
+        return false;
+
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2438,6 +2447,9 @@ static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input
 /// Cast column to target_type and fail if the cast introduces NULLs.
 static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
 {
+    if (castDropsFixedStringPadding(type, target_type))
+        return false;
+
     if (canBeSafelyCast(type, target_type))
     {
         column = castColumnAccurate({column, type, ""}, target_type);
@@ -3148,6 +3160,9 @@ static bool tryPrepareSetColumnsForIndex(
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
+
+        if (castDropsFixedStringPadding(set_element_type, key_column_type))
+            return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
