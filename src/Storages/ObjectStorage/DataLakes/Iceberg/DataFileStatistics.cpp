@@ -55,8 +55,9 @@ void DataFileStatistics::update(const Chunk & chunk)
         const auto & col = chunk.getColumns()[i];
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
         {
+            /// Any non-zero byte means NULL, so count the rows and not the byte values.
             for (UInt8 v : nullable_col->getNullMapData())
-                null_counts[i] += v;
+                null_counts[i] += (v != 0);
         }
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
     }

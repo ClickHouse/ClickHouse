@@ -41,6 +41,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 
 namespace DB
 {
@@ -192,16 +193,8 @@ protected:
         ColumnPtr filter_column
             = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)->convertToFullColumnIfConst();
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
-        {
-            auto materialized = ColumnUInt8::create(rows_in_chunk);
-            auto & out = materialized->getData();
-            const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-            const auto & nullmap = nullable->getNullMapData();
-            for (size_t i = 0; i < rows_in_chunk; ++i)
-                out[i] = data[i] & ~nullmap[i];
-            filter_column = std::move(materialized);
-        }
+        /// Reduces a nullable comparison result to a plain filter: value AND not-null, both as predicates.
+        filter_column = FilterDescription::preprocessFilterColumn(filter_column);
 
         const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
         const size_t matched_in_chunk = countBytesInFilter(filter);
@@ -762,16 +755,7 @@ private:
                 = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)
                       ->convertToFullColumnIfConst();
 
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
-            {
-                auto materialized = ColumnUInt8::create(rows_in_chunk);
-                auto & filter_data = materialized->getData();
-                const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-                const auto & nullmap = nullable->getNullMapData();
-                for (size_t i = 0; i < rows_in_chunk; ++i)
-                    filter_data[i] = data[i] & ~nullmap[i];
-                filter_column = std::move(materialized);
-            }
+            filter_column = FilterDescription::preprocessFilterColumn(filter_column);
 
             const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
 

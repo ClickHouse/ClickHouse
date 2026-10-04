@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -220,7 +221,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Per-block fast path: if a one-time `memchr` at construction proved that the block
+            /// Per-block fast path: if a one-time scan at construction proved that the block
             /// contains no nulls, the compiler can fold this branch away entirely. Otherwise we
             /// load the cached `null_map_data` directly, avoiding the virtual `IColumn::getBool`.
             if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
@@ -383,11 +384,11 @@ public:
 
 protected:
     Cache cache;
-    /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
+    /// Cached raw pointer to the null map bytes for the current block. Any non-zero byte means NULL.
     /// Bypasses the virtual `IColumn` dispatch on the per-row hot path in `emplaceKey` / `findKey`.
     const UInt8 * null_map_data = nullptr;
-    /// Per-block flag set by a single `memchr` at construction time. When true, every row in the
-    /// block has a zero null-map byte, so the per-row null check can be statically skipped.
+    /// Per-block flag set by a single `memoryIsZero` scan at construction time. The block is null-free
+    /// exactly when every null-map byte is zero, so the per-row null check can be statically skipped.
     bool block_has_no_nulls = true;
     bool has_null_data = false;
 
@@ -411,14 +412,10 @@ protected:
             const auto & null_map_column = checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
             const auto & null_map_container = null_map_column.getData();
             null_map_data = null_map_container.data();
-            /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
-            /// finding a single 0x01 byte is enough to know the block contains a null. We use
-            /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
-            /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
-            /// is dominated by the function-call overhead, but the per-row payload saves a
-            /// virtual call and a branch, so the break-even is small.
+            /// Scan the null map once per block. Any non-zero byte means NULL, so the block is
+            /// null-free exactly when every byte is zero.
             const size_t size = null_map_container.size();
-            block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
+            block_has_no_nulls = memoryIsZero(null_map_data, 0, size);
         }
     }
 
@@ -604,7 +601,7 @@ protected:
             if (null_maps[k] != nullptr)
             {
                 const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
-                if (null_map[row] == 1)
+                if (null_map[row] != 0)
                 {
                     size_t bucket = k / 8;
                     size_t offset = k % 8;
