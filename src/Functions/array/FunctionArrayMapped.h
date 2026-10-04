@@ -65,6 +65,11 @@ public:
     static constexpr auto name = Name::name;
     static constexpr size_t num_fixed_params = []{ if constexpr (requires { Impl::num_fixed_params; }) return Impl::num_fixed_params; else return 0; }();
 
+    /// Some functions (e.g. arrayPackBitsToFixedString) return a FixedString whose size is taken from a constant
+    /// argument. Such an implementation defines `return_fixed_string` and accepts the size as a third argument of
+    /// `getReturnType`. The size is always the first fixed parameter of the function.
+    static constexpr bool return_fixed_string = []{ if constexpr (requires { Impl::return_fixed_string; }) return Impl::return_fixed_string; else return false; }();
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override { return name; }
@@ -248,7 +253,15 @@ public:
             throw DB::Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
 
-        return Impl::getReturnType(return_type, first_array_type->getNestedType());
+        if constexpr (return_fixed_string)
+        {
+            /// The size of the resulting FixedString is taken from the first fixed parameter, which immediately
+            /// follows the lambda expression. `checkArguments` has already verified it is a constant integer.
+            const ColumnWithTypeAndName & size_argument = arguments[1];
+            return Impl::getReturnType(return_type, first_array_type->getNestedType(), size_argument.column->getUInt(0));
+        }
+        else
+            return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
