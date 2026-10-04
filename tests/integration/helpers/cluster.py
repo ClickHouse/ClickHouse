@@ -61,7 +61,7 @@ from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from . import pytest_xdist_logging_to_separate_files
+from . import ci_logs_export, pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
@@ -708,7 +708,11 @@ class ClickHouseCluster:
         with_dolor=False,
     ):
         for param in list(os.environ.keys()):
-            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+            # The logs are collected as CI artifacts, do not expose secrets
+            if re.search(r"PASSWORD|SECRET|TOKEN|ACCESS_KEY", param, re.IGNORECASE):
+                logging.debug("ENV %40s [MASKED]" % param)
+            else:
+                logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
@@ -2311,8 +2315,15 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
+
+        with_ci_logs_export - whether the system log tables of the server are
+        exported to the CI Logs cluster in CI (see helpers/ci_logs_export.py).
+        Turn it off for a server whose memory or CPU budget the test measures:
+        the export materialises every log table at startup and keeps a sender
+        per table running.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
         base_config_dir - a directory with config.xml and users.xml files which will be copied to /etc/clickhouse-server/ directory
@@ -2448,6 +2459,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             extra_parameters=extra_parameters,
+            with_ci_logs_export=with_ci_logs_export,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -4526,6 +4538,10 @@ class ClickHouseCluster:
                 )
                 instance.arm_per_test_coverage()
 
+            for instance in self.instances.values():
+                if instance.ci_logs_export_enabled:
+                    ci_logs_export.setup_for_instance(self, instance)
+
             self.is_up = True
             started_clusters.append(self)
             self.save_logs()
@@ -4581,6 +4597,10 @@ class ClickHouseCluster:
         failure_logs = []
 
         if self.up_called:
+            if self.is_up:
+                for instance in self.instances.values():
+                    ci_logs_export.flush_before_shutdown(instance)
+
             if self in started_clusters:
                 started_clusters.remove(self)
             if kill:
@@ -5101,6 +5121,7 @@ services:
         user: '{user}'
         env_file:
             - {env_file}
+        {ci_logs_env}
         security_opt:
             - label:disable
             - seccomp:unconfined
@@ -5217,6 +5238,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -5393,6 +5415,27 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+
+        # Export of the system log tables to the CI Logs cluster, see
+        # helpers/ci_logs_export.py. Only for servers that run - or, for a
+        # `with_installed_binary` instance, can be switched to - the binary
+        # under test: a server of an old release may not support the configs
+        # and the DDL that the export needs. A test can opt a server out, see
+        # add_instance.
+        self.ci_logs_export_supported = (
+            ci_logs_export.is_enabled()
+            and with_ci_logs_export
+            and not cluster.with_dolor
+            and ci_logs_export.supports_export(image, tag, with_installed_binary)
+            and config_root_name == "clickhouse"
+        )
+        # `with_installed_binary` starts the container with an old release
+        # installed over the image, so the export is off until (and unless) the
+        # instance switches to the binary under test, see
+        # restart_with_latest_version.
+        self.ci_logs_export_enabled = (
+            self.ci_logs_export_supported and not with_installed_binary
+        )
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5899,6 +5942,15 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
+            # A graceful stop is not a crash simulation, so push the tail of the
+            # system logs out to the CI Logs cluster first: the rows still in the
+            # buffers of the log tables, in the asynchronous insert queue and in
+            # the `_sender` queues would otherwise be lost. restart_clickhouse()
+            # delegates here, so restarts are covered too. A hard kill keeps its
+            # semantics: nothing is sent to the server before it is killed.
+            if not kill:
+                ci_logs_export.flush_before_shutdown(self)
+
             if kill:
                 self.flush_per_test_coverage()
 
@@ -6015,7 +6067,6 @@ class ClickHouseInstance:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
-                    return exec_id
                 except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
@@ -6026,6 +6077,12 @@ class ClickHouseInstance:
                     if not retry_start:
                         raise
                     time.sleep(time_to_sleep)
+                    continue
+                # A restart may have changed the structure of a log table, see
+                # helpers/ci_logs_export.py
+                if self.ci_logs_export_enabled:
+                    ci_logs_export.refresh_after_start(self.cluster, self)
+                return exec_id
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
@@ -6314,6 +6371,13 @@ class ClickHouseInstance:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
+        # The old release the server is about to become may not know the
+        # settings of the `ci_logs_sender` profile nor be able to run the
+        # `_watcher` views, see helpers/ci_logs_export.py
+        if self.ci_logs_export_enabled:
+            ci_logs_export.teardown_for_instance(self)
+            ci_logs_export.remove_instance_config(self.config_d_dir, self.users_d_dir)
+            self.ci_logs_export_enabled = False
         self.exec_in_container(
             ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
         )
@@ -6427,6 +6491,18 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
+        # From here on the container runs the binary under test, so it can carry
+        # the export even if it was started from an installed old release, see
+        # helpers/ci_logs_export.py. The configs are written before the server
+        # starts, so it picks them up without a reload.
+        enable_ci_logs_export = (
+            self.ci_logs_export_supported and not self.ci_logs_export_enabled
+        )
+        if enable_ci_logs_export:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+            ci_logs_export.write_instance_users_config(self.users_d_dir)
+            self.ci_logs_export_enabled = True
+
         if fix_metadata:
             # Versions older than 20.7 might not create .sql file for system and default database
             # Create it manually if upgrading from older version
@@ -6455,6 +6531,12 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+
+        if enable_ci_logs_export:
+            ci_logs_export.setup_for_instance(self.cluster, self)
+        elif self.ci_logs_export_enabled:
+            # The binary under test may have log tables of another structure
+            ci_logs_export.refresh_after_start(self.cluster, self)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
@@ -6722,6 +6804,7 @@ class ClickHouseInstance:
         self.config_d_dir = p.abspath(p.join(instance_config_dir, "config.d"))
         os.mkdir(self.config_d_dir)
         users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
+        self.users_d_dir = users_d_dir
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, "dictionaries"))
         os.mkdir(dictionaries_dir)
@@ -6769,6 +6852,10 @@ class ClickHouseInstance:
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
+
+        if self.ci_logs_export_enabled:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+            ci_logs_export.write_instance_users_config(users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
@@ -7016,6 +7103,17 @@ class ClickHouseInstance:
 
         is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
 
+        # Keyed on `ci_logs_export_supported`, not on `ci_logs_export_enabled`:
+        # the variables have to be in the container from the start, because a
+        # `with_installed_binary` instance enables the export only after
+        # `restart_with_latest_version`, and the config written then references
+        # them with `from_env` - a server whose `from_env` variable does not
+        # exist refuses to start. Passing them to a container that never
+        # enables the export costs nothing, the config is what uses them.
+        ci_logs_env = ""
+        if self.ci_logs_export_supported:
+            ci_logs_env = ci_logs_export.docker_compose_environment_section()
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -7051,6 +7149,7 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    ci_logs_env=ci_logs_env,
                     privileged="true" if is_priv else "false",
                     dev_mount=(
                         "- /dev:/dev" if is_priv else ""

@@ -16,8 +16,14 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml", "configs/enable_span_log.xml"], with_zookeeper=False)
 node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml", "configs/enable_span_log.xml"], with_zookeeper=False)
 # The span log is configured but never written: `system.opentelemetry_span_log` is created by the
-# first flush of spans, and no traced query ever reaches this node.
-node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml", "configs/enable_span_log.xml"], with_zookeeper=False)
+# first flush of spans, and no traced query ever reaches this node. The CI logs export flushes and
+# creates every log table at startup, so it is off here.
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/remote_servers.xml", "configs/enable_span_log.xml"],
+    with_zookeeper=False,
+    with_ci_logs_export=False,
+)
 
 
 @pytest.fixture(scope="module")
