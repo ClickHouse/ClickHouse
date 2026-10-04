@@ -5474,7 +5474,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Higher-order map functions (lambda, map → map or UInt8)
         higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base32Encode", "base58Encode", "base64Encode", "base64URLEncode"},
+        {"hex", "bin", "base32Encode", "base58Encode", "base62Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
         {"unhex",
          "unbin",
@@ -5482,6 +5482,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "tryBase32Decode",
          "base58Decode",
          "tryBase58Decode",
+         "base62Decode",
+         "tryBase62Decode",
          "base64Decode",
          "base64URLDecode",
          "tryBase64Decode",

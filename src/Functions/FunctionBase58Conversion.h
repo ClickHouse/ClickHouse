@@ -2,12 +2,18 @@
 
 #include <Functions/FunctionBaseXXConversion.h>
 
+#include <Core/Settings.h>
 #include <Common/Base58.h>
 
 #include <functional>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 function_base58_max_input_size;
+}
 
 /// The generic (variable-length) base58 conversion is quadratic in the input length, so it can be
 /// extremely slow on large values. base58 is meant for short data (keys, hashes, addresses), so we
@@ -23,6 +29,8 @@ static constexpr size_t MAX_BASE58_INPUT_SIZE = 10000;
 struct Base58EncodeTraits
 {
     static constexpr size_t max_input_size = MAX_BASE58_INPUT_SIZE;
+
+    static size_t maxInputSize(const Settings & settings) { return settings[Setting::function_base58_max_input_size]; }
 
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
@@ -49,6 +57,8 @@ struct Base58DecodeTraits
 {
     static constexpr bool has_size_optimization = true;
     static constexpr size_t max_input_size = MAX_BASE58_INPUT_SIZE;
+
+    static size_t maxInputSize(const Settings & settings) { return settings[Setting::function_base58_max_input_size]; }
 
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
