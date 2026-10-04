@@ -6,7 +6,7 @@
 #include <string>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/Simulator.h>
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
 #    include <Common/randomSeed.h>
 #    include <fmt/format.h>
 #    include <magic_enum.hpp>
@@ -41,18 +41,18 @@ void runTest(std::function<void()> body)
 
     for (size_t i = 0; i < seeds; ++i)
     {
-        SimulatorParams params;
+        SimulationParams params;
         params.seed = base_seed + i;
 
-        SimulatorResult first = Simulator(params, {}).run(body);
-        SimulatorResult second = Simulator(params, {}).run(body);
+        SimulationResult first = Simulation(params, {}).run(body);
+        SimulationResult second = Simulation(params, {}).run(body);
 
         if (first.digest != second.digest)
             throw std::runtime_error(fmt::format(
                 "Simulation with seed {} is not deterministic: digests {} and {}, {} and {} steps",
                 params.seed, first.digest, second.digest, first.total_steps, second.total_steps));
 
-        if (first.status != SimulatorResult::Status::Ok)
+        if (first.status != SimulationResult::Status::Ok)
             throw std::runtime_error(fmt::format(
                 "Simulation with seed {} ended with {} after {} steps. {}\nLast syscalls:\n{}",
                 params.seed, magic_enum::enum_name(first.status), first.total_steps, first.exception_message, first.last_syscalls));

@@ -18,7 +18,7 @@ namespace DB::Runtime::Wyrd
 struct SimulatedThread;
 struct SyscallRecord;
 
-struct SimulatorResult
+struct SimulationResult
 {
     enum class Status
     {
@@ -35,7 +35,7 @@ struct SimulatorResult
     std::string last_syscalls;
 };
 
-struct SimulatorParams
+struct SimulationParams
 {
     UInt64 seed = 42;
     size_t spurious_wakeup_every = 7;
@@ -45,19 +45,19 @@ struct SimulatorParams
     size_t stack_size = CoroutineStack::default_stack_size;
 };
 
-class Simulator
+class Simulation
 {
-    SimulatorResult::Status runLoop();
+    SimulationResult::Status runLoop();
     void recordSyscall(const char * operation, std::source_location location);
     void createThread(std::function<void()> user_body);
 
 public:
-    Simulator(SimulatorParams params_, SchedulerParams scheduler_params);
-    ~Simulator();
+    Simulation(SimulationParams params_, SchedulerParams scheduler_params);
+    ~Simulation();
 
     /// Test entry point
-    SimulatorResult run(std::function<void()> main);
-    static Simulator * current();
+    SimulationResult run(std::function<void()> main);
+    static Simulation * current();
 
     /// Syscalls
     void sync(const char * operation, std::source_location location);
@@ -68,7 +68,7 @@ public:
     bool spuriousFailure(std::source_location location);
 
 private:
-    const SimulatorParams params;
+    const SimulationParams params;
     Scheduler scheduler;
 
     std::vector<SyscallRecord> trace;

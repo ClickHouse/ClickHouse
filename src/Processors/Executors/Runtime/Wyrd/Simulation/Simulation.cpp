@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulator.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
 #include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Common/Exception.h>
@@ -22,7 +22,7 @@ struct SyscallRecord
 namespace
 {
 
-Simulator * current_simulator = nullptr;
+Simulation * current_simulation = nullptr;
 
 std::string formatRecord(const SyscallRecord & record)
 {
@@ -45,24 +45,24 @@ std::string formatTail(const std::vector<SyscallRecord> & trace, size_t count)
 
 }
 
-Simulator::Simulator(SimulatorParams params_, SchedulerParams scheduler_params)
+Simulation::Simulation(SimulationParams params_, SchedulerParams scheduler_params)
     : params(params_)
     , scheduler(scheduler_params)
 {
 }
 
-Simulator::~Simulator() = default;
+Simulation::~Simulation() = default;
 
-SimulatorResult Simulator::run(std::function<void()> main)
+SimulationResult Simulation::run(std::function<void()> main)
 {
-    if (current_simulator)
+    if (current_simulation)
         throw std::logic_error("Nested simulation");
 
     setRandomSeed(params.seed);
     createThread(std::move(main));
-    SimulatorResult::Status status = runLoop();
+    SimulationResult::Status status = runLoop();
 
-    return SimulatorResult{
+    return SimulationResult{
         .status = status,
         .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
         .total_steps = steps,
@@ -71,43 +71,43 @@ SimulatorResult Simulator::run(std::function<void()> main)
     };
 }
 
-SimulatorResult::Status Simulator::runLoop()
+SimulationResult::Status Simulation::runLoop()
 {
     while (true)
     {
         SimulatedThread * next = scheduler.pickNext();
         if (!next)
-            return alive == 0 ? SimulatorResult::Status::Ok : SimulatorResult::Status::Deadlock;
+            return alive == 0 ? SimulationResult::Status::Ok : SimulationResult::Status::Deadlock;
 
         if (steps >= params.step_limit)
-            return SimulatorResult::Status::StepLimit;
+            return SimulationResult::Status::StepLimit;
 
         ++steps;
 
         running_thread = next;
-        current_simulator = this;
+        current_simulation = this;
         next->resume();
-        current_simulator = nullptr;
+        current_simulation = nullptr;
         running_thread = nullptr;
 
         if (next->finished())
         {
             if (exception)
-                return SimulatorResult::Status::Exception;
+                return SimulationResult::Status::Exception;
             --alive;
             scheduler.onExit();
         }
     }
 }
 
-void Simulator::recordSyscall(const char * operation, std::source_location location)
+void Simulation::recordSyscall(const char * operation, std::source_location location)
 {
     digest.update(running_thread->id);
     digest.update(location.line());
     trace.push_back(SyscallRecord{.step = steps, .thread_id = running_thread->id, .operation = operation, .location = location});
 }
 
-void Simulator::createThread(std::function<void()> user_body)
+void Simulation::createThread(std::function<void()> user_body)
 {
     auto guarded_body = [this, body = std::move(user_body)]
     {
@@ -130,26 +130,26 @@ void Simulator::createThread(std::function<void()> user_body)
     scheduler.onRunnable(threads.back().get());
 }
 
-Simulator * Simulator::current()
+Simulation * Simulation::current()
 {
-    return current_simulator;
+    return current_simulation;
 }
 
-void Simulator::sync(const char * operation, std::source_location location)
+void Simulation::sync(const char * operation, std::source_location location)
 {
     recordSyscall(operation, location);
     scheduler.onSync();
     running_thread->suspend();
 }
 
-void Simulator::yield(std::source_location location)
+void Simulation::yield(std::source_location location)
 {
     recordSyscall("yield", location);
     scheduler.onYield();
     running_thread->suspend();
 }
 
-void Simulator::futexWait(void * address, std::source_location location)
+void Simulation::futexWait(void * address, std::source_location location)
 {
     recordSyscall("futexWait", location);
     if (randomEventEvery(params.spurious_wakeup_every))
@@ -164,20 +164,20 @@ void Simulator::futexWait(void * address, std::source_location location)
     running_thread->suspend();
 }
 
-void Simulator::futexWake(void * address, size_t count, std::source_location location)
+void Simulation::futexWake(void * address, size_t count, std::source_location location)
 {
     recordSyscall("futexWake", location);
     for (SimulatedThread * waiter : futexes.wake(address, count))
         scheduler.onRunnable(waiter);
 }
 
-void Simulator::spawn(std::function<void()> body, std::source_location location)
+void Simulation::spawn(std::function<void()> body, std::source_location location)
 {
     recordSyscall("spawn", location);
     createThread(std::move(body));
 }
 
-bool Simulator::spuriousFailure(std::source_location location)
+bool Simulation::spuriousFailure(std::source_location location)
 {
     recordSyscall("spuriousFailure", location);
     return randomEventEvery(params.spurious_failure_every);
