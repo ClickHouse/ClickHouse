@@ -37,5 +37,10 @@
   <query>SELECT count() FROM tab WHERE startsWith(message, 'clickhouse')</query>
   <query>SELECT count() FROM tab WHERE endsWith(message, 'system')</query>
 
+  <query>SELECT count() FROM tab WHERE message LIKE '%column oriented%'</query>
+  <query>SELECT count() FROM tab WHERE message ILIKE '%COLUMN ORIENTED%'</query>
+  <!-- A phrase in every row: nothing is pruned, so this measures the cost of searching one of its words. -->
+  <query>SELECT count() FROM tab WHERE message LIKE '%quick brown%'</query>
+
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

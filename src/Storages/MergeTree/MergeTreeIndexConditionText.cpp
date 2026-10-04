@@ -982,6 +982,79 @@ String escapeForLikePattern(std::string_view needle)
     return pattern;
 }
 
+struct InfixPhraseWord
+{
+    std::string_view word;
+    bool is_token = false;
+};
+
+/// A word that every value matching the infix phrase '%<w1><sep>...<sep><wN>%' holds under `splitByNonAlpha`, as a token
+/// if `is_token`, else as the start of one. The first word may end a longer token, so it is never chosen.
+std::optional<InfixPhraseWord> chooseInfixPhraseWord(std::string_view pattern, bool case_insensitive, size_t min_length)
+{
+    if (pattern.size() < 3 || pattern.front() != '%' || pattern.back() != '%')
+        return {};
+
+    const std::string_view phrase = pattern.substr(1, pattern.size() - 2);
+    if (std::ranges::any_of(phrase, [](char c) { return !isASCII(c) || c == '%' || c == '_' || c == '\\'; }))
+        return {};
+
+    std::optional<InfixPhraseWord> best;
+    size_t best_rank = 0;
+
+    for (size_t pos = 0; pos < phrase.size();)
+    {
+        if (!isAlphaNumericASCII(phrase[pos]))
+        {
+            ++pos;
+            continue;
+        }
+
+        const size_t word_begin = pos;
+        while (pos < phrase.size() && isAlphaNumericASCII(phrase[pos]))
+            ++pos;
+
+        const std::string_view word = phrase.substr(word_begin, pos - word_begin);
+        if (word_begin == 0 || word.size() < min_length)
+            continue;
+
+        /// A case-insensitive word is searched by the key ranges of its case variants, the more leading characters the fewer blocks.
+        size_t rank = word.size();
+        if (case_insensitive)
+        {
+            if (std::ranges::any_of(word, UTF8::isASCIIReachableByCaseFolding))
+                continue;
+            rank = TextIndexAnalyzer::getCaseVariantPrefixSize(word);
+            if (rank == 0)
+                continue;
+        }
+
+        const InfixPhraseWord candidate{word, pos < phrase.size()};
+        if (!best || std::tuple(rank, candidate.is_token, word.size()) > std::tuple(best_rank, best->is_token, best->word.size()))
+        {
+            best = candidate;
+            best_rank = rank;
+        }
+    }
+
+    return best;
+}
+
+String likePatternOf(const InfixPhraseWord & phrase_word)
+{
+    return phrase_word.is_token ? String(phrase_word.word) : String(phrase_word.word) + "%";
+}
+
+/// Only prunes granules: the original predicate is still evaluated for every row read.
+template <bool case_insensitive>
+TextSearchQueryPtr makePhraseWordQuery(const String & function_name, const InfixPhraseWord & phrase_word)
+{
+    std::vector<OptimizedRegularExpression> patterns;
+    patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, case_insensitive>(likePatternOf(phrase_word)));
+    return std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>(), std::move(patterns));
+}
+
 }
 
 /// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
@@ -1696,6 +1769,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         VectorWithMemoryTracking<String> exact_tokens = stringLikeToTokens(value_field);
 
+        /// A phrase without a complete token, e.g. '%Java heap%', is searched by the token prefix 'heap%', which only prunes.
+        if (exact_tokens.empty() && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha && !has_preprocessor && !has_postprocessor
+            && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
+        {
+            const size_t min_length = settings[Setting::text_index_like_min_pattern_length];
+            if (auto phrase_word = chooseInfixPhraseWord(value_field.safeGet<String>(), /*case_insensitive=*/ false, min_length))
+            {
+                out.function = RPNElement::FUNCTION_LIKE;
+                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ false>(function_name, *phrase_word));
+                return true;
+            }
+        }
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
@@ -1723,6 +1809,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     function_name, TextSearchMode::Any, pattern_read_mode,
                     VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
+        }
+
+        /// A phrase, e.g. '%java heap%', is searched by one of its words, case-insensitively, which only prunes.
+        if (patterns.empty() && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha)
+        {
+            const size_t min_length = settings[Setting::text_index_like_min_pattern_length];
+            if (auto phrase_word = chooseInfixPhraseWord(like_pattern, /*case_insensitive=*/ true, min_length))
+            {
+                out.function = RPNElement::FUNCTION_LIKE;
+                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ true>(function_name, *phrase_word));
+                return true;
+            }
         }
         return false;
     }
