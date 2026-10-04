@@ -280,8 +280,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+    , finish_counter(std::move(finish_counter_))
+    , build_context(build_context_)
 {
     spillable = join->canSpillToDisk();
 }
@@ -390,7 +394,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, build_context);
     }
 
     set_totals = for_totals;
@@ -413,7 +417,7 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 {
     if (spillable && join->getSpillableBytes() >= bytes)
     {
-        join->requestSpill();
+        join->requestSpill(build_context);
         return true;
     }
     return false;
