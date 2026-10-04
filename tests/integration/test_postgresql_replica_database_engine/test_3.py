@@ -14,6 +14,7 @@ from helpers.postgres_utility import (
     create_postgres_table,
     create_postgres_table_with_schema,
     get_postgres_conn,
+    postgres_table_template_2,
     postgres_table_template_6,
 )
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
@@ -5118,6 +5119,106 @@ def test_attach_checks_publication_column_list_against_tables_list(started_clust
     for _ in range(5):
         assert 40 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
         time.sleep(1)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_column_list_removed(started_cluster):
+    # The reverse of the column-list drift above: an operator rewrote the publication to publish all
+    # columns of a table that `materialized_postgresql_tables_list` restricts to a subset. The first
+    # `Relation` message would then carry more columns than the nested table, and the consumer would skip
+    # the table from that point on, so the attach must fail closed instead.
+    table = "publication_column_list_removed"
+    mat_db = "publication_column_list_removed_database"
+    pg_manager.create_postgres_table(table, template=postgres_table_template_2)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        f"INSERT INTO {table} SELECT i, i, i, i FROM generate_series(0, 29) AS i"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}(key, value1)'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db}.{table}", "30")
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" SET TABLE ONLY {table}')
+    cursor.execute(
+        f"INSERT INTO {table} SELECT i, i, i, i FROM generate_series(30, 39) AS i"
+    )
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes all columns of the table",
+        retry_count=60,
+        sleep_time=1,
+    )
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_table_fails_closed_through_altered_publication(started_cluster):
+    # The restart path refuses an altered publication definition, and `ATTACH TABLE` on a running database
+    # must not start replicating a table through it either: with publish = 'insert' the newly attached
+    # table would silently miss every UPDATE and DELETE.
+    table = "attach_through_altered_publication"
+    attached_table = "attach_through_altered_publication_new"
+    mat_db = "attach_through_altered_publication_database"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    pg_manager.create_postgres_table(attached_table)
+    cursor.execute(
+        f"INSERT INTO {attached_table} SELECT i, i FROM generate_series(0, 9) AS i"
+    )
+    cursor.execute(f'ALTER PUBLICATION "{publication}" SET (publish = \'insert\')')
+
+    error = instance.query_and_get_error(f"ATTACH TABLE {mat_db}.{attached_table}")
+    assert "does not publish all operation types" in error, error
+    assert attached_table not in instance.query(f"SHOW TABLES FROM {mat_db}")
+
+    # The failed `ATTACH TABLE` did not extend the publication.
+    cursor.execute(
+        f"SELECT count(*) FROM pg_publication_tables WHERE pubname = '{publication}' "
+        f"AND tablename = '{attached_table}'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
 
     pg_manager.drop_materialized_db(mat_db)
 

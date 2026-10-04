@@ -1862,6 +1862,18 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 bool PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
+    /// The restart path refuses an altered publication in startSynchronization(); `ATTACH TABLE` must not
+    /// start replicating a table through it either, whether it reuses the table's existing membership or
+    /// extends the publication with it.
+    const String definition_conflict = publicationDefinitionConflict(ntx, publication_name);
+    if (!definition_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot add table {} to MaterializedPostgreSQL replication: {}. Replicating the table through this "
+            "altered publication would silently filter its replication stream. Restore the publication "
+            "definition on the PostgreSQL side, or recreate this object for a clean rebuild.",
+            doubleQuoteWithSchema(table_name), definition_conflict);
+
     const auto published = fetchPublishedTablePairs(ntx);
     const auto table = getNormalizedSchemaAndTableName(table_name);
 
@@ -2543,6 +2555,19 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
                 return fmt::format(
                     "the publication {} applies a column list to the published table {}.{} that "
                     "`materialized_postgresql_tables_list` does not request",
+                    doubleQuoteString(name), table.first, table.second);
+        }
+
+        /// The reverse drift: a table `materialized_postgresql_tables_list` restricts to a column subset is
+        /// published with all its columns. Its first `Relation` message would then carry more columns than
+        /// the nested table, and the consumer would skip the table from that point on.
+        const auto published_tables = fetchPublishedTablePairs(tx);
+        for (const auto & [table, columns] : configured_column_lists)
+        {
+            if (published_tables.contains(table) && !published_column_lists.contains(table))
+                return fmt::format(
+                    "the publication {} publishes all columns of the table {}.{}, but "
+                    "`materialized_postgresql_tables_list` requests only a subset of them",
                     doubleQuoteString(name), table.first, table.second);
         }
 
