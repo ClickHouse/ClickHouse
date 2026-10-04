@@ -1,0 +1,41 @@
+-- A negative Enum8 is not representable in any unsigned target
+Row 1:
+──────
+enum_uint8:  ᴺᵁᴸᴸ
+int_uint8:   ᴺᵁᴸᴸ
+enum_uint16: ᴺᵁᴸᴸ
+int_uint16:  ᴺᵁᴸᴸ
+enum_uint32: ᴺᵁᴸᴸ
+int_uint32:  ᴺᵁᴸᴸ
+enum_uint64: ᴺᵁᴸᴸ
+int_uint64:  ᴺᵁᴸᴸ
+-- ... nor in the temporal targets
+Row 1:
+──────
+enum_date:     ᴺᵁᴸᴸ
+int_date:      ᴺᵁᴸᴸ
+enum_datetime: ᴺᵁᴸᴸ
+int_datetime:  ᴺᵁᴸᴸ
+-- A wide Enum16 value is not truncated into a narrow target
+Row 1:
+──────
+enum_int8:  ᴺᵁᴸᴸ
+int_int8:   ᴺᵁᴸᴸ
+enum_uint8: ᴺᵁᴸᴸ
+int_uint8:  ᴺᵁᴸᴸ
+-- A representable value is still converted, by both functions
+Row 1:
+──────
+enum_or_null: 127
+int_or_null:  127
+enum_cast:    127
+int_cast:     127
+-- accurateCast throws where accurateCastOrNull returns NULL
+-- accurateCastOrDefault returns the target default, as it does for the integer
+0	0
+-- plain CAST and toUInt8 keep wrapping the value
+255	255
+-- a stored column, and a Nullable Enum, behave the same as the literal
+neg	\N	\N	\N
+zero	0	0	0
+high	127	127	127
