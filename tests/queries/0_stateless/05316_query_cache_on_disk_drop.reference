@@ -1,0 +1,20 @@
+-- The entries are served from disk
+untagged	hit
+tag a	hit
+tag b	hit
+-- DROP QUERY CACHE TAG removes only the entries with the tag
+untagged	hit
+tag a	miss
+tag b	hit
+-- Without setting query_cache_on_disk_cache_name, DROP QUERY CACHE does not touch the query cache on disk
+untagged	hit
+tag a	miss
+tag b	hit
+-- DROP QUERY CACHE removes all entries
+untagged	miss
+tag a	miss
+tag b	miss
+-- New entries can be written afterwards
+untagged	hit
+tag a	hit
+tag b	hit

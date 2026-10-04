@@ -1,0 +1,16 @@
+-- max_entry_size_in_bytes = 0: the queries run normally and nothing is written
+1
+1
+0
+QueryCacheOnDiskMisses
+-- max_entry_size_in_bytes = 0: nothing is read in a new process
+1
+QueryCacheOnDiskMisses
+-- max_entry_size_in_rows = 0: the queries run normally and nothing is written
+1
+1
+0
+QueryCacheOnDiskMisses
+-- max_entry_size_in_rows = 0: nothing is read in a new process
+1
+QueryCacheOnDiskMisses
