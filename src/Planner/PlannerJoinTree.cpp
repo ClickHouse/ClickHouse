@@ -1148,6 +1148,33 @@ bool lateralSubqueryHasVolatileHiddenFilter(const QueryTreeNodePtr & node, const
     return false;
 }
 
+/// Whether the `LATERAL` subquery reads a view that the analyzer did not inline (`analyzer_inline_views`
+/// is disabled or the view cannot be inlined), including a parameterized view. The view body is planned
+/// only when `StorageView::read` runs, so neither `containsFunctionVolatileInScopeOfQuery` nor
+/// `lateralSubqueryHasVolatileHiddenFilter` can see a volatile function inside it, or a volatile row policy
+/// or `additional_table_filters` on the tables it reads. Such a view is rejected conservatively.
+bool lateralSubqueryReadsOpaqueView(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    StoragePtr storage;
+    if (const auto * table_node = node->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+
+    if (storage && typeid_cast<const StorageView *>(storage.get()))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (lateralSubqueryReadsOpaqueView(child))
+            return true;
+    }
+    return false;
+}
+
 /// Apply filters from additional_table_filters setting. Expects
 /// `parseAdditionalFilterAstIfNeeded` to have been called earlier so
 /// `table_expression_query_info.additional_filter_ast` is populated.
@@ -4019,6 +4046,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                         "LATERAL JOIN subquery must not contain functions or table functions that are non-deterministic "
                         "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom), because it is not "
                         "evaluated separately for every row of the left side");
+
+                if (lateralSubqueryReadsOpaqueView(right_table_expression))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not read a view that is not inlined into the query, because functions "
+                        "non-deterministic within a query inside it cannot be detected, and the subquery is not evaluated "
+                        "separately for every row of the left side. Use the view's query directly or enable `analyzer_inline_views`");
 
                 if (lateralSubqueryHasVolatileHiddenFilter(right_table_expression, planner_context->getQueryContext()))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
