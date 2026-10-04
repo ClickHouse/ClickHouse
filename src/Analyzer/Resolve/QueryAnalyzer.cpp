@@ -4684,6 +4684,9 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        /// a fill row is computed from one previous row, it cannot multiply rows
+        assertNoFunctionNodes(interpolation_to_resolve, "arrayJoin", ErrorCodes::UNSUPPORTED_METHOD, "ARRAY JOIN", "in INTERPOLATE");
     }
 }
 
