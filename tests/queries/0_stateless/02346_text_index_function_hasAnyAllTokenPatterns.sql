@@ -284,6 +284,10 @@ SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_any_all_token_patterns_matched_tokens_%'
 ORDER BY log_comment;
+-- The capped discard above is not cached, so the same pattern without a cap scans again.
+SELECT 'bypass cache hits without a cap', ProfileEvents['TextIndexPatternBypassCacheHits']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = 'has_any_all_token_patterns_matched_tokens_unlimited';
 
 DROP TABLE tab;
 
