@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# A part detached before a metadata-only `ALTER` and then missing its `metadata_version.txt` - a file
+# the part checksums do not cover - used to be attached at the table's *current* version, so the
+# pending `RENAME COLUMN` was skipped and every row of the renamed column read as its default. Such a
+# part must be refused instead. `clickhouse local` is used because the test removes a file from a part.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+workdir="${CLICKHOUSE_TMP}/05171_${CLICKHOUSE_DATABASE}"
+rm -rf "${workdir}"
+mkdir -p "${workdir}"
+
+drop_metadata_version() {
+    find "${workdir}/store" -path "*detached/$1/metadata_version.txt" -delete
+}
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE renamed (id UInt64, a UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO renamed SELECT number, number FROM numbers(1000);
+SELECT 'before the rename', count(), sum(a) FROM renamed;
+ALTER TABLE renamed DETACH PARTITION tuple();
+ALTER TABLE renamed RENAME COLUMN a TO b;
+"
+
+drop_metadata_version all_1_1_0
+
+echo -n 'attach refused: '
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE renamed ATTACH PARTITION tuple()" 2>&1 |
+    grep -c -m1 'metadata_version.txt'
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'renamed';
+SELECT 'nothing attached', count() FROM renamed;
+"
+
+# A rename into a name freed by a drop leaves the set of names looking plausible: the part holds
+# `a, b`, the table holds `a`, and only the table's own record of the rename tells that the part's `b`
+# is the table's current `a`. Reading the part at the current version would serve the stale `a`.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE reused (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO reused SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE reused DETACH PARTITION tuple();
+ALTER TABLE reused DROP COLUMN a;
+ALTER TABLE reused RENAME COLUMN b TO a;
+"
+
+drop_metadata_version all_1_1_0
+
+echo -n 'reused name refused: '
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE reused ATTACH PARTITION tuple()" 2>&1 |
+    grep -c -m1 'renamed to a'
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'reused';
+SELECT 'nothing attached', count() FROM reused;
+"
+
+# A swap of two columns leaves the set of names identical (one `ALTER` refuses transitive renames,
+# so the swap takes three).
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE swapped (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO swapped SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE swapped DETACH PARTITION tuple();
+ALTER TABLE swapped RENAME COLUMN a TO tmp;
+ALTER TABLE swapped RENAME COLUMN b TO a;
+ALTER TABLE swapped RENAME COLUMN tmp TO b;
+"
+
+drop_metadata_version all_1_1_0
+
+echo -n 'swapped names refused: '
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE swapped ATTACH PARTITION tuple()" 2>&1 |
+    grep -c -m1 'renamed to'
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'swapped';
+SELECT 'nothing attached', count() FROM swapped;
+"
+
+# The same reused-name rename, but with the part found in the table's directory when the table is
+# loaded, not attached: the table reads its mutations before its parts, so the part is refused there
+# too (and detached as broken) instead of serving the stale `a`.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE reloaded (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO reloaded SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE reloaded DETACH PARTITION tuple();
+ALTER TABLE reloaded DROP COLUMN a;
+ALTER TABLE reloaded RENAME COLUMN b TO a;
+"
+
+reloaded_path=$(${CLICKHOUSE_LOCAL} --path "${workdir}" -q "SELECT arrayJoin(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = 'reloaded'")
+rm "${reloaded_path}detached/all_1_1_0/metadata_version.txt"
+mv "${reloaded_path}detached/all_1_1_0" "${reloaded_path}"
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "SELECT 'reloaded part not served', count() FROM reloaded"
+# A broken part is moved to `detached` in the background after the load: look at it from a later run.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'reloaded part detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'reloaded' AND startsWith(reason, 'broken');
+"
+
+# The same missing file over an unchanged schema: the part's columns match the table's, so reading it
+# at the current version is the same as reading it at its own.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE unchanged (id UInt64, a UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO unchanged SELECT number, number FROM numbers(1000);
+ALTER TABLE unchanged DETACH PARTITION tuple();
+"
+
+drop_metadata_version all_1_1_0
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+ALTER TABLE unchanged ATTACH PARTITION tuple();
+SELECT 'unchanged schema attaches', count(), sum(a) FROM unchanged;
+"
+
+# And with a column dropped meanwhile: the part carries a column the table does not, but the table has
+# nothing the part lacks, so the part is still readable as it is.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE dropped (id UInt64, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO dropped SELECT number, number, number FROM numbers(1000);
+ALTER TABLE dropped DETACH PARTITION tuple();
+ALTER TABLE dropped DROP COLUMN c;
+"
+
+drop_metadata_version all_1_1_0
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+ALTER TABLE dropped ATTACH PARTITION tuple();
+SELECT 'dropped column attaches', count(), sum(a) FROM dropped;
+"
+
+# A column dropped and another added meanwhile: the part holds a column the table does not and lacks
+# one the table has, as after a rename, but the table remembers the drop, which explains the extra column;
+# the added column reads as its default either way.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE dropped_added (id UInt64, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO dropped_added SELECT number, number, number FROM numbers(1000);
+ALTER TABLE dropped_added DETACH PARTITION tuple();
+ALTER TABLE dropped_added DROP COLUMN c;
+ALTER TABLE dropped_added ADD COLUMN b UInt32 DEFAULT 7;
+"
+
+drop_metadata_version all_1_1_0
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+ALTER TABLE dropped_added ATTACH PARTITION tuple();
+SELECT 'dropped and added columns attach', count(), sum(a), sum(b) FROM dropped_added;
+"
+
+rm -rf "${workdir}"
