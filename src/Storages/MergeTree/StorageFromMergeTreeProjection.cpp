@@ -141,6 +141,15 @@ void StorageFromMergeTreeProjection::read(
         auto it = created_projections.find(projection->name);
         if (it != created_projections.end())
         {
+            /// likewise for pending alter and metadata mutations (e.g. `MODIFY COLUMN`, `DROP COLUMN`, `RENAME COLUMN`),
+            /// which the parent read applies on the fly via `AlterConversions` but the projection read does not.
+            /// The snapshot counters also include already finished mutations, so check the commands for this part.
+            if (has_row_policy && !snapshot_data.mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part).empty())
+                throw Exception(ErrorCodes::ACCESS_DENIED,
+                    "Cannot read from projection `{}` of table {} under a row policy while part {} has unmaterialized "
+                    "mutations, since the projection may show stale values the policy would hide",
+                    projection->name, parent_storage_id.getNameForLogs(), part.data_part->name);
+
             projection_parts.push_back(
                 RangesInDataPart(it->second, part.data_part, part.part_index_in_query, part.part_starting_offset_in_query));
         }
