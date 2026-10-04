@@ -11,6 +11,9 @@ import threading
 
 LISTEN_PORT = 8081
 UPSTREAM = ("minio1", 9001)
+# The proxy is started with a detached `docker exec`, whose output does not reach
+# the container logs, so the events are also written to this file for the test.
+LOG_FILE = "/tmp/auth_proxy.log"
 
 USERNAME = "user"
 # The environment variable percent-encodes this as p%40ssword.
@@ -23,6 +26,15 @@ DENIED = (
     b"Content-Length: 0\r\n"
     b"Connection: close\r\n\r\n"
 )
+
+
+log_lock = threading.Lock()
+
+
+def log(message):
+    print(message, flush=True)
+    with log_lock, open(LOG_FILE, "a") as f:
+        f.write(message + "\n")
 
 
 def read_headers(sock):
@@ -84,13 +96,11 @@ def handle(client):
                 authorization = line.split(":", 1)[1].strip()
 
         if authorization != EXPECTED:
-            print(
-                f"DENIED {request_line} proxy_authorization={authorization}", flush=True
-            )
+            log(f"DENIED {request_line} proxy_authorization={authorization}")
             client.sendall(DENIED)
             return
 
-        print(f"ALLOWED {request_line}", flush=True)
+        log(f"ALLOWED {request_line}")
 
         forwarded = [to_origin_form(request_line)]
         for line in lines[1:]:
@@ -114,7 +124,7 @@ def handle(client):
         pipe(client, upstream)
         back.join(timeout=30)
     except OSError as e:
-        print(f"ERROR {e}", flush=True)
+        log(f"ERROR {e}")
     finally:
         for s in (client, upstream):
             if s is not None:
@@ -129,7 +139,7 @@ def main():
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("0.0.0.0", LISTEN_PORT))
     server.listen(64)
-    print(f"auth proxy listening on {LISTEN_PORT}", flush=True)
+    log(f"auth proxy listening on {LISTEN_PORT}")
     while True:
         client, _ = server.accept()
         threading.Thread(target=handle, args=(client,), daemon=True).start()

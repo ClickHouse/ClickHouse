@@ -117,7 +117,9 @@ def test_s3_with_proxy_credentials(cluster):
     node = cluster.instances["env_node_with_credentials"]
     proxy_util.perform_simple_queries(node, minio_endpoint)
 
-    logs = cluster.get_container_logs("resolver")
+    logs = cluster.exec_in_container(
+        cluster.get_container_id("resolver"), ["cat", "/tmp/auth_proxy.log"]
+    )
     assert "ALLOWED" in logs, "Proxy never accepted an authenticated request"
 
 
