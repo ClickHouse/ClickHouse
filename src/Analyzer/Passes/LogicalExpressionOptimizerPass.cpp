@@ -458,8 +458,7 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     return converted;
 }
 
-/// Whether `from` is `DateTime` or a `DateTime64` of a lower scale than the `DateTime64` type `to`.
-/// A comparison of the two widens the `from` value to the scale of `to`.
+/// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
 static bool isLowerScaleTimePoint(const DataTypePtr & from, const DataTypePtr & to)
 {
     const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get());
@@ -2137,10 +2136,9 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
-    /// If one side is a constant that the comparison converts once to the other side's type, convert
-    /// the literal to that type and return the edge's domain. That is a `String`/`FixedString` compared
-    /// with a non-string type (as `executeWithConstString` does), or a `DateTime`/lower-scale
-    /// `DateTime64` compared with a `DateTime64`, which is widened exactly to the higher scale.
+    /// If one side is a constant the comparison converts once to the other side's type (a `String`/`FixedString`
+    /// vs a non-string, as `executeWithConstString` does, or a `DateTime`/lower-scale `DateTime64` vs a `DateTime64`,
+    /// widened exactly), convert the literal to that type and return the edge's domain.
     ComparisonOrderDomain tryNormalizeConstEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
     {
         const auto * lhs_constant = lhs->as<ConstantNode>();
