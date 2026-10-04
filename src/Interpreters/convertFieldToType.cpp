@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
@@ -43,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
@@ -764,6 +766,66 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
 
         return applyVisitor(FieldVisitorToString(), src);
+    }
+    else if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecaying *>(&type))
+    {
+        if (src.getType() == Field::Types::Tuple)
+        {
+            if (const auto * tuple_hint = typeid_cast<const DataTypeTuple *>(from_type_hint); tuple_hint && tuple_hint->hasExplicitNames())
+            {
+                const auto & names = tuple_hint->getElementNames();
+                if (names.size() == 3
+                    && names[0] == "sign"
+                    && names[1] == "signed_unit_time"
+                    && names[2] == "decay_length")
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "Tuple(sign, signed_unit_time, decay_length) is not a representation of ExponentialTimeDecaying");
+            }
+
+            const auto & src_tuple = src.safeGet<Tuple>();
+            DataTypePtr raw_type;
+            if (src_tuple.size() == 2)
+                raw_type = decaying_type->getNestedType();
+            else if (src_tuple.size() == 3)
+                raw_type = decaying_type->getLogicalTupleType();
+            else
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "ExponentialTimeDecaying expects raw Tuple(value, timestamp[, decay_length]), got {} elements",
+                    src_tuple.size());
+
+            Field raw = convertFieldToType(
+                src, *raw_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+            if (raw.isNull())
+                return {};
+
+            const auto & tuple = raw.safeGet<Tuple>();
+            const Float64 value = tuple[0].safeGet<Float64>();
+            const Float64 time = tuple[1].safeGet<Float64>();
+            const Float64 decay_length = decaying_type->getDecayLength();
+            if (tuple.size() == 3)
+            {
+                const Float64 supplied_decay_length = tuple[2].safeGet<Float64>();
+                if (!std::isfinite(supplied_decay_length) || supplied_decay_length != decay_length)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "ExponentialTimeDecaying value supplies decay length {}, expected {}",
+                        supplied_decay_length,
+                        decay_length);
+            }
+
+            if (!std::isfinite(value)
+                || !std::isfinite(time)
+                || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "ExponentialTimeDecaying value and timestamp must define a finite decay curve");
+
+            const auto normalized = normalizeExponentialTimeDecaying(
+                value, time, decay_length, decaying_type->getKeyWidth());
+            return Tuple{normalized.value_at_anchor, normalized.anchor_time};
+        }
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {

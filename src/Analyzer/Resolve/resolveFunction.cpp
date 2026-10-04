@@ -1,5 +1,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
@@ -46,6 +47,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/exponentialTimeDecaying.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -2998,7 +3000,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(
+            function_name, action, AggregateFunctionStateVariant::Window, scope.context);
 
         argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -3051,6 +3054,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
+    }
+
+    if (!function && function_name == "exponentialTimeDecaying")
+    {
+        function = createExponentialTimeDecayingFunction(parameters, scope.context);
+        can_have_parameters = true;
     }
 
     FunctionBasePtr * function_base_cache = nullptr;
@@ -3132,7 +3141,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(
+            function_name, action, AggregateFunctionStateVariant::Aggregation, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
@@ -3325,6 +3335,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
+
+            /// Preserve pairwise validation before getSetElementsForConstantValue
+            /// converts layout-compatible set literals to the left-hand type.
+            auto assert_set_element_type_compatible = [&](const DataTypePtr & set_element_type)
+            {
+                if (typeid_cast<const DataTypeNothing *>(removeNullable(set_element_type).get()))
+                    return;
+
+                assertExponentialTimeDecayingTypesCompatible(
+                    first_argument_constant_type, set_element_type, "IN constant set");
+            };
+
+            if (isExponentialTimeDecaying(removeNullable(second_argument_constant_type)))
+                assert_set_element_type_compatible(second_argument_constant_type);
+            else if (const auto * set_element_types = typeid_cast<const DataTypeTuple *>(second_argument_constant_type.get()))
+            {
+                for (const auto & set_element_type : set_element_types->getElements())
+                    assert_set_element_type_compatible(set_element_type);
+            }
+            else
+                assert_set_element_type_compatible(second_argument_constant_type);
 
             auto result_block = getSetElementsForConstantValue(
                 first_argument_constant_type, second_argument_constant_column, second_argument_constant_type,

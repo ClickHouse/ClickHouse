@@ -1,9 +1,12 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -19,6 +22,7 @@ namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -33,6 +37,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
 
 }
 
@@ -43,7 +48,21 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
+    , allow_experimental_time_decay_aggregate_functions(settings[Setting::allow_experimental_time_decay_aggregate_functions])
 {
+}
+
+DataTypeValidationSettings DataTypeValidationSettings::forNonStorageDefinition(const DB::Settings & settings)
+{
+    DataTypeValidationSettings result(settings);
+    /// Views historically skipped data-type validation entirely. Preserve every
+    /// pre-existing exemption while keeping the experimental time-decay gate explicit.
+    result.allow_suspicious_low_cardinality_types = true;
+    result.allow_suspicious_fixed_string_types = true;
+    result.allow_suspicious_variant_types = true;
+    result.enable_time_time64_type = true;
+    result.enable_nullable_tuple_type = true;
+    return result;
 }
 
 
@@ -51,6 +70,34 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 {
     auto validate_callback = [&](const IDataType & data_type)
     {
+        if (!settings.allow_experimental_time_decay_aggregate_functions)
+        {
+            bool is_experimental_time_decay_type = isExponentialTimeDecaying(data_type);
+            if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+            {
+                const String & function_name = aggregate_function_type->getFunctionName();
+                const auto & factory = AggregateFunctionFactory::instance();
+                if (factory.hasExecutionAvailabilityCheck(function_name))
+                {
+                    if (factory.hasWindowCreator(function_name))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "The function '{}' can only be used as a window function, not as an aggregate function, "
+                            "so its state cannot be used as a data type",
+                            function_name);
+
+                    is_experimental_time_decay_type = true;
+                }
+            }
+
+            if (is_experimental_time_decay_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
+                    "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
+                    data_type.getName());
+        }
+
         if (!settings.allow_suspicious_low_cardinality_types)
         {
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))

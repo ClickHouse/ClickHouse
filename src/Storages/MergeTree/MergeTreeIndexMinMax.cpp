@@ -5,7 +5,13 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -19,16 +25,182 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+DataTypePtr getMinMaxPhysicalType(const DataTypePtr & type)
+{
+    bool nullable = false;
+    DataTypePtr nested = type;
+
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested.get()))
+        nested = low_cardinality->getDictionaryType();
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested.get()))
+    {
+        nullable = true;
+        nested = nullable_type->getNestedType();
+    }
+
+    if (!isExponentialTimeDecaying(nested))
+        return type;
+
+    const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecaying &>(*nested);
+    DataTypePtr result = decaying_type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64
+        ? DataTypePtr(std::make_shared<DataTypeUInt64>())
+        : DataTypePtr(std::make_shared<DataTypeUInt128>());
+    if (nullable)
+        result = makeNullable(result);
+    return result;
+}
+
+bool getDecayPrefixExtremes(
+    const ColumnPtr & source,
+    const DataTypePtr & type,
+    size_t begin,
+    size_t end,
+    FieldRef & min_value,
+    FieldRef & max_value)
+{
+    DataTypePtr nested_type = type;
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+        nested_type = low_cardinality->getDictionaryType();
+
+    bool nullable = false;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+    {
+        nullable = true;
+        nested_type = nullable_type->getNestedType();
+    }
+
+    if (!isExponentialTimeDecaying(nested_type))
+        return false;
+
+    ColumnPtr full = source->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(full.get());
+    const IColumn * nested_column = full.get();
+    if (nullable_column)
+        nested_column = &nullable_column->getNestedColumn();
+
+    const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*nested_column);
+
+    bool found = false;
+    bool saw_null = false;
+
+    if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+    {
+        const auto & keys
+            = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+        UInt64 min_key = 0;
+        UInt64 max_key = 0;
+
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (nullable_column && nullable_column->isNullAt(row))
+            {
+                saw_null = true;
+                continue;
+            }
+
+            const UInt64 key = keys[row];
+            if (!found)
+            {
+                min_key = key;
+                max_key = key;
+                found = true;
+            }
+            else
+            {
+                min_key = std::min(min_key, key);
+                max_key = std::max(max_key, key);
+            }
+        }
+
+        if (found)
+        {
+            min_value = Field(min_key);
+            if (!saw_null)
+                max_value = Field(max_key);
+        }
+    }
+    else
+    {
+        const auto & keys
+            = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
+        UInt128 min_key = 0;
+        UInt128 max_key = 0;
+
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (nullable_column && nullable_column->isNullAt(row))
+            {
+                saw_null = true;
+                continue;
+            }
+
+            const UInt128 key = keys[row];
+            if (!found)
+            {
+                min_key = key;
+                max_key = key;
+                found = true;
+            }
+            else
+            {
+                if (key < min_key)
+                    min_key = key;
+                if (key > max_key)
+                    max_key = key;
+            }
+        }
+
+        if (found)
+        {
+            min_value = Field(min_key);
+            if (!saw_null)
+                max_value = Field(max_key);
+        }
+    }
+
+    if (!found)
+    {
+        if (nullable)
+        {
+            min_value = Null{};
+            max_value = Null{};
+            return true;
+        }
+
+        return false;
+    }
+
+    if (saw_null)
+        max_value = Null{};
+    return true;
+}
+
+DataTypes getMinMaxPhysicalTypes(const DataTypes & types)
+{
+    DataTypes result;
+    result.reserve(types.size());
+    for (const auto & type : types)
+        result.push_back(getMinMaxPhysicalType(type));
+    return result;
+}
+
+}
+
+
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        const DataTypePtr type = getMinMaxPhysicalType(index_sample_block.getByPosition(i).type);
         serializations.push_back(type->getDefaultSerialization());
     }
-    datatypes = index_sample_block.getDataTypes();
+    datatypes = getMinMaxPhysicalTypes(index_sample_block.getDataTypes());
 }
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
@@ -41,10 +213,10 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
 {
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        const DataTypePtr type = getMinMaxPhysicalType(index_sample_block.getByPosition(i).type);
         serializations.push_back(type->getDefaultSerialization());
     }
-    datatypes = index_sample_block.getDataTypes();
+    datatypes = getMinMaxPhysicalTypes(index_sample_block.getDataTypes());
 }
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
@@ -174,11 +346,18 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
         /// sentinel; otherwise IS NULL wrongly prunes). getExtremes on LC materializes internally too,
         /// so this adds no extra work.
-        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
-        else
-            column->getExtremes(field_min, field_max, range_start, range_end);
+        const auto & source_type = index_sample_block.getByPosition(i).type;
+        if (!getDecayPrefixExtremes(
+                src_column, source_type, range_start, range_end, field_min, field_max))
+        {
+            const auto column = src_column->lowCardinality()
+                ? src_column->convertToFullColumnIfLowCardinality()
+                : src_column;
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+                column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
+            else
+                column->getExtremes(field_min, field_max, range_start, range_end);
+        }
 
         if (hyperrectangle.size() <= i)
         {
@@ -208,9 +387,10 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWith
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
-    : index_data_types(index.data_types)
+    : index_data_types(getMinMaxPhysicalTypes(index.data_types))
     , condition(buildCondition(index, filter_dag, context))
 {
+    condition.projectExponentialTimeDecayingIndexKeys(index.data_types);
     /// The granule bound comes from `getExtremes`, which skips NaN.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
@@ -295,7 +475,7 @@ MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String 
     , last_part_granule(last_part_granule_)
     , store_map(store_map_)
 {
-    const DataTypePtr & type = index_sample_block.getByPosition(0).type;
+    const DataTypePtr type = getMinMaxPhysicalType(index_sample_block.getByPosition(0).type);
     serialization = type->getDefaultSerialization();
     granules.reserve(size_hint_);
 }
@@ -512,6 +692,19 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                 "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
                 column.type->getName(), column.name);
         }
+
+        DataTypePtr decay_candidate = column.type;
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(decay_candidate.get()))
+            decay_candidate = low_cardinality->getDictionaryType();
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(decay_candidate.get()))
+            decay_candidate = nullable->getNestedType();
+
+        if (containsExponentialTimeDecaying(column.type)
+            && !isExponentialTimeDecaying(decay_candidate))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Nested ExponentialTimeDecaying values are not supported by minmax index for column {}",
+                column.name);
 
         auto check_not_dynamic_or_variant = [&](const IDataType & type)
         {

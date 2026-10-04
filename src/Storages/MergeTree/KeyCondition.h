@@ -262,6 +262,11 @@ public:
 
     bool matchesExactContinuousRange() const;
 
+    /// Project direct exponential-time-decaying key atoms to the width-specific
+    /// integer ordering domain used by the column comparator and sparse/minmax indexes. Unsupported
+    /// set/special predicates become unknown so pruning remains conservative.
+    void projectExponentialTimeDecayingIndexKeys(const DataTypes & key_types);
+
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
     ///

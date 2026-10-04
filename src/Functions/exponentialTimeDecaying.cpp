@@ -1,0 +1,609 @@
+#include <Columns/ColumnExponentialTimeDecaying.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/assert_cast.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/exponentialTimeDecaying.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context.h>
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_FUNCTION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+}
+
+namespace
+{
+
+void assertExperimentalFeatureEnabled(const ContextPtr & context, const String & function_name)
+{
+    if (context && !context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        throw Exception(
+            ErrorCodes::UNKNOWN_FUNCTION,
+            "Function {} is experimental and disabled by default. Enable it with setting "
+            "allow_experimental_time_decay_aggregate_functions",
+            function_name);
+}
+
+void assertDecayingType(const DataTypePtr & type, const String & function_name, size_t argument)
+{
+    if (!isExponentialTimeDecaying(type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument {} of function {} must be ExponentialTimeDecaying, got {}",
+            argument,
+            function_name,
+            type->getName());
+}
+
+void assertTimeType(const DataTypePtr & type, const String & function_name)
+{
+    if (!isNumber(type) && !isDateTime(type) && !isDateTime64(type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Time argument of function {} must be a number, DateTime, or DateTime64, got {}",
+            function_name,
+            type->getName());
+}
+
+struct DecayingColumnView
+{
+    const ColumnFloat64 & value_at_anchor;
+    const ColumnFloat64 & anchor_time;
+    const IColumn & ordering_key;
+    Float64 decay_length;
+    ExponentialTimeDecayingKeyWidth key_width;
+};
+
+DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTypePtr & type)
+{
+    const auto decay_length = tryGetExponentialTimeDecayingDecayLength(type);
+    chassert(decay_length);
+
+    const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
+    const auto & tuple = decaying.getStorageTuple();
+    return {
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
+        decaying.getOrderingKeyColumn(),
+        *decay_length,
+        decaying.getKeyWidth(),
+    };
+}
+
+bool isEmptyRow(const DecayingColumnView & input, size_t row)
+{
+    return input.value_at_anchor.getData()[row] == 0;
+}
+
+void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
+{
+    const Float64 value = input.value_at_anchor.getData()[row];
+    const Float64 time = input.anchor_time.getData()[row];
+    if (!std::isfinite(value) || !std::isfinite(time))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument of function {} is not a canonical exponential-time-decaying value",
+            function_name);
+}
+
+Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
+{
+    if (isEmptyRow(input, row))
+        return 0;
+
+    const Float64 value = input.value_at_anchor.getData()[row];
+    const Float64 anchor_time = input.anchor_time.getData()[row];
+    if (target_time == anchor_time)
+        return value;
+
+    return value * std::exp((anchor_time - target_time) / input.decay_length);
+}
+
+Float64 unitTime(const DecayingColumnView & input, size_t row)
+{
+    if (isEmptyRow(input, row))
+        return 0;
+
+    if (input.key_width == ExponentialTimeDecayingKeyWidth::Bits64)
+    {
+        const auto & keys = assert_cast<const ColumnUInt64 &>(input.ordering_key).getData();
+        return getExponentialTimeDecayingCanonicalDirectValue(keys[row]).anchor_time;
+    }
+
+    const auto & keys = assert_cast<const ColumnUInt128 &>(input.ordering_key).getData();
+    const auto direct = getExponentialTimeDecayingCanonicalDirectValue(keys[row]);
+    return getExponentialTimeDecayingUnitTimestamp(
+        direct.value_at_anchor, direct.anchor_time, input.decay_length);
+}
+
+struct DecayingColumnBuilder
+{
+    explicit DecayingColumnBuilder(
+        Float64 decay_length_,
+        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64)
+        : decay_length(decay_length_)
+        , key_width(key_width_)
+    {
+    }
+
+    void append(Float64 value, Float64 time)
+    {
+        if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "exponential-time-decaying value does not define a finite decay curve");
+
+        const auto normalized = normalizeExponentialTimeDecaying(
+            value, time, decay_length, key_width);
+        value_at_anchor->insertValue(normalized.value_at_anchor);
+        anchor_time->insertValue(normalized.anchor_time);
+    }
+
+    ColumnPtr build()
+    {
+        auto tuple = ColumnTuple::create(
+            Columns{std::move(value_at_anchor), std::move(anchor_time)});
+        return ColumnExponentialTimeDecaying::create(
+            tuple->assumeMutable(), decay_length, key_width);
+    }
+
+    const Float64 decay_length;
+    const ExponentialTimeDecayingKeyWidth key_width;
+    ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
+    ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
+};
+
+class FunctionExponentialTimeDecaying final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecaying";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecaying>();
+    }
+
+    FunctionExponentialTimeDecaying() = default;
+
+    explicit FunctionExponentialTimeDecaying(Float64 decay_length_)
+        : decay_length(decay_length_)
+    {
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function {} requires a decay_length parameter",
+                getName());
+
+        if (!isNumber(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a number, got {}",
+                getName(),
+                arguments[0].type->getName());
+
+        assertTimeType(arguments[1].type, getName());
+        return std::make_shared<DataTypeExponentialTimeDecaying>(
+            *decay_length, ExponentialTimeDecayingKeyWidth::Bits64);
+    }
+
+    ColumnPtr executeImpl(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        size_t input_rows_count) const override
+    {
+        chassert(decay_length);
+
+        auto value_column = arguments[0].column->convertToFullColumnIfConst();
+        auto time_column = arguments[1].column->convertToFullColumnIfConst();
+        DecayingColumnBuilder result(*decay_length);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const Float64 value = value_column->getFloat64(row);
+            const Float64 time = time_column->getFloat64(row);
+
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", getName());
+            if (!std::isfinite(time))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", getName());
+
+            result.append(value, time);
+        }
+
+        return result.build();
+    }
+
+private:
+    std::optional<Float64> decay_length;
+};
+
+class FunctionExponentialTimeDecayingAdd final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecayingAdd";
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecayingAdd>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        assertDecayingType(arguments[0].type, getName(), 1);
+        assertDecayingType(arguments[1].type, getName(), 2);
+
+        assertExponentialTimeDecayingTypesCompatible(
+            arguments[0].type, arguments[1].type, getName());
+        return arguments[0].type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto left_column = arguments[0].column->convertToFullColumnIfConst();
+        auto right_column = arguments[1].column->convertToFullColumnIfConst();
+        const auto left = getDecayingColumnView(left_column, arguments[0].type);
+        const auto right = getDecayingColumnView(right_column, arguments[1].type);
+        DecayingColumnBuilder result(left.decay_length, left.key_width);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            assertValidRow(left, row, getName());
+            assertValidRow(right, row, getName());
+
+            if (isEmptyRow(left, row))
+            {
+                result.append(
+                    right.value_at_anchor.getData()[row],
+                    right.anchor_time.getData()[row]);
+                continue;
+            }
+            if (isEmptyRow(right, row))
+            {
+                result.append(
+                    left.value_at_anchor.getData()[row],
+                    left.anchor_time.getData()[row]);
+                continue;
+            }
+
+            const Float64 latest_time = std::max(
+                left.anchor_time.getData()[row],
+                right.anchor_time.getData()[row]);
+            result.append(
+                valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
+                latest_time);
+        }
+
+        return result.build();
+    }
+};
+
+class FunctionExponentialTimeDecayingValueAt final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecayingValueAt";
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecayingValueAt>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        assertDecayingType(arguments[0].type, getName(), 1);
+        assertTimeType(arguments[1].type, getName());
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto input_column = arguments[0].column->convertToFullColumnIfConst();
+        auto target_time_column = arguments[1].column->convertToFullColumnIfConst();
+        const auto input = getDecayingColumnView(input_column, arguments[0].type);
+        auto result = ColumnFloat64::create(input_rows_count, 0.0);
+        auto & result_data = result->getData();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            assertValidRow(input, row, getName());
+            if (!std::isfinite(target_time_column->getFloat64(row)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must be finite", getName());
+            result_data[row] = valueAt(input, row, target_time_column->getFloat64(row));
+        }
+        return result;
+    }
+};
+
+class FunctionExponentialTimeDecayingUnitTime final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecayingUnitTime";
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecayingUnitTime>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        assertDecayingType(arguments[0].type, getName(), 1);
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto input_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto input = getDecayingColumnView(input_column, arguments[0].type);
+        auto result = ColumnFloat64::create(input_rows_count, 0.0);
+        auto & result_data = result->getData();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            assertValidRow(input, row, getName());
+            result_data[row] = unitTime(input, row);
+        }
+
+        return result;
+    }
+};
+
+class FunctionExponentialTimeDecayingValueAtUnitTime final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecayingValueAtUnitTime";
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecayingValueAtUnitTime>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        assertDecayingType(arguments[0].type, getName(), 1);
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto input_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto input = getDecayingColumnView(input_column, arguments[0].type);
+        auto result = ColumnFloat64::create(input_rows_count, 0.0);
+        auto & result_data = result->getData();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            assertValidRow(input, row, getName());
+            const Float64 target_time = unitTime(input, row);
+            result_data[row] = valueAt(input, row, target_time);
+        }
+
+        return result;
+    }
+};
+
+class FunctionExponentialTimeDecayingDecayLength final : public IFunction
+{
+public:
+    static constexpr auto name = "exponentialTimeDecayingDecayLength";
+    static FunctionPtr create(ContextPtr context)
+    {
+        assertExperimentalFeatureEnabled(context, name);
+        return std::make_shared<FunctionExponentialTimeDecayingDecayLength>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        assertDecayingType(arguments[0].type, getName(), 1);
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const Float64 decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[0].type);
+        return ColumnFloat64::create(input_rows_count, decay_length);
+    }
+};
+
+}
+
+FunctionOverloadResolverPtr createExponentialTimeDecayingFunction(
+    const Array & parameters,
+    ContextPtr context)
+{
+    assertExperimentalFeatureEnabled(context, FunctionExponentialTimeDecaying::name);
+
+    if (parameters.size() != 1)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function {} takes exactly one parameter, the decay length",
+            FunctionExponentialTimeDecaying::name);
+
+    const Float64 decay_length
+        = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
+    if (!std::isfinite(decay_length) || decay_length <= 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Decay length of function {} must be finite and positive",
+            FunctionExponentialTimeDecaying::name);
+
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(
+        std::make_shared<FunctionExponentialTimeDecaying>(decay_length));
+}
+
+REGISTER_FUNCTION(ExponentialTimeDecaying)
+{
+    factory.registerFunction<FunctionExponentialTimeDecaying>(FunctionDocumentation{
+        .description = R"(
+Constructs one `ExponentialTimeDecaying(decay_length)` value for each `(value, time)` input row.
+The result keeps its direct value and anchor for arithmetic and derives one `UInt64` ordering prefix.
+Comparison and equality use that prefix first and fall back to the full logical key on collisions.
+Hashing uses the full logical key; primary-key marks and minmax indexes use the compact prefix.
+It can be combined by `exponentialTimeDecayedSum`, including as a
+`SimpleAggregateFunction` column in an `AggregatingMergeTree`.
+)",
+        .syntax = "exponentialTimeDecaying(decay_length)(value, time)",
+        .arguments = {
+            {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
+            {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
+        .parameters = {
+            {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
+        .returned_value = {"Returns an `ExponentialTimeDecaying(decay_length)` value.", {}},
+        .examples = {{
+            "Construct a decaying value",
+            "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "(1,20.79441541679836,10)"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
+        .description = R"(
+Adds two exponentially time-decaying values using their direct value/anchor payloads.
+Both inputs must have identical decay lengths encoded in their types. The function rebases the older direct payload to
+`ct = greatest(A.anchor_time, B.anchor_time)` and stores `A.value_at(ct) + B.value_at(ct)` at that anchor.
+Because values are stored as `Float64`, large signed values that nearly cancel can be sensitive to
+addition order and grouping. Normalize magnitudes or use a numerically stable method to pre-aggregate
+sensitive inputs when stronger numerical reproducibility is required.
+)",
+        .syntax = "exponentialTimeDecayingAdd(a, b)",
+        .arguments = {
+            {"a", "First value of type `ExponentialTimeDecaying(decay_length)`.", {}},
+            {"b", "Second value with the same parameterized type.", {}}},
+        .returned_value = {"Returns the combined `ExponentialTimeDecaying(decay_length)` value.", {}},
+        .examples = {{
+            "Add values with the same decay length",
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingAdd("
+            "exponentialTimeDecaying(10)(2.718281828459045, toFloat64(0)), "
+            "exponentialTimeDecaying(10)(4, toFloat64(10))), toFloat64(10)), 6) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "5"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionExponentialTimeDecayingValueAt>(FunctionDocumentation{
+        .description = R"(
+Evaluates an exponentially time-decaying value at any target time from its stored direct value and anchor.
+Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` and `now64()` can be used.
+)",
+        .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
+        .arguments = {
+            {"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}},
+            {"target_time", "Evaluation time; it may be before, at, or after the normalization time.",
+                {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
+        .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
+        .examples = {{
+            "Evaluate one decay length later",
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecaying(10)(8, toFloat64(0)), toFloat64(10)), 6) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "2.943036"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionExponentialTimeDecayingUnitTime>(FunctionDocumentation{
+        .description = R"(
+Returns the canonical unit time represented by the compact ordering prefix of an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value.
+For non-zero curves, the exact unit time is quantized to the prefix bucket used by ordering and sparse indexes.
+Zero returns `0`.
+)",
+        .syntax = "exponentialTimeDecayingUnitTime(value)",
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .returned_value = {"Returns the canonical unit time of the ordering bucket.", {"Float64"}},
+        .examples = {{
+            "Read the unit time",
+            "SELECT exponentialTimeDecayingUnitTime(exponentialTimeDecaying(10)(1, toFloat64(5))) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "5"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionExponentialTimeDecayingValueAtUnitTime>(FunctionDocumentation{
+        .description = R"(
+Evaluates an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value at the canonical unit time represented by its compact ordering prefix.
+The result preserves the residual `Float64` precision discarded by the compact prefix and is therefore only approximately
+`-1` or `1` for non-zero curves. Zero returns `0`.
+)",
+        .syntax = "exponentialTimeDecayingValueAtUnitTime(value)",
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .returned_value = {"Returns the value at `exponentialTimeDecayingUnitTime(value)`.", {"Float64"}},
+        .examples = {{
+            "Read the residual value at unit time",
+            "SELECT exponentialTimeDecayingValueAtUnitTime(exponentialTimeDecaying(10)(1, toFloat64(5))) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "1"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionExponentialTimeDecayingDecayLength>(FunctionDocumentation{
+        .description = "Returns the decay length encoded in an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` type.",
+        .syntax = "exponentialTimeDecayingDecayLength(value)",
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .returned_value = {"Returns the decay length.", {"Float64"}},
+        .examples = {{
+            "Read the decay length",
+            "SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecaying(10)(1, toFloat64(0))) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
+            "10"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+}
+
+}

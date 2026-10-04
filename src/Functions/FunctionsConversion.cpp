@@ -1,6 +1,9 @@
 #include <Functions/FunctionsConversion.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -55,6 +58,25 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 
 namespace detail
 {
+
+static bool containsExperimentalTimeDecayTypeOrState(const DataTypePtr & type)
+{
+    if (containsExponentialTimeDecaying(type))
+        return true;
+
+    bool found = false;
+    auto check = [&](const IDataType & nested_type)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&nested_type);
+            aggregate_type
+            && AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(aggregate_type->getFunctionName()))
+            found = true;
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return found;
+}
 
 /// When assembling the result of a Variant/Dynamic-to-column conversion, the result column must have
 /// the exact type of the converted columns it is filled from, otherwise `insertFrom` fails the column
@@ -404,10 +426,38 @@ namespace detail
 
 ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const
 {
+    if (!settings.allow_experimental_time_decay_aggregate_functions)
+    {
+        const bool result_is_experimental = containsExperimentalTimeDecayTypeOrState(getResultType());
+        const bool argument_is_experimental = containsExperimentalTimeDecayTypeOrState(getArgumentTypes()[0]);
+        if (result_is_experimental || argument_is_experimental)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type {} is experimental and disabled by default. Enable it with setting "
+                "allow_experimental_time_decay_aggregate_functions",
+                result_is_experimental ? getResultType()->getName() : getArgumentTypes()[0]->getName());
+    }
+
     try
     {
+        auto wrapper = prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
+        if (containsExponentialTimeDecaying(getResultType()))
+        {
+            wrapper = [nested = std::move(wrapper)](
+                          ColumnsWithTypeAndName & arguments,
+                          const DataTypePtr & result_type,
+                          const ColumnNullable * nullable,
+                          size_t input_rows_count)
+            {
+                auto result = nested(arguments, result_type, nullable, input_rows_count);
+                validateExponentialTimeDecayingColumn(
+                    *result, result_type, "conversion to ExponentialTimeDecaying");
+                return result;
+            };
+        }
+
         return std::make_unique<ExecutableFunctionCast>(
-            prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
+            std::move(wrapper), cast_name, diagnostic);
     }
     catch (Exception & e)
     {
@@ -1035,9 +1085,52 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         };
     }
 
-    const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
+    const DataTypeTuple * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
     if (!from_type)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types or from String.\n"
+    {
+        if (const auto * decaying_type = checkAndGetDataType<DataTypeExponentialTimeDecaying>(from_type_untyped.get()))
+        {
+            const auto & logical_type = decaying_type->getLogicalTupleType();
+            const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
+            if (to_type->getElements().size() == logical_tuple.getElements().size())
+            {
+                auto decay_logical_wrapper = createTupleWrapper(logical_type, to_type);
+                const Float64 decay_length = decaying_type->getDecayLength();
+                return [logical_wrapper = std::move(decay_logical_wrapper), logical_type, decay_length]
+                    (ColumnsWithTypeAndName & arguments,
+                     const DataTypePtr & result_type,
+                     const ColumnNullable * nullable_source,
+                     size_t input_rows_count) -> ColumnPtr
+                {
+                    ColumnsWithTypeAndName logical_arguments = arguments;
+                    logical_arguments[0].column
+                        = materializeExponentialTimeDecayingLogicalColumn(*arguments[0].column, decay_length);
+                    logical_arguments[0].type = logical_type;
+                    return logical_wrapper(logical_arguments, result_type, nullable_source, input_rows_count);
+                };
+            }
+
+            const auto & storage_type = decaying_type->getNestedType();
+            auto storage_wrapper = createTupleWrapper(storage_type, to_type);
+            return [wrapper = std::move(storage_wrapper), storage_type]
+                (ColumnsWithTypeAndName & arguments,
+                 const DataTypePtr & result_type,
+                 const ColumnNullable * nullable_source,
+                 size_t input_rows_count) -> ColumnPtr
+            {
+                ColumnsWithTypeAndName storage_arguments = arguments;
+                ColumnPtr full_column = arguments[0].column->convertToFullColumnIfConst();
+                const auto & decaying_column
+                    = assert_cast<const ColumnExponentialTimeDecaying &>(*full_column);
+                storage_arguments[0].column = decaying_column.getStoragePtr();
+                storage_arguments[0].type = storage_type;
+                return wrapper(storage_arguments, result_type, nullable_source, input_rows_count);
+            };
+        }
+    }
+
+    if (!from_type)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple-backed types or from String.\n"
                         "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
 
     const auto & from_element_types = from_type->getElements();
@@ -3121,6 +3214,47 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
+    const auto from_decay_length = tryGetExponentialTimeDecayingDecayLength(from_type);
+    const auto to_decay_length = tryGetExponentialTimeDecayingDecayLength(to_type);
+    if (from_decay_length && to_decay_length && *from_decay_length != *to_decay_length)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot convert ExponentialTimeDecaying values between different decay lengths: {} and {}",
+            *from_decay_length,
+            *to_decay_length);
+
+    if (cast_type == CastType::nonAccurate
+        && from_decay_length
+        && to_decay_length
+        && !from_type->equals(*to_type))
+    {
+        const auto & target = assert_cast<const DataTypeExponentialTimeDecaying &>(*to_type);
+        const auto target_key_width = target.getKeyWidth();
+        const Float64 decay_length = target.getDecayLength();
+
+        return [target_key_width, decay_length](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr &,
+                   const ColumnNullable *,
+                   size_t) -> ColumnPtr
+        {
+            ColumnPtr full = arguments[0].column->convertToFullColumnIfConst();
+            const auto & source = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
+            return materializeExponentialTimeDecayingStorageColumn(
+                source.getStorageColumn(),
+                decay_length,
+                "explicit ExponentialTimeDecaying width conversion",
+                target_key_width);
+        };
+    }
+
+    /// Accurate conversions are used for implicit key coercion (for example by IN).
+    /// A finalized decaying value must not become a layout-compatible plain Tuple, or
+    /// silently change its decay length. Container conversions recurse through this path.
+    if (cast_type != CastType::nonAccurate
+        && (isExponentialTimeDecaying(from_type) || isExponentialTimeDecaying(to_type)))
+        assertExponentialTimeDecayingTypesCompatible(from_type, to_type, "accurate CAST");
+
     if (isUInt8(from_type) && isBool(to_type))
         return createUInt8ToBoolWrapper(from_type, to_type);
 
@@ -3325,6 +3459,54 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
         case TypeIndex::QBit:
             return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
+        case TypeIndex::ExponentialTimeDecaying:
+        {
+            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecaying &>(*to_type);
+            const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get());
+            if (!from_tuple)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS ExponentialTimeDecaying can only be performed from a raw Tuple(value, timestamp[, decay_length])");
+
+            if (from_tuple->hasExplicitNames())
+            {
+                const auto & names = from_tuple->getElementNames();
+                if (names.size() == 3
+                    && names[0] == "sign"
+                    && names[1] == "signed_unit_time"
+                    && names[2] == "decay_length")
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Tuple(sign, signed_unit_time, decay_length) is not a representation of ExponentialTimeDecaying");
+            }
+
+            DataTypePtr raw_type;
+            if (from_tuple->getElements().size() == 2)
+                raw_type = decaying_type.getNestedType();
+            else if (from_tuple->getElements().size() == 3)
+                raw_type = decaying_type.getLogicalTupleType();
+            else
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS ExponentialTimeDecaying expects raw Tuple(value, timestamp[, decay_length]), got {} elements",
+                    from_tuple->getElements().size());
+
+            const auto & raw_tuple = assert_cast<const DataTypeTuple &>(*raw_type);
+            auto raw_wrapper = createTupleWrapper(from_type, &raw_tuple);
+            const Float64 decay_length = decaying_type.getDecayLength();
+            const auto key_width = decaying_type.getKeyWidth();
+            return [wrapper = std::move(raw_wrapper), raw_type, decay_length, key_width]
+                (ColumnsWithTypeAndName & arguments,
+                 const DataTypePtr &,
+                 const ColumnNullable * nullable_source,
+                 size_t input_rows_count) -> ColumnPtr
+            {
+                auto raw_column
+                    = wrapper(arguments, raw_type, nullable_source, input_rows_count);
+                return materializeExponentialTimeDecayingStorageColumn(
+                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying", key_width);
+            };
+        }
         case TypeIndex::Map:
             return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
         case TypeIndex::Object:

@@ -1,6 +1,8 @@
+#include <AggregateFunctions/AggregateFunctionExponentialTimeDecayed.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <WindowFunctions/IWindowFunction.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <WindowFunctions/helpers.h>
 #include <Common/Exception.h>
@@ -11,6 +13,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+}
 
 namespace ErrorCodes
 {
@@ -411,7 +418,7 @@ void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & fa
 void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
-Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
+Returns the exponentially decayed sum of values at the index `t` in time. Without `OVER`, the experimental regular aggregate form returns a mergeable `ExponentialTimeDecaying(decay_length)` value; the legacy window form remains a `Float64`.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
@@ -421,7 +428,7 @@ Returns the sum of exponentially smoothed moving average values of a time series
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns the sum of exponentially smoothed moving average values at the given point in time.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
         "Window function usage with visual representation",
@@ -499,12 +506,28 @@ FROM
     FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedSum_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedSum_documentation = {exponentialTimeDecayedSum_description, exponentialTimeDecayedSum_syntax, exponentialTimeDecayedSum_arguments, exponentialTimeDecayedSum_parameters, exponentialTimeDecayedSum_returned_value, exponentialTimeDecayedSum_examples, exponentialTimeDecayedSum_introduced_in, exponentialTimeDecayedSum_category};
-    factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
+    factory.registerFunction("exponentialTimeDecayedSum", {
+        [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
+                return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
+                    name, argument_types, parameters);
+
+            return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, settings);
+        },
+        exponentialTimeDecayedSum_documentation,
+        {},
+        [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedSum_documentation, properties});
+        },
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false,
+        true});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -515,7 +538,7 @@ Returns the maximum of the computed exponentially smoothed moving average at ind
         {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
@@ -610,9 +633,9 @@ Returns the cumulative exponential decay over a time series at the index `t` in 
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns the cumulative exponential decay at the given point in time.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
         "Window function usage with visual representation",
@@ -690,12 +713,28 @@ FROM
     FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedCount_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedCount_documentation = {exponentialTimeDecayedCount_description, exponentialTimeDecayedCount_syntax, exponentialTimeDecayedCount_arguments, exponentialTimeDecayedCount_parameters, exponentialTimeDecayedCount_returned_value, exponentialTimeDecayedCount_examples, exponentialTimeDecayedCount_introduced_in, exponentialTimeDecayedCount_category};
-    factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
+    factory.registerFunction("exponentialTimeDecayedCount", {
+        [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
+                return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
+                    name, argument_types, parameters);
+
+            return createAggregateFunctionExponentialTimeDecayedCount(name, argument_types, parameters, settings);
+        },
+        exponentialTimeDecayedCount_documentation,
+        {.returns_default_when_only_null = true},
+        [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedCount_documentation, properties});
+        },
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false,
+        true});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
@@ -706,7 +745,7 @@ Returns the exponentially smoothed weighted moving average of values of a time s
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns an exponentially smoothed weighted moving average at index `t` in time.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
@@ -786,12 +825,28 @@ FROM
     FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedAvg_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedAvg_documentation = {exponentialTimeDecayedAvg_description, exponentialTimeDecayedAvg_syntax, exponentialTimeDecayedAvg_arguments, exponentialTimeDecayedAvg_parameters, exponentialTimeDecayedAvg_returned_value, exponentialTimeDecayedAvg_examples, exponentialTimeDecayedAvg_introduced_in, exponentialTimeDecayedAvg_category};
-    factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
+    factory.registerFunction("exponentialTimeDecayedAvg", {
+        [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
+                return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
+                    name, argument_types, parameters);
+
+            return createAggregateFunctionExponentialTimeDecayedAvg(name, argument_types, parameters, settings);
+        },
+        exponentialTimeDecayedAvg_documentation,
+        {},
+        [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedAvg_documentation, properties});
+        },
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false,
+        true});
 }
 
 }

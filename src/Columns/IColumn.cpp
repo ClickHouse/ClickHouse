@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -1010,6 +1011,7 @@ template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;
 template class IColumnHelper<ColumnVariant, IColumn>;
 template class IColumnHelper<ColumnDynamic, IColumn>;
+template class IColumnHelper<ColumnExponentialTimeDecaying, IColumn>;
 template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;

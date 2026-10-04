@@ -404,6 +404,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
+    registerDataTypeExponentialTimeDecaying(*this);
     registerDataTypeMap(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);

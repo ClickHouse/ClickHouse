@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 namespace DB
 {
@@ -221,6 +222,16 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
             if (to_which_type.isString())
                 return true;
 
+            return false;
+        }
+        case TypeIndex::ExponentialTimeDecaying:
+        {
+            const auto & from_decaying = assert_cast<const DataTypeExponentialTimeDecaying &>(*from_type);
+            if (to_which_type.isTuple())
+                return canBeSafelyCast(from_decaying.getNestedType(), to_type_unwrapped);
+            if (to_which_type.isString())
+                return true;
+            /// Different decay lengths are different logical types even though the physical layout matches.
             return false;
         }
         case TypeIndex::QBit:

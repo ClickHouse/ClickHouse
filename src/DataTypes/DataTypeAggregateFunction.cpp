@@ -346,7 +346,8 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    AggregateFunctionPtr function
+        = AggregateFunctionFactory::instance().getForDataType(function_name, action, argument_types, params_row, properties);
     DataTypeAggregateFunction::checkSupportedFunctions(function);
 
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);

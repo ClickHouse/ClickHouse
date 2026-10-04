@@ -1,4 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <Core/Range.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
@@ -9,6 +12,160 @@
 
 namespace DB
 {
+
+namespace
+{
+
+const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
+{
+    if (field.isExplicit() || !field.columns || field.column_idx >= field.columns->size())
+        return nullptr;
+
+    return &(*field.columns)[field.column_idx];
+}
+
+std::optional<Field> getExponentialTimeDecayingKeyFromField(
+    const FieldRef & field,
+    const DataTypeExponentialTimeDecaying & type)
+{
+    if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
+        return std::nullopt;
+
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64
+        && field.getType() == Field::Types::UInt64)
+        return Field(field.safeGet<UInt64>());
+
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits128
+        && field.getType() == Field::Types::UInt128)
+        return Field(field.safeGet<UInt128>());
+
+    if (field.getType() != Field::Types::Tuple)
+        return std::nullopt;
+
+    const auto & tuple = field.safeGet<Tuple>();
+    if (tuple.size() != 2 && tuple.size() != 3)
+        return std::nullopt;
+
+    const Float64 value = tuple[0].safeGet<Float64>();
+    const Float64 time = tuple[1].safeGet<Float64>();
+    Float64 decay_length = type.getDecayLength();
+
+    if (tuple.size() == 3)
+    {
+        decay_length = tuple[2].safeGet<Float64>();
+        if (decay_length != type.getDecayLength())
+            return std::nullopt;
+    }
+
+    if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
+        return std::nullopt;
+
+    const auto normalized = normalizeExponentialTimeDecaying(
+        value, time, decay_length, type.getKeyWidth());
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+        return Field(static_cast<UInt64>(normalized.ordering_key));
+    return Field(normalized.ordering_key);
+}
+
+std::optional<Field> getExponentialTimeDecayingKeyFromColumn(
+    const ColumnWithTypeAndName & value,
+    size_t row)
+{
+    if (const auto * compact = typeid_cast<const ColumnUInt64 *>(value.column.get()))
+        return Field(compact->getData()[row]);
+
+    if (const auto * precise = typeid_cast<const ColumnUInt128 *>(value.column.get()))
+        return Field(precise->getData()[row]);
+
+    if (const auto * decaying = typeid_cast<const ColumnExponentialTimeDecaying *>(value.column.get()))
+    {
+        if (decaying->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+        {
+            const auto & keys
+                = assert_cast<const ColumnUInt64 &>(decaying->getOrderingKeyColumn()).getData();
+            return Field(keys[row]);
+        }
+
+        const auto & keys
+            = assert_cast<const ColumnUInt128 &>(decaying->getOrderingKeyColumn()).getData();
+        return Field(keys[row]);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef & rhs)
+{
+    const auto * lhs_value = getColumnBackedValue(lhs);
+    const auto * rhs_value = getColumnBackedValue(rhs);
+
+    const auto * typed_value = lhs_value ? lhs_value : rhs_value;
+    if (!typed_value || !typed_value->type || !containsExponentialTimeDecaying(*typed_value->type))
+        return std::nullopt;
+
+    const auto * direct_type
+        = typeid_cast<const DataTypeExponentialTimeDecaying *>(typed_value->type.get());
+
+    if (direct_type)
+    {
+        std::optional<Field> lhs_key;
+        std::optional<Field> rhs_key;
+
+        if (lhs_value)
+            lhs_key = getExponentialTimeDecayingKeyFromColumn(*lhs_value, lhs.row_idx);
+        else
+            lhs_key = getExponentialTimeDecayingKeyFromField(lhs, *direct_type);
+
+        if (rhs_value)
+            rhs_key = getExponentialTimeDecayingKeyFromColumn(*rhs_value, rhs.row_idx);
+        else
+            rhs_key = getExponentialTimeDecayingKeyFromField(rhs, *direct_type);
+
+        /// Sparse primary-index boundaries store only the authoritative ordering
+        /// key for the declared width. Compare in that physical domain.
+        const auto is_index_key = [](const ColumnWithTypeAndName * value)
+        {
+            return value
+                && (typeid_cast<const ColumnUInt64 *>(value->column.get())
+                    || typeid_cast<const ColumnUInt128 *>(value->column.get()));
+        };
+
+        if (lhs_key && rhs_key && (is_index_key(lhs_value) || is_index_key(rhs_value)))
+        {
+            if (accurateLess(*lhs_key, *rhs_key))
+                return -1;
+            if (accurateLess(*rhs_key, *lhs_key))
+                return 1;
+            return 0;
+        }
+    }
+
+    if (lhs_value && rhs_value)
+    {
+        if (!lhs_value->type || !rhs_value->type || !lhs_value->type->equals(*rhs_value->type))
+            return std::nullopt;
+
+        return lhs_value->column->compareAt(
+            lhs.row_idx,
+            rhs.row_idx,
+            *rhs_value->column,
+            1);
+    }
+
+    const FieldRef & explicit_value = lhs_value ? rhs : lhs;
+    if (explicit_value.isNull() || explicit_value.isNegativeInfinity() || explicit_value.isPositiveInfinity())
+        return std::nullopt;
+
+    auto materialized = typed_value->type->createColumn();
+    materialized->insert(static_cast<const Field &>(explicit_value));
+
+    if (lhs_value)
+        return lhs_value->column->compareAt(lhs.row_idx, 0, *materialized, 1);
+
+    return materialized->compareAt(0, rhs.row_idx, *rhs_value->column, 1);
+}
+
+}
 
 FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
     : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
@@ -119,6 +276,27 @@ bool Range::equals(const Field & lhs, const Field & rhs)
 bool Range::less(const Field & lhs, const Field & rhs)
 {
     return accurateLess(lhs, rhs);
+}
+
+bool Range::hasColumnComparator(const FieldRef & lhs, const FieldRef & rhs)
+{
+    return compareFieldRefsByColumn(lhs, rhs).has_value();
+}
+
+bool Range::equals(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison == 0;
+
+    return equals(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
+}
+
+bool Range::less(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison < 0;
+
+    return less(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
 }
 
 bool Range::empty() const

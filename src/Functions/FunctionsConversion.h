@@ -95,6 +95,7 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
 }
 
 namespace ErrorCodes
@@ -133,6 +134,7 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool allow_experimental_time_decay_aggregate_functions;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -149,6 +151,7 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , allow_experimental_time_decay_aggregate_functions(!context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
