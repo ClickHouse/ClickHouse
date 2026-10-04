@@ -32,6 +32,7 @@ namespace ProfileEvents
     extern const Event TextIndexPhraseCandidates;
     extern const Event TextIndexPhraseSearches;
     extern const Event TextIndexPhraseFallbacks;
+    extern const Event TextIndexPostingsIntersectionsReused;
 }
 
 namespace DB
@@ -49,6 +50,23 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+PostingListPtr intersectWithBlocks(const PostingList * current, const std::vector<PostingListPtr> & blocks, const PostingList & window)
+{
+    auto result = std::make_shared<PostingList>(*blocks.front() & window);
+    for (size_t i = 1; i < blocks.size(); ++i)
+        *result |= *blocks[i] & window;
+
+    if (current)
+        *result &= *current;
+
+    return result;
+}
+
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -85,6 +103,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     lazy_cursors.resize(columns_.size());
     prebuilt_cursors.resize(columns_.size());
+    intersection_steps.resize(columns_.size());
 
     auto data_part = getDataPart();
     auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
@@ -119,7 +138,16 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_granule)
 {
     chassert(index_granule);
-    granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
+    auto text_granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
+
+    /// Cached intersections include the granule's analyzer postings. Every read task of a part sets the same granule again.
+    if (text_granule != granule)
+    {
+        for (auto & steps : intersection_steps)
+            steps.clear();
+    }
+
+    granule = std::move(text_granule);
     /// Phrase search results are cached per granule; drop them when the granule changes.
     phrase_search_doc_ids.clear();
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
@@ -638,13 +666,14 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         if (search_query->getSearchMode() == TextSearchMode::Phrase)
             continue;
 
-        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range, range_posting);
+        result[i] = buildPostingsForQuery(i, *search_query, analyzer, *effective_range, range_posting);
     }
 
     return result;
 }
 
 PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
+    size_t column_idx,
     const TextSearchQuery & query,
     const TextIndexAnalyzer & analyzer,
     const RowsRange & range,
@@ -653,6 +682,14 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     const auto & query_builder = analyzer.getQueryBuilder(query);
     if (query_builder.is_failed)
         return {};
+
+    /// Consecutive granules inside one Roaring container (65536 rows) reuse the intersection of the posting lists.
+    if (query.getSearchMode() == TextSearchMode::All && query_builder.needReadPostings() && query_builder.tokens.size() > 1
+        && (range.begin >> 16) == (range.end >> 16))
+    {
+        const PostingList * folded_postings = query_builder.postings ? &*query_builder.postings : nullptr;
+        return intersectPostingsInContainer(column_idx, query_builder.tokens, folded_postings, range, range_posting);
+    }
 
     std::optional<PostingList> result;
     if (query_builder.postings)
@@ -691,6 +728,58 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     }
 
     return result.value_or(PostingList{});
+}
+
+PostingList MergeTreeReaderTextIndex::intersectPostingsInContainer(
+    size_t column_idx,
+    const TokenToPostingsInfosMap & tokens,
+    const PostingList * folded_postings,
+    const RowsRange & range,
+    const PostingList & range_posting)
+{
+    const UInt32 window_begin = static_cast<UInt32>(range.begin) & ~UInt32{0xFFFF};
+    auto & steps = intersection_steps[column_idx];
+    std::optional<PostingList> window;
+    const PostingList * postings = folded_postings;
+    size_t step = 0;
+    bool reuse = true;
+
+    for (const auto & [token, token_info] : tokens)
+    {
+        if (!large_postings_streams.contains(token))
+            continue;
+
+        auto read_blocks = readPostingsBlocksForToken(token, *token_info, range);
+        if (read_blocks.empty())
+            return {};
+
+        reuse = reuse && step < steps.size() && steps[step].window_begin == window_begin && steps[step].blocks == read_blocks;
+        if (reuse && step == 0)
+            ProfileEvents::increment(ProfileEvents::TextIndexPostingsIntersectionsReused);
+        if (!reuse)
+        {
+            if (!window)
+            {
+                window.emplace();
+                window->addRangeClosed(window_begin, window_begin | UInt32{0xFFFF});
+            }
+
+            auto intersection = intersectWithBlocks(postings, read_blocks, *window);
+            steps.resize(step);
+            steps.push_back({window_begin, std::move(read_blocks), std::move(intersection)});
+        }
+
+        postings = steps[step].postings.get();
+        ++step;
+
+        if (!roaring::api::roaring_bitmap_intersect_with_range(&postings->roaring, range.begin, static_cast<UInt64>(range.end) + 1))
+            return {};
+    }
+
+    if (!postings)
+        return {};
+
+    return *postings & range_posting;
 }
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)

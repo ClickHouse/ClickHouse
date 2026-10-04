@@ -69,7 +69,10 @@ private:
     std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
-    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
+    PostingList buildPostingsForQuery(size_t column_idx, const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
+    /// Intersects `folded_postings` (all rows if null) with the large tokens in `range`, which lies in one Roaring container.
+    PostingList intersectPostingsInContainer(
+        size_t column_idx, const TokenToPostingsInfosMap & tokens, const PostingList * folded_postings, const RowsRange & range, const PostingList & range_posting);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
@@ -144,6 +147,15 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
+    /// Per column of an `All` query: the intersection of the analyzer's postings with the blocks of the first, second, ...
+    /// large token covering the last rows read, restricted to the Roaring container starting at `window_begin`.
+    struct IntersectionStep
+    {
+        UInt32 window_begin = 0;
+        std::vector<PostingListPtr> blocks;
+        PostingListPtr postings;
+    };
+    std::vector<std::vector<IntersectionStep>> intersection_steps;
     TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
