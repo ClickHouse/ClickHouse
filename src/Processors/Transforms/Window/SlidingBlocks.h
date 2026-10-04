@@ -20,6 +20,13 @@ struct RowNumber
     auto operator<=>(const RowNumber &) const noexcept = default;
 };
 
+struct RowPoint
+{
+    RowNumber location;
+    int64_t row_index_in_partition = 0;
+    int64_t peer_group_index_in_partition = 0;
+};
+
 struct SlidingBlock
 {
     /// Inputs

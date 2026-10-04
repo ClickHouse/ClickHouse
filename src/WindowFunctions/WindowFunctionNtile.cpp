@@ -34,14 +34,14 @@ struct NtileState
     {
         if (!buckets) [[unlikely]]
         {
-            const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
+            const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.input_columns[workspace.argument_column_indices[0]];
 
             if (!isColumnConst(arg_col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
 
-            const UInt64 value = arg_col[transform->current_row.row].safeGet<UInt64>();
+            const UInt64 value = arg_col[transform->current.location.row].safeGet<UInt64>();
             if (value == 0 || value > std::numeric_limits<Int64>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be in [1, {}], {} given", std::numeric_limits<Int64>::max(), value);
 
@@ -52,7 +52,7 @@ struct NtileState
         {
             current_partition_rows = 0;
             current_partition_inserted_row = 0;
-            start_row = transform->current_row;
+            start_row = transform->current.location;
         }
         current_partition_rows++;
 
