@@ -395,6 +395,36 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
+TEST(Statistics, RequiredColumnCacheAvailability)
+{
+    tryRegisterFunctions();
+
+    auto stats_a = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/5);
+    auto stats_b = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/10);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("b", stats_b);
+    builder.incrementRowCount(100);
+    auto estimator = builder.getEstimatorForCache();
+    ASSERT_NE(estimator, nullptr);
+
+    EXPECT_TRUE(estimator->hasColumnStatistics());
+    EXPECT_TRUE(estimator->hasColumnStatistics(Names{}));
+    EXPECT_TRUE(estimator->hasColumnStatistics(Names{"a"}));
+    EXPECT_TRUE(estimator->hasColumnStatistics(Names{"a.null"}));
+    EXPECT_TRUE(estimator->hasColumnStatistics(Names{"b", "missing"}));
+    EXPECT_FALSE(estimator->hasColumnStatistics(Names{"missing"}));
+    EXPECT_FALSE(estimator->hasColumnStatistics(Names{"a.other"}));
+
+    ConditionSelectivityEstimatorBuilder empty_builder(getContext().context);
+    auto empty_estimator = empty_builder.getEstimatorForCache();
+    ASSERT_NE(empty_estimator, nullptr);
+    EXPECT_FALSE(empty_estimator->hasColumnStatistics());
+    EXPECT_FALSE(empty_estimator->hasColumnStatistics(Names{}));
+    EXPECT_FALSE(empty_estimator->hasColumnStatistics(Names{"a"}));
+}
+
 TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
