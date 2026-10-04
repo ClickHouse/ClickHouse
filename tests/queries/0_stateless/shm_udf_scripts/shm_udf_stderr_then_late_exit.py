@@ -6,7 +6,9 @@ import mmap
 import os
 import sys
 
-from go_signal import wait_for_go
+# CI runs Python with `PYTHONSAFEPATH`, which keeps the script's own directory out of `sys.path`.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from go_signal import wait_for_go  # noqa: E402
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0

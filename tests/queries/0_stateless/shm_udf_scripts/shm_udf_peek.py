@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
 # A pooled shared-memory UDF that reports whether the region past its input is clean, and then
-# dirties it. Otherwise identical to shm_udf.py.
+# dirties it. Otherwise identical to shm_udf.py. `--peek-at OFFSET` probes a fixed offset instead,
+# and `--extend-to BYTES` first extends the region's file past the server's mapping, so that the
+# probe can look at a tail the server never mapped.
 #
 # Protocol (all control values use the ClickHouse native binary encoding):
 #   server -> stdin : varint version, varint request id, varint path length + path bytes,
@@ -65,12 +67,16 @@ def write_string_binary(stream, text):
 
 
 def process(input_data, region, region_size):
-    # Reports, for every input row, whether the region past this request's input still holds
-    # anything: "clean" if the 4 KiB right after the input are all zero, "dirty" otherwise. A
+    # Reports, for every input row, whether the probed stretch of the region still holds anything:
+    # "clean" if the 4 KiB right after the input (or at `--peek-at`) are all zero, "dirty" otherwise. A
     # previous request's larger input or output leaves its bytes there unless the server scrubbed
     # them; this is how the test sees whether it did. Then overwrites that stretch, so that the next
     # request finds it dirty unless scrubbed again.
-    probe_from = len(input_data)
+    probe_from = (
+        int(sys.argv[sys.argv.index("--peek-at") + 1])
+        if "--peek-at" in sys.argv
+        else len(input_data)
+    )
     probe = bytes(region[probe_from : probe_from + 4096])
     verdict = b"clean" if probe.strip(b"\x00") == b"" else b"dirty"
     output = bytearray()
@@ -112,6 +118,12 @@ def main():
 
             fd = os.open(path, os.O_RDWR)
             try:
+                # Extend the file past the server's mapping once (`--extend-to`): the tail the
+                # server never mapped is where a scrub that only covered the mapping would miss.
+                if "--extend-to" in sys.argv:
+                    extend_to = int(sys.argv[sys.argv.index("--extend-to") + 1])
+                    if os.fstat(fd).st_size < extend_to:
+                        os.ftruncate(fd, extend_to)
                 region = mmap.mmap(fd, 0)
             finally:
                 os.close(fd)

@@ -43,11 +43,11 @@ function shm_functions()
 # error codes in its message - without the text of the query it failed, which is echoed after it and
 # ends with `;)` - so that a reference does not depend on the wording around them. The output as it
 # was is kept for `shm_output_contains`, and what the process logs goes to a file of its own, for
-# `shm_log_contains`.
+# `shm_log_contains`. Arguments after the queries are passed to `clickhouse-local` as they are.
 function shm_local()
 {
     rm -f "$SHM_UDF_WORK/local.log"
-    $CLICKHOUSE_LOCAL --ignore-error --logger.log="$SHM_UDF_WORK/local.log" --logger.level=information --query "
+    $CLICKHOUSE_LOCAL --ignore-error --logger.log="$SHM_UDF_WORK/local.log" --logger.level=information "${@:2}" --query "
         CREATE VIEW shm_regions AS
             SELECT * FROM executable('shm_regions.sh', TSV, 'inode UInt64, size UInt64, committed UInt64');
         CREATE VIEW shm_pooled AS
@@ -85,7 +85,9 @@ function shm_local()
 # How many lines of the last `shm_local`'s own output - exception messages included - contain the text.
 function shm_output_contains()
 {
-    grep -cF -- "$1" "$SHM_UDF_WORK/local.out"
+    # `grep -c` prints 0 and exits with 1 when nothing matches; a count of zero is an answer, not a
+    # failure, and as the last command of a test it would fail the test with return code 1.
+    grep -cF -- "$1" "$SHM_UDF_WORK/local.out" || true
 }
 
 # Whether the last `shm_local` logged the text: prints `1` or `0`.
