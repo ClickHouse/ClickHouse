@@ -330,6 +330,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecByteStreamSplit(*this);
 
     default_codec = get("ZSTD", 3);
 }

@@ -10043,6 +10043,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 Enables the `ALP` compression codec.
 )", BETA, \
         {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_bytestreamsplit_codec, false, R"(
+Allows using the experimental `ByteStreamSplit` compression codec.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
 Enables the `Quantized` compression codec.
 )", EXPERIMENTAL, \
