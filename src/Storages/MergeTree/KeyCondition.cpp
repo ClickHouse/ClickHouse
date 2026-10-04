@@ -2223,7 +2223,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             /// It does not apply to `!=`: `notEquals` is in `no_relaxed_atom_functions`, so if
             /// analysis would need to push the constant through a monotonic function chain, we do
             /// not create a relaxed atom for `!=` on this path.
-            if (func.getName() == "assumeNotNull")
+            ///
+            /// The same holds for `ifNull(d, c)` and `coalesce(d, c)` with a constant `c`: a non-`NULL`
+            /// `d` keeps its value (converted to the common supertype, which preserves order), and a
+            /// `NULL` row gets the key value `c`, which can only keep a granule as a false positive.
+            const auto name = func.getName();
+            if (name == "assumeNotNull" || name == "ifNull" || name == "coalesce")
                 return true;
 
             /// Range is irrelevant in this case.
