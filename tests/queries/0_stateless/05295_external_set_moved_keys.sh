@@ -49,9 +49,9 @@ FROM (SELECT number, toUInt256(cityHash64(number)) * 3 IN rhs AS found FROM numb
 WITH rhs AS (SELECT toString(n) FROM (SELECT cityHash64(number) AS n FROM numbers(200000)))
 SELECT 'key_string', sum(found), sum(cityHash64(number) * found)
 FROM (SELECT number, toString(cityHash64(number)) IN rhs AS found FROM numbers(180000, 40000));
-WITH rhs AS (SELECT toFixedString(toString(n % 100000000), 8) FROM (SELECT cityHash64(number) AS n FROM numbers(200000)))
+WITH rhs AS (SELECT toFixedString(toString(n % 100000000), 40) FROM (SELECT cityHash64(number) AS n FROM numbers(200000)))
 SELECT 'key_fixed_string', sum(found), sum(cityHash64(number) * found)
-FROM (SELECT number, toFixedString(toString(cityHash64(number) % 100000000), 8) IN rhs AS found FROM numbers(180000, 40000));
+FROM (SELECT number, toFixedString(toString(cityHash64(number) % 100000000), 40) IN rhs AS found FROM numbers(180000, 40000));
 WITH rhs AS (SELECT (toString(n), n % 7) FROM (SELECT cityHash64(number) AS n FROM numbers(200000)))
 SELECT 'hashed', sum(found), sum(cityHash64(number) * found)
 FROM (SELECT number, (toString(cityHash64(number)), cityHash64(number) % 7) IN rhs AS found FROM numbers(180000, 40000));

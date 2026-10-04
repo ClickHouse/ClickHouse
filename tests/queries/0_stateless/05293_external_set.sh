@@ -93,9 +93,9 @@ FROM (SELECT number, toString(number) AS x FROM numbers(10000));
 WITH rhs AS (SELECT toLowCardinality(toString(number * 3 % 1000)) FROM numbers(200))
 SELECT 'key_string LowCardinality', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toLowCardinality(toString(number % 1000)) AS x FROM numbers(10000));
-WITH rhs AS (SELECT toFixedString(toString(number * 3), 6) FROM numbers(3000))
+WITH rhs AS (SELECT toFixedString(toString(number * 3), 40) FROM numbers(3000))
 SELECT 'key_fixed_string', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
-FROM (SELECT number, toFixedString(toString(number % 100000), 6) AS x FROM numbers(10000));
+FROM (SELECT number, toFixedString(toString(number % 100000), 40) AS x FROM numbers(10000));
 WITH rhs AS (SELECT (toUInt16(number * 3 % 300), toUInt16(number % 7)) FROM numbers(3000))
 SELECT 'keys32', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, (toUInt16(number % 300), toUInt16(number % 7)) AS x FROM numbers(10000));
