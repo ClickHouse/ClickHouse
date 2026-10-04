@@ -947,11 +947,22 @@ Block ProjectionDescription::calculateByQuery(
                                                           : sink->getPort().getHeader().cloneEmpty();
 
     /// Bring the columns of the result to the names the projection stores them under.
+    /// Distinct columns of the pipeline must not be brought to the same name: a block with two
+    /// columns of the same name (possibly of different types, like `1_UInt8` and `1_Int32` would be)
+    /// is ambiguous, and only one of them would be written into the projection part.
     Block projection_block;
     for (const auto & column : pipeline_block)
     {
         auto it = projection_column_names.find(column.name);
-        projection_block.insert({column.column, column.type, it == projection_column_names.end() ? column.name : it->second});
+        String projection_column_name = it == projection_column_names.end() ? column.name : it->second;
+        if (projection_block.has(projection_column_name))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Projection {} calculated more than one column named {}: the columns {}. It's a bug",
+                name,
+                projection_column_name,
+                pipeline_block.dumpNames());
+        projection_block.insert({column.column, column.type, std::move(projection_column_name)});
     }
 
     /// Rename parent _part_offset to _parent_part_offset column
