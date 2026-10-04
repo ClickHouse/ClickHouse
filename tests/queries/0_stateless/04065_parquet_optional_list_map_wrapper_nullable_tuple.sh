@@ -83,7 +83,7 @@ echo "-- affected file: SELECT * of it is refused at read time"
 $CLICKHOUSE_LOCAL $opts -q "SELECT * FROM file('$DATA/04065_clickhouse_written_ambiguous_all_nullable.parquet', 'Parquet')" 2>&1 | grep -o "TYPE_MISMATCH" | head -1
 
 echo "-- affected file: with nullable-tuple inference off it is a plain Tuple and reads as one"
-$CLICKHOUSE_LOCAL -q "SELECT p, toTypeName(p) FROM file('$DATA/04065_clickhouse_written_ambiguous_all_nullable.parquet', 'Parquet')"
+$CLICKHOUSE_LOCAL --enable_nullable_tuple_type=0 -q "SELECT p, toTypeName(p) FROM file('$DATA/04065_clickhouse_written_ambiguous_all_nullable.parquet', 'Parquet')"
 
 # End to end over the marker: the same no-clean-leaf shape written by this build must read back,
 # which fails if the writer stops emitting the key or the reader stops accepting it.
