@@ -1,0 +1,55 @@
+active parts after global mutation - all parts modified
+7_8_8_1_11
+8_9_9_1_11
+9_10_10_1_11
+active parts after local, then global mutation - all parts modified
+7_8_8_1_13
+8_9_9_1_13
+9_10_10_1_13
+active parts after local, then global mutation, then optimize
+7_8_8_2_13
+8_9_9_2_13
+9_10_10_2_13
+active parts after global, then local mutation - only part 7 is modified by local mutation
+7_8_8_2_15
+8_9_9_2_14
+9_10_10_2_14
+active parts after global, then local mutation, then optimize
+7_8_8_3_15
+8_9_9_3_14
+9_10_10_3_14
+active parts after global mutation - all parts modified
+7_8_8_3_16
+8_9_9_3_16
+9_10_10_3_16
+active parts after global mutation, insert
+7_8_8_3_16
+8_17_17_0
+8_9_9_3_16
+9_10_10_3_16
+active parts after global mutation, insert, optimize
+7_8_8_4_16
+8_9_17_4_16
+9_10_10_4_16
+active parts after local mutation
+7_8_8_4_18
+8_9_17_4_16
+9_10_10_4_16
+active parts after local mutation, insert into partition that is not affected by local mutation
+7_8_8_4_18
+8_19_19_0
+8_9_17_4_16
+9_10_10_4_16
+active parts after local mutation, insert, optimize - merge done, mutation versions are still different
+7_8_8_5_18
+8_9_19_5_16
+9_10_10_5_16
+active parts after local mutation, insert into partition that is affected by local mutation
+7_20_20_0
+7_8_8_5_18
+8_9_19_5_16
+9_10_10_5_16
+active parts after local mutation, insert, optimize - merge done, mutation versions are still different
+7_8_20_6_18
+8_9_19_6_16
+9_10_10_6_16
