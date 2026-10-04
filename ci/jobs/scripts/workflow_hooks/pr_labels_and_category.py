@@ -92,6 +92,8 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Disables the unresolved-review-threads CI gate (see review_threads.py)
+    IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
