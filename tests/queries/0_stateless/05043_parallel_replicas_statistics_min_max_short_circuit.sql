@@ -2,7 +2,7 @@
 -- - no-parallel - due to usage of fail points
 
 -- Regression test for the statistics-based min/max/count short-circuit under parallel replicas
--- (the `_statistics_min_max_projection` counterpart of
+-- (the `_statistics_projection` counterpart of
 -- 04545_parallel_replicas_projection_short_circuit_unknown_stream). When the statistics block
 -- covers all parts, the `ReadFromMergeTree` step is fully replaced by a prepared source on the
 -- initiator's local plan, so it must send the empty-ranges announcement to the coordinator.
@@ -37,7 +37,7 @@ SET use_statistics_for_min_max_aggregation = 1;
 
 -- Liveness: the query below must actually take the statistics short-circuit on the initiator,
 -- otherwise the regression is not being exercised. Assert the pseudo projection is selected (prints 1).
-SELECT 'statistics_projection_used', count() > 0 FROM (EXPLAIN SELECT min(v), max(v), count() FROM t_pr_stats_short_circuit) WHERE explain ILIKE '%_statistics_min_max_projection%';
+SELECT 'statistics_projection_used', count() > 0 FROM (EXPLAIN SELECT min(v), max(v), count() FROM t_pr_stats_short_circuit) WHERE explain ILIKE '%_statistics_projection%';
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_skip_aggregate_projection_on_follower;
 

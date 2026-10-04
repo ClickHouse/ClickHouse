@@ -1453,26 +1453,45 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
+void IMergeTreeDataPart::cacheEstimates(const ColumnsStatistics & statistics, const Names & looked_up_columns) const
+{
+    /// The callers load the transient raw statistics in the default arena; only the cache is long-lived
+    /// (kept on the part until reload), so build it in the dedicated arena, like the part's metadata.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    for (const auto & [column_name, stats] : statistics)
+        estimates.try_emplace(column_name, stats->getEstimate());
+    estimates_loaded_columns.insert(looked_up_columns.begin(), looked_up_columns.end());
+}
+
 Estimates IMergeTreeDataPart::getEstimates() const
 {
     std::lock_guard lock(estimates_mutex);
 
-    if (estimates.has_value())
-        return *estimates;
-
-    /// The raw statistics are transient, so load them in the default arena; only the cached
-    /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
-    /// arena, like the rest of the part's metadata.
-    auto statistics = loadStatistics();
-
+    if (!all_estimates_loaded)
     {
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        Estimates new_estimates;
-        for (const auto & [column_name, stats] : statistics)
-            new_estimates.emplace(column_name, stats->getEstimate());
-        estimates = std::move(new_estimates);
+        cacheEstimates(loadStatistics(), {});
+        all_estimates_loaded = true;
     }
-    return *estimates;
+    return estimates;
+}
+
+Estimates IMergeTreeDataPart::getEstimates(const Names & columns) const
+{
+    std::lock_guard lock(estimates_mutex);
+
+    Names columns_to_load;
+    for (const auto & column : columns)
+        if (!all_estimates_loaded && !estimates_loaded_columns.contains(column))
+            columns_to_load.push_back(column);
+
+    if (!columns_to_load.empty())
+        cacheEstimates(loadStatistics(columns_to_load), columns_to_load);
+
+    Estimates result;
+    for (const auto & column : columns)
+        if (auto it = estimates.find(column); it != estimates.end())
+            result.emplace(*it);
+    return result;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
@@ -1489,6 +1508,7 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 
     std::lock_guard lock(estimates_mutex);
     estimates = std::move(stored_estimates);
+    all_estimates_loaded = true;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

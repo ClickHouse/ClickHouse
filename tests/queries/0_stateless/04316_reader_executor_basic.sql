@@ -10,6 +10,7 @@
 -- scan, point lookup, range, string column), and proves the executor path was
 -- taken via `system.text_log` — on local disk and on object storage.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_reader_executor;
 
 CREATE TABLE t_reader_executor

@@ -1,15 +1,22 @@
 #include <Storages/Statistics/StatisticsBasic.h>
 
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -32,6 +39,7 @@ enum BasicFeatureMask : UInt8
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
     DefaultCount = 1u << 2,
+    ExactSum = 1u << 3,
 };
 
 const NullMap * tryGetNullMap(const IColumn & column)
@@ -71,6 +79,40 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
     return 0;
 }
 
+/// Sums like the `sum` aggregate function: in its accumulator type and with its wraparound, which
+/// unsigned and `wide::integer` arithmetic give without undefined behavior.
+Field sumValues(const IColumn & column, const IDataType & type)
+{
+    Field result;
+    callOnIndexAndDataType<void>(type.getTypeId(), [&](const auto & types)
+    {
+        using DataType = typename std::decay_t<decltype(types)>::LeftType;
+        if constexpr (IsDataTypeDecimal<DataType>)
+        {
+            using T = typename DataType::FieldType;
+            using Accumulator = std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>;
+            typename Accumulator::NativeType accumulated = 0;
+            for (const auto & value : assert_cast<const ColumnDecimal<T> &>(column).getData())
+                accumulated += value.value;
+            result = DecimalField<Accumulator>(accumulated, getDecimalScale(type));
+        }
+        else if constexpr (IsDataTypeNumber<DataType>)
+        {
+            using T = typename DataType::FieldType;
+            if constexpr (is_integer<T>)
+            {
+                using Accumulator = std::conditional_t<sizeof(T) <= sizeof(UInt64), UInt64, T>;
+                Accumulator accumulated = 0;
+                for (const auto value : assert_cast<const ColumnVector<T> &>(column).getData())
+                    accumulated += static_cast<Accumulator>(value);
+                result = static_cast<NearestFieldType<T>>(accumulated);
+            }
+        }
+        return true;
+    });
+    return result;
+}
+
 }
 
 
@@ -88,6 +130,10 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     column_default_field = (*default_col)[0];
 
     is_nullable = isNullableOrLowCardinalityNullable(data_type_) || column_default_field.isNull();
+
+    has_sum = canStatisticsTrackSum(data_type_);
+    if (has_sum)
+        sum = sumValues(*data_type->createColumn(), *data_type);
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
@@ -114,6 +160,15 @@ void StatisticsBasic::build(const ColumnPtr & column)
     if (tracks_string)
         string_total_bytes += sumNonNullStringBytes(column);
 
+    if (has_sum)
+    {
+        auto values = column->convertToFullColumnIfConst();
+        /// A sparse column omits only zeros from its values.
+        if (const auto * sparse = typeid_cast<const ColumnSparse *>(values.get()))
+            values = sparse->getValuesPtr();
+        applyVisitor(FieldVisitorSum(sumValues(*values, *data_type)), sum);
+    }
+
     row_count += column_size;
 }
 
@@ -136,6 +191,11 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
         default_count += other->default_count;
     }
 
+    if (has_sum && other->has_sum)
+        applyVisitor(FieldVisitorSum(other->sum), sum);
+    else
+        has_sum = false;
+
     row_count += other->row_count;
 }
 
@@ -150,6 +210,9 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
 
     mask |= BasicFeatureMask::DefaultCount;
+    /// Not written for a sum that a loaded blob lacks, so that a mutation re-serializing it does not invent one.
+    if (has_sum)
+        mask |= BasicFeatureMask::ExactSum;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -161,6 +224,9 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
 
     writeIntBinary(default_count, buf);
+
+    if (has_sum)
+        writeFieldBinary(sum, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -184,6 +250,14 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     has_default_count = (mask & BasicFeatureMask::DefaultCount) != 0;
     if (has_default_count)
         readIntBinary(default_count, buf);
+
+    Field stored_sum;
+    if (mask & BasicFeatureMask::ExactSum)
+        stored_sum = readFieldBinary(buf);
+    /// A missing sum, or one of an unexpected type, is not used, and the next merge of the part rebuilds it.
+    has_sum = has_sum && stored_sum.getType() == sum.getType();
+    if (has_sum)
+        sum = stored_sum;
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const

@@ -2193,6 +2193,7 @@ Answer `min`, `max` and `count` aggregations from per-part column statistics ins
 When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
 is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
 for the data parts that have them materialized, and only the remaining parts are read.
+`count()` is also answered together with the aggregations of `use_statistics_for_sum_avg_aggregation`.
 
 Possible values:
 
@@ -2200,6 +2201,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
+    DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
+`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+`auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
+parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+The result is exactly the same as when reading the data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to answer `sum`, `avg`, `sumCount` and `count(column)` aggregations without `GROUP BY` and filters from per-part column statistics. previous_value=false so `compatibility` with versions before 26.10 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 

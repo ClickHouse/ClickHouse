@@ -32,69 +32,69 @@ INSERT INTO t_min_max_from_stats
 
 SELECT 'no statistics yet';
 SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'statistics are materialized by the merge';
 OPTIMIZE TABLE t_min_max_from_stats FINAL;
 SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'a part without statistics is read and combined with the statistics of other parts';
 SYSTEM STOP MERGES t_min_max_from_stats;
 INSERT INTO t_min_max_from_stats VALUES (1000000, -600, '2021-05-05', 42, 'foo');
 SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%' OR explain LIKE '%ReadFromMergeTree%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%' OR explain LIKE '%ReadFromMergeTree%';
 
 SELECT 'statistics can also be materialized by the insert';
 SET materialize_statistics_on_insert = 1;
 INSERT INTO t_min_max_from_stats VALUES (2000000, 600, '2019-05-05', 43, 'bar');
 SELECT min(date), max(date), min(value), max(value), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%' OR explain LIKE '%ReadFromMergeTree%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%' OR explain LIKE '%ReadFromMergeTree%';
 SYSTEM START MERGES t_min_max_from_stats;
 OPTIMIZE TABLE t_min_max_from_stats FINAL;
 
 SELECT 'not applied: the setting is disabled';
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats SETTINGS use_statistics_for_min_max_aggregation = 0) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats SETTINGS use_statistics_for_min_max_aggregation = 0) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: Nullable column';
 SELECT min(nullable_value), max(nullable_value) FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(nullable_value), max(nullable_value) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(nullable_value), max(nullable_value) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: no statistics for String columns';
 SELECT min(str), max(str) FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: there is a filter';
 SELECT min(date), max(date) FROM t_min_max_from_stats WHERE key < 1000;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats WHERE key < 1000) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats WHERE key < 1000) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'applied: monotonic arithmetic is rewritten to be applied over the aggregation';
 SELECT min(date + 1), max(date + 1) FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date + 1), max(date + 1) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date + 1), max(date + 1) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: aggregation over an expression';
 SELECT min(key % 7), max(key % 7) FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(key % 7), max(key % 7) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(key % 7), max(key % 7) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
-SELECT 'not applied: unsupported aggregate function';
+SELECT 'not applied: `sum` of a column without `basic` statistics';
 SELECT min(date), sum(value) FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), sum(value) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), sum(value) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: lightweight delete';
 DELETE FROM t_min_max_from_stats WHERE date = '2021-05-05';
 SELECT min(date), max(date), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'the merge applies the delete and rebuilds statistics';
 OPTIMIZE TABLE t_min_max_from_stats FINAL;
 SELECT min(date), max(date), count() FROM t_min_max_from_stats;
-SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: count over an expression must still evaluate the argument';
 -- Disable the trivial count optimization: it intentionally answers a bare `count(expr)` over
 -- a non-Nullable expression from metadata, which would mask what is being tested here.
 SELECT count(key % 7) FROM t_min_max_from_stats SETTINGS optimize_trivial_count_query = 0;
-SELECT count() FROM (EXPLAIN SELECT count(key % 7) FROM t_min_max_from_stats SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT count(key % 7) FROM t_min_max_from_stats SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%_statistics_projection%';
 -- Mixed with `min`, so no other shortcut applies: the statistics optimization must decline and
 -- the expression must be evaluated (and throw).
 SELECT min(value), count(throwIf(key = 0)) FROM t_min_max_from_stats; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

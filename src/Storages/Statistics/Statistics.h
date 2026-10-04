@@ -119,6 +119,7 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
+    std::optional<Field> estimated_sum;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -147,6 +148,7 @@ public:
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
+    bool hasSum() const;
     /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
     /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
     /// a measurement.
@@ -245,6 +247,9 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 /// every column type but leaves its min/max sub-statistics unpopulated
 /// (`StatisticsBasic::hasNumericMinMax`).
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
+
+/// Whether `basic` statistics record the sum of a column of this type (integers and `Decimal`, exact in any order).
+bool canStatisticsTrackSum(const DataTypePtr & data_type);
 
 
 }

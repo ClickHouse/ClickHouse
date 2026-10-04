@@ -1,3 +1,4 @@
+SET use_statistics_for_sum_avg_aggregation = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 

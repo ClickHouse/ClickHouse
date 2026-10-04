@@ -29,10 +29,14 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -54,6 +58,12 @@ namespace Setting
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
+    extern const SettingsBool use_statistics_for_sum_avg_aggregation;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -576,15 +586,18 @@ struct MinMaxProjectionCandidate
     Block block;
 };
 
-/// A min(column) / max(column) / count() aggregate that can be computed from per-part column
-/// statistics (see StatisticsMinMax) for parts that have them materialized.
-struct StatisticsMinMaxAggregate
+/// An aggregate that can be answered for the parts that have column statistics materialized: `count` from the
+/// number of rows, `min`, `max`, `sum`, `avg` and `sumCount` from the statistics.
+struct StatisticsAggregate
 {
     enum class Kind : UInt8
     {
         Min,
         Max,
         Count,
+        Sum,
+        /// `avg` and `sumCount`, whose states are the sum and the count.
+        SumAndCount,
     };
 
     Kind kind;
@@ -597,6 +610,8 @@ struct StatisticsMinMaxAggregate
     Field::Types::Which expected_field_type = Field::Types::Null;
 
     const AggregateDescription * aggregate = nullptr;
+
+    bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
 };
 
 struct AggregateProjectionCandidates
@@ -611,17 +626,15 @@ struct AggregateProjectionCandidates
     String only_count_column;
 
     /// If not empty, try to answer the aggregation from per-part column statistics.
-    std::vector<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
+    std::vector<StatisticsAggregate> statistics_aggregates;
 
     /// Why each projection that was not used could not be used.
     std::unordered_map<String, String> reject_reasons;
 };
 
 /// Check if the whole aggregation can be answered from per-part column statistics: there is no
-/// GROUP BY and no filter, and every aggregate is count() or min/max over a physical column
-/// that has statistics with min/max (StatisticsType::MinMax or StatisticsType::Basic) declared
-/// in the table metadata for a type whose min/max these statistics actually track
-/// (canStatisticsTrackMinMax).
+/// `GROUP BY` and no filter, and every aggregate is `count`, or a `StatisticsAggregate` over a physical column
+/// whose declared statistics track it for the column type (`canStatisticsTrackMinMax`, `canStatisticsTrackSum`).
 ///
 /// Statistics describe the physical rows of a part as they were written, so anything that changes
 /// the visible rows or values at read time disables the optimization: lightweight deletes, pending
@@ -629,14 +642,16 @@ struct AggregateProjectionCandidates
 /// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
-static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
+static std::vector<StatisticsAggregate> getStatisticsAggregates(
     const AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
     const StorageMetadataPtr & metadata,
     const DAGIndex & query_index,
     const ContextPtr & context)
 {
-    if (!context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation])
+    const bool use_min_max = context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation];
+    const bool use_sum_avg = context->getSettingsRef()[Setting::use_statistics_for_sum_avg_aggregation];
+    if (!use_min_max && !use_sum_avg)
         return {};
 
     if (!aggregating.getParams().keys.empty())
@@ -668,7 +683,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
 
     const auto & columns = metadata->getColumns();
 
-    std::vector<StatisticsMinMaxAggregate> result;
+    std::vector<StatisticsAggregate> result;
     result.reserve(aggregates.size());
 
     for (const auto & aggregate : aggregates)
@@ -676,20 +691,28 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
         if (!aggregate.parameters.empty())
             return {};
 
-        if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+        const bool is_count = typeid_cast<const AggregateFunctionCount *>(aggregate.function.get());
+        if (is_count && aggregate.argument_names.empty())
         {
-            /// Only a bare `count()`: `count(expr)` must still evaluate the argument
-            /// (it can throw), even when the result would be the same row count.
-            if (!aggregate.argument_names.empty())
-                return {};
-
-            result.push_back({.kind = StatisticsMinMaxAggregate::Kind::Count, .aggregate = &aggregate});
+            result.push_back({.kind = StatisticsAggregate::Kind::Count, .aggregate = &aggregate});
             continue;
         }
 
         const auto & function_name = aggregate.function->getName();
-        bool is_min = function_name == "min";
-        if (!is_min && function_name != "max")
+        auto kind = StatisticsAggregate::Kind::Count;
+        if (function_name == "min")
+            kind = StatisticsAggregate::Kind::Min;
+        else if (function_name == "max")
+            kind = StatisticsAggregate::Kind::Max;
+        else if (function_name == "sum")
+            kind = StatisticsAggregate::Kind::Sum;
+        else if (function_name == "avg" || function_name == "sumCount")
+            kind = StatisticsAggregate::Kind::SumAndCount;
+        else if (!is_count)
+            return {};
+
+        const bool is_min_max = kind == StatisticsAggregate::Kind::Min || kind == StatisticsAggregate::Kind::Max;
+        if (!(is_min_max ? use_min_max : use_sum_avg))
             return {};
 
         if (aggregate.argument_names.size() != 1)
@@ -716,6 +739,23 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
         if (column->type->isNullable() || column->type->lowCardinality())
             return {};
 
+        /// Like the trivial count optimization, answer `count(column)` of a column that cannot be `NULL` with the number
+        /// of rows (`count(expr)` was declined above, because its argument has to be evaluated, and that can throw).
+        if (kind == StatisticsAggregate::Kind::Count)
+        {
+            result.push_back({.kind = kind, .aggregate = &aggregate});
+            continue;
+        }
+
+        if (!is_min_max)
+        {
+            if (!column->statistics.types_to_desc.contains(StatisticsType::Basic) || !canStatisticsTrackSum(column->type))
+                return {};
+
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
+            continue;
+        }
+
         if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
             && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
             return {};
@@ -728,7 +768,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
             return {};
 
         result.push_back({
-            .kind = is_min ? StatisticsMinMaxAggregate::Kind::Min : StatisticsMinMaxAggregate::Kind::Max,
+            .kind = kind,
             .column_name = node->result_name,
             .expected_field_type = column->type->getDefault().getType(),
             .aggregate = &aggregate});
@@ -779,8 +819,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         && metadata->minmax_count_projection
         && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
         && canMinMaxCountProjectionMatchAggregates(aggregates);
+    bool can_use_statistics = allow_implicit_projections && keys.empty();
 
-    if (!can_use_minmax_projection && agg_projections.empty())
+    if (!can_use_minmax_projection && !can_use_statistics && agg_projections.empty())
         return candidates;
 
     QueryDAG dag;
@@ -879,13 +920,13 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         }
     }
 
-    /// When no projection can serve the aggregation, try to answer min/max/count directly
+    /// When no projection can serve the aggregation, try to answer it directly
     /// from per-part column statistics.
-    if (allow_implicit_projections && !candidates.minmax_projection && candidates.real.empty()
+    if (can_use_statistics && !candidates.minmax_projection && candidates.real.empty()
         && candidates.only_count_column.empty() && !dag.filter_node)
     {
-        candidates.statistics_min_max_aggregates
-            = getStatisticsMinMaxAggregates(aggregating, reading, metadata, query_index, context);
+        candidates.statistics_aggregates
+            = getStatisticsAggregates(aggregating, reading, metadata, query_index, context);
     }
 
     return candidates;
@@ -970,14 +1011,44 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
-/// Pseudo projection name used to indicate min/max/count aggregation from column statistics
-static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_min_max_projection";
+/// Pseudo projection name used to indicate aggregation from column statistics
+static constexpr const char * STATISTICS_PROJECTION_NAME = "_statistics_projection";
 
-/// Compute the states of min/max/count aggregate functions over the parts whose column statistics
+/// Builds the state from its serialized form, the little-endian accumulator followed by the count for
+/// `avg` and `sumCount`, because the in-memory layout of the states is not a stable interface.
+static void deserializeSumState(
+    const IAggregateFunction & function, AggregateDataPtr place, const Field & sum, std::optional<UInt64> count, Arena & arena)
+{
+    WriteBufferFromOwnString out;
+    switch (sum.getType())
+    {
+        case Field::Types::Int64: writeBinaryLittleEndian(sum.safeGet<Int64>(), out); break;
+        case Field::Types::UInt64: writeBinaryLittleEndian(sum.safeGet<UInt64>(), out); break;
+        case Field::Types::Int128: writeBinaryLittleEndian(sum.safeGet<Int128>(), out); break;
+        case Field::Types::UInt128: writeBinaryLittleEndian(sum.safeGet<UInt128>(), out); break;
+        case Field::Types::Int256: writeBinaryLittleEndian(sum.safeGet<Int256>(), out); break;
+        case Field::Types::UInt256: writeBinaryLittleEndian(sum.safeGet<UInt256>(), out); break;
+        case Field::Types::Decimal128: writeBinaryLittleEndian(sum.safeGet<DecimalField<Decimal128>>().getValue(), out); break;
+        case Field::Types::Decimal256: writeBinaryLittleEndian(sum.safeGet<DecimalField<Decimal256>>().getValue(), out); break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected sum type {} for `{}`", sum.getTypeName(), function.getName());
+    }
+    if (count)
+        writeVarUInt(*count, out);
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    function.deserialize(place, in, std::nullopt, &arena);
+    if (!in.eof())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "State of `{}` built from statistics has {} unread byte(s)",
+            function.getName(), in.available());
+}
+
+/// Compute the states of the aggregate functions over the parts whose column statistics
 /// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
 /// with one row of aggregate function states, or an empty block if no part could be covered.
-static Block makeBlockWithMinMaxFromStatistics(
-    const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
+static Block makeBlockFromStatistics(
+    const std::vector<StatisticsAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
     const LoggerPtr & logger)
 {
@@ -986,6 +1057,11 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_rows = 0;
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
+
+    Names statistics_columns;
+    for (const auto & stats_aggregate : stats_aggregates)
+        if (!stats_aggregate.column_name.empty())
+            statistics_columns.push_back(stats_aggregate.column_name);
 
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
     {
@@ -1007,7 +1083,7 @@ static Block makeBlockWithMinMaxFromStatistics(
         Estimates estimates;
         try
         {
-            estimates = part->getEstimates();
+            estimates = part->getEstimates(statistics_columns);
         }
         catch (const Exception &)
         {
@@ -1020,8 +1096,14 @@ static Block makeBlockWithMinMaxFromStatistics(
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
         {
             const auto & stats_aggregate = stats_aggregates[i];
-            if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
                 continue;
+
+            /// Statistics describe the column as the part stores it, which may be a type that a read converts.
+            const auto & column_type = stats_aggregate.aggregate->function->getArgumentTypes().front();
+            const auto * part_column = part->getColumnsDescription().tryGet(stats_aggregate.column_name);
+            if (!part_column || part_column->type->getName() != column_type->getName())
+                return false;
 
             auto it = estimates.find(stats_aggregate.column_name);
             if (it == estimates.end())
@@ -1033,12 +1115,12 @@ static Block makeBlockWithMinMaxFromStatistics(
             if (estimate.rows_count != part->rows_count)
                 return false;
 
-            const auto & value = stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Min
-                ? estimate.estimated_min
+            const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
+                : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
                 : estimate.estimated_max;
 
             /// Reject legacy statistics whose min/max were stored lossy (as Float64 for any column type).
-            if (!value || value->getType() != stats_aggregate.expected_field_type)
+            if (!value || (!stats_aggregate.isSum() && value->getType() != stats_aggregate.expected_field_type))
                 return false;
 
             part_values[i] = &*value;
@@ -1050,7 +1132,7 @@ static Block makeBlockWithMinMaxFromStatistics(
                 continue;
 
             auto & folded = folded_values[i];
-            bool is_min = stats_aggregates[i].kind == StatisticsMinMaxAggregate::Kind::Min;
+            bool is_min = stats_aggregates[i].kind == StatisticsAggregate::Kind::Min;
             const Field & value = *part_values[i];
 
             /// `min`/`max` skip `NaN` and return it only when every value is `NaN`, and a part
@@ -1059,6 +1141,8 @@ static Block makeBlockWithMinMaxFromStatistics(
             /// and `SingleValueDataFixed::setIfSmaller` instead of the raw `Field` ordering.
             if (folded.isNull() || isNaNField(folded))
                 folded = value;
+            else if (stats_aggregates[i].isSum())
+                applyVisitor(FieldVisitorSum(value), folded);
             else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
                 folded = value;
         }
@@ -1085,14 +1169,14 @@ static Block makeBlockWithMinMaxFromStatistics(
     remaining_select_result.exceeded_row_limits = false;
 
     auto & stat = remaining_select_result.projection_stats.emplace_back();
-    stat.name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+    stat.name = STATISTICS_PROJECTION_NAME;
     stat.selected_parts = covered_parts;
     stat.selected_marks = covered_marks;
     stat.selected_ranges = covered_ranges;
     stat.selected_rows = covered_rows;
     stat.filtered_parts = covered_parts;
     stat.description = fmt::format(
-        "Min/max aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
+        "Aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
         covered_parts, covered_rows, parts_with_ranges.size());
     LOG_DEBUG(logger, "{}", stat.description);
 
@@ -1107,9 +1191,15 @@ static Block makeBlockWithMinMaxFromStatistics(
         auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
         function->create(place);
 
-        if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
         {
             AggregateFunctionCount::set(place, covered_rows);
+        }
+        else if (stats_aggregate.isSum())
+        {
+            auto count = stats_aggregate.kind == StatisticsAggregate::Kind::SumAndCount
+                ? std::optional<UInt64>(covered_rows) : std::nullopt;
+            deserializeSumState(*function, place, folded_values[i], count, arena);
         }
         else
         {
@@ -1222,15 +1312,15 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     /// Stores row count from exact ranges of parts.
     size_t exact_count = 0;
-    /// Stores one row of min/max/count aggregate function states computed from column statistics.
-    Block statistics_min_max_block;
+    /// Stores one row of aggregate function states computed from column statistics.
+    Block statistics_block;
     ReadFromMergeTree::AnalysisResultPtr parent_reading_select_result;
     ReadFromMergeTree::AnalysisResultPtr inexact_ranges_select_result;
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
     }
-    else if (!candidates.statistics_min_max_aggregates.empty())
+    else if (!candidates.statistics_aggregates.empty())
     {
         parent_reading_select_result = reading->getAnalyzedResult();
         if (!parent_reading_select_result)
@@ -1242,10 +1332,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
         /// Copy parent analysis result to isolate modifications. This result will store the
         /// remaining parts (without statistics), to be used for normal reading.
         inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
-        statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
-            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
+        statistics_block = makeBlockFromStatistics(
+            candidates.statistics_aggregates, *inexact_ranges_select_result, logger);
 
-        if (statistics_min_max_block.empty())
+        if (statistics_block.empty())
             return result;
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
@@ -1510,9 +1600,9 @@ UseProjectionsResult optimizeUseAggregateProjections(
         has_parent_parts = false;
         short_circuited_with_prepared_source = true;
     }
-    else if (!statistics_min_max_block.empty())
+    else if (!statistics_block.empty())
     {
-        /// Min/max/count aggregation from column statistics: like the exact count optimization
+        /// Aggregation from column statistics: like the exact count optimization
         /// below, the block with aggregate function states is a prepared source, and the parts
         /// without statistics (if any) are read normally.
         /// When parallel replicas is enabled, only the initiator should read the block to avoid data duplication.
@@ -1520,12 +1610,12 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
         Pipe pipe;
         if (!is_parallel_reading_on_remote_replicas)
-            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(statistics_min_max_block))));
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(statistics_block))));
         else
-            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(statistics_min_max_block.cloneEmpty())));
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(statistics_block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
-        selected_projection_name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+        selected_projection_name = STATISTICS_PROJECTION_NAME;
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
         if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));

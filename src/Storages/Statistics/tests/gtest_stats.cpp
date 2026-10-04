@@ -773,6 +773,57 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     EXPECT_DOUBLE_EQ(*eq0, 4.0);
 }
 
+/// `basic` statistics written before the sum was tracked have no `ExactSum` bit. They must not report a sum, must not
+/// gain one when a mutation re-serializes them, and must stay compatible with new ones for the selectivity estimator.
+TEST(Statistics, BasicSumMissingFromOlderStatistics)
+{
+    auto data_type = std::make_shared<DataTypeInt64>();
+    MutableColumnPtr col = data_type->createColumn();
+    col->insert(Field(std::numeric_limits<Int64>::max()));
+    col->insert(Field(Int64(1)));
+    auto fresh = createTestStats({StatisticsType::Basic}, data_type);
+    fresh->build(std::move(col));
+    ASSERT_EQ(fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+
+    String older_payload;
+    {
+        WriteBufferFromString buf(older_payload);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `row_count`
+        writeIntBinary(static_cast<UInt8>(1 | 4), buf); /// `NumericMinMax | DefaultCount`
+        writeFieldBinary(Field(Int64(1)), buf);
+        writeFieldBinary(Field(std::numeric_limits<Int64>::max()), buf);
+        writeIntBinary(static_cast<UInt64>(0), buf); /// `default_count`
+        buf.finalize();
+    }
+    String older_file;
+    {
+        WriteBufferFromString buf(older_file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// `StatisticsFileVersion::V4`
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+        writeStringBinary(data_type->getName(), buf);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// `rows`
+        writeIntBinary(static_cast<UInt64>(older_payload.size()), buf);
+        buf.write(older_payload.data(), older_payload.size());
+        buf.finalize();
+    }
+
+    ReadBufferFromString older_buf(older_file);
+    auto older = ColumnStatistics::deserialize(older_buf, data_type);
+    EXPECT_FALSE(older->hasSum());
+    EXPECT_TRUE(fresh->structureEquals(*older));
+
+    WriteBufferFromOwnString reserialized;
+    older->serialize(reserialized);
+    ReadBufferFromString reserialized_buf(reserialized.str());
+    EXPECT_FALSE(ColumnStatistics::deserialize(reserialized_buf, data_type)->hasSum());
+
+    auto merged = fresh->cloneEmpty();
+    merged->merge(fresh);
+    EXPECT_EQ(merged->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+    merged->merge(older);
+    EXPECT_FALSE(merged->hasSum());
+}
+
 TEST(Statistics, BasicDefaultCountArray)
 {
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());

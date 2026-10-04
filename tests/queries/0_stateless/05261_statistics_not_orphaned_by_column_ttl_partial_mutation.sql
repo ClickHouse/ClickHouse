@@ -44,6 +44,6 @@ SELECT count() FROM ttl_stats_orphan_partial WHERE v > 50;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ttl_stats_orphan_partial WHERE v > 5000)
 WHERE explain ILIKE '%Statistics%';
 SELECT count() > 0 FROM (EXPLAIN SELECT min(v), max(v) FROM ttl_stats_orphan_partial)
-WHERE explain ILIKE '%_statistics_min_max_projection%';
+WHERE explain ILIKE '%_statistics_projection%';
 
 DROP TABLE ttl_stats_orphan_partial;

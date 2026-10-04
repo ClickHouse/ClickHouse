@@ -27,7 +27,7 @@ applied: monotonic arithmetic is rewritten to be applied over the aggregation
 not applied: aggregation over an expression
 0	6
 0
-not applied: unsupported aggregate function
+not applied: `sum` of a column without `basic` statistics
 2019-05-05	-50000
 0
 not applied: lightweight delete

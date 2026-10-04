@@ -3,6 +3,7 @@
 -- long: for flaky check
 -- no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading

@@ -56,6 +56,6 @@ WHERE explain ILIKE '%Statistics%';
 
 -- liveness: the min/max aggregation must actually be answered from statistics
 SELECT count() > 0 FROM (EXPLAIN SELECT min(v), max(v) FROM ttl_stats_orphan)
-WHERE explain ILIKE '%_statistics_min_max_projection%';
+WHERE explain ILIKE '%_statistics_projection%';
 
 DROP TABLE ttl_stats_orphan;

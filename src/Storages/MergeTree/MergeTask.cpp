@@ -998,7 +998,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 auto it = part_statistics.find(column_name);
 
-                if (it == part_statistics.end() || !column_stats->structureEquals(*it->second))
+                if (it == part_statistics.end() || !column_stats->structureEquals(*it->second)
+                    || (column_stats->hasSum() && !it->second->hasSum()))
                     global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, column_stats->cloneEmpty());
                 else
                     column_stats->merge(it->second);

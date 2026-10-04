@@ -10,6 +10,7 @@
 -- so the populate can't reserve); no-parallel additionally keeps the test's own flaky-check reruns
 -- from contending that dedicated cache.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_re_disk_cache;
 
 -- Full (not Packed) part storage, so every stream of the part is its own object and therefore its own
