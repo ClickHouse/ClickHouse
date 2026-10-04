@@ -181,6 +181,28 @@ SELECT
         )
     );
 
+-- State/Merge combinators preserve the same key width as finalized input.
+WITH
+    compact_state AS
+    (
+        SELECT exponentialTimeDecayedSumState(value) AS state
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying64(10)') AS value
+        )
+    ),
+    precise_state AS
+    (
+        SELECT exponentialTimeDecayedSumState(value) AS state
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying128(10)') AS value
+        )
+    )
+SELECT
+    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM compact_state),
+    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM precise_state);
+
 -- The width-specific parameterless spelling is inference-only. A standalone type declaration
 -- still needs a concrete decay length because column types are static.
 CREATE TEMPORARY TABLE time_decay_unparameterized_type_rejected
