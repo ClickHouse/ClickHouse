@@ -1484,6 +1484,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     std::optional<NameDependencies> name_deps{};
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1497,17 +1498,20 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         {
             if (!name_deps)
                 name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
-            if (!deps_mv.empty())
+            for (const auto & dropped_column_name : getColumnNamesAffectedByDrop(
+                     metadata_snapshot->getColumns(), command.column_name, /* share_nested_offsets = */ true))
             {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv));
+                const auto & deps_mv = name_deps.value()[dropped_column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                        backQuoteIfNeed(command.column_name), toString(deps_mv));
+                }
             }
         }
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
     /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
