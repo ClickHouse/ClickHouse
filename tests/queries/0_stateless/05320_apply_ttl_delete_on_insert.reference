@@ -1,0 +1,9 @@
+disabled	5	5
+enabled	0	100
+parts	1
+all expired	1
+parts	1
+where	[0,1,3,5]
+mixed	0
+replicated	[0]
+parts	1
