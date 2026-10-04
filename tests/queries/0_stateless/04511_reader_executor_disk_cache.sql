@@ -9,6 +9,8 @@
 -- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments
 -- so the populate can't reserve); no-parallel additionally keeps the test's own flaky-check reruns
 -- from contending that dedicated cache.
+-- Tag no-parallel-replicas: the assertions read per-query executor ProfileEvents, which land on the
+-- replica instead of the initiator when parallel replicas are used.
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
