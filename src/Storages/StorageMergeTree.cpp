@@ -3,7 +3,9 @@
 
 #include <optional>
 #include <ranges>
+#include <set>
 #include <thread>
+#include <unordered_map>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -2260,13 +2262,31 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
-    auto mutations_end_it = current_mutations_by_version.end();
-
-    /// The block numbers of the lightweight updates that have not written their patch part yet, read
-    /// once for the whole selection: it only has to be a snapshot no older than the parts below.
-    CommittingBlocksSet committing_blocks_snapshot;
+    /// A lightweight update reserves its block number in `committing_blocks` before its patch part is committed
+    /// (see `updateLightweight`), so a mutation with a higher version must not be executed on a part that the update
+    /// may patch until the update is committed: `MutateTask` would either miss the patch (it is not visible yet, and it
+    /// is never applied to the result part because that part has a higher data version), or apply it before the commands
+    /// of the mutations with a lower version. The same is done for a replicated table in `ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation`.
+    /// The committing blocks are taken before the patch parts, so that an update committed in between is seen
+    /// at least in one of the two places. Blocks with an unknown operation are conservatively treated as updates,
+    /// as in `getMinUpdateBlockNumber`. The set of committing blocks is ordered by number, so this vector is sorted.
+    std::vector<Int64> pending_update_blocks;
     if (supportsLightweightUpdate())
-        committing_blocks_snapshot = getCommittingBlocks();
+    {
+        for (const auto & block : getCommittingBlocks())
+        {
+            if (block.op == CommittingBlock::Op::Update || block.op == CommittingBlock::Op::Unknown)
+                pending_update_blocks.push_back(block.number);
+        }
+    }
+
+    /// Patch parts are applied to the source part before any of the mutation commands are evaluated,
+    /// and the set of applied patches is bounded from above by the data version of the result part.
+    /// So a batch of mutations squashed into a single task must not span the version of a patch part:
+    /// the commands with a lower version would be evaluated over an update that they must not see.
+    std::unordered_map<String, std::set<Int64>> patch_versions_by_partition;
+    for (const auto & patch : getPatchPartsVectorForInternalUsage())
+        patch_versions_by_partition[patch->info.getOriginalPartitionId()].insert(patch->info.getDataVersion());
 
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -2281,8 +2301,34 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        if (mutations_begin_it == mutations_end_it)
+        if (mutations_begin_it == current_mutations_by_version.end())
             continue;
+
+        /// A pending update reads only the parts with block numbers below its own (see `partition_id_to_max_block`
+        /// in `updateLightweight`), so its patch part can be applied only to a part that contains data inserted before
+        /// the update. A part with all blocks above the update (e.g. inserted after the update reserved its block number,
+        /// possibly into a new partition) is never patched by it, so the update does not restrict mutations of such a part.
+        std::optional<Int64> update_block;
+        if (auto update_it = std::ranges::upper_bound(pending_update_blocks, part->info.min_block); update_it != pending_update_blocks.end())
+            update_block = *update_it;
+
+        /// Block numbers of mutations and updates come from the same increment, so an update is never equal to a mutation version.
+        auto mutations_end_it = update_block ? current_mutations_by_version.upper_bound(*update_block) : current_mutations_by_version.end();
+
+        /// Compare versions rather than iterators: for a part with a data version above `update_block`
+        /// (e.g. a merged part that contains data inserted after the update), `mutations_end_it` may point
+        /// before `mutations_begin_it`.
+        if (update_block && static_cast<Int64>(mutations_begin_it->first) > *update_block)
+        {
+            LOG_DEBUG(
+                log,
+                "Will not mutate part {} to version {} yet because the lightweight update with block number {} is not committed yet",
+                part->name,
+                mutations_begin_it->first,
+                *update_block);
+            current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
+            continue;
+        }
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
@@ -2359,6 +2405,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             }
         }
 
+        const std::set<Int64> * patch_versions = nullptr;
+        if (auto patches_it = patch_versions_by_partition.find(part->info.getPartitionId()); patches_it != patch_versions_by_partition.end())
+            patch_versions = &patches_it->second;
+
         auto commands = std::make_shared<MutationCommands>();
         Strings mutation_ids;
         size_t current_ast_elements = 0;
@@ -2368,6 +2418,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
+
+            /// Stop before a mutation that is separated from the previous one by a patch part - see the
+            /// comment about `patch_versions_by_partition` above. The same is done for a replicated table
+            /// in `ReplicatedMergeTreeZooKeeperMergePredicate::getExpectedMutationVersion`.
+            if (patch_versions && it != mutations_begin_it
+                && patch_versions->lower_bound(std::prev(it)->first) != patch_versions->upper_bound(it->first))
+            {
+                break;
+            }
 
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
@@ -2436,37 +2495,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             auto new_part_info = part->info;
             new_part_info.mutation = last_mutation_to_apply->first;
-
-            /** A lightweight update allocates its block number before it writes its patch part, and a
-              * mutation whose version is above that number has to see the update. Mutating the part
-              * now would read it without the patch and write a part at a higher data version, which
-              * the patch no longer applies to: the acknowledged update would be silently lost. Leave
-              * the part for a later round, exactly as `havePendingPatchPartsForMutation` postpones the
-              * entry on a replicated table.
-              */
-            std::optional<Int64> pending_update_block;
-            for (const auto & block : committing_blocks_snapshot)
-            {
-                if (block.number > new_part_info.getDataVersion())
-                    break;
-
-                if (block.op == CommittingBlock::Op::Update)
-                {
-                    pending_update_block = block.number;
-                    break;
-                }
-            }
-
-            if (pending_update_block.has_value())
-            {
-                LOG_DEBUG(
-                    log,
-                    "Will not mutate part {} yet because the lightweight update with block number {} is not committed",
-                    part->name,
-                    *pending_update_block);
-                current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
-                continue;
-            }
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
