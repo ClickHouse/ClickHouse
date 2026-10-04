@@ -44,6 +44,7 @@ namespace ErrorCodes
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     const NamesAndTypesList & columns_,
+    NamesAndTypesList converted_columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
@@ -66,9 +67,7 @@ IMergeTreeReader::IMergeTreeReader(
     , last_mark_to_read(getLastMark(all_mark_ranges_))
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
-    , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
-        ? Nested::convertToSubcolumns(columns_)
-        : columns_)
+    , converted_requested_columns(std::move(converted_columns_))
     , virtual_fields(virtual_fields_)
 {
     /// Check the memory consumption before doing all the heavy-lifting such as
@@ -485,14 +484,18 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    /// The part's cached serializations are keyed by the names of its physical columns. In Wide parts `part_columns`
-    /// collects flattened `Nested` members into a synthetic column (e.g. `n.a` becomes subcolumn `a` of `n`), which
-    /// has no entry in that cache, so only use it when the storage column exists in the part as is.
-    if (containsObjectType(*column_in_part->getTypeInStorage())
-        && data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
+    /// The part's cached serializations are keyed by the names of its physical columns. `part_columns` may be the
+    /// collected-Nested description (Wide parts): a flattened `Nested` member `n.a` becomes subcolumn `a` of `n`, which
+    /// the part cache would resolve to the plain `n.a` column with a different offsets stream (`n.a.size0` instead of
+    /// the shared `n.size0`). Only trust the cache when the storage column exists in the part as is.
+    if (data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
     {
-        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
-        if (serialization->supportsPooling())
+        /// `getSerialization` also derives the serializations of `JSON` subcolumns that are not enumerable.
+        auto serialization = containsObjectType(*column_in_part->getTypeInStorage())
+            ? data_part_info_for_read->getSerialization(*column_in_part)
+            : data_part_info_for_read->tryGetSerialization(*column_in_part);
+        /// Non-poolable serializations (e.g. `JSON`) carry mutable state, so they must stay reader-local.
+        if (serialization && serialization->supportsPooling())
             return serialization;
     }
 
@@ -649,9 +652,24 @@ String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, s
         max_rows_to_read);
 }
 
+NamesAndTypesList convertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings)
+{
+    if (auto converted = tryConvertRequestedColumns(columns, storage_settings))
+        return std::move(*converted);
+    return columns;
+}
+
+std::optional<NamesAndTypesList> tryConvertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings)
+{
+    if (!storage_settings[MergeTreeSetting::share_nested_offsets])
+        return std::nullopt;
+    return Nested::tryConvertToSubcolumns(columns);
+}
+
 MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -666,6 +684,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -680,6 +699,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -695,6 +715,7 @@ MergeTreeReaderPtr createMergeTreeReader(
         return createMergeTreeReaderCompact(
             read_info,
             columns_to_read,
+            std::move(converted_columns_to_read),
             storage_snapshot,
             storage_settings,
             mark_ranges,
@@ -710,6 +731,7 @@ MergeTreeReaderPtr createMergeTreeReader(
         return createMergeTreeReaderWide(
             read_info,
             columns_to_read,
+            std::move(converted_columns_to_read),
             storage_snapshot,
             storage_settings,
             mark_ranges,

@@ -2,7 +2,6 @@
 
 #include <base/scope_guard.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/VarInt.h>
@@ -199,10 +198,10 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
     group->serializations.push_back(serialization);
     group->names.push_back(column.name);
 
-    auto substream_data = ISerialization::SubstreamData(serialization);
-    if (containsObjectType(*column.type))
-        substream_data.withType(column.type);
-
+    /// Enumerate with the type set, as `IDataType::getSubcolumnSerialization` does: some serializations
+    /// attach subcolumn creators only when they know the type (`SerializationNullable` wraps the
+    /// elements of a `Nullable(Tuple)` into `Nullable` this way), and a reader deserializing the
+    /// subcolumn with the un-wrapped serialization would write into a column of the wrong type.
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto full_name = Nested::concatenateName(column.name, subname);
@@ -212,7 +211,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
         }
-    }, substream_data);
+    }, ISerialization::SubstreamData(serialization).withType(column.type));
 
     /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
     group->serializations.shrink_to_fit();

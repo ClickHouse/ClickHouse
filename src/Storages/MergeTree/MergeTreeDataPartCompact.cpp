@@ -66,6 +66,7 @@ Strings MergeTreeDataPartCompact::getPreferredFileOrder() const
 MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -80,6 +81,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -92,7 +94,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
-        read_info, columns_to_read, virtual_fields,
+        read_info, columns_to_read, std::move(converted_columns_to_read), virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
