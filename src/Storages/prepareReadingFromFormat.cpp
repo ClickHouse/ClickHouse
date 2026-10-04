@@ -176,8 +176,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
         if (column_to_read.isSubcolumn())
         {
-            /// Subcolumn names are flat: in ``Tuple(a Tuple(c Int32), `a.b` Int32)`` both `a` and `a.b` are name prefixes of `a.b`.
-            /// So follow the substreams of the subcolumn the name resolves to, the one getColumnFromBlock extracts.
+            /// Element names may contain dots, so an element whose name prefixes the subcolumn name need not be on its path.
+            /// Follow the substreams of the subcolumn the name resolves to, as getColumnFromBlock does.
             auto type = column_to_read.getTypeInStorage();
             if (auto resolved = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName()))
             {
