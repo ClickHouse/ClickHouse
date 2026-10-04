@@ -2344,6 +2344,21 @@ ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, M
 {
 }
 
+namespace
+{
+
+/// CLEAR COLUMN keeps the column in the metadata, so it stays pinned like a data mutation.
+MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (const auto & command : commands)
+        if (AlterConversions::isSupportedMetadataMutation(command.type) && !command.clear)
+            result.push_back(command);
+    return result;
+}
+
+}
+
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     auto partition_id = part->info.getOriginalPartitionId();
@@ -2352,6 +2367,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     if (in_partition == mutations_by_partition.end())
         return {};
 
+    const Int64 max_mutation_version_to_include = getMaxMutationVersionForPartition(params, partition_id);
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
 
@@ -2381,7 +2397,12 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                addSupportedCommands(entry->commands, mutation_version, result);
+            {
+                if (mutation_version > max_mutation_version_to_include)
+                    addSupportedCommands(getMetadataMutationCommands(entry->commands), mutation_version, result);
+                else
+                    addSupportedCommands(entry->commands, mutation_version, result);
+            }
             else
                 seen_all_metadata_mutations = true;
         }
@@ -2445,9 +2466,6 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
 
-            if (mutation_version > max_mutation_version_to_include)
-                continue;
-
             auto alter_version = status->entry->alter_version;
             if (alter_version != -1)
             {
@@ -2457,9 +2475,20 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
                 /// We take commands with bigger metadata version
                 if (alter_version > params.min_part_metadata_version)
                 {
+                    /// A part is read with the snapshot's metadata, so the renames and drops of every ALTER up to it are needed
+                    /// even when the ALTER is newer than max_mutation_version_to_include.
+                    if (mutation_version > max_mutation_version_to_include)
+                    {
+                        auto metadata_commands = getMetadataMutationCommands(status->entry->commands);
+                        if (!metadata_commands.empty())
+                        {
+                            partition_snapshot.emplace(mutation_version, status->entry);
+                            incrementMutationsCounters(mutations_snapshot_counters, metadata_commands);
+                        }
+                    }
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    else if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
                     {
                         partition_snapshot.emplace(mutation_version, status->entry);
                         incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
@@ -2472,6 +2501,9 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             }
             else if (!seen_all_data_mutations)
             {
+                if (mutation_version > max_mutation_version_to_include)
+                    continue;
+
                 if (mutation_version > min_part_data_version)
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.

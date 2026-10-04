@@ -1,0 +1,26 @@
+compact pending	2
+compact columns	['id','a','c']
+compact	2	3333	4444
+wide pending	2
+wide columns	['id','a','c']
+wide	2	3333	4444
+update pending	2
+update columns	['id','a','c']
+update	1	1112	2222
+update	2	3334	4444
+1
+patch pending	2
+patch columns	['id','a','c']
+patch	2	3333	9999
+patch on disk	2	3333	9999
+clear pending	2
+clear	1	0	4444
+clear	2	0	8888
+attach before	1	1111	2222
+attach before	2	3333	4444
+attach	1	1112	2222
+attach	2	3334	4444
+1
+attach target	1	1111	2223
+attach target	2	3333	4445
+1

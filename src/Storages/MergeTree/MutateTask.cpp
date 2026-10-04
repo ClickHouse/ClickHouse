@@ -1357,6 +1357,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
@@ -1428,6 +1429,13 @@ static NameToNameVector collectFilesForRenames(
             }
         }
     }
+
+    /// Streams of a renamed column are moved by its RENAME_COLUMN entry, unless the mutation rewrites the column.
+    NameSet moved_columns;
+    for (const auto & command : commands_for_renames)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN && !updated_header.has(command.rename_to)
+            && !updated_columns_in_patches.contains(command.rename_to))
+            moved_columns.insert(command.column_name);
 
     /// Remove old data
     for (const auto & command : commands_for_renames)
@@ -1556,8 +1564,13 @@ static NameToNameVector collectFilesForRenames(
                 /// Remove files for streams that exist in source_part,
                 /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
                 /// type with higher number of streams (e.g. LowCardinality -> String).
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
+                Names columns_to_check;
+                for (const auto & name : source_part->getColumns().getNames())
+                    if (!moved_columns.contains(name))
+                        columns_to_check.push_back(name);
+
+                auto old_streams = getStreamCounts(source_part, source_part->checksums, columns_to_check);
+                auto new_streams = getStreamCounts(new_part, source_part->checksums, columns_to_check);
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
@@ -4363,6 +4376,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension);
