@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t_mt;
 CREATE TABLE t_mt (c0 Int) ENGINE = MergeTree() ORDER BY c0;
 INSERT INTO t_mt SELECT * FROM numbers(10);
 
-CREATE TABLE t_dist (c0 Int) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), 't_mt');
+CREATE TABLE t_dist (c0 Int) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), 't_mt', c0);
 
 -- Thresholds are large enough that the inserted rows stay in the buffer.
 CREATE TABLE t_buf (c0 Int) ENGINE = Buffer(currentDatabase(), 't_dist', 1, 100000, 100000, 1000000, 1000000, 100000000, 100000000);
