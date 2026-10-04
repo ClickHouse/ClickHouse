@@ -480,13 +480,16 @@ private:
             /// The output port is closed, for example by a satisfied LIMIT downstream. Tell the
             /// exchange, so the producer's sink stops instead of queueing chunks that nobody
             /// reads. `onCancel` covers the cancellation path in the same way.
-            if (!detach_notified && getPort().isFinished())
+            /// Decide on the same read that finishes the source, the port can be closed concurrently.
+            /// A source that ended by itself (`finished`, e.g. at the end of the data) needs no detach.
+            const auto status = ISource::prepare();
+            if (status == Status::Finished && !finished && !detach_notified)
             {
                 detach_notified = true;
                 LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
-            return ISource::prepare();
+            return status;
         }
 
         std::optional<Chunk> tryGenerate() override
