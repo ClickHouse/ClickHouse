@@ -5270,7 +5270,8 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const std::span<String>
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    /// With geo replication control, the replicas of the same region go first.
+    Strings replicas = getAllReplicasInPath(zookeeper_path).all_replicas;
 
     for (const String & replica : replicas)
     {
@@ -8734,11 +8735,26 @@ void StorageReplicatedMergeTree::fetchPartition(
                 if (it == partition_parts_by_replica.end() || it->second.empty())
                     continue;
 
+                /// The replica covers a part of the current state either with a part containing it, or with its own
+                /// smaller parts (e.g. not merged yet) that span the whole block range of that part without gaps.
+                /// A gap may also be a block number that was allocated but never committed, then the replica is
+                /// conservatively considered incomplete: it only makes us miss the preference of the region.
                 const ActiveDataPartSet replica_partition_state(format_version, it->second);
                 const bool covers_whole_partition = std::all_of(
                     current_partition_parts.begin(), current_partition_parts.end(), [&](const String & part)
                     {
-                        return !replica_partition_state.getContainingPart(part).empty();
+                        if (!replica_partition_state.getContainingPart(part).empty())
+                            return true;
+
+                        const auto part_info = MergeTreePartInfo::fromPartName(part, format_version);
+                        Int64 next_block = part_info.min_block;
+                        for (const auto & covered_info : replica_partition_state.getPartInfosCoveredBy(part_info))
+                        {
+                            if (covered_info.min_block != next_block)
+                                return false;
+                            next_block = covered_info.max_block + 1;
+                        }
+                        return next_block == part_info.max_block + 1;
                     });
 
                 if (covers_whole_partition)
