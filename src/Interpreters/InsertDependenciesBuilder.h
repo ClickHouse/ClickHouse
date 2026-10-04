@@ -112,6 +112,7 @@ public:
 
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
     StorageIDMaybeEmpty getRootViewID() const { return root_view; }
+    bool skipsDestinationTable() const { return skip_destination_table; }
 
     const auto & getSquashingProcessors() const { return squashing_processors; }
 
