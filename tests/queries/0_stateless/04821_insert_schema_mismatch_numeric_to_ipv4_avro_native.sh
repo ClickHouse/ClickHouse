@@ -31,10 +31,10 @@ $CLICKHOUSE_LOCAL -q "SELECT 16909060::Int32 AS ip, 'not-a-uuid' AS u FORMAT Avr
 $CLICKHOUSE_LOCAL -q "SELECT 16909060::UInt32 AS ip, 'not-a-uuid' AS u FORMAT Native" > "$DATA_NATIVE"
 
 echo "-- Avro: a numeric value for an IPv4 column is valid (no false positive)"
-{
-    echo "CREATE TABLE t (ip IPv4, u UUID) ENGINE = Memory; INSERT INTO t FORMAT Avro"
-    cat "$DATA_AVRO"
-} | $CLICKHOUSE_LOCAL 2>&1 | check
+# The `Avro` data is sent through stdin, separately from the query given with `--query`: when it is
+# appended to the query text instead, `clickhouse-local` ends inline data at the first `\n\n`, and the
+# random 16-byte `Avro` sync marker occasionally contains one, which truncates the data.
+$CLICKHOUSE_LOCAL -q "CREATE TABLE t (ip IPv4, u UUID) ENGINE = Memory; INSERT INTO t FORMAT Avro" < "$DATA_AVRO" 2>&1 | check
 
 echo "-- Native: a numeric column is cast to IPv4 under input_format_native_allow_types_conversion (no false positive)"
 {
