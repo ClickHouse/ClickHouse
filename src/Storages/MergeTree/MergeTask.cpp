@@ -653,8 +653,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
-    /// A part that stores a column without a calculated TTL for it adds nothing to the aggregated bound,
-    /// so the merged part gets no bound for that column rather than the bound of the other parts.
+    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
+    /// so the merged part must not take the bound of the other parts for that column.
     NameSet columns_without_ttl_info;
     if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
     {
