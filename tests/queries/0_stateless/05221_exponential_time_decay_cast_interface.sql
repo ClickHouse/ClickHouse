@@ -21,6 +21,10 @@ SELECT
     abs(exponentialTimeDecayingValueAt(checked, timestamp) - value) < 1e-12,
     abs(exponentialTimeDecayingValueAt(parameterized, timestamp) - value) < 1e-12;
 
+-- Constant CAST results are serialized through the Native protocol before the
+-- data block is materialized. Keep serialization-info discovery valid for ColumnConst.
+SELECT CAST((toFloat64(1), toFloat64(65535), toFloat64(10)), 'ExponentialTimeDecaying(10)');
+
 -- The unparameterized target can infer a non-integral decay length and DateTime64
 -- input while still producing one concrete static type.
 WITH

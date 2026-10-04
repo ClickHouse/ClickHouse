@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -429,6 +430,9 @@ MutableSerializationInfoPtr DataTypeExponentialTimeDecaying::createSerialization
 SerializationInfoPtr DataTypeExponentialTimeDecaying::getSerializationInfo(
     const IColumn & column, const SerializationInfoSettings & settings) const
 {
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
     const auto & decaying_column = assert_cast<const ColumnExponentialTimeDecaying &>(column);
     return storage_type->getSerializationInfo(decaying_column.getStorageColumn(), settings);
 }
