@@ -319,9 +319,11 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
             /// The size of compressed marks does not follow from the number of marks, so check their
-            /// decompressed size instead.
+            /// decompressed size instead. With marks for substreams, each granule has a mark per substream.
             UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(mrk_file_name)->ignoreAll() : file_size;
-            UInt64 expected_payload_size = index_granularity_info.getMarkSizeInBytes(getColumns().size()) * index_granularity->getMarksCount();
+            size_t num_marks_in_granule = index_granularity_info.mark_type.with_substreams
+                ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size();
+            UInt64 expected_payload_size = index_granularity_info.getMarkSizeInBytes(num_marks_in_granule) * index_granularity->getMarksCount();
             if (expected_payload_size != marks_payload_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
