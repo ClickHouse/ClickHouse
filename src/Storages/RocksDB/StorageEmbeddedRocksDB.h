@@ -1,6 +1,8 @@
 #pragma once
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
@@ -23,6 +25,7 @@ namespace DB
 {
 
 class Context;
+class RocksDBFullScanLease;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 
@@ -36,6 +39,7 @@ class StorageEmbeddedRocksDB final : public StorageWithCommonVirtualColumns, pub
     friend class EmbeddedRocksDBSink;
     friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
+    friend class RocksDBFullScanLease;
     friend class EmbeddedRocksDBBackup;
 
     static VirtualColumnsDescription createVirtuals();
@@ -160,6 +164,13 @@ private:
     RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
+
+    /// Leases outstanding on rocksdb_ptr. Taken only while holding rocksdb_ptr_mx at least shared,
+    /// so holding it exclusively both reads this and prevents the next one.
+    mutable size_t full_scan_leases TSA_GUARDED_BY(full_scan_leases_mx) = 0;
+    mutable std::mutex full_scan_leases_mx;
+    mutable std::condition_variable full_scan_leases_released;
+
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
