@@ -1,0 +1,22 @@
+nested subqueries: every level reads the subcolumn
+3	0
+x
+y
+x
+y
+interpolate in the subquery
+x
+x
+y
+x
+x
+y
+aggregation in a nested scope over the same CTE
+1	x
+1	y
+1	x
+1	y
+table function that cannot read subcolumns
+0	0
+x	2
+y	1

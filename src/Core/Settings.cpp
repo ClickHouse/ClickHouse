@@ -5748,6 +5748,20 @@ Possible values:
 
 - true, false
 )", 0)                                                                                                                                           \
+    DECLARE(Bool, optimize_push_subcolumns_into_subqueries, true, R"(
+Push a subcolumn read through a subquery or a CTE, so that the subquery projects the subcolumn itself instead of the whole column.
+
+For example, `WITH foo AS (SELECT * FROM t) SELECT tup.a FROM foo` reads only the `tup.a` subcolumn instead of the whole `tup` column.
+
+Only a direct subcolumn access (`tup.a`, `getSubcolumn(tup, 'a')`) is pushed. A function that is otherwise rewritten to a subcolumn read by `optimize_functions_to_subcolumns`, such as `length(arr)` or `tupleElement(tup, 'a')`, still reads the whole column from a subquery.
+
+The optimization is not applied when it would change the rows the subquery produces, for example when the subquery uses `DISTINCT`, `GROUP BY`, `LIMIT BY` or window functions.
+
+Possible values:
+
+- true, false
+)", 0, \
+        {"26.10", false, true, "New setting to push a subcolumn read through a subquery or a CTE, so that the subquery projects the subcolumn itself instead of the whole column. previous_value=false so `compatibility` with versions below 26.10 restores the pre-existing behavior (no push down)."})                                                                                                                                            \
     DECLARE(Bool, optimize_substitute_columns, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for column substitution. The default is `false`.
 
