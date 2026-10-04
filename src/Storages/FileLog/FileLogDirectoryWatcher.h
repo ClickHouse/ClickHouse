@@ -39,7 +39,10 @@ public:
         std::string error_msg = {};
     };
 
-    FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_);
+    /// `read_inodes_` are the files the table reads when the watcher is created, including the ones whose names the
+    /// globs of the path exclude.
+    FileLogDirectoryWatcher(
+        const std::string & path_, StorageFileLog & storage_, std::unordered_set<uint64_t> read_inodes_, ContextPtr context_);
     ~FileLogDirectoryWatcher() = default;
 
     Events getEventsAndReset();
@@ -63,6 +66,9 @@ private:
     const std::string path;
 
     StorageFileLog & storage;
+
+    /// Used only by the watcher thread on macOS, which watches only the files the table may read.
+    const std::unordered_set<uint64_t> read_inodes;
 
     /// Note, in order to avoid data race found by fuzzer, put events before dw,
     /// such that when this class destruction, dw will be destructed before events.

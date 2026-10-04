@@ -142,6 +142,9 @@ public:
 
     void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
 
+    /// The file name matches the globs of `path`, if any.
+    bool fileNameMatches(const String & file_name) const;
+
 private:
     friend class ReadFromStorageFileLog;
 
@@ -228,8 +231,6 @@ private:
     /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
     /// and pushes the name into `file_names` exactly once.
     void onFileAppeared(const String & file_name, UInt64 inode);
-
-    bool fileNameMatches(const String & file_name) const;
 
     /// The file is read under another name that still has it (a hard link).
     bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;

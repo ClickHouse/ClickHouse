@@ -3,9 +3,11 @@
 
 namespace DB
 {
-FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_)
+FileLogDirectoryWatcher::FileLogDirectoryWatcher(
+    const std::string & path_, StorageFileLog & storage_, std::unordered_set<uint64_t> read_inodes_, ContextPtr context_)
     : path(path_)
     , storage(storage_)
+    , read_inodes(std::move(read_inodes_))
     , log(getLogger("FileLogDirectoryWatcher(" + path + ")"))
     , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
 {

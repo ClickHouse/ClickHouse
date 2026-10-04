@@ -241,7 +241,12 @@ StorageFileLog::StorageFileLog(
         chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
-            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
+        {
+            std::unordered_set<UInt64> read_inodes;
+            for (const auto & [inode, meta] : file_infos.meta_by_inode)
+                read_inodes.insert(inode);
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, std::move(read_inodes), getContext());
+        }
 
         auto thread = getContext()->getSchedulePool()->createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));

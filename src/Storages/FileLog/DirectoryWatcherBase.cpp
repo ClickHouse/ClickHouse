@@ -22,6 +22,7 @@
 #elif defined(OS_DARWIN)
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include <fcntl.h>
 #include <sys/event.h>
@@ -231,7 +232,13 @@ void DirectoryWatcherBase::watchFunc()
         Int64 size;
     };
 
-    auto scan = [this](std::map<std::string, FileState> & out)
+    /// Every watched file holds a descriptor, so only the files the table may read are watched: the names matching
+    /// the globs of the path, and the files watched (or, on the first scan, read) before under any name, e.g. a log
+    /// renamed by rotation to a name the globs exclude, which is read until it is removed. Archives that the globs
+    /// exclude, such as the compressed files of `logrotate`, are new files and are not watched.
+    std::unordered_set<UInt64> followed_inodes = owner.read_inodes;
+
+    auto scan = [this, &followed_inodes](std::map<std::string, FileState> & out)
     {
         out.clear();
         for (const auto & entry : std::filesystem::directory_iterator(path))
@@ -241,8 +248,11 @@ void DirectoryWatcherBase::watchFunc()
             struct stat st{};
             if (::stat(entry.path().c_str(), &st) != 0)
                 continue;
+            std::string name = entry.path().filename().string();
+            if (!owner.storage.fileNameMatches(name) && !followed_inodes.contains(static_cast<UInt64>(st.st_ino)))
+                continue;
             out.emplace(
-                entry.path().filename().string(),
+                std::move(name),
                 FileState{
                     static_cast<UInt64>(st.st_ino),
                     static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
@@ -445,6 +455,14 @@ void DirectoryWatcherBase::watchFunc()
     }
     if (stopped)
         return;
+
+    auto follow_snapshot = [&]
+    {
+        followed_inodes.clear();
+        for (const auto & [name, state] : snapshot)
+            followed_inodes.insert(state.inode);
+    };
+    follow_snapshot();
 
     pollfd pfds[2];
     pfds[0].fd = event_pipe.fds_rw[0];
@@ -656,6 +674,7 @@ void DirectoryWatcherBase::watchFunc()
 
         owner.commitEvents();
         snapshot.swap(current);
+        follow_snapshot();
         /// This pass committed successfully, so its drained deletes have been applied; start the next
         /// pass with a clean set. (On a retried pass we skip this via `continue`, keeping them.)
         deleted.clear();
