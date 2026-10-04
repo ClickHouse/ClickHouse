@@ -348,7 +348,13 @@ void StorageMergeTree::shutdown(bool)
     flushAndPrepareForShutdown();
 
     if (deduplication_log)
+    {
+        /// `MergeTreeSink::commitPart` checks for duplicates, commits the part and publishes its block IDs under one
+        /// `lockParts`. Stopping the log under the same lock makes a concurrent insert fail with `ABORTED` before its
+        /// part is committed, never between the commit and the publication.
+        auto parts_lock = lockParts();
         deduplication_log->shutdown();
+    }
 }
 
 

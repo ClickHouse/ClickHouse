@@ -266,10 +266,10 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
 {
     /// The records are already written and applied to the in-memory map, so failing here would
-    /// report an operation that has actually succeeded as failed. For an insert this means that the
-    /// block IDs stay published for a part that never became active, and a retry of the insert
-    /// would be wrongly deduplicated. Rotation is only housekeeping, and it is retried on the next
-    /// operation, because `rotate` leaves the state untouched when it fails.
+    /// report an operation that has actually succeeded as failed. For an insert this means
+    /// an error for a part that is committed and whose block IDs are published. Rotation is only
+    /// housekeeping, and it is retried on the next operation, because `rotate` leaves the state
+    /// untouched when it fails.
     try
     {
         rotateAndDropIfNeeded();
@@ -299,6 +299,40 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     chassert(current_writer != nullptr);
 }
 
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::getDuplicatesUnlocked(const std::vector<std::string> & block_ids) const
+{
+    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
+
+    for (const auto & block_id : block_ids)
+    {
+        if (deduplication_map.contains(block_id))
+        {
+            auto info = deduplication_map.get(block_id);
+            result.emplace_back(info, block_id);
+        }
+    }
+    return result;
+}
+
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::getDuplicates(const std::vector<std::string> & block_ids)
+{
+    std::lock_guard lock(state_mutex);
+
+    /// See comment in `addPart`
+    if (deduplication_window == 0)
+        return {};
+
+    auto result = getDuplicatesUnlocked(block_ids);
+    if (!result.empty())
+        return result;
+
+    /// Fail the insert here, before its part is committed, as `addPart` would. Otherwise it would fail after the commit.
+    if (stopped)
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
+
+    return {};
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
@@ -312,17 +346,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     if (deduplication_window == 0)
         return {};
 
-    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
-
     /// If we already have this block let's deduplicate it
-    for (const auto & block_id : block_ids)
-    {
-        if (deduplication_map.contains(block_id))
-        {
-            auto info = deduplication_map.get(block_id);
-            result.emplace_back(info, block_id);
-        }
-    }
+    auto result = getDuplicatesUnlocked(block_ids);
 
     if (!result.empty())
         return result;
@@ -334,6 +359,9 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     prepareToWrite();
 
+    /// If writing a record fails, the block IDs written before it are neither erased from the map nor followed by
+    /// `DROP` records. They belong to a committed part, and dropping them would only let a retry insert their
+    /// rows once more.
     for (const auto & block_id : block_ids)
     {
         /// Create new record

@@ -8,6 +8,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
@@ -33,6 +34,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace Setting
@@ -411,25 +415,41 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
+    /// The deduplication log is not aware of transactions. Inside a transaction the part is committed below only at the
+    /// level of `MergeTreeData`. It becomes visible at the `COMMIT` of the transaction, or is removed at its `ROLLBACK`.
+    /// The block IDs would outlive a `ROLLBACK`, so a retry of the insert would be deduplicated against rows that do not
+    /// exist, and inserts of other sessions would be deduplicated against a part that is not committed yet. This loses
+    /// data, so unlike other unsupported operations it is rejected even with `throw_on_unsupported_query_inside_transaction = 0`.
+    if (!deduplication_hashes.empty() && context->getCurrentTransaction())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Deduplication of inserts into table {} with `non_replicated_deduplication_window` is not supported inside "
+            "transactions. Insert outside of the transaction, or disable deduplication for this insert with "
+            "`deduplicate_insert = 'disable'` (for `INSERT SELECT`, with `deduplicate_insert_select = 'disable'`)",
+            storage.getStorageID().getNameForLogs());
+
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
     {
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
+        MergeTreeDeduplicationLog * deduplication_log{nullptr};
+        std::vector<std::string> block_ids;
 
         if (!deduplication_hashes.empty())
         {
-            auto * deduplication_log = storage.getDeduplicationLog();
+            deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
-            auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-            auto result = deduplication_log->addPart(block_ids, part->info);
+            block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+            /// Only look for duplicates here. The block IDs are published after the part is committed, see below.
+            auto duplicates = deduplication_log->getDuplicates(block_ids);
 
             std::vector<std::string> conflict_block_ids;
-            for (const auto & res : result)
+            for (const auto & duplicate : duplicates)
             {
-                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
-                conflict_block_ids.push_back(res.block_id);
+                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", duplicate.block_id, duplicate.part_info.getPartNameForLogs());
+                conflict_block_ids.push_back(duplicate.block_id);
             }
 
             if (!conflict_block_ids.empty())
@@ -448,6 +468,39 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// Hence, for now rename_in_transaction is false.
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
+
+        /// Publish the block IDs only after the part is committed. If they were published first, any failure between
+        /// the publication and the commit (a table size limit, an I/O error, a server kill) would leave block IDs of a
+        /// part that does not exist, and a retry of the insert would be deduplicated against it. Its rows would be
+        /// silently lost. Now such a failure leaves either nothing or a committed part without some or all of its block
+        /// IDs, so a retry can only insert the rows again. Duplicates can be found and removed, lost rows cannot.
+        ///
+        /// The publication stays under the same `lockParts` as the check above. `commitPart` is the only place that
+        /// publishes block IDs, so no other insert can publish the same block ID in between, and no `DROP` can select
+        /// the new part before its block IDs exist.
+        if (deduplication_log)
+        {
+            std::vector<MergeTreeDeduplicationLog::AddPartResult> duplicates;
+            try
+            {
+                /// The part is already committed, so a memory limit must not leave it without its block IDs.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                duplicates = deduplication_log->addPart(block_ids, part->info);
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Part {} is committed, but its deduplication block IDs could not be recorded: {}. "
+                    "Check the table before retrying this insert: a retry would insert its rows again",
+                    part->name, getCurrentExceptionMessage(/* with_stacktrace= */ false));
+            }
+
+            if (!duplicates.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Block with ID {} of the committed part {} is already published as part {} although it was not found "
+                    "by the duplicate check. It's a bug",
+                    duplicates.front().block_id, part->name, duplicates.front().part_info.getPartNameForLogs());
+        }
     }
 
     return {};

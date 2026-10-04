@@ -741,6 +741,9 @@ A deduplication mechanism is used, similar to replicated tables (see
 [replicated_deduplication_window](#replicated_deduplication_window) setting): the deduplication
 hash sum covers the whole inserted block. The hash sums are written to
 a local file on a disk rather than to ClickHouse Keeper.
+
+Deduplicated inserts into such tables are not supported inside [transactions](/guides/developer/transactional)
+and throw `NOT_IMPLEMENTED`.
 )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
 Max amount of parts which can be merged at once (0 - disabled). Doesn't affect

@@ -1,0 +1,5 @@
+after the rejected insert	5
+after the retry	0	[1,2,3,4,5]
+after the retry	1	[1,2,3,4,5]
+after the second retry	10
+active parts	2
