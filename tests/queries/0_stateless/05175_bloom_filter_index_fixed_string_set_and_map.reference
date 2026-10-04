@@ -1,0 +1,58 @@
+ground truth
+1
+subquery set
+2
+2
+literal set
+1
+1
+same-type subquery set still prunes
+1
+1
+0
+1
+map value
+1
+1
+1
+1
+0
+0
+map value from a subquery set
+2
+2
+2
+2
+same-type subquery set over a map still prunes
+0
+1
+absent map key with a FixedString value
+3
+3
+3
+3
+3
+3
+absent map key with an all-zero String constant
+3
+3
+3
+3
+3
+3
+3
+3
+a String value type compares exactly, so a zero byte still prunes
+0
+0
+1
+a non-default FixedString constant still prunes
+0
+1
+absent map key against a set of another type
+3
+3
+3
+3
+0
+1
