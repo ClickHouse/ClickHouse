@@ -57,6 +57,29 @@ UInt128 readOrderingKey128(const char * pos)
     return key;
 }
 
+struct ComparatorBase
+{
+    ComparatorBase(const ColumnExponentialTimeDecaying & column_, int nan_direction_hint_)
+        : column(column_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
+
+    const ColumnExponentialTimeDecaying & column;
+    int nan_direction_hint;
+
+    int compare(size_t lhs, size_t rhs) const
+    {
+        return column.compareAt(lhs, rhs, column, nan_direction_hint);
+    }
+};
+
+using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
 
 }
 
