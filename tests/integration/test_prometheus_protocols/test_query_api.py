@@ -13,6 +13,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
@@ -128,6 +129,106 @@ def test_range_query_post_urlencoded():
     )
     post_data = extract_data_from_http_api_response(post_resp)
     assert get_data == post_data
+
+
+def test_query_stats():
+    instant_with_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "true"},
+    )
+    instant_without_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+    )
+
+    assert instant_with_stats.status_code == requests.codes.ok, instant_with_stats.text
+    assert instant_without_stats.status_code == requests.codes.ok, instant_without_stats.text
+    instant_data = instant_with_stats.json()["data"]
+    instant_data_without_stats = instant_without_stats.json()["data"]
+    assert instant_data["result"] == instant_data_without_stats["result"]
+    assert "stats" not in instant_data_without_stats
+    instant_stats = instant_data["stats"]
+    assert instant_stats["clickhouse"]["elapsedTime"] >= 0
+    assert instant_stats["clickhouse"]["readRows"] > 0
+    assert instant_stats["clickhouse"]["readBytes"] > 0
+    assert instant_stats["clickhouse"]["peakMemoryUsage"] >= 0
+
+    instant_all_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "all"},
+    )
+    assert instant_all_stats.status_code == requests.codes.ok, instant_all_stats.text
+    instant_all_data = instant_all_stats.json()["data"]
+    assert instant_all_data["result"] == instant_data_without_stats["result"]
+    assert set(instant_all_data["stats"]["clickhouse"]) == set(instant_stats["clickhouse"])
+
+    instant_empty_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": ""},
+    )
+    assert instant_empty_stats.status_code == requests.codes.ok, instant_empty_stats.text
+    assert "stats" not in instant_empty_stats.json()["data"]
+
+    invalid_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "banana"},
+    )
+    assert invalid_stats.status_code == requests.codes.bad_request, invalid_stats.text
+    invalid_stats_error = invalid_stats.json()
+    assert invalid_stats_error["status"] == "error"
+    assert invalid_stats_error["errorType"] == "bad_data"
+    assert "expected 'true' or 'all'" in invalid_stats_error["error"]
+
+    range_with_stats = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        999,
+        1002,
+        1,
+        params={"stats": "all"},
+    )
+    range_without_stats = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        999,
+        1002,
+        1,
+    )
+
+    assert range_with_stats.status_code == requests.codes.ok, range_with_stats.text
+    assert range_without_stats.status_code == requests.codes.ok, range_without_stats.text
+    range_data = range_with_stats.json()["data"]
+    range_data_without_stats = range_without_stats.json()["data"]
+    assert range_data["result"] == range_data_without_stats["result"]
+    assert "stats" not in range_data_without_stats
+    range_stats = range_data["stats"]
+    assert range_stats["clickhouse"]["elapsedTime"] >= 0
+    assert range_stats["clickhouse"]["readRows"] > 0
+    assert range_stats["clickhouse"]["readBytes"] > 0
+    assert range_stats["clickhouse"]["peakMemoryUsage"] >= 0
 
 
 def test_range_query_rejects_non_positive_step_for_equal_start_and_end():

@@ -156,6 +156,18 @@ curl --user default:<password> \
   --data-urlencode "table=metrics"
 ```
 
+### ClickHouse query statistics {#query-statistics}
+
+Add `stats=true` or `stats=all` to `/api/v1/query` or `/api/v1/query_range` to include ClickHouse execution statistics in the response under `data.stats.clickhouse`. Both values currently return the same aggregate fields:
+
+- `elapsedTime`: wall-clock time from the start of ClickHouse PromQL handling until the statistics are written.
+- `readRows`: rows selected by ClickHouse while executing the generated SQL query.
+- `readBytes`: uncompressed bytes selected by ClickHouse while executing the generated SQL query.
+- `peakMemoryUsage`: peak memory usage of the request query group, in bytes.
+
+These values use ClickHouse query accounting. In particular, `readRows` is a ClickHouse row counter and is not a Prometheus sample count, so ClickHouse does not derive Prometheus `samples` statistics from it. An empty or omitted `stats` parameter returns no statistics. Other non-empty values return a `bad_data` error.
+
+
 Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
 
 ```bash
