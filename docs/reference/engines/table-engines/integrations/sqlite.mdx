@@ -38,6 +38,8 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM t
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to SQLite, so it must not end with a semicolon.
+
 Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`sqlite`](/reference/functions/table-functions/sqlite) table function.
 
 <Note>
