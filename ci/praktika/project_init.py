@@ -836,6 +836,11 @@ def _pick_components(root: Path) -> List[str]:
 
 
 def scaffold_project(root: Path, answers: InitAnswers, components: List[str]) -> List[Path]:
+    artifact_bucket = answers.artifact_bucket
+    if not _validate_bucket_name(artifact_bucket):
+        raise ValueError(
+            f"Generated S3 artifact bucket name [{artifact_bucket}] is invalid"
+        )
     written = []
     rendered = _render_files(answers)
     targets = _component_file_targets()
