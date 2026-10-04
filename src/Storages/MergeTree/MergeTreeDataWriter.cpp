@@ -368,69 +368,6 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
-/// Removes from `block` the rows which are already expired by a table-level `TTL ... DELETE` rule.
-/// The other kinds of TTL (`GROUP BY`, `RECOMPRESS`, moves and column TTLs) are not applied.
-void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
-{
-    /// The unconditional rule goes first: if it expires all the rows, the `DELETE WHERE` predicates are not evaluated at all,
-    /// so they cannot throw for rows that would be discarded anyway.
-    TTLDescriptions delete_ttls;
-    if (metadata_snapshot.hasRowsTTL())
-        delete_ttls.push_back(metadata_snapshot.getRowsTTL());
-    for (const auto & ttl_entry : metadata_snapshot.getRowsWhereTTLs())
-        delete_ttls.push_back(ttl_entry);
-
-    const size_t num_rows = block.rows();
-    if (delete_ttls.empty() || num_rows == 0)
-        return;
-
-    const time_t current_time = time(nullptr);
-    const auto & date_lut = DateLUT::instance();
-    IColumn::Filter filter(num_rows, 1);
-    PaddedPODArray<Int64> timestamps;
-    size_t num_kept_rows = num_rows;
-
-    for (const auto & ttl_entry : delete_ttls)
-    {
-        if (num_kept_rows == 0)
-            break;
-
-        auto expr_and_set = ttl_entry.buildExpression(context);
-        for (auto & subquery : expr_and_set.sets->getSubqueries())
-            subquery->buildSetInplace(context);
-
-        auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
-        ITTLAlgorithm::extractTimestamps(ttl_column.get(), date_lut, timestamps);
-
-        ColumnPtr where_column;
-        if (ttl_entry.where_expression_ast)
-        {
-            auto where_expr_and_set = ttl_entry.buildWhereExpression(context);
-            for (auto & subquery : where_expr_and_set.sets->getSubqueries())
-                subquery->buildSetInplace(context);
-
-            where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
-            if (where_column)
-                where_column = where_column->convertToFullColumnIfConst();
-        }
-
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            bool expired = timestamps[i] && timestamps[i] <= current_time;
-            if (expired && (!where_column || where_column->getBool(i)))
-                filter[i] = 0;
-        }
-
-        num_kept_rows = countBytesInFilter(filter);
-    }
-
-    if (num_kept_rows == num_rows)
-        return;
-
-    for (auto & column : block)
-        column.column = column.column->filter(filter, num_kept_rows);
-}
-
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
 {
     /// Iterate over required columns in the expression and check if block doesn't have this column.
@@ -559,6 +496,67 @@ void MergeTreeTemporaryPart::prewarmCaches()
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
+}
+
+void MergeTreeDataWriter::removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
+{
+    /// The unconditional rule goes first: if it expires all the rows, the `DELETE WHERE` predicates are not evaluated at all,
+    /// so they cannot throw for rows that would be discarded anyway.
+    TTLDescriptions delete_ttls;
+    if (metadata_snapshot.hasRowsTTL())
+        delete_ttls.push_back(metadata_snapshot.getRowsTTL());
+    for (const auto & ttl_entry : metadata_snapshot.getRowsWhereTTLs())
+        delete_ttls.push_back(ttl_entry);
+
+    const size_t num_rows = block.rows();
+    if (delete_ttls.empty() || num_rows == 0)
+        return;
+
+    const time_t current_time = time(nullptr);
+    const auto & date_lut = DateLUT::instance();
+    IColumn::Filter filter(num_rows, 1);
+    PaddedPODArray<Int64> timestamps;
+    size_t num_kept_rows = num_rows;
+
+    for (const auto & ttl_entry : delete_ttls)
+    {
+        if (num_kept_rows == 0)
+            break;
+
+        auto expr_and_set = ttl_entry.buildExpression(context);
+        for (auto & subquery : expr_and_set.sets->getSubqueries())
+            subquery->buildSetInplace(context);
+
+        auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+        ITTLAlgorithm::extractTimestamps(ttl_column.get(), date_lut, timestamps);
+
+        ColumnPtr where_column;
+        if (ttl_entry.where_expression_ast)
+        {
+            auto where_expr_and_set = ttl_entry.buildWhereExpression(context);
+            for (auto & subquery : where_expr_and_set.sets->getSubqueries())
+                subquery->buildSetInplace(context);
+
+            where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
+            if (where_column)
+                where_column = where_column->convertToFullColumnIfConst();
+        }
+
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            bool expired = timestamps[i] && timestamps[i] <= current_time;
+            if (expired && (!where_column || where_column->getBool(i)))
+                filter[i] = 0;
+        }
+
+        num_kept_rows = countBytesInFilter(filter);
+    }
+
+    if (num_kept_rows == num_rows)
+        return;
+
+    for (auto & column : block)
+        column.column = column.column->filter(filter, num_kept_rows);
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(

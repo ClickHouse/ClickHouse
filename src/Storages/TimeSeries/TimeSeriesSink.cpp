@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -21,6 +22,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -333,6 +336,14 @@ void TimeSeriesSink::insertSortedTagsToColumns(
 void TimeSeriesSink::TargetPipeline::push(Block block) const
 {
     converting_actions->execute(block);
+
+    if (expired_rows_ttl_metadata)
+    {
+        MergeTreeDataWriter::removeRowsExpiredByTTL(context, *expired_rows_ttl_metadata, block);
+        if (block.rows() == 0)
+            return;
+    }
+
     executor->push(std::move(block));
 }
 
@@ -364,6 +375,44 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 }
 
 
+namespace
+{
+    /// Returns the metadata of a plain `MergeTree` table with a table-level `TTL ... DELETE` which can be evaluated
+    /// on the blocks with the columns of `header`, or `nullptr` otherwise.
+    /// For the `MergeTree` engines which merge rows (`ReplacingMergeTree`, etc.) a TTL merge applies the TTL to the rows
+    /// produced by merging, so removing the expired rows before the insert could change which rows the merge keeps.
+    StorageMetadataPtr getExpiredRowsTTLMetadata(const StorageID & table_id, const Block & header, const ContextPtr & context)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+        if (!merge_tree || merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            return nullptr;
+
+        auto metadata_handle = table->getInMemoryMetadataPtr(context, false);
+        StorageMetadataPtr metadata = metadata_handle;
+
+        TTLDescriptions delete_ttls = metadata->getRowsWhereTTLs();
+        if (metadata->hasRowsTTL())
+            delete_ttls.push_back(metadata->getRowsTTL());
+        if (delete_ttls.empty())
+            return nullptr;
+
+        /// A TTL which depends on a column not inserted by `TimeSeries` (filled with its default by the insert) is left to TTL merges.
+        for (const auto & ttl : delete_ttls)
+        {
+            for (const auto & column : ttl.expression_source_columns)
+                if (!header.has(column.name))
+                    return nullptr;
+            for (const auto & column : ttl.where_expression_source_columns)
+                if (!header.has(column.name))
+                    return nullptr;
+        }
+
+        return metadata;
+    }
+}
+
+
 std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
     ViewTarget::Kind kind, const Block & header)
 {
@@ -381,12 +430,6 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
-
-    /// Reads use the recent samples table only for ranges starting at `now() - TTL + 60` seconds
-    /// (see `StorageTimeSeriesSelector::readImpl`), so a sample already expired by its TTL is never read from it.
-    /// Don't write such samples there: a backfill of historical data would create parts which only wait for the TTL to drop them.
-    if (kind == ViewTarget::RecentSamples)
-        pipeline->context->setSetting("apply_ttl_delete_on_insert", true);
 
     InterpreterInsertQuery interpreter(
         insert_query,
@@ -409,6 +452,14 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         pipeline->context);
     pipeline->converting_actions = std::make_shared<ExpressionActions>(
         std::move(converting_dag), ExpressionActionsSettings(pipeline->context));
+
+    /// Reads use the recent samples table only for ranges starting at `now() - TTL + 60` seconds
+    /// (see `StorageTimeSeriesSelector::readImpl`), so a sample already expired by its TTL is never read from it.
+    /// Don't write such samples there: a backfill of historical data would create parts which only wait for the TTL to drop them.
+    /// The rows are filtered here rather than by enabling the setting `apply_ttl_delete_on_insert` for the insert,
+    /// because that setting would also apply to the tables which the materialized views over the recent samples table write to.
+    if (kind == ViewTarget::RecentSamples)
+        pipeline->expired_rows_ttl_metadata = getExpiredRowsTTLMetadata(target_table_id, target_header, pipeline->context);
 
     return pipeline;
 }
