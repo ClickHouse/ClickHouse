@@ -1020,6 +1020,7 @@
         "ko/reference/system-tables/codecs",
         "ko/reference/system-tables/collations",
         "ko/reference/system-tables/columns",
+        "ko/reference/system-tables/columns_cache",
         "ko/reference/system-tables/completions",
         "ko/reference/system-tables/constraints",
         "ko/reference/system-tables/contributors",

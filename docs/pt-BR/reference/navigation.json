@@ -1020,6 +1020,7 @@
         "pt-BR/reference/system-tables/codecs",
         "pt-BR/reference/system-tables/collations",
         "pt-BR/reference/system-tables/columns",
+        "pt-BR/reference/system-tables/columns_cache",
         "pt-BR/reference/system-tables/completions",
         "pt-BR/reference/system-tables/constraints",
         "pt-BR/reference/system-tables/contributors",
