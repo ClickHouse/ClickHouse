@@ -120,7 +120,7 @@ void Set::setSpillSettings(SetSpillSettings spill_settings_)
 void Set::finishInsert()
 {
     /// Only a set that `CreatingSetsTransform` fills can spill, and such a set is read only after
-    /// `is_created` publishes it, so publishing the disk set takes no lock.
+    /// `is_created` publishes it, so publishing the disk set here takes no lock.
     if (disk_set_builder)
     {
         disk_set = disk_set_builder->finish();
@@ -138,6 +138,9 @@ bool Set::isLargeEnoughToSpill() const
 bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const
 {
     const size_t threshold = spill_settings.max_bytes_before_external_set;
+
+    if (!threshold || !isLargeEnoughToSpill())
+        return false;
 
     /// Query accounting can briefly become negative while a concurrent free saturates its counter.
     const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
@@ -166,13 +169,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
 
 void Set::spill(std::string_view reason)
 {
-    LOG_TRACE(log, "Switching the set of IN to external mode: {} "
-        "(keys in memory: {}, set memory: {}, query memory: {}, spill threshold: {})",
-        reason,
-        data->getTotalRowCount(),
-        formatReadableSizeWithBinarySuffix(data->getTotalByteCount()),
-        formatReadableSizeWithBinarySuffix(std::max<Int64>(0, getCurrentQueryMemoryUsage())),
-        formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
+    logSpill("while it is built", reason);
 
     /// `fill_set_elements` mainly serves index analysis. Since the set itself has to be spilled, it is safe
     /// to assume that its elements would not fit in memory for index analysis later either. Index analysis
@@ -180,10 +177,71 @@ void Set::spill(std::string_view reason)
     fill_set_elements = false;
     set_elements.clear();
 
-    data->callOnMethod([&](const auto & method) { moveKeysToDiskSet(method); });
+    data->callOnMethod([&]<typename Method>(const Method & method)
+    {
+        compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+        disk_set_builder = createDiskSetBuilderWithKeys(method, limits);
+    });
 
     data.reset();
     ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
+}
+
+bool Set::isSpillNeeded() const
+{
+    return spill_settings.max_bytes_before_external_set
+        && getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_bytes_before_external_set)
+        && isLargeEnoughToSpill();
+}
+
+void Set::spillAfterBuild() const
+{
+    if (spill_after_build_started.exchange(true))
+        return;
+
+    std::unique_ptr<DiskSet> new_disk_set;
+    ComputeDiskSetKeys new_compute_disk_set_keys = nullptr;
+    {
+        /// The table does not change after the build, so other lookups keep reading it while its keys are
+        /// written.
+        std::shared_lock lock(rwlock);
+
+        /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
+        chassert(data && !disk_set);
+        logSpill("while it is used", "query memory exceeds the spill threshold");
+
+        data->callOnMethod([&]<typename Method>(const Method & method)
+        {
+            /// The keys are final, so the builder applies no size limits and keeps all of them.
+            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{})->finish();
+            new_compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+        });
+    }
+
+    /// It is freed when the function returns, after the lock is released, so the lookups waiting for the lock
+    /// do not also wait for the table to be freed.
+    std::unique_ptr<SetVariants> table;
+    {
+        /// The exclusive lock waits for the lookups in progress, which hold the shared lock for one chunk
+        /// each.
+        std::lock_guard lock(rwlock);
+        compute_disk_set_keys = new_compute_disk_set_keys;
+        disk_set = std::move(new_disk_set);
+        table = std::move(data);
+    }
+    ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
+}
+
+void Set::logSpill(std::string_view stage, std::string_view reason) const
+{
+    LOG_TRACE(log, "Switching the set of IN to external mode {}: {} "
+        "(keys in memory: {}, set memory: {}, query memory: {}, spill threshold: {})",
+        stage,
+        reason,
+        data->getTotalRowCount(),
+        formatReadableSizeWithBinarySuffix(data->getTotalByteCount()),
+        formatReadableSizeWithBinarySuffix(std::max<Int64>(0, getCurrentQueryMemoryUsage())),
+        formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
 }
 
 size_t Set::getDiskSetKeyBytes() const
@@ -192,14 +250,13 @@ size_t Set::getDiskSetKeyBytes() const
 }
 
 template <typename Method>
-void Set::moveKeysToDiskSet(const Method & method)
+std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const
 {
     using Key = DiskSetKey<Method>;
-    compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
 
-    disk_set_builder = createDiskSetBuilder<Key>(
+    auto builder = createDiskSetBuilder<Key>(
         spill_settings.tmp_data,
-        limits,
+        builder_limits,
         spill_settings.max_bytes_before_external_set,
         spill_settings.max_block_size,
         spill_settings.min_free_disk_space,
@@ -218,11 +275,12 @@ void Set::moveKeysToDiskSet(const Method & method)
             keys->getData().push_back(Method::getHashedKey(it->getValue()));
 
         if (keys->size() == max_rows_in_column)
-            disk_set_builder->add(std::exchange(keys, ColumnVector<Key>::create()));
+            builder->add(std::exchange(keys, ColumnVector<Key>::create()));
     }
 
     if (!keys->empty())
-        disk_set_builder->add(std::move(keys));
+        builder->add(std::move(keys));
+    return builder;
 }
 
 void Set::executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
@@ -437,8 +495,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
-    if (spill_settings.max_bytes_before_external_set && !disk_set_builder && isLargeEnoughToSpill()
-        && isSpillNeededBeforeInsert(holder.key_columns, rows))
+    if (!disk_set_builder && isSpillNeededBeforeInsert(holder.key_columns, rows))
         spill("the projected growth of the set exceeds the memory left under the spill threshold");
 
     if (disk_set_builder)
@@ -458,8 +515,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     if (!within_limits)
         is_truncated = true;
     /// Actual allocations and concurrent operators can consume more memory than projected before insertion.
-    else if (spill_settings.max_bytes_before_external_set && isLargeEnoughToSpill()
-        && getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_bytes_before_external_set))
+    else if (isSpillNeeded())
         spill("query memory exceeds the spill threshold after insertion");
     return within_limits;
 }
@@ -799,10 +855,20 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (disk_set)
+    {
         executeDiskSet(key_columns, vec_res, negative, null_map);
-    else
-        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
+        return res;
+    }
 
+    data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
+
+    /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
+    /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
+    if (isSpillNeeded())
+    {
+        lock.unlock();
+        spillAfterBuild();
+    }
     return res;
 }
 

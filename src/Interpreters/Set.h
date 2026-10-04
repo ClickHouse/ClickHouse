@@ -65,18 +65,23 @@ public:
 
     ~Set();
 
-    /// Configures when the set spills to disk while it is filled. Call it before inserting rows. With a
-    /// nonzero threshold, the set spills once it outgrows the threshold of tracked query memory: before
-    /// inserting a chunk whose projected growth, plus the memory that spilling needs, exceeds the memory
-    /// left under the threshold, or after inserting a chunk when query memory exceeds the threshold. Either
-    /// way, the set spills only once its keys take as much memory as the smallest run of its builder, the
-    /// smaller of 16 MiB and the threshold. The keys then go to a `DiskSet`, and explicit elements are
-    /// dropped, as when there are more of them than `max_elements_to_fill`.
+    /// Configures when the set spills to disk. Call it before inserting rows. With a nonzero threshold, the
+    /// set spills once it outgrows the threshold of tracked query memory: before inserting a chunk whose
+    /// projected growth, plus the memory that spilling needs, exceeds the memory left under the threshold, or
+    /// after inserting a chunk when query memory exceeds the threshold. Either way, the set spills only once
+    /// its keys take as much memory as the smallest run of its builder, the smaller of 16 MiB and the
+    /// threshold. The keys then go to a `DiskSet`, and explicit elements are dropped, as when there are more
+    /// of them than `max_elements_to_fill`.
     /// Once on disk, the size limits apply to the distinct keys and to the memory of the set when the keys
     /// are merged into the file, so the set receives every chunk. In the `break` overflow mode, it then keeps
     /// the keys that come first in the order of their disk keys rather than the first ones to arrive. Disk
     /// keys compare as unsigned integers, so this order matches the order of values only for a single key
     /// stored as an unsigned integer, such as `UInt64`, `Date` or `DateTime`.
+    /// A set that stays in memory while it is filled is usually built before the rest of the query takes its
+    /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold
+    /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
+    /// reading the table, and the disk set then replaces the table. The keys are final by then, so no size
+    /// limit applies, and explicit elements stay, because their consumers read them without locking the set.
     void setSpillSettings(SetSpillSettings spill_settings_);
 
     bool transformNullIn() const { return transform_null_in; }
@@ -112,6 +117,7 @@ public:
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
+      * A set in memory can spill to disk during the call, as described at `setSpillSettings`.
       */
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
@@ -153,18 +159,25 @@ private:
     size_t keys_size = 0;
     Sizes key_sizes;
 
-    /// This holds the keys in memory. Spilling releases the table and its arena.
-    std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
+    /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
+    /// the members that `spillAfterBuild` replaces are `mutable`.
+    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
 
+    /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
 
     /// A set that spilled keeps its keys in the builder while it is filled, then in the finished disk set.
     std::unique_ptr<DiskSetBuilder> disk_set_builder;
-    std::unique_ptr<DiskSet> disk_set;
+    mutable std::unique_ptr<DiskSet> disk_set;
 
     /// Computes the disk keys of key columns. It is selected when the set spills.
     using ComputeDiskSetKeys = ColumnPtr (*)(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
-    ComputeDiskSetKeys compute_disk_set_keys = nullptr;
+    mutable ComputeDiskSetKeys compute_disk_set_keys = nullptr;
+
+    /// Set by the first lookup that finds that the set has to spill while it is used, and never reset. Only
+    /// that lookup spills the set.
+    mutable std::atomic<bool> spill_after_build_started = false;
 
     /** How IN works with Nullable types.
       *
@@ -207,9 +220,9 @@ private:
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;
 
-    /** Protects work with the set in the functions `insertFromBlock` and `execute`.
-      * These functions can be called simultaneously from different threads only when using StorageSet,
-      */
+    /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
+    /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
+    /// `spillAfterBuild` takes it exclusively to replace the table with the disk set.
     mutable SharedMutex rwlock;
 
     /// A cache for cast functions (if any) to avoid rebuilding cast functions
@@ -254,22 +267,38 @@ private:
 
     /// Returns whether the keys of the set, its table and arena, take at least the smallest run of its
     /// builder (see `DiskSetBuilder::getMinBytesInRun`). Spilling fewer keys would release less
-    /// memory than that, part of which the builder would hold again until it writes a run, while the set
-    /// would lose its explicit elements for index analysis and its lookups would read the disk.
+    /// memory than that, part of which the builder would hold again until it writes a run, while lookups
+    /// would read the disk, and a set that spills while it is filled would lose its explicit elements for
+    /// index analysis.
     bool isLargeEnoughToSpill() const;
 
-    /// Returns whether inserting `rows` keys could need more memory than the query has left under the
-    /// spill threshold. The set then spills to disk before the insertion, because a single insertion can
-    /// overshoot the threshold (e.g. hash table resize).
+    /// Returns whether the set in memory has to spill before inserting `rows` keys: the set is large enough
+    /// to spill, and the insertion could need more memory than the query has left under the spill threshold.
+    /// The set then spills to disk before the insertion, because a single insertion can overshoot the
+    /// threshold (e.g. hash table resize).
     bool isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const;
+
+    /// Returns whether the set in memory has to spill now: query memory exceeds the spill threshold, and the
+    /// set is large enough to spill. The set checks it after inserting a chunk and after each lookup in
+    /// memory. Call it under `rwlock`.
+    bool isSpillNeeded() const;
 
     /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
     void spill(std::string_view reason);
 
+    /// Writes the keys of the table to a `DiskSet` while lookups keep reading the table, then replaces the
+    /// table with the disk set under the exclusive lock. Only the first caller spills, and the others return.
+    /// Call it without holding `rwlock`.
+    void spillAfterBuild() const;
+
+    /// Logs that the set switches to disk, at which `stage` ("while it is built" or "while it is used") and why.
+    void logSpill(std::string_view stage, std::string_view reason) const;
+
     size_t getDiskSetKeyBytes() const;
 
+    /// Creates a `DiskSetBuilder` with the spill settings of the set and adds the keys of the table to it.
     template <typename Method>
-    void moveKeysToDiskSet(const Method & method);
+    std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const;
 
     void executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const;
 };
