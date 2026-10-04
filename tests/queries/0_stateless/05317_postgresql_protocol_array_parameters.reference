@@ -1,0 +1,23 @@
+--- one dimension
+6	Array(Int32)
+1	Array(Nullable(Int32))
+Array(Nullable(String))	4	b,c	1	NULL
+{"t","f"}	Array(Bool)
+2026-10-02	Array(Date32)
+[1.5,2.25,NULL]	Array(Nullable(Decimal(76, 2)))
+0	Array(Int32)
+--- several dimensions
+{"1","2","3","4"}	Array(Array(Int64))
+x"y	c	Array(Array(String))
+--- not an array of the element type
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error: not a PostgreSQL array literal
+error
+error: invalid numeric element
+--- the connection is still usable
+42

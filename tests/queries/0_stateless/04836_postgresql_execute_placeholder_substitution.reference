@@ -1,0 +1,17 @@
+PREPARE
+42
+SELECT 0
+PREPARE
+42
+SELECT 0
+PREPARE
+$1 stays literal|42
+SELECT 0
+PREPARE
+42
+SELECT 0
+PREPARE
+42
+SELECT 0
+EXECUTE supplies 1 argument(s) but the prepared statement has 2 parameter(s)
+EXECUTE supplies 2 argument(s) but the prepared statement has 1 parameter(s)

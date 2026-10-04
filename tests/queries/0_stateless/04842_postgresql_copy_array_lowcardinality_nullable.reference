@@ -1,0 +1,10 @@
+--- the literals a null element is written as
+{}	{}
+{"x",NULL,"NULL",""}	{"1",NULL,"3"}
+{NULL}	{NULL}
+--- and they read back into the same values
+COPY 3
+Array(LowCardinality(Nullable(String)))	[]	[]
+Array(LowCardinality(Nullable(String)))	['x',NULL,'NULL','']	[1,NULL,3]
+Array(LowCardinality(Nullable(String)))	[NULL]	[NULL]
+--- the round trip is lossless	3
