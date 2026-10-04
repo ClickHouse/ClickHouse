@@ -10,6 +10,8 @@
 
 #include <pcg_random.hpp>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -163,6 +165,18 @@ private:
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
 
+    /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
+    /// taken for a directory queue. The files in it are left untouched, and the old name is saved
+    /// in a file next to them.
+    void renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const;
+
+    /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
+    /// directory queue, so `TRUNCATE TABLE` has to drop them separately.
+    void removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const;
+
+    /// A guard that syncs the directory on destruction if `fsync_directories` is set, nullptr otherwise.
+    SyncGuardPtr getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const;
+
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
@@ -224,7 +238,7 @@ private:
     void delayInsertOrThrowIfNeeded() const;
 
     std::optional<QueryPipeline>
-    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    distributedWriteFromClusterStorage(IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -245,6 +259,9 @@ private:
     bool has_sharding_key;
     ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 
