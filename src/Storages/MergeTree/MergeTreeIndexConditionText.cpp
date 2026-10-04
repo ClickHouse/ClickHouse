@@ -758,7 +758,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
-        if (traverseJSONSubcolumnKeyNode(function, out))
+        if (traverseJSONSubcolumnKeyNode(function, out) || traverseSubstringOccurrenceNode(function, out))
             return true;
 
         /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
@@ -792,7 +792,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 String rewritten = likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]);
                 Field rewritten_field(std::move(rewritten));
-                if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                if (traverseFunctionNode(function_name, lhs_argument, pattern_type, rewritten_field, out))
                     return true;
             }
             return false;
@@ -831,12 +831,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function_name, lhs_argument, const_type, const_value, out))
                     return true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
             {
-                if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function_name, rhs_argument, const_type, const_value, out))
                     return true;
             }
         }
@@ -980,6 +980,28 @@ String escapeForLikePattern(std::string_view needle)
     }
 
     return pattern;
+}
+
+/// Whether comparing a search result with `bound` means "found": `> 0`, `!= 0` or `>= 1`.
+/// `search_is_left` is false for the swapped form, e.g. `0 < position(s, 'x')`.
+inline bool isOccurrenceComparison(std::string_view comparison_name, UInt64 bound, bool search_is_left)
+{
+    if (bound == 0)
+        return comparison_name == "notEquals" || comparison_name == (search_is_left ? "greater" : "less");
+    return bound == 1 && comparison_name == (search_is_left ? "greaterOrEquals" : "lessOrEquals");
+}
+
+/// Substring search functions that the index serves as `LIKE '%needle%'`.
+inline bool isCaseSensitiveSubstringSearch(std::string_view function_name)
+{
+    return function_name == "position" || function_name == "positionUTF8" || function_name == "countSubstrings";
+}
+
+/// Substring search functions that the index serves as `ILIKE '%needle%'`.
+inline bool isCaseInsensitiveSubstringSearch(std::string_view function_name)
+{
+    return function_name == "positionCaseInsensitive" || function_name == "positionCaseInsensitiveUTF8"
+        || function_name == "countSubstringsCaseInsensitive" || function_name == "countSubstringsCaseInsensitiveUTF8";
 }
 
 }
@@ -1212,13 +1234,12 @@ static bool isMapValueDefault(std::string_view value, const Block & header)
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
-    const RPNBuilderFunctionTreeNode & function_node,
+    const String & function_name,
     const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out) const
 {
-    const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
@@ -1849,6 +1870,73 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
 
     return false;
+}
+
+/// If `function_node` is `position(s, 'x') > 0` or another comparison that is true exactly when a substring search
+/// function finds a constant needle, builds `out` as for `s LIKE '%x%'` (`s ILIKE '%x%'` for the case-insensitive
+/// functions). Returns false if it is not such a comparison, or if the index cannot serve that `LIKE`.
+bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    const auto comparison_name = function_node.getFunctionName();
+    if (function_node.getArgumentsSize() != 2
+        || (comparison_name != "notEquals" && comparison_name != "greater" && comparison_name != "less"
+            && comparison_name != "greaterOrEquals" && comparison_name != "lessOrEquals"))
+        return false;
+
+    Field bound;
+    DataTypePtr bound_type;
+    size_t search_argument = 0;
+    if (function_node.getArgumentAt(0).tryGetConstant(bound, bound_type))
+        search_argument = 1;
+    else if (!function_node.getArgumentAt(1).tryGetConstant(bound, bound_type))
+        return false;
+
+    if (bound.getType() != Field::Types::UInt64)
+        return false;
+
+    if (!isOccurrenceComparison(comparison_name, bound.safeGet<UInt64>(), search_argument == 0))
+        return false;
+
+    const auto search_node = function_node.getArgumentAt(search_argument);
+    if (!search_node.isFunction())
+        return false;
+
+    const auto search_function = search_node.toFunctionNode();
+    const auto search_function_name = search_function.getFunctionName();
+
+    /// Case-insensitive functions give the same result as `ILIKE` for every needle `ILIKE` accepts.
+    String like_function_name;
+    if (isCaseSensitiveSubstringSearch(search_function_name))
+        like_function_name = "like";
+    else if (isCaseInsensitiveSubstringSearch(search_function_name))
+        like_function_name = "ilike";
+    else
+        return false;
+
+    /// `LIKE` has no start position argument.
+    if (search_function.getArgumentsSize() != 2)
+        return false;
+
+    Field needle;
+    DataTypePtr needle_type;
+    if (!search_function.getArgumentAt(1).tryGetConstant(needle, needle_type) || needle.getType() != Field::Types::String)
+        return false;
+
+    /// Not checked by the `like` branch of `traverseFunctionNode`: `stringLikeToTokens` runs the preprocessor over the
+    /// escaped pattern, which only `lower`/`upper` keep intact, and splits a needle cut inside a UTF-8 character wrongly.
+    const auto & needle_string = needle.safeGet<String>();
+    if ((has_preprocessor && !preprocessor->isASCIILowerOrUpper())
+        || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
+        return false;
+
+    /// A UInt8 virtual column cannot carry the NULL of a Nullable haystack.
+    const auto * haystack_node = search_function.getArgumentAt(0).getDAGNode();
+    if (!haystack_node || isNullableOrLowCardinalityNullable(haystack_node->result_type))
+        return false;
+
+    Field pattern("%" + escapeForLikePattern(needle_string) + "%");
+    return traverseFunctionNode(
+        like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out);
 }
 
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
