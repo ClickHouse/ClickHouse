@@ -12,3 +12,4 @@ reloaded part not served	0
 reloaded part detached	1
 unchanged schema attaches	1000	499500
 dropped column attaches	1000	499500
+dropped and added columns attach	1000	499500	7000

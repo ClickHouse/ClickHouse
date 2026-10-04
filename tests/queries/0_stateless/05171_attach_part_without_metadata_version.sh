@@ -131,4 +131,22 @@ ALTER TABLE dropped ATTACH PARTITION tuple();
 SELECT 'dropped column attaches', count(), sum(a) FROM dropped;
 "
 
+# A column dropped and another added meanwhile: the part holds a column the table does not and lacks
+# one the table has, as after a rename, but the table remembers the drop, which explains the extra column;
+# the added column reads as its default either way.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE dropped_added (id UInt64, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO dropped_added SELECT number, number, number FROM numbers(1000);
+ALTER TABLE dropped_added DETACH PARTITION tuple();
+ALTER TABLE dropped_added DROP COLUMN c;
+ALTER TABLE dropped_added ADD COLUMN b UInt32 DEFAULT 7;
+"
+
+drop_metadata_version all_1_1_0
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+ALTER TABLE dropped_added ATTACH PARTITION tuple();
+SELECT 'dropped and added columns attach', count(), sum(a), sum(b) FROM dropped_added;
+"
+
 rm -rf "${workdir}"

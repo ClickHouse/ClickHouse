@@ -2730,12 +2730,22 @@ void IMergeTreeDataPart::assertColumnsReadableAtCurrentMetadataVersion(
     auto mutations_snapshot = storage.getMutationsSnapshot(params);
     const auto part_data_version = static_cast<UInt64>(info.getDataVersion());
 
+    /// Columns of the part that a remembered `DROP COLUMN`, issued after the part was written, removed:
+    /// the part holding them is explained without any rename, so the name check below ignores them.
+    NameSet columns_dropped_after_part;
+
     for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(shared_from_this()))
     {
-        if (command.type != MutationCommand::RENAME_COLUMN)
+        if (!command.mutation_version || *command.mutation_version <= part_data_version)
             continue;
 
-        if (!command.mutation_version || *command.mutation_version <= part_data_version)
+        if (command.type == MutationCommand::DROP_COLUMN)
+        {
+            columns_dropped_after_part.insert(command.column_name);
+            continue;
+        }
+
+        if (command.type != MutationCommand::RENAME_COLUMN)
             continue;
 
         if (part_column_names.contains(command.column_name))
@@ -2757,14 +2767,17 @@ void IMergeTreeDataPart::assertColumnsReadableAtCurrentMetadataVersion(
       * schema does not while the schema holds a column the part does not - the signature of a rename
       * this part has not applied, even one the table no longer remembers. A part that only carries a
       * dropped column, or only misses a column added later, still loads: reading it at the current
-      * version gives the same answer as reading it at its own. A rename that reused a name is invisible
-      * to this check once the table has forgotten the mutation; it is the price of the file being gone.
+      * version gives the same answer as reading it at its own. A column whose drop the table still
+      * remembers is accounted for by that drop, so a `DROP COLUMN` followed by an `ADD COLUMN` does not
+      * look like a rename. A rename that reused a name is invisible to this check once the table has
+      * forgotten the mutation, and a drop the table has forgotten is indistinguishable from a forgotten
+      * rename, so such a part is refused; it is the price of the file being gone.
       */
     const auto & current_columns = current_metadata.getColumns();
 
     Names columns_only_in_part;
     for (const auto & column : part_columns)
-        if (!current_columns.hasPhysical(column.name))
+        if (!current_columns.hasPhysical(column.name) && !columns_dropped_after_part.contains(column.name))
             columns_only_in_part.push_back(column.name);
 
     Names columns_only_in_table;
