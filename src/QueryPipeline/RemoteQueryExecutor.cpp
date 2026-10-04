@@ -648,8 +648,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             "The query context was not initialized as an initial query");
 
     /// Forward the initial user's current roles so the remote scopes row policies the same way (gated by the setting).
-    /// Reset first against stale/injected values: an initial query sends its own roles, a secondary query run as
-    /// another user passes on the ones it received.
+    /// Reset first against stale/injected values.
     modified_client_info.current_roles.reset();
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {

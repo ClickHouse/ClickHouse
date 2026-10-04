@@ -2546,7 +2546,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             {
                 const auto & role_names = *client_info.current_roles;
                 auto role_ids = getAccessControl().find<Role>(role_names);
-                /// Fail closed as on the interserver path: dropping an unknown role could widen the filter.
+                /// Fail closed: dropping an unknown role could widen the filter.
                 if (role_ids.size() != role_names.size())
                     throw Exception(ErrorCodes::ACCESS_DENIED,
                         "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
