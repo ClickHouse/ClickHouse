@@ -265,6 +265,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             global_search_mode = TextSearchMode::Any;
     }
 
+    std::vector<UInt128> pattern_hashes;
+    for (const auto & [query_hash, query] : all_search_queries)
+    {
+        if (!query->getPatterns().empty())
+            pattern_hashes.emplace_back(query_hash);
+    }
+    std::ranges::sort(pattern_hashes);
+
+    SipHash pattern_hash_state;
+    pattern_hash_state.update(pattern_hashes.size());
+    for (const auto & pattern_hash : pattern_hashes)
+        pattern_hash_state.update(pattern_hash);
+    search_patterns_hash = pattern_hash_state.get128();
+
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
@@ -991,9 +1005,9 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     {
         std::vector<OptimizedRegularExpression> patterns;
         if (case_insensitive)
-            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, true>(pattern));
         else
-            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, false>(pattern));
         return patterns;
     };
 
@@ -1716,7 +1730,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
         const auto & pattern = value_field.safeGet<String>();
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
+        Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
         auto tokens_for_queries = regexpToTokensForQueries(pattern);
