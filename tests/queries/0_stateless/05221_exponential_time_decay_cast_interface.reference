@@ -7,3 +7,4 @@ ExponentialTimeDecaying64(0.5)	0.5	1
 1	1
 ExponentialTimeDecaying128(10)	ExponentialTimeDecaying64(10)	1	1
 ExponentialTimeDecaying64(10)	ExponentialTimeDecaying128(10)
+ExponentialTimeDecaying64(10)	ExponentialTimeDecaying128(10)
