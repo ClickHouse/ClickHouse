@@ -3,7 +3,8 @@
 
 -- A Parquet integer column holding 2, read with a `LowCardinality(Bool)` hint: every nonzero value is
 -- read as `true`, but the row group and page min/max statistics still say [2, 2], so pruning by them
--- dropped the rows equal to `true`. The bloom and dictionary filters lose these rows through a separate
+-- dropped the rows equal to `true`. A plain `Bool` keeps the stored 2, which `IN (true)` still matches.
+-- Statistics of 0 and 1 keep pruning. The bloom and dictionary filters lose these rows through a separate
 -- mechanism, so they are pinned off to leave only the min/max legs under test.
 
 set engine_file_truncate_on_insert = 1;
@@ -33,7 +34,7 @@ select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x L
 
 -- Row group statistics only.
 select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x LowCardinality(Bool)') where x = true
-    settings input_format_parquet_page_filter_push_down = 0,
+    settings log_comment = '05321prune_lc', input_format_parquet_page_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x LowCardinality(Nullable(Bool))') where x = true
     settings input_format_parquet_page_filter_push_down = 0,
@@ -42,6 +43,12 @@ select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x L
     settings input_format_parquet_page_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05321_tp.parquet', Parquet, 'x Tuple(b LowCardinality(Bool))') where x.b = true
+    settings input_format_parquet_page_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x Bool') where x in (true)
+    settings log_comment = '05321prune_plain', input_format_parquet_page_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x Nullable(Bool)') where x in (true)
     settings input_format_parquet_page_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
 
