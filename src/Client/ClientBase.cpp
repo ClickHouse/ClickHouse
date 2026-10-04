@@ -6,6 +6,7 @@
 #include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
+#include <Client/SchemaDumper.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TerminalMarkdownRenderer.h>
 #include <Client/TestHint.h>
@@ -122,6 +123,10 @@
 #include <boost/algorithm/string.hpp>
 
 #include <Common/config_version.h>
+#include <sys/ioctl.h>
+#ifdef __sun
+#include <sys/filio.h>
+#endif
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
@@ -1311,6 +1316,16 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
     struct stat file_stat{};
     return fstat(fd, &file_stat) == 0
         && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+}
+
+bool ClientBase::stdinHoldsInput() const
+{
+    if (isFileDescriptorSuitableForInput(stdin_fd))
+        return true;
+    struct stat file_stat{};
+    int available = 0;
+    return fstat(stdin_fd, &file_stat) == 0 && (S_ISFIFO(file_stat.st_mode) || S_ISSOCK(file_stat.st_mode))
+        && ioctl(stdin_fd, FIONREAD, &available) == 0 && available > 0;
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -4541,6 +4556,9 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("processed-rows", "Print the number of locally processed rows")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
+        ("dump-schema", po::value<std::string>()->implicit_value(""), "Dump the schema DDL - `CREATE` statements for databases, tables, views, materialized views, and dictionaries - for the given comma-separated database(s) (or all user databases, if no value is given) to stdout in dependency order, then exit. Backquote a name that contains a comma or significant spaces, doubling any backquote inside it. Similar to `pg_dump --schema-only`.")
+        ("dump-schema-exclude", po::value<std::string>(), "Comma-separated list of database(s) to skip when dumping all databases with `--dump-schema` (no value). Names may be backquoted as in `--dump-schema`. Cannot be combined with an explicit database list.")
+        ("dump-schema-dir", po::value<std::string>(), "Used with `--dump-schema`: instead of writing everything to stdout, write one `<database>.sql` file per dumped database into this directory (created if it doesn't exist).")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("prompt", po::value<std::string>(), "Custom prompt string")
 
@@ -4596,6 +4614,12 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
+    if (options.contains("dump-schema"))
+        getClientConfiguration().setString("dump-schema", options["dump-schema"].as<std::string>());
+    if (options.contains("dump-schema-exclude"))
+        getClientConfiguration().setString("dump-schema-exclude", options["dump-schema-exclude"].as<std::string>());
+    if (options.contains("dump-schema-dir"))
+        getClientConfiguration().setString("dump-schema-dir", options["dump-schema-dir"].as<std::string>());
     if (options.contains("queries-file"))
     {
         if (isEmbeeddedClient())
@@ -4862,6 +4886,25 @@ void ClientBase::validateClientConfiguration()
     validate_numeric_key("history_max_entries", [&](const char * key) { config.getUInt(key); });
     /// Read via getInt in Client::connect and ClientBase::runInteractive.
     validate_numeric_key("suggestion_limit", [&](const char * key) { config.getInt(key); });
+}
+
+bool ClientBase::tryRunDumpSchema()
+{
+    /// Flag combinations are validated earlier, in `processConfig()`, before `connect()`.
+    if (!getClientConfiguration().has("dump-schema"))
+        return false;
+
+    dumpDatabaseSchema(
+        *connection,
+        connection_parameters.timeouts,
+        client_context->getClientInfo(),
+        client_context,
+        getClientConfiguration().getString("dump-schema"),
+        getClientConfiguration().getString("dump-schema-exclude", ""),
+        getClientConfiguration().getString("dump-schema-dir", ""),
+        output_stream,
+        error_stream);
+    return true;
 }
 
 void ClientBase::runInteractive()

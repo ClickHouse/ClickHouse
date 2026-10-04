@@ -1,0 +1,110 @@
+--- a healthy materialized view does not get the bad-select gate ---
+healthy views, bad-select gate emitted: 0
+healthy views, GROUP BY and ORDER BY gates emitted: 0
+healthy views, correlated-subquery gate emitted: 0
+OK: healthy views replayed
+healthy views, replayed objects: 11
+--- a materialized view accepted under a relaxed check gets the gate exactly once ---
+extra output column, bad-select gate emitted: 1
+OK: extra output column replayed
+extra output column, replayed objects: 1
+missing TO target, bad-select gate emitted: 1
+OK: missing TO target replayed
+missing TO target, replayed objects: 1
+failed analysis, bad-select gate emitted: 1
+OK: failed analysis replayed
+failed analysis, replayed objects: 1
+merge matching no table, bad-select gate emitted: 1
+OK: merge matching no table replayed
+merge matching no table, replayed objects: 1
+url without a structure, bad-select gate emitted: 1
+OK: url without a structure replayed
+url without a structure, replayed objects: 1
+--- healthy and bad views together get one gate line ---
+mixed views, bad-select gate emitted: 1
+OK: mixed views replayed
+mixed views, replayed objects: 2
+--- a healthy materialized view dump replays under a bad-select constraint ---
+OK: constrained replay succeeded
+constrained replay views present: 10
+--- TimeSeries and Kafka Keeper gates follow their carriers exactly once ---
+TimeSeries tables, time-series gate emitted: 1
+TimeSeries tables and plain Kafka, keeper gate emitted: 0
+Kafka with Keeper settings, keeper gate emitted: 1
+Kafka with Keeper settings, time-series gate emitted: 0
+--- a plain mixed schema gets no carrier-specific gate ---
+plain mixed schema, hive-partitioning gate emitted: 0
+plain mixed schema, YTsaurus/Paimon/unique-key/nullable-tuple gates emitted: 0
+plain mixed schema, bad-select gate emitted: 0
+plain mixed schema, recovery gates emitted: 0
+plain mixed schema, time-series gate emitted: 0
+plain mixed schema, keeper gate emitted: 0
+plain mixed schema, analyzer gates emitted: 0
+plain mixed schema, carrier-derived shared gates emitted: 0
+OK: plain mixed schema replayed
+plain mixed schema, replayed objects: 8
+--- the shared gates follow their carriers ---
+fuzzQuery materialized view, fuzz-functions gate emitted: 1
+neighbor materialized view, error-prone-window gate emitted: 1
+multiMatchAny materialized view, hyperscan gate emitted: 1
+CAST materialized view, low-cardinality gate emitted: 1
+Nullable(Tuple) CAST materialized view, nullable-tuple gate emitted: 1
+correlated subquery materialized view, correlated-subquery gate emitted: 1
+OK: function materialized views replayed
+function materialized views, replayed objects: 7
+plain views, function gates emitted: 0
+plain views, analyzer gates emitted: 0
+OK: plain views replayed
+plain views, replayed objects: 6
+view calling a later user-defined function, bad-select gate emitted: 1
+view calling a later user-defined function, warning: 1
+OK: view calling a later user-defined function replayed
+view calling a later user-defined function, replayed objects: 1
+column STATISTICS, statistics gate emitted: 1
+OK: column STATISTICS replayed
+column STATISTICS, replayed objects: 1
+plain projections, analyzer gates emitted: 0
+OK: plain projections replayed
+plain projections, replayed objects: 1
+projection window over a Variant, GROUP BY gate emitted: 1
+projection window over a Variant, ORDER BY gate emitted: 0
+fuzzQuery table function, fuzz-functions gate emitted: 0
+OK: fuzzQuery table function replayed
+fuzzQuery table function, replayed objects: 1
+CODEC column, suspicious-codecs gate emitted: 1
+OK: CODEC column replayed
+CODEC column, replayed objects: 1
+LowCardinality column, low-cardinality gate emitted: 1
+OK: LowCardinality column replayed
+LowCardinality column, replayed objects: 1
+text index, full-text-index gate emitted: 1
+OK: text index replayed
+text index, replayed objects: 1
+SimpleAggregateFunction key, suspicious-primary-key gate emitted: 1
+OK: SimpleAggregateFunction key replayed
+SimpleAggregateFunction key, replayed objects: 1
+Time column and column TTL, time-type gate emitted: 1
+Time column and column TTL, suspicious-TTL gate emitted: 1
+OK: Time column and column TTL replayed
+Time column and column TTL, replayed objects: 1
+table TTL, suspicious-TTL gate emitted: 1
+columns named time and ttl, time-type gate emitted: 0
+columns named time and ttl, suspicious-TTL gate emitted: 0
+Variant column, suspicious-variant gate emitted: 1
+OK: Variant column replayed
+Variant column, replayed objects: 1
+sequenceNextNodeIf view, funnel gate emitted: 1
+OK: sequenceNextNodeIf view replayed
+sequenceNextNodeIf view, replayed objects: 2
+url objects without a path wildcard, url-wildcard gate emitted: 0
+OK: url objects without a path wildcard replayed
+url objects without a path wildcard, replayed objects: 3
+url table with a path wildcard, url-wildcard gate emitted: 1
+OK: url table with a path wildcard replayed
+url table with a path wildcard, replayed objects: 1
+column named variant, suspicious-variant gate emitted: 0
+columns named lowcardinality, fixedstring, json and neighbor, their gates emitted: 0
+--- a plain dump replays under every carrier-gate constraint ---
+plain dump, join-key/minmax-JSON/suspicious-index/url-wildcard gates emitted: 0
+OK: constrained replay succeeded
+constrained replay tables present: 21

@@ -119,6 +119,10 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
+    /// Handles `--dump-schema`, if given, and returns true; otherwise returns false unchanged.
+    bool tryRunDumpSchema();
+    /// Whether stdin is a file, or a pipe or socket that already holds data; an empty one is not waited on.
+    bool stdinHoldsInput() const;
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")

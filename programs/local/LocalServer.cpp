@@ -2,6 +2,7 @@
 
 #include <Server/StartupWarnings.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <exception>
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -1310,7 +1311,9 @@ try
         }
     }
 
-    is_interactive = stdin_is_a_tty
+    /// `--dump-schema` always runs non-interactively, so its output can be redirected to a file
+    /// without an interactive banner mixed into the SQL.
+    is_interactive = !getClientConfiguration().has("dump-schema") && stdin_is_a_tty
         && (getClientConfiguration().hasOption("interactive")
             || (queries.empty() && !getClientConfiguration().has("table-structure") && queries_files.empty() && !getClientConfiguration().has("table-file")));
 
@@ -1397,6 +1400,9 @@ try
 
     connect();
 
+    if (tryRunDumpSchema())
+        return 0;
+
     if (!table_name.empty())
     {
         // Set option to false for hidden query to prevent double-printing time
@@ -1451,6 +1457,26 @@ void LocalServer::processConfig()
     auto component_guard = Coordination::setCurrentComponent("LocalServer::processConfig");
     if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
+    bool dump_schema = getClientConfiguration().has("dump-schema");
+    if (dump_schema && (!queries.empty() || !queries_files.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
+    /// The dump reads no stdin, so a file, pipe or socket there is refused; a terminal or `/dev/null` is a character device.
+    struct stat stdin_stat{};
+    const bool stdin_may_carry_input = fstat(stdin_fd, &stdin_stat) == 0
+        && (S_ISREG(stdin_stat.st_mode) || S_ISFIFO(stdin_stat.st_mode) || S_ISSOCK(stdin_stat.st_mode));
+    if (dump_schema
+        && (getClientConfiguration().has("table-file") || getClientConfiguration().has("table-structure")
+            || getClientConfiguration().has("table-data-format") || stdin_may_carry_input))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Option '--dump-schema' cannot be combined with '--file', '--structure', '--input-format' or a file, pipe or socket "
+            "on stdin; redirect stdin from /dev/null");
+    if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
+    if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()
+        && getClientConfiguration().has("dump-schema-exclude"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`--dump-schema` with an explicit database list cannot be combined with `--dump-schema-exclude`");
 
     pager = getClientConfiguration().getString("pager", "");
 
