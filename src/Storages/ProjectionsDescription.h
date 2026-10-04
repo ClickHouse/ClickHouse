@@ -137,6 +137,11 @@ struct ProjectionDescription
         bool attach_short_syntax = true,
         bool is_restore_from_backup = false);
 
+    /// Apply the session codec policy after a caller has identified a new definition.
+    /// Copied projections may have been analyzed in trusted mode to recover their output types.
+    static void validateDeclaredColumnCodecsAgainstSettings(
+        const ProjectionDescription & projection, const ContextPtr & query_context);
+
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,

@@ -66,7 +66,7 @@ bool isInitialProjectionMetadataQuery(const ContextPtr & context)
         && !isSecondaryProjectionMetadataReplay(context);
 }
 
-bool shouldValidateProjectionCodecsOnCreate(
+bool shouldValidateTableCodecPolicyOnCreate(
     const ContextPtr & context,
     LoadingStrictnessLevel mode,
     bool attach_short_syntax,

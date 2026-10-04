@@ -38,7 +38,7 @@ ProjectionDefinitionSource getProjectionDefinitionSource(
     LoadingStrictnessLevel mode, bool attach_short_syntax, bool is_restore_from_backup);
 bool isInitialProjectionMetadataQuery(const ContextPtr & context);
 bool isSecondaryProjectionMetadataReplay(const ContextPtr & context);
-bool shouldValidateProjectionCodecsOnCreate(
+bool shouldValidateTableCodecPolicyOnCreate(
     const ContextPtr & context,
     LoadingStrictnessLevel mode,
     bool attach_short_syntax,

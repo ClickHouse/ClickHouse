@@ -1672,8 +1672,10 @@ public:
 
     /// Recheck table-level restrictions before publishing copied or restored unavailable declarations.
     /// `RESTORE` preserves declarations whose external dependencies cannot yet be analyzed.
+    /// A new destination also applies its initiating session's codec policy after analysis.
     void checkCopiedUnavailableProjections(
-        const StorageInMemoryMetadata & metadata, ContextPtr local_context, bool preserve_unanalyzable) const;
+        const StorageInMemoryMetadata & metadata, ContextPtr local_context,
+        bool preserve_unanalyzable, bool validate_codec_policy) const;
 
 protected:
     friend class IMergeTreeDataPart;

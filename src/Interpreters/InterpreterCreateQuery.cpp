@@ -948,6 +948,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 {
     const bool copies_source_projections = !create.columns_list && !create.as_table.empty();
     const auto projection_source = getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup);
+    const bool validate_codec_policy = shouldValidateTableCodecPolicyOnCreate(
+        getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
 
     /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
@@ -1019,9 +1021,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// so include it explicitly. Format 3+ distributed DDL was normalized on the initiator.
         /// Format 2 ships the original query and codec settings, so validate it on the worker.
         /// Format 1 cannot ship codec settings and rejects fresh codec declarations before enqueue.
-        const bool validate_projection_codecs = shouldValidateProjectionCodecsOnCreate(
-            getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
-
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
@@ -1040,7 +1039,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     /// Analyze codec declarations in a temporary context so `RESTORE` checks their
                     /// output types even when positional arguments are currently disabled.
                     const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
-                    if (validate_projection_codecs && hasDeclaredProjectionColumnCodec(declaration))
+                    if (validate_codec_policy && hasDeclaredProjectionColumnCodec(declaration))
                     {
                         auto analysis_context = Context::createCopy(getContext());
                         analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
@@ -1095,7 +1094,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                             projection_ast->formatForErrorMessage()));
                     continue;
                 }
-                if (validate_projection_codecs)
+                if (validate_codec_policy)
                     ProjectionDescription::validateDeclaredColumnCodecs(
                         *projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
                 properties.projections.add(std::move(*projection));
@@ -1334,6 +1333,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
+
+    /// Direct CREATE checked its ordinary columns while building them. Source copies bypass that
+    /// path, and full-definition ATTACH and RESTORE built their columns with trusted settings.
+    /// Every newly supplied destination definition must satisfy the initiating session's codec
+    /// policy, regardless of where its columns came from.
+    if (validate_codec_policy)
+    {
+        if (copies_source_projections || mode != LoadingStrictnessLevel::CREATE)
+        {
+            const CodecValidationSettings validation_settings(getContext()->getSettingsRef());
+            for (const auto & column : properties.columns)
+                if (column.codec)
+                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        column.codec, column.type, validation_settings);
+        }
+
+        /// Analyzable copied projections have already been built, so check their resolved output
+        /// types now. The unavailable copies are checked after temporary analysis in the finalizer.
+        if (copies_source_projections)
+            for (const auto & projection : properties.projections)
+                ProjectionDescription::validateDeclaredColumnCodecsAgainstSettings(projection, getContext());
+    }
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
@@ -2624,7 +2645,9 @@ try
         {
             if (metadata->projections.hasUnavailable())
                 merge_tree->checkCopiedUnavailableProjections(
-                    *metadata, context, projection_source == ProjectionDefinitionSource::Backup);
+                    *metadata, context, projection_source == ProjectionDefinitionSource::Backup,
+                    shouldValidateTableCodecPolicyOnCreate(
+                        context, mode, create.attach_short_syntax, projection_source == ProjectionDefinitionSource::Backup));
         }
 }
 catch (...)

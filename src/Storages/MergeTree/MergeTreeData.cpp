@@ -1664,7 +1664,8 @@ void MergeTreeData::checkMetadataProperties(
 }
 
 void MergeTreeData::checkCopiedUnavailableProjections(
-    const StorageInMemoryMetadata & metadata, ContextPtr local_context, bool preserve_unanalyzable) const
+    const StorageInMemoryMetadata & metadata, ContextPtr local_context,
+    bool preserve_unanalyzable, bool validate_codec_policy) const
 {
     /// Analyze declarations in a temporary copy so the published table retains their original
     /// ASTs. A copied declaration must be fully checked against its new destination. `RESTORE`
@@ -1672,6 +1673,7 @@ void MergeTreeData::checkCopiedUnavailableProjections(
     auto checked_metadata = metadata;
     auto analysis_context = Context::createCopy(local_context);
     analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
+    Names analyzed_unavailable_names;
     for (const auto & definition : metadata.projections.getUnavailableDefinitions())
     {
         const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
@@ -1697,6 +1699,7 @@ void MergeTreeData::checkCopiedUnavailableProjections(
         {
             checked_metadata.projections.remove(declaration.name, /*if_exists=*/false);
             checked_metadata.projections.add(std::move(*projection));
+            analyzed_unavailable_names.push_back(declaration.name);
         }
     }
 
@@ -1709,6 +1712,13 @@ void MergeTreeData::checkCopiedUnavailableProjections(
         local_context,
         /*alter_effective_settings=*/nullptr,
         /*validate_unavailable_as_new=*/preserve_unanalyzable);
+
+    /// The temporary analysis used trusted codec construction to recover output types. A new
+    /// destination must also pass the initiating session's admission policy before publication.
+    if (validate_codec_policy)
+        for (const auto & name : analyzed_unavailable_names)
+            ProjectionDescription::validateDeclaredColumnCodecsAgainstSettings(
+                checked_metadata.projections.get(name), local_context);
 }
 
 void MergeTreeData::setProperties(

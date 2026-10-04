@@ -55,8 +55,8 @@ CREATE TABLE t_projection_gorilla_substreams
 )
 ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
 
--- A previously accepted declaration remains loadable and copyable under a
--- stricter session because its codec policy was decided at source admission.
+-- A stored declaration remains loadable, while a new copy applies the current
+-- session's codec admission policy.
 SET allow_suspicious_codecs = 1;
 
 CREATE TABLE t_projection_gorilla_substreams
@@ -70,7 +70,16 @@ ENGINE = MergeTree ORDER BY k;
 SET allow_suspicious_codecs = 0;
 
 CREATE TABLE t_projection_gorilla_substreams_copy AS t_projection_gorilla_substreams
+ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
+
+SELECT count() FROM system.tables
+WHERE database = currentDatabase() AND name = 't_projection_gorilla_substreams_copy';
+
+SET allow_suspicious_codecs = 1;
+CREATE TABLE t_projection_gorilla_substreams_copy AS t_projection_gorilla_substreams
 ENGINE = MergeTree ORDER BY k;
+
+SET allow_suspicious_codecs = 0;
 
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = 't_projection_gorilla_substreams_copy';
@@ -90,7 +99,7 @@ CREATE TABLE t_projection_gorilla_substreams
 (k UInt64, j JSON(a Float64) CODEC(NONE), d Dynamic CODEC(NONE))
 ENGINE = MergeTree ORDER BY k;
 
-INSERT INTO t_projection_gorilla_substreams (k, j, d) VALUES (1, '{"a":1.5}', 7);
+INSERT INTO t_projection_gorilla_substreams (k, j, d) SELECT 1, '{"a":1.5}', 7;
 SELECT count() FROM t_projection_gorilla_substreams;
 
 DETACH TABLE t_projection_gorilla_substreams;

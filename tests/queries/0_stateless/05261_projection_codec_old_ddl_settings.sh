@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 
-# Version 1 distributed DDL omits query settings. Fresh projection codecs that need the
-# initiator's settings must be refused before enqueueing; existing metadata can be reused.
+# Version 1 distributed DDL omits query settings. New table definitions that need the
+# initiator's codec settings must be refused before enqueueing.
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -58,12 +58,12 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_attach'"
 
 # The `AS` source definition has an accepted codec, but version 1 cannot carry the
-# column-list opt-in setting to the worker.
+# destination's codec setting to the worker.
 ${CLICKHOUSE_CLIENT} --allow_suspicious_codecs=1 -q "
     CREATE TABLE ${source_table}
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
         ENGINE = MergeTree ORDER BY k"
-if output=$(${CLICKHOUSE_CLIENT} "${v1_wait[@]}" -q "
+if output=$(${CLICKHOUSE_CLIENT} "${v1_wait[@]}" --allow_suspicious_codecs=1 -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = MergeTree ORDER BY k FORMAT Null" 2>&1); then
     echo "copy_v1 unexpectedly succeeded" >&2
@@ -85,8 +85,8 @@ expect_disabled_before_enqueue alter_add "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_codec_old_alter'"
 
-# Version 2 carries the initiator's settings to the worker. Explicit declarations still need
-# the initiating session's codec override, while copying an existing declaration does not.
+# Version 2 carries the initiator's settings to the worker. Direct and copied
+# definitions both need the destination session's codec override.
 if output=$(${CLICKHOUSE_CLIENT} "${v2_copy[@]}" -q "
     CREATE TABLE ${create_table} ON CLUSTER test_shard_localhost
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
@@ -120,7 +120,21 @@ ${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(replaceAll(create_table_query, 
     'PROJECTION p (x CODEC(Delta, Delta)) AS') > 0) FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_attach'"
 
-${CLICKHOUSE_CLIENT} "${v2_copy[@]}" -q "
+if output=$(${CLICKHOUSE_CLIENT} "${v2_copy[@]}" -q "
+    CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
+        ENGINE = MergeTree ORDER BY k FORMAT Null" 2>&1); then
+    echo "copy_v2_without_codec_setting unexpectedly succeeded" >&2
+    exit 1
+fi
+if [[ "$output" != *BAD_ARGUMENTS* ]]; then
+    echo "copy_v2_without_codec_setting failed with an unexpected error: $output" >&2
+    exit 1
+fi
+echo "copy_v2_without_codec_setting rejected"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
+
+${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
     CREATE TABLE ${copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections
@@ -138,8 +152,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT countIf(position(create_table_query,
     'WITH SETTINGS (index_granularity = 128)') > 0) FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_codec_old_copy'"
 
-# Format 3 normalizes AS source into an explicit projection list before enqueueing it. The worker
-# must reuse the accepted codec even though the initiating session no longer allows that spelling.
+# Format 3 normalizes AS source before enqueueing. The initiator checks the new
+# destination's codec admission, and the worker replays the admitted definition.
 if output=$(${CLICKHOUSE_CLIENT} "${v3_copy[@]}" -q "
     CREATE TABLE ${normalized_copy_table} ON CLUSTER test_shard_localhost
         (k UInt64, x UInt64, PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
@@ -153,7 +167,21 @@ if [[ "$output" != *BAD_ARGUMENTS* ]]; then
 fi
 echo "create_v3_without_codec_setting rejected"
 
-${CLICKHOUSE_CLIENT} "${v3_copy[@]}" -q "
+if output=$(${CLICKHOUSE_CLIENT} "${v3_copy[@]}" -q "
+    CREATE TABLE ${normalized_copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
+        ENGINE = MergeTree ORDER BY k FORMAT Null" 2>&1); then
+    echo "copy_v3_without_codec_setting unexpectedly succeeded" >&2
+    exit 1
+fi
+if [[ "$output" != *BAD_ARGUMENTS* ]]; then
+    echo "copy_v3_without_codec_setting failed with an unexpected error: $output" >&2
+    exit 1
+fi
+echo "copy_v3_without_codec_setting rejected"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_codec_normalized_copy'"
+
+${CLICKHOUSE_CLIENT} "${v3_copy[@]}" --allow_suspicious_codecs=1 -q "
     CREATE TABLE ${normalized_copy_table} ON CLUSTER test_shard_localhost AS ${source_table}
         ENGINE = MergeTree ORDER BY k FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.projections

@@ -1208,7 +1208,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     error = node.query_and_get_error(
         "CREATE TABLE dl.t6_unique_copy AS dl.t6 "
         "ENGINE = MergeTree ORDER BY a UNIQUE KEY (a)",
-        settings={"enable_unique_key": 1},
+        settings={"enable_unique_key": 1, "allow_suspicious_codecs": 1},
     )
     assert "Projections are not supported on tables with UNIQUE KEY" in error
     error = node.query_and_get_error(
@@ -1219,7 +1219,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     error = node.query_and_get_error(
         f"ATTACH TABLE dl.t6_unique_attach UUID '{uuid.uuid4()}' "
         "ENGINE = MergeTree ORDER BY a UNIQUE KEY (a) AS dl.t6",
-        settings={"enable_unique_key": 1},
+        settings={"enable_unique_key": 1, "allow_suspicious_codecs": 1},
     )
     assert "Projections are not supported on tables with UNIQUE KEY" in error
     error = node.query_and_get_error(
@@ -1305,23 +1305,33 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         assert projections(destination) == "0"
         assert declarations_on_disk(destination) == 1
 
+    attach_without_codec_setting = (
+        f"ATTACH TABLE dl.t6_rejected_attach UUID '{uuid.uuid4()}' "
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t6"
+    )
+    error = node.query_and_get_error(attach_without_codec_setting)
+    assert "suspicious" in error.lower(), error
+    assert node.query("EXISTS TABLE dl.t6_rejected_attach").strip() == "0"
     node.query(
         f"ATTACH TABLE dl.t6_valid_attach UUID '{uuid.uuid4()}' "
-        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t6"
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1 AS dl.t6",
+        settings={"allow_suspicious_codecs": 1},
     )
     assert projections("t6_valid_attach") == "0"
     assert declarations_on_disk("t6_valid_attach") == 1
 
-    # A local `CREATE AS` must retain the declaration even though this server cannot analyze it
-    # until the projection setting is restored. It is absent from `system.projections` meanwhile.
-    node.query("CREATE TABLE dl.t6_local_copy AS dl.t6 ENGINE = MergeTree ORDER BY a")
+    # A new `CREATE AS` must recheck codec admission even while the copied projection
+    # is unavailable. With the opt-in, it retains the declaration for later analysis.
+    local_copy = "CREATE TABLE dl.t6_local_copy AS dl.t6 ENGINE = MergeTree ORDER BY a"
+    error = node.query_and_get_error(local_copy)
+    assert "suspicious" in error.lower(), error
+    assert node.query("EXISTS TABLE dl.t6_local_copy").strip() == "0"
+    node.query(local_copy, settings={"allow_suspicious_codecs": 1})
     assert projections("t6_local_copy") == "0"
     assert declarations_on_disk("t6_local_copy") == 1
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
 
-    # The source declaration was admitted with the codec opt-in before it became unavailable.
-    # The same fresh declaration is rejected by this session's codec policy, while the accepted
-    # source copy above retains its declaration for reanalysis at startup.
+    # A direct declaration follows the same current-session codec policy as a source copy.
     error = node.query_and_get_error(
         "CREATE TABLE dl.t6_fresh_rejected "
         "(a UInt64, b UInt64, PROJECTION pp (b CODEC(Delta, Delta)) "
@@ -1339,6 +1349,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
             "client",
             "--multiquery",
             "--format=TabSeparated",
+            "--allow_suspicious_codecs=1",
             "--query="
             "CREATE TEMPORARY TABLE tmp_plain AS dl.t6 ENGINE = MergeTree ORDER BY a; "
             "SHOW CREATE TABLE tmp_plain; "
@@ -1357,7 +1368,8 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
 
     node.query(
         "CREATE TABLE dl.t6_limit_copy AS dl.t6 "
-        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1"
+        "ENGINE = MergeTree ORDER BY a SETTINGS max_projections = 1",
+        settings={"allow_suspicious_codecs": 1},
     )
     assert projections("t6_limit_copy") == "0"
     assert declarations_on_disk("t6_limit_copy") == 1

@@ -443,6 +443,12 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     if (!isFreshTableDefinition(mode, attach_short_syntax) && !is_restore_from_backup)
         return;
 
+    validateDeclaredColumnCodecsAgainstSettings(projection, query_context);
+}
+
+void ProjectionDescription::validateDeclaredColumnCodecsAgainstSettings(
+    const ProjectionDescription & projection, const ContextPtr & query_context)
+{
     const auto & declaration = projection.definition_ast->as<const ASTProjectionDeclaration &>();
     validateDynamicDefaultCodec(declaration);
     if (!declaration.columns)
