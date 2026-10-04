@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 #include <Columns/ColumnLazy.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -80,7 +79,6 @@ namespace ProfileEvents
 {
 extern const Event ParallelReplicasAnnouncementMicroseconds;
 extern const Event ParallelReplicasReadRequestMicroseconds;
-extern const Event UniqueKeyBitmapRowsSkipped;
 }
 
 namespace DB
@@ -281,30 +279,6 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     return prewhere_actions;
 }
 
-/// Drop the rows the part's delete bitmap kills from `res`, in place; false when the whole batch is deleted.
-static bool applyDeleteBitmapFilter(const MergeTreeReadTask & current_task, MergeTreeReadTask::BlockAndProgress & res)
-{
-    const auto & delete_bitmap = current_task.getInfo().delete_bitmap;
-    if (!delete_bitmap || delete_bitmap->empty())
-        return true;
-
-    const auto & offsets = typeid_cast<const ColumnUInt64 &>(*res.block.getByName("_part_offset").column).getData();
-    IColumn::Filter filter(res.row_count);
-    const size_t kept = delete_bitmap->buildKeepFilter(offsets.data(), res.row_count, filter.data());
-    if (kept == res.row_count)
-        return true;
-
-    ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapRowsSkipped, res.row_count - kept);
-
-    if (kept == 0)
-        return false;
-
-    for (auto & col : res.block)
-        col.column = col.column->filter(filter, kept);
-    res.row_count = kept;
-    return true;
-}
-
 ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
@@ -317,9 +291,6 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     if (res.row_count)
     {
-        if (!applyDeleteBitmapFilter(current_task, res))
-            return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
-
         /// Reorder the columns according to result_header
         Columns ordered_columns;
         ordered_columns.reserve(result_header.columns());
