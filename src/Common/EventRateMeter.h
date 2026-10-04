@@ -51,8 +51,10 @@ public:
     void reset(double now, size_t data_points_ = 0)
     {
         start = now;
-        events = ExponentiallySmoothedAverage();
-        duration = ExponentiallySmoothedAverage();
+        // `add` measures elapsed time as `now - duration.time`, and while heating it
+        // re-seeds `start` from `events.time`; the default reference time is 0.
+        events = ExponentiallySmoothedAverage(0.0, now);
+        duration = ExponentiallySmoothedAverage(0.0, now);
         data_points = data_points_;
     }
 
