@@ -118,7 +118,11 @@ bool injectRequiredColumnsRecursively(
             /// This can happen if the column was dropped and then re-added with the same name.
             && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
-            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
+            /// Resolved against the serialization the part holds for the column - which it always does, the column
+            /// comes from its own list - instead of a newly built one.
+            if (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(
+                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
             {
                 add_column(column_name);
                 return true;
