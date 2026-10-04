@@ -308,6 +308,18 @@ parser.add_argument(
     "purges to do asymmetric work during measured queries.",
 )
 parser.add_argument(
+    "--allow-settings-version-skew",
+    action="store_true",
+    help="Allow dropping a setting from the reference connection (the first --host/--port, "
+    "LEFT) when its server does not know it, instead of failing. Pass this only for "
+    "comparison runs where the reference server is master HEAD and the tested server is "
+    "the pull request the test XML comes from, so master may not know a setting the pull "
+    "request added. A setting unknown to the tested server remains a hard error, as does "
+    "a setting rejected by every server. Without this flag an unknown setting fails immediately, so a typo in "
+    "the test XML cannot silently change what is benchmarked, and an ordinary run against "
+    "same-version servers can never end up benchmarking different settings on LEFT and RIGHT.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -824,6 +836,9 @@ if not args.use_existing_tables:
 # Inline settings override file settings.
 file_settings = load_settings_file(root, xml_dir)
 inline_settings = root.findall("settings/*")
+# Track per-connection settings that the server didn't recognize, so we can
+# still raise on settings that ALL servers reject (likely typos).
+dropped_per_connection = []
 for conn_index, c in enumerate(all_connections):
     for key, value in file_settings.items():
         c.settings[key] = str(value)
@@ -832,7 +847,67 @@ for conn_index, c in enumerate(all_connections):
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
-    c.execute("select 1")
+    #
+    # In a master-vs-PR comparison the reference server (connection #0, LEFT)
+    # is master HEAD, which may not yet know about settings introduced by the
+    # PR. With `--allow-settings-version-skew` we drop only those specific
+    # unknown settings on the reference connection and retry, so a single new
+    # setting doesn't block the whole comparison. The tested server (RIGHT) runs
+    # the build that the test XML comes from, so a setting it rejects means a
+    # broken test or a renamed setting, which is always a hard error. After
+    # every connection has been probed, settings that were dropped on ALL
+    # servers are reported as a hard error - that's the typo case. Without the
+    # flag an unknown setting is fatal on any server: in a run whose servers are
+    # supposed to be interchangeable, silently dropping a setting on one side
+    # would benchmark different settings on LEFT and RIGHT and produce a bogus
+    # delta instead of failing fast.
+    dropped = set()
+    while True:
+        try:
+            c.execute("select 1")
+            break
+        except clickhouse_driver.errors.ServerException as e:
+            m = re.search(r"Unknown setting '?([A-Za-z_][A-Za-z0-9_]*)'?", str(e))
+            if m is None:
+                raise
+            unknown_setting = m.group(1)
+            if unknown_setting not in c.settings:
+                raise
+            if not args.allow_settings_version_skew:
+                raise RuntimeError(
+                    f"server #{conn_index} doesn't know setting '{unknown_setting}'. "
+                    "Both sides of a comparison must run with the same settings. Pass "
+                    "--allow-settings-version-skew if the servers are intentionally "
+                    "different builds and dropping the setting on the older side is "
+                    "acceptable."
+                ) from e
+            if conn_index != 0:
+                raise RuntimeError(
+                    f"server #{conn_index} doesn't know setting '{unknown_setting}'. "
+                    "--allow-settings-version-skew tolerates unknown settings only on "
+                    "the reference server #0 (master); the tested server runs the "
+                    "build the test comes from, so it must know every setting the "
+                    "test uses."
+                ) from e
+            print(
+                f"perf-warn\tserver #{conn_index} doesn't know setting "
+                f"'{unknown_setting}', dropping from this connection"
+            )
+            del c.settings[unknown_setting]
+            dropped.add(unknown_setting)
+    dropped_per_connection.append(dropped)
+
+# A setting rejected by every server is almost certainly a typo, not a
+# version skew, so fail loudly to preserve the original safety property.
+# This must also fire for single-server runs (len == 1), otherwise a typo
+# in XML would silently disappear instead of failing the test.
+if dropped_per_connection:
+    rejected_everywhere = set.intersection(*dropped_per_connection)
+    if rejected_everywhere:
+        raise RuntimeError(
+            "Settings unknown to all servers (likely a typo): "
+            f"{sorted(rejected_everywhere)}"
+        )
 
 reportStageEnd("settings")
 

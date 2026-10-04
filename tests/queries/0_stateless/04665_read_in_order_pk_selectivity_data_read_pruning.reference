@@ -1,0 +1,8 @@
+data_read_pruning_keeps_in_order
+0
+analysis_time_pruning_keeps_in_order
+0
+poor_selectivity_full_sort
+1
+correctness
+10000	50000	59999

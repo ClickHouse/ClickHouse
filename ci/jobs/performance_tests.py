@@ -1328,6 +1328,7 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
+                --allow-settings-version-skew \
                 --pr-number {pr_number} \
                 --stop-merges \
                 {test_file}",
