@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel
-# The test uses `SYSTEM PAUSE VIEWS` and `SYSTEM START VIEWS` which affect all
-# refreshable views on the server, so it must not run concurrently with other
-# tests that create refreshable materialized views.
+# Tags: atomic-database, memory-engine
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,10 +41,10 @@ wait_running_with_progress() {
 # Test 1: SYSTEM PAUSE VIEW does NOT interrupt the current refresh.
 # ---------------------------------------------------------------------------
 
-# A slow refresh: 5 rows * 1 second each, long enough to observe `Running` and pause.
+# A slow refresh: 2 rows * 1 second each, long enough to observe `Running` and pause.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(5) settings max_block_size=1;
+    insert into src select * from numbers(2) settings max_block_size=1;
     create materialized view p refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh view p;"
@@ -142,7 +139,14 @@ $CLICKHOUSE_CLIENT -q "
 
 # ---------------------------------------------------------------------------
 # Test 4: SYSTEM PAUSE VIEWS pauses all refreshable views on this replica.
+# It skips views the caller may not control, so it runs as a user granted only on this database,
+# to leave the views of concurrent tests alone.
 # ---------------------------------------------------------------------------
+
+db_user="user_04105_db_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT -q "
+    create user $db_user;
+    grant system views on $CLICKHOUSE_DATABASE.* to $db_user;"
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -154,7 +158,7 @@ $CLICKHOUSE_CLIENT -q "
     system wait view va;
     system wait view vb;"
 
-$CLICKHOUSE_CLIENT -q "system pause views;"
+$CLICKHOUSE_CLIENT --user $db_user -q "system pause views;"
 
 wait_status va Disabled
 wait_status vb Disabled
@@ -164,7 +168,7 @@ $CLICKHOUSE_CLIENT -q "
         countIf(status = 'Disabled'), count()
     from refreshes where view in ('va', 'vb');"
 
-$CLICKHOUSE_CLIENT -q "system start views;"
+$CLICKHOUSE_CLIENT --user $db_user -q "system start views;"
 
 # After start views, each view should leave the Disabled state.
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
@@ -180,7 +184,8 @@ $CLICKHOUSE_CLIENT -q "
     system stop view vb;
     drop table va;
     drop table vb;
-    drop table src;"
+    drop table src;
+    drop user $db_user;"
 
 # ---------------------------------------------------------------------------
 # Test 4: Access control for SYSTEM PAUSE VIEW.

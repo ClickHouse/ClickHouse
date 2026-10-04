@@ -8,6 +8,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <mutex>
 #include <shared_mutex>
@@ -27,6 +28,7 @@ namespace ProfileEvents
     extern const Event ParquetDecodingTaskBatches;
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
+    extern const Event ParquetTopKSkippedRowGroups;
 }
 
 namespace DB::Parquet
@@ -53,7 +55,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     parser_shared_resources = parser_shared_resources_;
 
     if (reader.file_metadata.schema.empty())
-        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
+        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher, reader.options.format.parquet.footer_read_size);
 
     if (buckets_to_read_)
     {
@@ -86,11 +88,78 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     for (Stage & stage : stages)
         stage.memory_target_fraction /= sum;
 
-    /// The NotStarted stage completed for all row groups, transition to next stage.
     MemoryUsageDiff diff(ReadStage::NotStarted);
-    for (size_t i = 0; i < reader.row_groups.size(); ++i)
-        finishRowGroupStage(i, ReadStage::NotStarted, diff);
+    if (reader.row_groups_ordered_by_top_k)
+    {
+        top_k_admission.min_outstanding = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, 1.).parsing_threads;
+        admitTopKRowGroups(diff);
+    }
+    else
+    {
+        /// The NotStarted stage completed for all row groups, transition to next stage.
+        for (size_t i = 0; i < reader.row_groups.size(); ++i)
+            finishRowGroupStage(i, ReadStage::NotStarted, diff);
+    }
     flushMemoryUsageDiff(std::move(diff));
+}
+
+/// The ReadManager whose admitTopKRowGroups is running in this thread, to keep it from recursing.
+static thread_local const ReadManager * top_k_admitting_manager = nullptr;
+
+void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
+{
+    /// Starts row groups in order, each checked against the latest threshold right before it starts.
+    if (top_k_admitting_manager == this)
+        return; /// The loop below, higher up in this thread's stack, picks up the released admission.
+    const ReadManager * outer_admitting_manager = top_k_admitting_manager;
+    top_k_admitting_manager = this;
+    SCOPE_EXIT(top_k_admitting_manager = outer_admitting_manager);
+
+    while (true)
+    {
+        size_t row_group_idx = 0;
+        {
+            std::lock_guard lock(top_k_admission.mutex);
+            size_t allowance = std::max(top_k_admission.min_outstanding, top_k_admission.admitted / 2);
+            if (top_k_admission.next_row_group == reader.row_groups.size() || top_k_admission.outstanding >= allowance)
+                return;
+            row_group_idx = top_k_admission.next_row_group++;
+            ++top_k_admission.outstanding;
+        }
+
+        RowGroup & row_group = reader.row_groups[row_group_idx];
+        const bool skipped_by_threshold = row_group.need_to_process && reader.topKShouldSkipRowGroup(row_group);
+        if (!row_group.need_to_process || skipped_by_threshold)
+        {
+            if (skipped_by_threshold)
+                ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+            {
+                std::lock_guard lock(top_k_admission.mutex);
+                --top_k_admission.outstanding;
+            }
+            finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
+            continue;
+        }
+
+        {
+            std::lock_guard lock(top_k_admission.mutex);
+            ++top_k_admission.admitted;
+        }
+        row_group.holds_top_k_admission.store(true);
+        finishRowGroupStage(row_group_idx, ReadStage::NotStarted, diff);
+    }
+}
+
+void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff)
+{
+    if (!reader.row_groups[row_group_idx].holds_top_k_admission.exchange(false))
+        return;
+    {
+        std::lock_guard lock(top_k_admission.mutex);
+        chassert(top_k_admission.outstanding > 0);
+        --top_k_admission.outstanding;
+    }
+    admitTopKRowGroups(diff);
 }
 
 void ReadManager::shutdownTasks()
@@ -118,6 +187,7 @@ void ReadManager::cancel() noexcept
 void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
+    bool release_top_k_admission = false;
 
     /// Finish the stage.
     if (stage == ReadStage::BloomFilterBlocksOrDictionary)
@@ -181,6 +251,8 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 /// filtered out (empty subgroups below).
                 if (reader.topKShouldSkipRowGroup(row_group))
                 {
+                    if (row_group.need_to_process)
+                        ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
                     stage = ReadStage::Deliver;
                     break;
                 }
@@ -207,6 +279,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 {
                     for (auto & c : row_group.columns)
                         clearColumnChunk(c, diff);
+                    release_top_k_admission = true;
                 }
                 break;
         }
@@ -248,6 +321,9 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
 
     if (!add_tasks.empty())
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
+
+    if (release_top_k_admission)
+        releaseTopKAdmission(row_group_idx, diff);
 }
 
 void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff)
@@ -485,6 +561,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
                 clearColumnChunk(row_group.columns.at(i), diff);
+
+            releaseTopKAdmission(row_group_idx, diff);
         }
     }
 }
