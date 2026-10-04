@@ -7,6 +7,7 @@
 #    include <Columns/ColumnString.h>
 #    include <Functions/LowerUpperImpl.h>
 #    include <base/scope_guard.h>
+#    include <unicode/uchar.h>
 #    include <unicode/ucasemap.h>
 #    include <unicode/unistr.h>
 #    include <unicode/urename.h>
@@ -15,6 +16,7 @@
 
 #    include <algorithm>
 #    include <array>
+#    include <bitset>
 #    include <string>
 #    include <string_view>
 
@@ -114,14 +116,23 @@ struct LowerUpperUTF8Impl
             ascii_run_start = row_i + 1;
 
             ensure_capacity(src_size);
-            if (tryMapTwoByteRow(data.data() + src_begin_offset, src_size, res_data.data() + curr_offset, two_byte_table))
+            const UInt8 * row = data.data() + src_begin_offset;
+            size_t resume = tryMapTwoByteRow(row, src_size, res_data.data() + curr_offset, two_byte_table);
+            if (resume == src_size)
             {
                 curr_offset += src_size;
                 res_offsets[row_i] = curr_offset;
                 continue;
             }
 
-            const auto * src = reinterpret_cast<const char *>(data.data() + src_begin_offset);
+            /// The table's output before `resume` is ICU's, so ICU maps only the rest of the row. In the root locale only
+            /// final sigma depends on other characters, and it needs the last one its check does not skip.
+            if constexpr (!upper)
+                resume = findSigmaContextStart(row, resume, two_byte_table);
+            curr_offset += resume;
+
+            const auto * src = reinterpret_cast<const char *>(row + resume);
+            const size_t icu_size = src_size - resume;
 
             /// ICU APIs accept `int32_t` for buffer sizes and return the required output
             /// length as `int32_t` on `U_BUFFER_OVERFLOW_ERROR`. Unicode full case mapping
@@ -142,7 +153,7 @@ struct LowerUpperUTF8Impl
             /// path enlarges `res_data` to fit and the guard above keeps the per-row
             /// requested length representable as `int32_t`.
             auto safe_dest_capacity = static_cast<int32_t>(std::min<size_t>(res_data.size() - curr_offset, INT32_MAX));
-            auto safe_src_size = static_cast<int32_t>(src_size);
+            auto safe_src_size = static_cast<int32_t>(icu_size);
 
             int32_t dst_size = 0;
             if constexpr (upper)
@@ -194,8 +205,8 @@ struct LowerUpperUTF8Impl
                     "Error calling {}: {} input: {} input_size: {}",
                     upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
                     u_errorName(error_code),
-                    std::string_view(src, src_size),
-                    src_size);
+                    std::string_view(src, icu_size),
+                    icu_size);
 
             curr_offset += dst_size;
             res_offsets[row_i] = curr_offset;
@@ -212,8 +223,13 @@ struct LowerUpperUTF8Impl
     }
 
 private:
-    /// (first << 8) | second output byte for each code point U+0080..U+07FF, 0 if a row containing it goes to ICU.
-    using TwoByteTable = std::array<UInt16, 0x800 - 0x80>;
+    struct TwoByteTable
+    {
+        /// (first << 8) | second output byte for each code point U+0080..U+07FF, 0 if a row containing it goes to ICU.
+        std::array<UInt16, 0x800 - 0x80> mapped{};
+        /// Case_Ignorable code points U+0000..U+07FF, which the final sigma check of ICU skips (lowerUTF8 only).
+        std::bitset<0x800> sigma_ignorable;
+    };
 
     static const TwoByteTable & getTwoByteTable(const UCaseMap * case_map)
     {
@@ -258,13 +274,18 @@ private:
                 && map(code_point, "A" + c) == letter + mapped
                 && map(code_point, c + "A") == mapped + letter
                 && map(code_point, "A" + c + "A") == letter + mapped + letter)
-                table[code_point - 0x80] = static_cast<UInt16>(static_cast<UInt8>(mapped[0]) << 8 | static_cast<UInt8>(mapped[1]));
+                table.mapped[code_point - 0x80] = static_cast<UInt16>(static_cast<UInt8>(mapped[0]) << 8 | static_cast<UInt8>(mapped[1]));
         }
+
+        if constexpr (!upper)
+            for (UInt32 code_point = 0; code_point < 0x800; ++code_point)
+                table.sigma_ignorable[code_point] = u_hasBinaryProperty(static_cast<UChar32>(code_point), UCHAR_CASE_IGNORABLE);
+
         return table;
     }
 
-    /// Maps a row whose non-ASCII characters all have a table entry. Returns false for any other row.
-    static bool tryMapTwoByteRow(const UInt8 * src, size_t size, UInt8 * dst, const TwoByteTable & table)
+    /// Maps the row up to the first non-ASCII character without a table entry. Returns the number of bytes mapped.
+    static size_t tryMapTwoByteRow(const UInt8 * src, size_t size, UInt8 * dst, const TwoByteTable & table)
     {
         constexpr UInt8 flip_case_mask = 'A' ^ 'a';
         for (size_t i = 0; i < size;)
@@ -278,18 +299,32 @@ private:
             }
 
             if (c < 0xC2 || c > 0xDF || i + 1 >= size || (src[i + 1] & 0xC0) != 0x80)
-                return false;
+                return i;
 
             const size_t code_point = static_cast<size_t>(c & 0x1F) << 6 | static_cast<size_t>(src[i + 1] & 0x3F);
-            const UInt16 mapped = table[code_point - 0x80];
+            const UInt16 mapped = table.mapped[code_point - 0x80];
             if (mapped == 0)
-                return false;
+                return i;
 
             dst[i] = static_cast<UInt8>(mapped >> 8);
             dst[i + 1] = static_cast<UInt8>(mapped);
             i += 2;
         }
-        return true;
+        return size;
+    }
+
+    /// Start of the last character before `pos` that the final sigma check of ICU does not skip, or 0.
+    /// The bytes before `pos` are ASCII or two-byte sequences with a table entry.
+    static size_t findSigmaContextStart(const UInt8 * src, size_t pos, const TwoByteTable & table)
+    {
+        while (pos > 0)
+        {
+            pos -= src[pos - 1] < 0x80 ? 1 : 2;
+            const size_t code_point = src[pos] < 0x80 ? src[pos] : (static_cast<size_t>(src[pos] & 0x1F) << 6 | (src[pos + 1] & 0x3F));
+            if (!table.sigma_ignorable[code_point])
+                return pos;
+        }
+        return 0;
     }
 
     static bool isAllASCIIWithEarlyExit(const UInt8 * data, size_t size)

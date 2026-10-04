@@ -47,17 +47,38 @@ WHERE id >= 17
 ORDER BY id
 FORMAT TSV;
 
--- Every code point U+0080..U+07FF in several contexts maps the same as with a trailing '€', which has no case mapping.
+-- Every ASCII and two-byte code point in several contexts maps as in a row starting with '€', which goes to ICU whole.
 SELECT
-    countIf(lowerUTF8(s) != substring(lowerUTF8(concat(s, '€')), 1, length(lowerUTF8(concat(s, '€'))) - 3))
-    + countIf(upperUTF8(s) != substring(upperUTF8(concat(s, '€')), 1, length(upperUTF8(concat(s, '€'))) - 3))
+    countIf(lowerUTF8(s) != substring(lowerUTF8(concat('€', s)), 4))
+    + countIf(upperUTF8(s) != substring(upperUTF8(concat('€', s)), 4))
 FROM
 (
-    SELECT arrayJoin([c, concat('A', c), concat(c, 'A'), concat('A', c, 'A'), concat('Ab', c, c, 'Cd')]) AS s
+    SELECT arrayJoin([c, concat('A', c), concat(c, 'A'), concat('A', c, 'A'), concat('Ab', c, c, 'Cd'),
+                      concat(c, 'Σ'), concat('A', c, 'Σ'), concat('Ж', c, c, 'Σ')]) AS s
     FROM
     (
-        SELECT char(bitOr(0xC0, bitShiftRight(number, 6)), bitOr(0x80, bitAnd(number, 0x3F))) AS c
-        FROM numbers(0x80, 0x780)
+        SELECT if(number < 0x80, char(number), char(bitOr(0xC0, bitShiftRight(number, 6)), bitOr(0x80, bitAnd(number, 0x3F)))) AS c
+        FROM numbers(0x800)
+    )
+);
+
+-- Rows the table maps up to a character it has no entry for, then ICU maps the rest.
+SELECT
+    countIf(lowerUTF8(s) != substring(lowerUTF8(concat('€', s)), 4))
+    + countIf(upperUTF8(s) != substring(upperUTF8(concat('€', s)), 4))
+FROM
+(
+    SELECT arrayJoin([concat('Жж', t, 'жЖ'), concat('Жж', t, 'ΣЖ'), concat('Жж\'', t, 'Σ'), concat('Жж\xCC\x81', t, 'Σ'),
+                      concat('Жж ', t, 'Σ'), concat('Ab', t, 'Σ'), concat('Ж', t), concat('Ж\'', t)]) AS s
+    FROM
+    (
+        SELECT multiIf(
+            number < 0x800, char(bitOr(0xC0, bitShiftRight(number, 6)), bitOr(0x80, bitAnd(number, 0x3F))),
+            char(bitOr(0xE0, bitShiftRight(number, 12)), bitOr(0x80, bitAnd(bitShiftRight(number, 6), 0x3F)), bitOr(0x80, bitAnd(number, 0x3F)))) AS t
+        FROM numbers(0x80, 0x10000 - 0x80)
+        WHERE number < 0xD800 OR number > 0xDFFF
+        UNION ALL
+        SELECT arrayJoin(['𐐀', '𐐨', '𞤀', '𞤢', '😀', '\xE2', '\xC0\xAF']) AS t
     )
 );
 
