@@ -33,6 +33,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageExecutable.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -269,7 +270,8 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 /// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows
 /// with the same correlated values would share one result. Unlike `containsNonDeterministicFunction`, this
 /// uses `isDeterministicInScopeOfQuery`, so `now` and server constants such as `hostName` are accepted.
-/// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well.
+/// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well, and
+/// so do script-backed reads (the `executable` table function, `Executable` and `ExecutablePool` tables).
 bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
 {
     if (!node)
@@ -285,6 +287,11 @@ bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
     {
         if (const auto & table_function = table_function_node->getTableFunction();
             table_function && !table_function->isDeterministicInScopeOfQuery())
+            return true;
+    }
+    else if (const auto * table_node = node->as<TableNode>())
+    {
+        if (typeid_cast<const StorageExecutable *>(table_node->getStorage().get()))
             return true;
     }
 
@@ -4058,7 +4065,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 if (containsFunctionVolatileInScopeOfQuery(right_table_expression))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN subquery must not contain functions or table functions that are non-deterministic "
-                        "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom), because it is not "
+                        "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom) or read the output of a script "
+                        "(the executable table function, Executable and ExecutablePool tables), because it is not "
                         "evaluated separately for every row of the left side");
 
                 if (lateralSubqueryReadsOpaqueView(right_table_expression))
