@@ -241,6 +241,16 @@ int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
     return std::ssize(objects_to_remove);
 }
 
+bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
+{
+    /// This must not be delegated to the wrapped storage: this wrapper has a queue of its own. Every commit
+    /// moves the blobs that the wrapped storage removed into `objects_to_remove`, so that the blob killer
+    /// drops the stale cache entries for them. That is exactly what a cached `plain` or `plain_rewritable`
+    /// disk needs, where blob paths are not random and a new file reuses the path of a deleted one.
+    /// A read-only storage never removes anything, so nothing is ever queued for it.
+    return !underlying->isReadOnly();
+}
+
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
     return underlying->getBlobsToReplicate(cluster, max_count);
@@ -254,6 +264,11 @@ int64_t MetadataStorageFromCacheObjectStorage::recordAsReplicated(const BlobsToR
 bool MetadataStorageFromCacheObjectStorage::hasUnreplicatedBlobs(const Location & location_to_check)
 {
     return underlying->hasUnreplicatedBlobs(location_to_check);
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasMissingBlobsQueue() const
+{
+    return underlying->hasMissingBlobsQueue();
 }
 
 void MetadataStorageFromCacheObjectStorage::updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description)

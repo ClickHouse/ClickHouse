@@ -309,6 +309,12 @@ void BlobKillerThread::startup()
 {
     started = true;
 
+    if (!metadata_storage->hasDeadBlobsQueue())
+    {
+        LOG_INFO(log, "Execution is not needed: the metadata storage does not defer blob removal");
+        return;
+    }
+
     if (enabled)
     {
         LOG_INFO(log, "Execution started");
@@ -322,6 +328,9 @@ void BlobKillerThread::shutdown()
     LOG_INFO(log, "Shutting down Blob Killer thread");
 
     task->deactivate();
+
+    if (!metadata_storage->hasDeadBlobsQueue())
+        return;
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
     executeBlobsCleanup(/*max_to_remove=*/0, blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
@@ -352,6 +361,10 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 
 void BlobKillerThread::triggerAndWait()
 {
+    /// The task is never scheduled for such a storage, so waiting for a round to finish would never return.
+    if (!metadata_storage->hasDeadBlobsQueue())
+        return;
+
     int64_t expected_round = trigger();
 
     if (wrapped_blob_killer)
@@ -374,7 +387,7 @@ void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
 
     LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());
 
-    if (enabled && started)
+    if (enabled && started && metadata_storage->hasDeadBlobsQueue())
         task->activateAndSchedule();
     else
         task->deactivate();
