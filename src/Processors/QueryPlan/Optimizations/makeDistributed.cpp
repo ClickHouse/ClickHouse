@@ -272,6 +272,11 @@ std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFr
         return std::make_optional(
             PreformattedMessage::create("make_distributed_plan does not support a distributed read with the STREAM modifier"));
 
+    /// TODO(unique-key): support distributed plans.
+    if (read->getStorageMetadata()->hasUniqueKey())
+        return std::make_optional(
+            PreformattedMessage::create("make_distributed_plan does not support a distributed read of a UNIQUE KEY table"));
+
     for (const auto & column : read->getAllColumnNames())
         if (column == "_part_index" || column == "_part_starting_offset")
             return std::make_optional(

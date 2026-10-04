@@ -65,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -274,7 +275,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load))
             return true;
         /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
         /// prunes them with this predicate. The initiator's plan for such a read stops at
@@ -3018,11 +3019,11 @@ void Planner::buildPlanForQueryNode()
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
-            /// Start with query settings and apply the changes attached to this query node.
-            /// A top-level `SETTINGS make_distributed_plan = 1` is held by the query context,
-            /// while nested query settings are attached to their respective query nodes.
+            /// `settings` holds this node's SETTINGS clause as constrained and clamped. A nested change equal to the inherited
+            /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
             Settings query_settings = settings;
-            query_settings.applyChanges(query_node.getSettingsChanges());
+            if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
+                query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
             std::optional<UInt64> trivial_group_by_limit;
             if (!query_settings[Setting::make_distributed_plan]

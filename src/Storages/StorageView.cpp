@@ -444,8 +444,9 @@ private:
 /// That is the case for the definer, and for a user who could have created the same view: `SET DEFINER` on the
 /// definer (or `ALLOW SQL SECURITY NONE` for a `NONE` view) is not enough for that, because `CREATE VIEW` also
 /// checks the access of the creator to everything the query of the view reads. So the user must also be able
-/// to read whatever any query can read: tables, dictionaries, table functions and named collections.
-bool canSeeViewPlan(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+/// to read whatever any query can read: tables, dictionaries, table functions and named collections, and to
+/// create a view in the database of this view.
+bool canSeeViewPlan(const StorageID & view_id, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
 {
     const auto access = context->getAccess();
 
@@ -463,6 +464,9 @@ bool canSeeViewPlan(const StorageInMemoryMetadata & metadata, const ContextPtr &
         if (!access->isGranted(AccessType::SET_DEFINER, *metadata.definer))
             return false;
     }
+
+    if (!access->isGranted(AccessType::CREATE_VIEW, view_id.getDatabaseName(), view_id.getTableName()))
+        return false;
 
     return access->isGranted(AccessFlags(AccessType::SELECT) | AccessType::dictGet | AccessType::READ | AccessType::CREATE_TEMPORARY_TABLE
                              | AccessType::NAMED_COLLECTION);
@@ -764,7 +768,7 @@ void StorageView::readImpl(
 
     if (sealed)
     {
-        const bool show_plan = canSeeViewPlan(*storage_snapshot->metadata, context) || canDisplaySecrets(context);
+        const bool show_plan = canSeeViewPlan(getStorageID(), *storage_snapshot->metadata, context) || canDisplaySecrets(context);
 
         auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context, show_plan);
         read_from_sealed_view->setStepDescription(

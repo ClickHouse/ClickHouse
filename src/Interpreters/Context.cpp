@@ -9498,8 +9498,15 @@ void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotP
 
 StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
 {
-    auto it = pinned_storage_snapshots.find(table_uuid);
-    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
+    /// The population's reads run under contexts derived from the query context, not under the context the
+    /// pin was set on, so the query context is consulted too.
+    if (auto it = pinned_storage_snapshots.find(table_uuid); it != pinned_storage_snapshots.end())
+        return it->second;
+    if (!hasQueryContext())
+        return nullptr;
+    const auto & query_pins = getQueryContext()->pinned_storage_snapshots;
+    auto it = query_pins.find(table_uuid);
+    return it != query_pins.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const
