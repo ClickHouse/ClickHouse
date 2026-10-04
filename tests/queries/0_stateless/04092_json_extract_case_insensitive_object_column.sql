@@ -201,6 +201,25 @@ SELECT 'nonconst key', id,
 FROM t_04092_nonconst ORDER BY id;
 DROP TABLE t_04092_nonconst;
 
+-- A non-constant key gives the same answer as the same constant key, including the coercions of the
+-- `JSON` fast path: a `Bool` value read as a number, and the string "true" read as a `Bool`.
+DROP TABLE IF EXISTS t_04092_nonconst_coercion;
+CREATE TABLE t_04092_nonconst_coercion (id UInt32, j JSON, k String) ENGINE = Memory;
+INSERT INTO t_04092_nonconst_coercion VALUES
+    (1, '{"flag": true, "sold": "true"}', 'flag'),
+    (2, '{"flag": true, "sold": "true"}', 'sold'),
+    (3, '{"Flag": true, "Sold": "true"}', 'FLAG'),
+    (4, '{"flag": false, "sold": "false"}', 'sold');
+SELECT 'nonconst key coercion', id,
+    JSONExtractInt(j, k), JSONExtractUInt(j, k), JSONExtractFloat(j, k), JSONExtractBool(j, k),
+    JSONExtractIntCaseInsensitive(j, k), JSONExtractBoolCaseInsensitive(j, k), JSONExtractString(j, k)
+FROM t_04092_nonconst_coercion ORDER BY id;
+SELECT 'const key coercion',
+    JSONExtractInt(j, 'flag'), JSONExtractUInt(j, 'flag'), JSONExtractFloat(j, 'flag'), JSONExtractBool(j, 'sold'),
+    JSONExtractBoolCaseInsensitive(j, 'SOLD')
+FROM t_04092_nonconst_coercion WHERE id = 1;
+DROP TABLE t_04092_nonconst_coercion;
+
 -- The call shapes that go through the serialize-and-reparse fallback must not be affected by the
 -- settings that change how values are presented in JSON output: the serialized text is internal and
 -- has to be parse-equivalent to the stored value.

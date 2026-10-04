@@ -85,6 +85,11 @@ index key	a	a
 nonconst key	1	1	1	1
 nonconst key	2	1	1	1
 nonconst key	3	1	1	1
+nonconst key coercion	1	1	1	1	1	1	1	true
+nonconst key coercion	2	0	0	0	1	0	1	true
+nonconst key coercion	3	0	0	0	0	1	1	
+nonconst key coercion	4	0	0	0	0	0	0	false
+const key coercion	1	1	1	1	1
 quoted 64bit type	UInt64	UInt64	Double	Double	Int64	Int64
 quoted 64bit raw	{"f":1.5,"n":18446744073709551615}	{"n":18446744073709551615,"f":1.5}
 quoted 64bit index	18446744073709551615	18446744073709551615

@@ -9,6 +9,7 @@
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
@@ -132,6 +133,9 @@ public:
                 if (supportsObjectSubcolumnExtraction() && num_path_arguments != 0
                     && arePathArgumentsConstantStrings(arguments, num_path_arguments, input_rows_count))
                     return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
+                if (supportsObjectSubcolumnExtraction() && num_path_arguments != 0
+                    && arePathArgumentsStrings(arguments, num_path_arguments))
+                    return runForObjectColumnWithNonConstKeys(arguments, result_type, input_rows_count, format_settings, num_path_arguments);
 
                 auto string_type = std::make_shared<DataTypeString>();
                 arguments_holder = arguments;
@@ -248,6 +252,91 @@ public:
                     return false;
             }
             return true;
+        }
+
+        static bool arePathArgumentsStrings(const ColumnsWithTypeAndName & arguments, size_t num_path_arguments)
+        {
+            for (size_t i = 1; i <= num_path_arguments; ++i)
+                if (!isString(arguments[i].type) || !arguments[i].column)
+                    return false;
+            return true;
+        }
+
+        /// Non-constant string keys cannot name a subcolumn for the whole block, but they still must give
+        /// the same answer as the equivalent constant keys - going through the JSON text instead would apply
+        /// the stricter coercion rules of the string implementation (e.g. `JSONExtractInt` of a `Bool` value,
+        /// or `JSONExtractBool` of the string `"true"`). So the rows are grouped by their keys, and every
+        /// group is handled by `runForObjectColumn` with the keys of that group as constants.
+        static ColumnPtr runForObjectColumnWithNonConstKeys(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            const FormatSettings & format_settings,
+            size_t num_path_arguments)
+        {
+            if (input_rows_count == 0)
+                return result_type->createColumn();
+
+            VectorWithMemoryTracking<ColumnPtr> full_columns(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                full_columns[i] = arguments[i].column->convertToFullColumnIfConst();
+
+            /// The keys of a row are encoded with length prefixes, so that distinct key lists never collide.
+            UnorderedMapWithMemoryTracking<String, size_t> group_by_keys;
+            VectorWithMemoryTracking<VectorWithMemoryTracking<String>> group_keys;
+            VectorWithMemoryTracking<MutableColumnPtr> group_rows;
+            VectorWithMemoryTracking<size_t> row_group(input_rows_count);
+            VectorWithMemoryTracking<size_t> row_position(input_rows_count);
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                String encoded;
+                for (size_t i = 1; i <= num_path_arguments; ++i)
+                {
+                    auto key = full_columns[i]->getDataAt(row);
+                    encoded += std::to_string(key.size());
+                    encoded += ':';
+                    encoded += key;
+                }
+
+                auto [it, inserted] = group_by_keys.emplace(std::move(encoded), group_rows.size());
+                if (inserted)
+                {
+                    VectorWithMemoryTracking<String> keys;
+                    for (size_t i = 1; i <= num_path_arguments; ++i)
+                        keys.emplace_back(full_columns[i]->getDataAt(row));
+                    group_keys.emplace_back(std::move(keys));
+                    group_rows.emplace_back(ColumnUInt64::create());
+                }
+
+                auto & rows = assert_cast<ColumnUInt64 &>(*group_rows[it->second]).getData();
+                row_group[row] = it->second;
+                row_position[row] = rows.size();
+                rows.push_back(row);
+            }
+
+            VectorWithMemoryTracking<ColumnPtr> group_results(group_rows.size());
+            for (size_t group = 0; group < group_rows.size(); ++group)
+            {
+                const size_t group_size = group_rows[group]->size();
+                ColumnsWithTypeAndName group_arguments = arguments;
+                for (size_t i = 0; i < arguments.size(); ++i)
+                {
+                    if (i >= 1 && i <= num_path_arguments)
+                        group_arguments[i].column = arguments[i].type->createColumnConst(group_size, Field(group_keys[group][i - 1]));
+                    else if (const auto * col_const = typeid_cast<const ColumnConst *>(arguments[i].column.get()))
+                        group_arguments[i].column = ColumnConst::create(col_const->getDataColumnPtr(), group_size);
+                    else
+                        group_arguments[i].column = full_columns[i]->index(*group_rows[group], 0);
+                }
+                group_results[group] = runForObjectColumn<Name, Impl, case_insensitive>(group_arguments, result_type, group_size, format_settings)
+                    ->convertToFullColumnIfConst();
+            }
+
+            auto result = result_type->createColumn();
+            result->reserve(input_rows_count);
+            for (size_t row = 0; row < input_rows_count; ++row)
+                result->insertFrom(*group_results[row_group[row]], row_position[row]);
+            return result;
         }
 
         /// Serialize a `JSON`/`Object` column back to its JSON text representation.
