@@ -80,6 +80,7 @@ namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
+    extern const char remote_query_executor_cancel_in_finish_drain[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -635,11 +636,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     modified_client_info.query_kind = query_kind;
 
     /// A distributed query must carry a known initiator version: the receiving server uses it for
-    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
+    /// version-gated compatibility decisions.
     /// A zero version means the initiating query context was not populated as an initial query
     /// (a real client always reports its version, and a server that (re-)initiates a query fills it
     /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
     /// remote, so fail loudly instead.
+    /// A context that this server builds for its own query fills it with `Context::setInitiatorVersionIfUnset`.
+    /// Do not fill it here instead: this check exists to catch a context that lost it.
     if (modified_client_info.client_version_major == 0
         && modified_client_info.client_version_minor == 0
         && modified_client_info.client_version_patch == 0)
@@ -664,8 +667,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         modified_client_info.current_roles = std::move(current_role_names);
     }
 
-    if (extension)
-        modified_client_info.collaborate_with_initiator = true;
+    /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
+    modified_client_info.collaborate_with_initiator = extension.has_value();
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
@@ -1077,6 +1080,14 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    {
+        std::lock_guard gate(finish_gate_mutex);
+        ++finish_in_progress;
+    }
+    /// Declared before `guard` so the decrement runs after `was_cancelled_mutex` is released: the gate
+    /// must never be taken while that mutex is held.
+    SCOPE_EXIT({ std::lock_guard gate(finish_gate_mutex); --finish_in_progress; });
+
     /// An exception thrown while cancelling or draining the connections is this fragment's failure.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
@@ -1165,6 +1176,11 @@ void RemoteQueryExecutor::finishUnlocked()
         return;
     }
 
+    /// This thread holds `was_cancelled_mutex` across the blocking drain below, which is the state in
+    /// which `cancel` must return instead of waiting for that mutex. Injected on this thread rather
+    /// than parking it for an outside cancel: `finish` runs from `RemoteSource::work`.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_in_finish_drain, { cancel(); });
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1243,10 +1259,20 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
+    /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
+    /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
+    UniqueLock gate(finish_gate_mutex);
+    if (finish_in_progress)
+        return;
+
     /// Failing to deliver the cancel (e.g. over a broken connection) ends the fragment
     /// abnormally: record it as ERROR instead of leaving it as a benign cancel.
     SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
+    /// Released before `cancelUnlocked`, whose `tryCancel` does socket writes: holding the gate across
+    /// them would make every concurrent `finish` wait for that I/O here instead.
+    gate.unlock();
     cancelUnlocked();
 }
 

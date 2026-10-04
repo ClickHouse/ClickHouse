@@ -45,9 +45,9 @@ async function main()
     };
     const RequestResult = vm.runInNewContext('(class {'
         + extract('    _markFlameAvailable()\n', '    appendProfileTraces(')
-        + '})', { activeTabId: 'request', progressEl: { showFlameToggle() {} } });
+        + '})', { cellOwnsChrome: () => true, progressEl: { showFlameToggle() {} } });
     const makeRequestResult = () => Object.assign(new RequestResult(), {
-        _flame_requested: false, _ownerTab: { id: 'request', flameAvailable: false },
+        _flame_requested: false, _ownerCell: { tab: { id: 'request' }, flameAvailable: false },
     });
     let requestCount = 0;
     const requestApi = vm.runInNewContext(extract('const TT = {', '/// SQL keywords recognized')
@@ -66,7 +66,7 @@ async function main()
             framed_default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
         });
     const request = (query, params = {}, enabled = true, url = 'http://fixture/') => requestApi.postImpl(
-        {profileTraces: enabled, profilerPeriodNs: '1000000'}, 1, query, makeRequestResult(), {}, params, '',
+        {tab: {profileTraces: enabled, profilerPeriodNs: '1000000'}}, 1, query, makeRequestResult(), {}, params, '',
         {url, user: '', password: ''}, 0);
     for (const value of ['0', "'0'", 'FALSE', "'false'", 'DEFAULT', "'\\x66alse'", '$value$false$value$'])
     {
@@ -119,12 +119,12 @@ async function main()
     assert.equal(inlinePayload.has_ambiguous_post_format_settings, true);
     assert.equal(new URL((await request('SELECT 1', {}, false)).url).searchParams.has('send_profile_traces'), false);
     const changingTab = {profileTraces: true, profilerPeriodNs: '1000000'};
-    const pendingRequest = requestApi.postImpl(changingTab, 1, 'SELECT 1', makeRequestResult(), {}, {}, '', {url: 'http://fixture/'}, 0);
+    const pendingRequest = requestApi.postImpl({tab: changingTab}, 1, 'SELECT 1', makeRequestResult(), {}, {}, '', {url: 'http://fixture/'}, 0);
     changingTab.profileTraces = false;
     changingTab.profilerPeriodNs = '100000000';
     assert.equal(new URL((await pendingRequest).url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000');
     const sessionTab = {profileTraces: true, profilerPeriodNs: '1000000'};
-    const sessionRequest = query => requestApi.postImpl(sessionTab, 1, query, makeRequestResult(), {}, {}, '', {url: 'http://fixture/'}, 0);
+    const sessionRequest = query => requestApi.postImpl({tab: sessionTab}, 1, query, makeRequestResult(), {}, {}, '', {url: 'http://fixture/'}, 0);
     assert.equal((await sessionRequest('SET send_profile_traces = 0')).profile_traces, false);
     assert.equal(sessionTab.profileTraces, true);
     const followingRequest = await sessionRequest('SELECT 1');
@@ -206,7 +206,7 @@ async function main()
     }
     const sessionQuery = "SELECT 1 SETTINGS framing_output_format = 'EventStream', send_logs_level = 'none'";
     const sessionResult = await requestApi.postImpl(
-        sessionTab, 1, sessionQuery, makeRequestResult(), {}, {}, '', {url: 'http://fixture/?session_id=logs'}, 0);
+        {tab: sessionTab}, 1, sessionQuery, makeRequestResult(), {}, {}, '', {url: 'http://fixture/?session_id=logs'}, 0);
     checkRequest(sessionResult, sessionQuery, true, 'None');
     assert.equal(new URL(sessionResult.url).searchParams.get('session_id'), 'logs');
     const packetQuery = "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'";
@@ -233,19 +233,19 @@ async function main()
     {
         const result = makeRequestResult();
         const before = requestCount;
-        await assert.rejects(requestApi.postImpl(sessionTab, 1, query, result, {}, {}, '', {url: 'http://fixture/'}, 0));
+        await assert.rejects(requestApi.postImpl({tab: sessionTab}, 1, query, result, {}, {}, '', {url: 'http://fixture/'}, 0));
         assert.equal(requestCount, before, query);
         assert.equal(result._flame_requested, false, query);
-        assert.equal(result._ownerTab.flameAvailable, false, query);
+        assert.equal(result._ownerCell.flameAvailable, false, query);
     }
     for (const [query, enabled] of [['SELECT 1', true], ['SELECT 1 SETTINGS send_profile_traces = 0', false]])
     {
         const result = makeRequestResult();
         const before = requestCount;
-        await requestApi.postImpl(sessionTab, 1, query, result, {}, {}, '', {url: 'http://fixture/'}, 0);
+        await requestApi.postImpl({tab: sessionTab}, 1, query, result, {}, {}, '', {url: 'http://fixture/'}, 0);
         assert.equal(requestCount, before + 1, query);
         assert.equal(result._flame_requested, enabled, query);
-        assert.equal(result._ownerTab.flameAvailable, enabled, query);
+        assert.equal(result._ownerCell.flameAvailable, enabled, query);
     }
     console.log('PASS Flame activates only after local preflight accepts a profiling request');
 
