@@ -34,3 +34,8 @@ cdf: `x.y` = 11
 cdf: s.x.null = 0
 1
 2
+3
+4
+cdf: s.x <= 30
+1
+2

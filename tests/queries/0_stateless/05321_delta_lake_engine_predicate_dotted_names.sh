@@ -77,8 +77,11 @@ mkdir -p "$DIR/cdf/_delta_log"
 CDF_STRUCTURE='id Int32, `x.y` Nullable(Int32), s Tuple(x Nullable(Int32))'
 $CLICKHOUSE_LOCAL -q "
 INSERT INTO FUNCTION file('$DIR/cdf/data.parquet', Parquet, '$CDF_STRUCTURE') VALUES (1, 10, (20)), (2, 11, (21));
+INSERT INTO FUNCTION file('$DIR/cdf/skip.parquet', Parquet, '$CDF_STRUCTURE') VALUES (3, 12, (30)), (4, 13, (31));
 "
 
+# The stats of skip.parquet do not match its rows (s.x is 30 and 31), so a file skipped by the engine predicate
+# shows as missing rows.
 python3 - "$DIR/cdf" <<'EOF'
 import json, os, sys
 
@@ -98,6 +101,11 @@ actions = [
     {"add": {"path": "data.parquet", "partitionValues": {},
              "size": os.path.getsize(os.path.join(directory, "data.parquet")),
              "modificationTime": 1700000000000, "dataChange": True}},
+    {"add": {"path": "skip.parquet", "partitionValues": {},
+             "size": os.path.getsize(os.path.join(directory, "skip.parquet")),
+             "modificationTime": 1700000000000, "dataChange": True,
+             "stats": json.dumps({"numRecords": 2, "minValues": {"s": {"x": 40}}, "maxValues": {"s": {"x": 41}},
+                                  "nullCount": {"s": {"x": 0}}})}},
 ]
 with open(os.path.join(directory, "_delta_log", "00000000000000000000.json"), "w") as log:
     for action in actions:
@@ -131,5 +139,6 @@ check_cdf() {
 
 check_cdf '`x.y` = 11'
 check_cdf 's.x.null = 0'
+check_cdf 's.x <= 30'
 
 rm -rf "$DIR"
