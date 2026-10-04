@@ -4099,6 +4099,10 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             if (input_nodes.size() != 1)
                 continue;
 
+            /// An input that is a key itself keeps that key's replacement, or an expression over it would be applied twice.
+            if (&node != input_nodes.front() && columns_to_replace.contains(input_nodes.front()->result_name))
+                continue;
+
             input_nodes_to_replace.insert_or_assign(input_nodes.front(), it->second);
         }
 
