@@ -1,0 +1,36 @@
+<test>
+    <!-- Stresses `TopKThresholdTracker`, shared by all query threads of a top-K
+         (`ORDER BY ... LIMIT n`) query. The fine-granularity minmax index routes every
+         mark (~1M) through `canSkipMark` -> `isValueInsideThreshold`, so the per-mark
+         threshold check dominates. The always-true `WHERE` disables the upfront mark
+         narrowing (`getTopKMarks`), and the query condition cache is off so repeated
+         runs keep consulting the tracker. The `Int64` sort column takes the tracker's
+         atomic fast path. The two queries pin `use_top_k_dynamic_filtering` to both
+         values so each one deterministically measures a single path: with `0` only the
+         skip-index `canSkipMark` path, with `1` additionally the `__topKFilter`
+         dynamic filter. -->
+
+    <create_query>
+        CREATE TABLE topk_tracker (key UInt64, val Int64, INDEX mm_val val TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO topk_tracker SELECT number, toInt64(cityHash64(number)) FROM numbers_mt(8000000)
+    </fill_query>
+
+    <fill_query>
+        OPTIMIZE TABLE topk_tracker FINAL
+    </fill_query>
+
+    <query>
+        SELECT val FROM topk_tracker WHERE key &lt; 1000000000 ORDER BY val LIMIT 10 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, use_top_k_dynamic_filtering = 0
+    </query>
+
+    <query>
+        SELECT val FROM topk_tracker WHERE key &lt; 1000000000 ORDER BY val LIMIT 10 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, use_top_k_dynamic_filtering = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS topk_tracker</drop_query>
+</test>

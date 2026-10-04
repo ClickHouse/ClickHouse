@@ -498,9 +498,10 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
     /// `getTopKSortColumnRange` only hands out a range whose both bounds decoded into the output
     /// block type's value space, so this is unreachable - but the cost of being wrong is a lost
-    /// row: the `Range` infinity sentinels are `Null`-typed `Field`s, which `TopKThresholdTracker`
+    /// row: the `Range` infinity sentinels are `Null`-typed `Field`s, which `TopKThresholdTrackerGeneric`
     /// compares as a SQL `NULL` - ordered by `nulls_direction` - rather than as an infinity, so an
-    /// unbounded side would read as "beyond the threshold" and skip the row group.
+    /// unbounded side would read as "beyond the threshold" and skip the row group (and which
+    /// `TopKThresholdTrackerNumeric` rejects with an exception).
     chassert(!boundary.isNull());
     if (boundary.isNull())
         return false;
