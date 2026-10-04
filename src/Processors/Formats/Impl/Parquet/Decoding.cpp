@@ -1748,6 +1748,8 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         return std::nullopt;
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
         return std::nullopt;
+    if (field_bool && val > 1)
+        return std::nullopt;
 
     if (field_ipv4)
     {
