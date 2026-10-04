@@ -23,4 +23,7 @@ Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale);
 Decimal64 parseTimeSeriesDuration(const Field & field, UInt32 duration_scale);
 Decimal64 parseTimeSeriesDuration(const Field & field, const DataTypePtr & field_data_type, UInt32 duration_scale);
 
+/// Converts a number of microseconds to a duration, rounding up.
+Decimal64 convertMicrosecondsToTimeSeriesDuration(Int64 microseconds, UInt32 duration_scale);
+
 }

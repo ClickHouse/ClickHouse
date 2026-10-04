@@ -48,6 +48,11 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
     else
         default_subquery_step = DEFAULT_SUBQUERY_STEP_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
 
+    if (instant_selector_window <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lookback delta (setting promql_lookback_delta) must not be negative");
+    if (default_subquery_step <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default subquery step (setting promql_default_subquery_step) must not be negative");
+
     const auto * root = promql_tree->getRoot();
     if (!root)
         return;
