@@ -440,13 +440,16 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
+        /// An output that is not computed from a sort column (a constant, a function of several columns or of
+        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
+        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            break;
+            continue;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            break;
+            continue;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -454,14 +457,16 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            break;
+            continue;
 
+        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
+        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            break;
+            continue;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            break;
+            continue;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
