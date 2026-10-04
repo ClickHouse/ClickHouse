@@ -1868,6 +1868,7 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         fs::create_directories(fs::path(path));
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        bool started_background_tasks = false;
 
         /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
         if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
@@ -1891,9 +1892,17 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().createBackgroundTasks();
                 waitLoad(loadMetadata(global_context));
                 DatabaseCatalog::instance().startupBackgroundTasks();
+                started_background_tasks = true;
             }
 
             LOG_DEBUG(log, "Loaded metadata.");
+        }
+
+        /// `DROP ... SYNC` waits for the drop task, so it has to run also when no metadata was loaded.
+        if (!started_background_tasks)
+        {
+            DatabaseCatalog::instance().createBackgroundTasks();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         if (!attached_system_database)
