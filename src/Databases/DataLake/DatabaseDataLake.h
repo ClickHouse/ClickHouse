@@ -114,8 +114,8 @@ private:
     /// The mode the per-table engine definition derived from `table_engine_definition` is initialized with.
     /// The table engine arguments (credentials, `format`, `compression_method`, ...) are the positional
     /// arguments of the `CREATE DATABASE` query passed through verbatim, so they are a fresh user-supplied
-    /// definition exactly once: on `CREATE DATABASE`. Every other way of getting here - server startup,
-    /// `ATTACH DATABASE`, `RESTORE DATABASE` - replays a definition that was already accepted, and the
+    /// definition on `CREATE DATABASE` and on a full-definition `ATTACH DATABASE ... ENGINE = ...`. Server
+    /// startup, a short `ATTACH DATABASE db` and `RESTORE DATABASE` replay a definition that was already accepted, and the
     /// fresh-definition-only validations of `StorageObjectStorageConfiguration::initialize` (for example
     /// the data lake `compression_method` / `format` rejection) must not stop an existing database from
     /// working after an upgrade. Hence `CREATE` for a fresh definition and `ATTACH` for a replayed one.

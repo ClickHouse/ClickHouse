@@ -2767,8 +2767,9 @@ def test_compression_argument_in_database_definition(started_cluster):
     """The positional arguments of `CREATE DATABASE ... DataLakeCatalog(...)` become the
     engine arguments of every table of the database verbatim, so a `compression_method`
     there is subject to the same rule as on a table: rejected when the definition is
-    freshly supplied by the user, exempt when a persisted definition is replayed
-    (`ATTACH DATABASE` by hand or at server startup), so that a database created before
+    freshly supplied by the user (`CREATE DATABASE` or a full-definition `ATTACH DATABASE`),
+    exempt when a persisted definition is replayed (a short `ATTACH DATABASE` or the server
+    startup), so that a database created before
     the argument was rejected keeps working after an upgrade."""
     node = started_cluster.instances["node1"]
 
@@ -2820,7 +2821,13 @@ SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_endpoint = 'http://m
     node.query(f"ATTACH DATABASE {db_name}")
     assert int(node.query(select_query)) == num_rows
 
-    # So does the server startup.
+    # A full-definition `ATTACH DATABASE ... ENGINE = ...` is a fresh definition supplied by the user.
+    node.query(f"DETACH DATABASE {db_name}")
+    node.query(create_query.replace("CREATE DATABASE", "ATTACH DATABASE", 1), settings={"allow_database_iceberg": 1})
+    error = node.query_and_get_error(select_query)
+    assert "not supported by data lake engines" in error, error
+
+    # The server startup replays the persisted definition.
     node.restart_clickhouse()
     assert int(node.query(select_query)) == num_rows
 

@@ -582,8 +582,8 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
     /// The engine arguments are the `CREATE DATABASE` arguments passed through verbatim, so the
-    /// fresh-definition validations apply only while the database that supplied them is the one
-    /// created in this server run (see `DatabaseDataLake::table_definition_mode`).
+    /// fresh-definition validations apply only when the user supplied the database definition
+    /// in this server run (see `DatabaseDataLake::table_definition_mode`).
     DB::StorageObjectStorageConfiguration::initialize(
         *configuration, args, getContext(), /* with_table_structure */ false, /* table_id */ nullptr, table_definition_mode);
 

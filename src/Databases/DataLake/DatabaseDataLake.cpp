@@ -997,8 +997,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     /// `table_definition_mode`: the engine arguments come verbatim from the `CREATE DATABASE` query, so they
-    /// are validated as a fresh definition only while the database that supplied them is the one created
-    /// in this server run; a database replayed from persisted metadata is a compatibility path.
+    /// are validated as a fresh definition only when the user supplied the database definition in this server
+    /// run; a database replayed from persisted metadata or a backup is a compatibility path.
     StorageObjectStorageConfiguration::initialize(
         *configuration,
         args,
@@ -1851,10 +1851,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// Only a user `CREATE DATABASE` supplies a fresh table engine definition; `ATTACH DATABASE`
-            /// (server startup or by hand) and `RESTORE DATABASE` replay an accepted one. `args.internal` is not
-            /// used here: it is also set for user statements run by `PARALLEL WITH` or `EXECUTE AS`.
-            /*table_definition_mode=*/(args.create_query.attach || args.is_restore_from_backup) ? LoadingStrictnessLevel::ATTACH : LoadingStrictnessLevel::CREATE,
+            /// A user `CREATE DATABASE` and a full-definition `ATTACH DATABASE ... ENGINE = ...` supply a fresh
+            /// table engine definition; server startup, a short `ATTACH DATABASE db` and `RESTORE DATABASE` replay
+            /// an accepted one. `args.internal` is not used here: it is also set for user statements run by
+            /// `PARALLEL WITH` or `EXECUTE AS`.
+            /*table_definition_mode=*/(args.create_query.attach_short_syntax || args.is_metadata_replay || args.is_restore_from_backup)
+                ? LoadingStrictnessLevel::ATTACH
+                : LoadingStrictnessLevel::CREATE,
             /// `ATTACH DATABASE` (including server startup) and `RESTORE DATABASE` shouldn't do network I/O.
             /// We don't want an unreachable or unauthorized catalog to block replica startup.
             /*lazy_init=*/args.create_query.attach || args.is_restore_from_backup);
