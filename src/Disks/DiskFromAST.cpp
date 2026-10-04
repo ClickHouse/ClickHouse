@@ -180,7 +180,7 @@ public:
         auto is_marker = [](const ASTPtr & arg)
         {
             const auto * eq = arg->as<ASTFunction>();
-            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
+            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
             return key && key->name() == "_server_credentials_allowed";

@@ -2444,6 +2444,18 @@ def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
         "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
     )
     assert "_server_credentials_allowed" not in create_query, create_query
+    instance.query("DROP TABLE t_user_marker SYNC")
+
+    # The disk configuration parser accepts and ignores extra values, so a marker with one is stripped too.
+    instance.query(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
+        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', equals(_server_credentials_allowed, 1, 'extra'))"
+    )
+    create_query = instance.query(
+        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
+    )
+    assert "_server_credentials_allowed" not in create_query, create_query
 
     instance.query("DROP TABLE t_user_marker SYNC")
 
