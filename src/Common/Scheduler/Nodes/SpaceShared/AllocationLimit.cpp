@@ -1,8 +1,11 @@
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
+#include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -77,6 +80,16 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
 
 ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
+    // If the requester's own reservation would exceed the limit, no eviction anywhere in the subtree can make
+    // it admissible. Fail its own request here instead of descending into a (possibly lower-precedence)
+    // sibling workload — and, for a `reserve_memory = 0` first grow that is not yet a running child, instead
+    // of leaving the increase blocked forever. `fair_key` is the requester's allocated size plus its pending
+    // increase, so `fair_key > limit` means it cannot fit even with the whole subtree freed.
+    if (killer.allocation.fair_key > limit)
+    {
+        details = fmt::format("Evicting allocation (eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.eviction_score);
+        return &killer.allocation;
+    }
     if (!child)
         return nullptr;
     return child->selectAllocationToKill(killer, limit, details);
@@ -168,15 +181,13 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     {
         // There is no increase request to satisfy anymore, so forget any victim we were
         // reclaiming from. The killer increase that selected `allocation_to_kill` is gone — its
-        // requester finished, was killed, or (for a never-admitted self-kill, e.g. a query with no
-        // `reserve_memory` that hits the limit on its first increase) was removed via the local
-        // path in `AllocationQueue::processActivation`, which never drives a `removing_allocation`
-        // decrease up to `approveDecrease`. Leaving the pointer set would make the next over-limit
-        // increase see a non-null `allocation_to_kill`, skip issuing a fresh kill, and block forever
-        // (observed as a 600s timeout in `test_scheduler_memory::test_max_memory_limit`). This must
-        // run before the early return below, because in the self-kill case both `increase` and
-        // `new_increase` are already `nullptr`. Any previously-issued `killAllocation` is harmless
-        // if its target has already cleaned up.
+        // requester finished, was killed, was cancelled, or had its subtree detached. Leaving the
+        // pointer set would make the next over-limit increase see a non-null `allocation_to_kill`,
+        // skip issuing a fresh kill, and block forever (observed as a 600s timeout in
+        // `test_scheduler_memory::test_max_memory_limit`). This must run before the early return
+        // below, because in the self-kill case both `increase` and `new_increase` are already
+        // `nullptr`. Any previously-issued `killAllocation` is harmless if its target has already
+        // cleaned up.
         allocation_to_kill = nullptr;
     }
 

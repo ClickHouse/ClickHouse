@@ -7,6 +7,7 @@ namespace DB
 ResourceAllocation::~ResourceAllocation()
 {
     chassert(!pending_hook.is_linked());
+    chassert(!admitting_hook.is_linked());
     chassert(!running_hook.is_linked());
     chassert(!increasing_hook.is_linked());
     chassert(!decreasing_hook.is_linked());
