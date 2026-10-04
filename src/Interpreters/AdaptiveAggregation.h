@@ -16,9 +16,11 @@ namespace DB
 /// whose key the table already holds (a frequent key, learned for free from the first rows)
 /// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
 /// anywhere: it becomes a delayed record, appended to the thread's own buffer of the partition its
-/// key's hash falls in. A partition is a slice of a two-level bucket. A record carries the key's hash and
-/// bytes, plus a run-length count when the only aggregate is count, or the row's aggregate-argument values
-/// otherwise; it never points into the source block, so the block is released.
+/// key's hash falls in. A partition is a slice of a two-level bucket. A record carries the key's bytes,
+/// plus a run-length count when the only aggregate is `count`, or the row's aggregate-argument values
+/// otherwise. Variable-length records also carry the hash; fixed-stride records omit it because rehashing
+/// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
+/// source block, so the block is released.
 ///
 /// A table also freezes where the baseline would convert it to two-level, which catches the few
 /// groups whose states own heap memory (`uniqExact` per region): such a table never fills in keys
@@ -40,8 +42,9 @@ namespace DB
 /// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every
 /// thread's records of those partitions and the locals' cells routed to them into one table sized for them, converts
 /// that table into a chunk and frees the partitions' memory, so the table stays in the cache and the staged memory
-/// shrinks as the merge proceeds. When the aggregation feeds `ORDER BY count() DESC LIMIT n`, the merge skips the
-/// partitions, records and cells whose groups provably cannot reach the top (see `AdaptiveTopKPruning`).
+/// shrinks as the merge proceeds. When the aggregation feeds a descending top-K by `count`, `uniqExact` or
+/// `uniqExactIf`, the merge skips the partitions, records and cells whose groups provably cannot reach the top
+/// (see `AdaptiveTopKPruning`).
 ///
 /// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
@@ -58,7 +61,7 @@ struct AdaptiveArgumentLayout;
 /// The working memory an adaptive merge task keeps across the buckets it merges.
 struct AdaptiveMergeScratch;
 
-/// The bin-bound pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`.
+/// The bin-bound pruning of an aggregation ranked by `count`, `uniqExact` or `uniqExactIf` in descending order.
 struct AdaptiveTopKPruning;
 
 /// The staged records of one partition as contiguous byte ranges of whole records: a producer's chunk, or a block
