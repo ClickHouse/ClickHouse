@@ -1,0 +1,9 @@
+no_prefetching_local
+1
+no_prefetching_parallel_replicas_local_plan
+1	1
+virtual_row_on_rebuilt_step
+1
+correctness
+1
+1	1

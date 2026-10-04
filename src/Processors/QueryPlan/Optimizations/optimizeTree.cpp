@@ -608,7 +608,7 @@ void optimizeTreeSecondPass(
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
-                optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
+                optimizeLimitByInOrder(stack, nodes, optimization_settings);
 
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
@@ -653,8 +653,20 @@ void optimizeTreeSecondPass(
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
             /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
-            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`), `optimizeLimitByInOrder` (`limit_by_in_order`) and
+            /// `tryTopKThroughJoin` (`top_k_through_join`): the latter injects a preserved-side
+            /// `Sort + Limit` and re-optimizes that subtree, and that injected sort is exactly what can
+            /// make the later `optimizeReadInOrder` pass call `requestReadingInOrder` on this fragment.
+            /// If a new such optimization is added, its gate must be added here too.
+            ///
+            /// `push_limit_by_into_sort` is overridden for a different reason: it does not call
+            /// `requestReadingInOrder` itself, but `pushLimitByIntoSort` is what attaches the `LIMIT BY`
+            /// hint that `optimizeReadInOrder` reads to decide whether the per-part `PrefetchingConcat`
+            /// must be given up in favour of multiple streams. Keeping the outer value here would let a
+            /// subquery-scoped `query_plan_push_limit_by_into_sort` shape the initiator-local fragment
+            /// differently from the remote replicas, which re-optimize the shipped fragment under the
+            /// subquery's own settings.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -664,6 +676,9 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.distributed_plan_read_in_order = subquery_optimization_settings.distributed_plan_read_in_order;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.limit_by_in_order = subquery_optimization_settings.limit_by_in_order;
+                local_optimization_settings.push_limit_by_into_sort = subquery_optimization_settings.push_limit_by_into_sort;
+                local_optimization_settings.top_k_through_join = subquery_optimization_settings.top_k_through_join;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;

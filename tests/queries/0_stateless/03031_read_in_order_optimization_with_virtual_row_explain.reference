@@ -1,25 +1,19 @@
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 4 → 1
+  MergingSortedTransform 3 → 1
     (Expression)
-    ExpressionTransform × 4
+    ExpressionTransform × 3
       (ReadFromMergeTree)
-      ExpressionTransform × 5
+      ExpressionTransform × 4
         VirtualRowTransform
           MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-            MergingSortedTransform 2 → 1
-              ExpressionTransform × 2
+            ExpressionTransform
+              PrefetchingConcat 2 → 1
                 VirtualRowTransform
                   MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
                     VirtualRowTransform
                       MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                        MergingSortedTransform 2 → 1
-                          ExpressionTransform × 2
-                            VirtualRowTransform
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                VirtualRowTransform
-                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                    ExpressionTransform
-                                      VirtualRowTransform
-                                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                        ExpressionTransform
+                          VirtualRowTransform
+                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

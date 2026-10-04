@@ -200,6 +200,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First global query-plan version that writes version 2 of `ReadFromMergeTree`, which appends the
+/// read-in-order soft-limit threshold (`query_task_size_limit`) to the read-in-order contract of a
+/// bucketed read. Without it a worker rebuilds the read with a zero threshold and sizes the first
+/// in-order task as a full range where the coordinator had chosen a single range for an outer `LIMIT`.
+/// It is a change to the step's own bytes, so it takes the plan version of the current release (26.10).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

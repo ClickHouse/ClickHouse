@@ -31,6 +31,10 @@ public:
 private:
     Chunk pullChunk(bool & virtual_row);
 
+    /// Emits the oldest buffered chunk, which is the next one in stream order.
+    /// Returns true if it was a virtual row.
+    bool pushBufferedChunk();
+
     InputPort & input;
     OutputPort & output;
 
