@@ -14,6 +14,8 @@
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
+#include <algorithm>
+#include <deque>
 #include <sys/inotify.h>
 #elif defined(OS_DARWIN)
 #include <map>
@@ -42,6 +44,8 @@ namespace FileLogSetting
 
 #if defined(OS_LINUX)
 static constexpr int buffer_size = 4096;
+/// An item moved out of the directory never gets its IN_MOVED_TO, so old cookies are evicted.
+static constexpr size_t max_unpaired_move_cookies = 1024;
 #endif
 
 DirectoryWatcherBase::DirectoryWatcherBase(
@@ -98,6 +102,7 @@ void DirectoryWatcherBase::watchFunc()
 
     std::string buffer;
     buffer.resize(buffer_size);
+    std::deque<uint32_t> unpaired_move_cookies;
     pollfd pfds[2];
     /// inotify descriptor
     pfds[0].fd = inotify_fd;
@@ -138,13 +143,31 @@ void DirectoryWatcherBase::watchFunc()
                         }
                         if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
                         {
+                            unpaired_move_cookies.push_back(p_event->cookie);
+                            if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
+                                unpaired_move_cookies.pop_front();
                             DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM);
                             owner.onItemMovedFrom(ev);
                         }
-                        if ((p_event->mask & IN_MOVED_TO) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO))
+                        if (p_event->mask & IN_MOVED_TO)
                         {
-                            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO);
-                            owner.onItemMovedTo(ev);
+                            /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
+                            /// is new here, even if it has the inode of a file just deleted from the directory.
+                            auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
+                            if (paired != unpaired_move_cookies.end())
+                            {
+                                unpaired_move_cookies.erase(paired);
+                                if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
+                                {
+                                    DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO);
+                                    owner.onItemMovedTo(ev);
+                                }
+                            }
+                            else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
+                            {
+                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+                                owner.onItemAdded(ev);
+                            }
                         }
                     }
 
@@ -315,6 +338,69 @@ void DirectoryWatcherBase::watchFunc()
         }
     };
 
+    /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
+    /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
+    /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
+    /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
+    std::set<std::string> deleted;
+
+    struct DrainedEvents
+    {
+        bool any = false;
+        bool structural = false;
+    };
+    auto drain_events = [&]
+    {
+        DrainedEvents result;
+        struct kevent evs[16];
+        struct timespec no_wait{0, 0};
+        int drained = 0;
+        while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
+        {
+            result.any = true;
+            for (int i = 0; i < drained; ++i)
+            {
+                const int event_fd = static_cast<int>(evs[i].ident);
+                if (event_fd == dir_fd)
+                {
+                    if (evs[i].fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
+                        result.structural = true;
+                    continue;
+                }
+                if (evs[i].fflags & NOTE_RENAME)
+                    result.structural = true;
+                if (!(evs[i].fflags & NOTE_DELETE))
+                    continue;
+                for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
+                {
+                    if (it->second.fd != event_fd)
+                        continue;
+                    deleted.insert(it->first);
+                    /// The name's identity ended; drop its now-stale fd so sync_file_watches
+                    /// reopens a fresh one if the name is recreated.
+                    closeFileDescriptor(it->second.fd);
+                    watched_fds.erase(it);
+                    break;
+                }
+            }
+        }
+        return result;
+    };
+
+    /// Listing, `stat` and opening the watches are not atomic with a rename, which would be diffed as
+    /// REMOVED + ADDED, so the caller discards a pass the directory changed under. The drain before
+    /// `sync_file_watches` keeps the NOTE_DELETE of a departed name, which closing its watch drops.
+    auto scan_and_watch = [&](std::map<std::string, FileState> & out)
+    {
+        scan(out);
+        auto result = drain_events();
+        sync_file_watches(out);
+        const auto after_sync = drain_events();
+        result.any |= after_sync.any;
+        result.structural |= after_sync.structural;
+        return result;
+    };
+
     /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
     /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
     /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
@@ -326,8 +412,8 @@ void DirectoryWatcherBase::watchFunc()
     {
         try
         {
-            scan(snapshot);
-            sync_file_watches(snapshot);
+            if (scan_and_watch(snapshot).structural)
+                continue;
             break;
         }
         catch (const std::exception & e)
@@ -346,15 +432,12 @@ void DirectoryWatcherBase::watchFunc()
     pfds[1].fd = kq;
     pfds[1].events = POLLIN;
 
-    /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
-    /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
-    /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
-    /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
-    std::set<std::string> deleted;
+    bool rescan_without_waiting = false;
     while (!stopped)
     {
-        if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
+        if (poll(pfds, 2, rescan_without_waiting ? 0 : static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
             break;
+        rescan_without_waiting = false;
         if (stopped)
             break;
 
@@ -364,43 +447,22 @@ void DirectoryWatcherBase::watchFunc()
         /// NOTE_DELETE to force an identity reset (REMOVED + ADDED) instead of MODIFIED, which would
         /// otherwise keep a stale read offset - matching what inotify's IN_DELETE + IN_CREATE gives.
         if (pfds[1].revents & POLLIN)
-        {
-            struct kevent evs[16];
-            struct timespec no_wait{0, 0};
-            int drained = 0;
-            while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
-            {
-                for (int i = 0; i < drained; ++i)
-                {
-                    if (!(evs[i].fflags & NOTE_DELETE))
-                        continue;
-                    const int event_fd = static_cast<int>(evs[i].ident);
-                    for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
-                    {
-                        if (it->second.fd != event_fd)
-                            continue;
-                        deleted.insert(it->first);
-                        /// The name's identity ended; drop its now-stale fd so sync_file_watches
-                        /// reopens a fresh one if the name is recreated.
-                        closeFileDescriptor(it->second.fd);
-                        watched_fds.erase(it);
-                        break;
-                    }
-                }
-            }
-        }
+            drain_events();
 
         const auto & settings = owner.storage.getFileLogSettings();
 
         std::map<std::string, FileState> current;
         try
         {
-            scan(current);
             /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
             /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
             /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
             /// behind a dead watcher. It also drops any file that vanished mid-scan from `current`.
-            sync_file_watches(current);
+            const auto drained = scan_and_watch(current);
+            /// The drain consumed wakeups that the pass may not reflect.
+            rescan_without_waiting = drained.any;
+            if (drained.structural)
+                continue;
         }
         catch (const std::exception & e)
         {
@@ -440,6 +502,9 @@ void DirectoryWatcherBase::watchFunc()
             auto sc = snapshot_inode_count.find(inode);
             auto cc = current_inode_count.find(inode);
             if (sc == snapshot_inode_count.end() || cc == current_inode_count.end() || sc->second != 1 || cc->second != 1)
+                return false;
+            /// An unlinked name is not a rename source, even when a hard link brings its inode back.
+            if (deleted.contains(snapshot_inode_name.at(inode)))
                 return false;
             return snapshot_inode_name.at(inode) != current_inode_name.at(inode);
         };

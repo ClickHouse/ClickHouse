@@ -56,8 +56,8 @@ public:
         /// True only when the server replays a definition it stored itself, during startup metadata loading.
         /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
         bool is_metadata_replay = false;
-        /// True when the database is created by `RESTORE`. Unlike `internal`, it is not set for user statements
-        /// that a wrapper such as `PARALLEL WITH` or `EXECUTE AS` runs as internal ones.
+        /// True when the definition comes from a backup being restored. Weaker than `is_metadata_replay`:
+        /// a backup may be crafted by the user, so it must not skip safety checks.
         bool is_restore_from_backup = false;
     };
 

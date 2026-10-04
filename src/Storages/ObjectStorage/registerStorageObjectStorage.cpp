@@ -549,7 +549,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any character include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -895,7 +895,7 @@ Multiple path components can have globs. For being processed file should exists 
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -1293,7 +1293,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, and `icebergHour`; the `PARTITION BY` aliases `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum` are accepted and evaluated as these transforms. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;
@@ -1849,6 +1849,12 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Partition pruning when `use_paimon_partition_pruning` is enabled.
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
+
+## Primary-key tables {#primary-key-tables}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws.
 
 ## Settings {#settings}
 
