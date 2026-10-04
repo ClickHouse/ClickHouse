@@ -185,7 +185,7 @@ public:
         }
     }
 
-    /// Cancel all current merges and mutations, and also all inserted later.
+    /// Cancel all current and future merges and mutations.
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
@@ -193,6 +193,13 @@ public:
         /// the new entry into the list under the mutex, so an entry is either cancelled by
         /// the loop below or observes the flag in `insert` - none can escape.
         all_cancelled = true;
+        cancelCurrent();
+    }
+
+    /// Cancel all current merges and mutations.
+    /// Users on OOM Canary, when we want to free resources
+    void cancelCurrent()
+    {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
             merge_element.is_cancelled = true;

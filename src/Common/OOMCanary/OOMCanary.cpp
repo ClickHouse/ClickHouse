@@ -438,7 +438,7 @@ void OOMCanary::onCanaryOOM()
     /// Cancel all merges and mutations
     try
     {
-        context->getMergeList().cancelAll();
+        context->getMergeList().cancelCurrent();
         LOG_INFO(log, "Cancelled all running merges");
     }
     catch (...)
