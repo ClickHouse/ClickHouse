@@ -5,6 +5,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -28,6 +29,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/likePatternToRegexp.h>
@@ -37,6 +39,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
@@ -69,6 +72,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -1243,6 +1247,32 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
+
+            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
+            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
+            {
+                if (need_inversion || !boolean_context)
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                return nullptr;
+            };
+
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
             /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
@@ -1331,20 +1361,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (!need_inversion
-                && boolean_context
-                && ((res = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+            else if (const auto * rewritten = try_rewrite_boolean_condition())
             {
-                handled_inversion = true;
-            }
-            else if (!need_inversion
-                && boolean_context
-                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
-                && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
-            {
+                res = rewritten;
                 handled_inversion = true;
             }
             else
@@ -1562,6 +1581,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -1782,14 +1802,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
     return true;
-}
-
-bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
-{
-    RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);
-    RPNBuilderTreeNode node(expr.get(), tree_context);
-
-    return node.tryGetConstant(out_value, out_type);
 }
 
 bool KeyCondition::hasOnlyConjunctions() const
@@ -2148,7 +2160,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     bool chain_is_positive = true;
     MonotonicFunctionsChain transform_functions;
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
+        node.getContext(),
         expr_name,
         info,
         out_key_column_num,
@@ -2365,6 +2377,29 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
+/// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
+/// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
+/// structure, so only what `equals` ignores moves: the DAG reads those off the type it is handed.
+static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
+{
+    return replaceNestedTypesInPair(elem_type, dag_type, [](const DataTypePtr & elem_leaf, const DataTypePtr & dag_leaf) -> DataTypePtr
+    {
+        /// Adopting is unconditional here: two `DateTime` types can both report the bare name `DateTime` and
+        /// still have captured different zones, so the name cannot say whether the leaf needs to move.
+        if (WhichDataType(elem_leaf).isDateTimeOrDateTime64())
+            return dag_leaf->equals(*elem_leaf) ? dag_leaf : nullptr;
+
+        /// A custom name on a leaf changes what the transform computes on it (`Bool` renders every nonzero
+        /// `UInt8` as `true`), so a pair whose names disagree is not interchangeable.
+        if ((elem_leaf->hasCustomName() || dag_leaf->hasCustomName()) && elem_leaf->getName() != dag_leaf->getName())
+            return nullptr;
+
+        /// Every other leaf carries no timezone, so there is nothing to adopt.
+        return elem_leaf->equals(*dag_leaf) ? elem_leaf : nullptr;
+    });
+}
+
+
 /// Materializes a transformed column and rejects a transformation that produced NULLs:
 /// - materialize output column (Const/LowCardinality)
 /// - reject if any NULLs were created as a result of transformation
@@ -2464,6 +2499,15 @@ static bool convertColumnForDeterministicDag(
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
+
+    /// Hand the DAG the timezone it was built against; `equals` cannot see it, so the pair is
+    /// interchangeable everywhere except inside the transform. Relabel, never convert.
+    if (auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type))
+        input_type = std::move(adopted);
+    /// A refusal on an otherwise equal pair means it is not interchangeable, so the DAG cannot be
+    /// given either type. A refusal on an unequal pair leaves the casts below to reconcile it.
+    else if (input_type->equals(*dag.input_type))
+        return false;
 
     if (!input_type->equals(*dag.input_type))
     {
@@ -2730,6 +2774,111 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+/// Whether the constant is numerically zero, and therefore reaches a float key column as `+0.0` or `-0.0`.
+/// Returns `std::nullopt` for a constant that cannot be compared against zero here, such as a `String`.
+static std::optional<bool> isNumericallyZeroConstant(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Bool:
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Float64:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return accurateEquals(field, Field(UInt64(0)));
+        default:
+            return {};
+    }
+}
+
+namespace
+{
+
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+}
+
+/// Whether the constant may reach a float element of the key input as a zero, `+0.0` or `-0.0`.
+/// `Tuple`, `Array` and `Map` are walked element by element, so that only an actual zero at a float position
+/// counts. Any other float carrier, and a constant whose shape does not match the type, are conservatively
+/// treated as holding a zero, so that the caller declines the rewrite and the granules are scanned.
+static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & type_with_wrappers)
+{
+    /// A NULL compares equal to nothing, so it cannot be mistaken for either zero.
+    if (field.isNull())
+        return false;
+
+    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (!typeContainsFloat(type))
+        return false;
+
+    if (isFloat(type))
+        return isNumericallyZeroConstant(field).value_or(true);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return true;
+
+        const auto & elements = tuple_type->getElements();
+        const auto & values = field.safeGet<Tuple>();
+        if (values.size() != elements.size())
+            return true;
+
+        for (size_t i = 0; i < values.size(); ++i)
+            if (constantMayHoldFloatZero(values[i], elements[i]))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Array)
+            return true;
+
+        return std::ranges::any_of(
+            field.safeGet<Array>(), [&](const Field & element) { return constantMayHoldFloatZero(element, array_type->getNestedType()); });
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Map)
+            return true;
+
+        /// Each element of a `Map` field is a `(key, value)` tuple.
+        const DataTypePtr entry_type = std::make_shared<DataTypeTuple>(DataTypes{map_type->getKeyType(), map_type->getValueType()});
+        return std::ranges::any_of(
+            field.safeGet<Map>(), [&](const Field & entry) { return constantMayHoldFloatZero(entry, entry_type); });
+    }
+
+    return true;
+}
+
+
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2813,6 +2962,52 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// fall back so the caller scans the granules.
     if (transformed_value.isNaN())
         return false;
+
+    /// IEEE equality does not distinguish `-0.0` from `+0.0`, but a key transform can: `toString(-0.0)` is
+    /// `'-0'`, and `reinterpretAsUInt64(-0.0)` is not zero. An equality on the transformed key then covers
+    /// only one of the two zeros, while the original predicate matches both, so the granules holding the
+    /// other zero would be skipped (and, for `notEquals`, counted without being filtered).
+    ///
+    /// The ambiguity exists only when the constant itself is a zero: an equality against any other constant
+    /// matches a single float value, which the transformed key identifies just as well as before. This is
+    /// not only about exactness - a relaxed atom is also not allowed to prune a granule that the original
+    /// predicate matches - so the bailout does not depend on the transform being injective.
+    const DataTypePtr key_input_type = removeNullable(removeLowCardinality(dag.input_type));
+    const std::optional<bool> constant_is_zero = isNumericallyZeroConstant(out_value);
+
+    if (isFloat(key_input_type) && constant_is_zero.value_or(true))
+    {
+        auto zeros_column = key_input_type->createColumn();
+        zeros_column->insert(Float64(0.0));
+        zeros_column->insert(Float64(-0.0));
+
+        ColumnPtr transformed_zeros_column;
+        DataTypePtr transformed_zeros_type;
+        if (!applyDeterministicDagToColumn(
+                std::move(zeros_column), key_input_type, expr_name, dag, transformed_zeros_column, transformed_zeros_type))
+            return false;
+
+        const Field positive_zero = (*transformed_zeros_column)[0];
+        const Field negative_zero = (*transformed_zeros_column)[1];
+
+        /// For a constant whose value cannot be compared against zero here - a `String`, for example, which
+        /// the transform converts to a float itself - fall back to checking the transformed image. That
+        /// over-approximates the ambiguity (it also fires for a non-zero constant whose image collides with
+        /// a zero image under a non-injective transform), but it is never unsafe.
+        const bool constant_can_be_a_zero
+            = constant_is_zero.value_or(transformed_value == positive_zero || transformed_value == negative_zero);
+
+        if (positive_zero != negative_zero && constant_can_be_a_zero)
+            return false;
+    }
+    else if (constantMayHoldFloatZero(out_value, key_input_type))
+    {
+        /// The zero sits inside a container, such as `k Tuple(Float64, Float64)` with `ORDER BY toString(k)`
+        /// and `WHERE k = (0.0, 1.0)`: the predicate also matches `(-0.0, 1.0)`, which the transformed key
+        /// tells apart. Whether the transform distinguishes the signs would have to be probed over every
+        /// combination of signs of the zero elements, so the index simply does not answer this predicate.
+        return false;
+    }
 
     out_value = transformed_value;
     out_type = transformed_const_type;
@@ -3063,23 +3258,6 @@ bool fieldContainsNaN(const Field & field)
     }
 
     return false;
-}
-
-bool typeContainsFloat(const DataTypePtr & type)
-{
-    if (!type)
-        return false;
-
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
 }
 
 /** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
@@ -3355,7 +3533,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (info.require_ready_sets && !future_set->get())
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getContext());
     if (!prepared_set)
         return false;
 
@@ -3699,13 +3877,6 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        /// `toDayOfWeek` declares that it is monotonic inside the enclosing Monday-based week: its factor
-        /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
-        /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
-        /// interval. Pruning a key range with the unsound claim silently loses matching rows.
-        if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
-            return {};
-
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
@@ -3737,25 +3908,6 @@ public:
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
-    /// Whether the constant argument is a `toDayOfWeek` mode that numbers the week from Monday.
-    /// A mode of an unexpected shape is reported as not Monday-first, which only declines monotonicity.
-    bool isMondayFirstDayOfWeekMode() const
-    {
-        const Field mode = (*const_arg.column)[0];
-
-        UInt64 mode_value = 0;
-        if (mode.getType() == Field::Types::UInt64)
-            mode_value = mode.safeGet<UInt64>();
-        else if (mode.getType() == Field::Types::Int64)
-            mode_value = static_cast<UInt64>(mode.safeGet<Int64>());
-        else
-            return false;
-
-        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
-        /// and the second one selects the Sunday-first numbering.
-        return (mode_value & 2) == 0;
-    }
-
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
@@ -3800,8 +3952,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        auto function = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getTreeContext().getQueryContext());
+        const auto & function = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
@@ -4963,6 +5115,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
+                        /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
+                        /// constant instead of throwing, so the index must do the same instead of converting.
+                        /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
+                        if (!validate_enum_literals_in_operators && isUnknownEnumElement(*key_expr_type_not_null, const_value))
+                        {
+                            if (key_expr_type_is_nullable)
+                                return false;
+
+                            if (func_name == "equals")
+                            {
+                                out.function = RPNElement::ALWAYS_FALSE;
+                                return true;
+                            }
+                            if (func_name == "notEquals")
+                            {
+                                out.function = RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                            return false;
+                        }
+
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -5011,7 +5184,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                             /// Declared against the type this cast is actually given, not the stripped
                             /// `key_expr_type` used to pick the supertype.
-                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -6627,6 +6800,38 @@ bool KeyCondition::mayReadNullKeyValue(
     return false;
 }
 
+bool KeyCondition::fieldHasNullInside(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Null:
+            return !field.isPositiveInfinity() && !field.isNegativeInfinity();
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Map:
+        {
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -6670,12 +6875,25 @@ BoolMask KeyCondition::checkInHyperrectangle(
             const Range * key_range_ptr = &hyperrectangle[key_column];
             std::optional<Range> key_range_storage;
 
+            /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
+            /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
+            /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
+            /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
+            /// comes out lower and needs no widening.
+            const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
+            if (unlikely(upper_bound_widened))
+            {
+                key_range_storage = *key_range_ptr;
+                key_range_storage->right = POSITIVE_INFINITY;
+                key_range_storage->right_included = true;
+                key_range_ptr = &*key_range_storage;
+            }
+
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
-                key_range_storage = hyperrectangle[key_column];
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_storage,
+                    *key_range_ptr,
                     element.monotonic_functions_chain,
                     data_types[key_column],
                     single_point
@@ -6707,7 +6925,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 intersects = false;
                 contains = false;
             }
-            else if (unlikely(key_range.right.isNaN()))
+            else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
             {
                 contains = false;
             }
@@ -7113,10 +7331,19 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
+                /// The upper bound is widened when it holds a nested NULL, as in the overload above.
+                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
+                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
+                if (unlikely(upper_bound_widened))
+                {
+                    sparse_key_range.right = POSITIVE_INFINITY;
+                    sparse_key_range.right_included = true;
+                }
+
                 /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
                 /// the helper returns the range unchanged.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    sparse_hyperrectangle[sparse_pos],
+                    std::move(sparse_key_range),
                     element.monotonic_functions_chain,
                     sparse_data_types[sparse_pos],
                     single_point);
@@ -7145,7 +7372,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         intersects = false;
                         contains = false;
                     }
-                    else if (unlikely(key_range.right.isNaN()))
+                    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
                     {
                         contains = false;
                     }
