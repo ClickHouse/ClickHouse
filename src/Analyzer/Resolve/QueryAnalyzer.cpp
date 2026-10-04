@@ -7,6 +7,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/InterpolateNode.h>
@@ -6958,6 +6959,220 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
     query_node_typed.getWhere() = build_and(std::move(new_where_args));
 }
 
+bool isTableAliasColumn(const QueryTreeNodePtr & node)
+{
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node || !column_node->hasExpression())
+        return false;
+
+    /// Columns from JOIN USING and ARRAY JOIN also have an expression, but it is not an ALIAS expression.
+    auto column_source = column_node->getColumnSourceOrNull();
+    if (!column_source)
+        return false;
+
+    auto column_source_type = column_source->getNodeType();
+    return column_source_type == QueryTreeNodeType::TABLE || column_source_type == QueryTreeNodeType::TABLE_FUNCTION;
+}
+
+/// Whether the expression contains a function whose value differs between servers, like `hostName` or `shardNum`,
+/// including the ones that were folded into a constant on the initiator.
+bool hasServerConstantFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        const auto & source_expression = constant_node->getSourceExpression();
+        return source_expression && hasServerConstantFunction(source_expression);
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
+    {
+        auto function_base = function_node->getFunction();
+        if (function_base && function_base->isServerConstant())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasServerConstantFunction(child))
+            return true;
+
+    return false;
+}
+
+/** Replaces references to ALIAS columns in the expressions computed after aggregation with the ALIAS expressions
+  * if they can be computed from GROUP BY keys and aggregate functions.
+  *
+  * The value of an ALIAS column is computed when the table is read and is not available after aggregation
+  * unless the column itself is a GROUP BY key, but its expression can depend only on the keys, for example:
+  * SELECT a FROM t GROUP BY k, where `a` is `ALIAS f(k)`.
+  *
+  * References that are under aggregate functions or are a part of a GROUP BY key are kept,
+  * as well as the ones whose expression depends on something else: `validateAggregates` reports them by their name.
+  */
+class InlineAliasColumnsAfterAggregationVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsAfterAggregationVisitor>
+{
+public:
+    explicit InlineAliasColumnsAfterAggregationVisitor(const QueryTreeNodes & group_by_keys_)
+        : group_by_keys(group_by_keys_)
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        /// The ALIAS expression can be a reference to another ALIAS column.
+        while (isTableAliasColumn(node) && !isGroupByKey(node) && isComputableAfterAggregation(node))
+        {
+            auto expression = node->as<ColumnNode &>().getExpression()->clone();
+            /// Aliases from the table definition, like `x` in `a ALIAS (k + 1 AS x)`, are not a part of the query
+            /// and would conflict with each other or with the aliases of the query when it is sent to remote servers.
+            removeAliasesRecursive(expression);
+            node = std::move(expression);
+        }
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child) const
+    {
+        /// The expression of a column that was not replaced is computed before aggregation.
+        if (parent->getNodeType() == QueryTreeNodeType::COLUMN)
+            return false;
+
+        if (const auto * function_node = parent->as<FunctionNode>())
+        {
+            /// Arguments of `grouping` must be GROUP BY keys as they are written.
+            if (function_node->isAggregateFunction() || function_node->getFunctionName() == "grouping")
+                return false;
+        }
+
+        if (isGroupByKey(parent))
+            return false;
+
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION;
+    }
+
+private:
+    bool isGroupByKey(const QueryTreeNodePtr & node) const
+    {
+        for (const auto & group_by_key : group_by_keys)
+            if (compareGroupByKeys(node, group_by_key))
+                return true;
+
+        return false;
+    }
+
+    /// Mirrors the checks of `validateAggregates` for the expression of an ALIAS column.
+    bool isComputableAfterAggregation(const QueryTreeNodePtr & node) const
+    {
+        if (isGroupByKey(node))
+            return true;
+
+        /// The value of a column is computed for every row, so it is determined by GROUP BY keys only if the expression is.
+        /// Computed after aggregation, `rand` would give a value per group, `rowNumberInAllBlocks` would count the groups
+        /// instead of the rows, and `shardNum` would give the value of the initiator instead of the value of each shard.
+        /// A folded constant (e.g. `now`) has one value in the query unless it comes from a server constant function.
+        switch (node->getNodeType())
+        {
+            case QueryTreeNodeType::CONSTANT:
+                return !hasServerConstantFunction(node);
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+                return true;
+            case QueryTreeNodeType::COLUMN:
+            {
+                if (isTableAliasColumn(node))
+                    return isComputableAfterAggregation(node->as<ColumnNode &>().getExpression());
+
+                auto column_source = node->as<ColumnNode &>().getColumnSourceOrNull();
+                return column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+            }
+            case QueryTreeNodeType::FUNCTION:
+            {
+                const auto & function_node = node->as<FunctionNode &>();
+                if (function_node.isAggregateFunction())
+                    return true;
+                if (function_node.getFunctionName() == "grouping")
+                    return false;
+
+                if (function_node.isOrdinaryFunction())
+                {
+                    auto function_base = function_node.getFunction();
+                    if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
+                        || function_base->isServerConstant())
+                        return false;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child && !isComputableAfterAggregation(child))
+                return false;
+
+        return true;
+    }
+
+    const QueryTreeNodes & group_by_keys;
+};
+
+void inlineAliasColumnsAfterAggregation(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
+{
+    /// `scope.group_by_use_nulls` is set only for ROLLUP, CUBE or GROUPING SETS with the `group_by_use_nulls` setting.
+    /// Then the GROUP BY keys inside the resolved ALIAS expressions are converted to Nullable,
+    /// so an ALIAS column that is a key itself would not be recognized as a key and would be replaced,
+    /// and its replacement would not be NULL in the rows where the key is NULL.
+    if (scope.group_by_use_nulls)
+        return;
+
+    auto & query_node_typed = query_node->as<QueryNode &>();
+
+    QueryTreeNodes group_by_keys;
+    for (const auto & node : query_node_typed.getGroupBy().getNodes())
+    {
+        if (query_node_typed.isGroupByWithGroupingSets())
+        {
+            for (const auto & grouping_set_key : node->as<ListNode &>().getNodes())
+                group_by_keys.push_back(grouping_set_key);
+        }
+        else
+        {
+            group_by_keys.push_back(node);
+        }
+    }
+
+    if (group_by_keys.empty())
+    {
+        QueryTreeNodes aggregate_function_nodes;
+        collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+        if (aggregate_function_nodes.empty())
+            return;
+    }
+
+    InlineAliasColumnsAfterAggregationVisitor visitor(group_by_keys);
+
+    if (query_node_typed.hasHaving())
+        visitor.visit(query_node_typed.getHaving());
+
+    if (query_node_typed.hasQualify())
+        visitor.visit(query_node_typed.getQualify());
+
+    if (query_node_typed.hasOrderBy())
+        visitor.visit(query_node_typed.getOrderByNode());
+
+    if (query_node_typed.hasInterpolate())
+        visitor.visit(query_node_typed.getInterpolate());
+
+    if (query_node_typed.hasLimitBy())
+        visitor.visit(query_node_typed.getLimitByNode());
+
+    if (query_node_typed.hasLimitAfter())
+        visitor.visit(query_node_typed.getLimitAfter());
+
+    if (query_node_typed.hasLimitUntil())
+        visitor.visit(query_node_typed.getLimitUntil());
+
+    visitor.visit(query_node_typed.getProjectionNode());
+}
+
 }
 
 /** Resolve query.
@@ -7510,6 +7725,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
+    inlineAliasColumnsAfterAggregation(query_node, scope);
 
     validateFromClause(query_node);
     validateFilters(query_node);
