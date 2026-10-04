@@ -44,7 +44,6 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/13900
 03075_shared_merge_tree_recursive_cte_smoke_test
-03034_recursive_cte_tree_merge_tree
 03154_recursive_cte_distributed
 
     analyzer=0 (partially supported)
