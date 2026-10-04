@@ -213,6 +213,24 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
         join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 
+/// Same as `supportsRuntimeFilter`, but also requires that `tryCreateJoin` can actually build the algorithm
+/// for this join. Without a spill threshold `grace_hash` is not runnable and is skipped in favour of the next
+/// listed algorithm, so it must not stop the scan of the preference list, nor be the reason to plant a filter
+/// (planting erases every other algorithm and would leave a standalone `grace_hash` that refuses to run).
+static bool supportsRuntimeFilterAndIsRunnable(JoinAlgorithm join_algorithm, const JoinSettings & join_settings)
+{
+    if (!supportsRuntimeFilter(join_algorithm))
+        return false;
+
+    if (join_algorithm == JoinAlgorithm::GRACE_HASH
+        && !join_settings.legacy_join_size_limits_trigger_spilling
+        && join_settings.getEffectiveMaxBytesBeforeExternalJoin() == 0
+        && join_settings.join_algorithms.size() > 1)
+        return false;
+
+    return true;
+}
+
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
 /// identical across the two Auto-PR plan builds (single-replica and parallel-replicas), so their
 /// plans hash equally with no special-casing.
@@ -302,7 +320,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
-        std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
+        std::any_of(join_algorithms.begin(), join_algorithms.end(),
+            [&](auto algorithm) { return supportsRuntimeFilterAndIsRunnable(algorithm, join_step->getJoinSettings()); });
 
     if (!can_use_runtime_filter)
         return false;
@@ -328,7 +347,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// two passes cannot disagree.
     for (auto algorithm : join_algorithms)
     {
-        if (supportsRuntimeFilter(algorithm))
+        if (supportsRuntimeFilterAndIsRunnable(algorithm, join_step->getJoinSettings()))
             break;
 
         /// `partial_merge` is a merge algorithm too. If it is supported and precedes
