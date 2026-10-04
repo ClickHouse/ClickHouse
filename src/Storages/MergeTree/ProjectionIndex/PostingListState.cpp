@@ -16,6 +16,8 @@
 #include <base/scope_guard.h>
 #include <Common/FieldVisitorToString.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -503,6 +505,41 @@ DataTypePtr createPostingListType(const ASTPtr & text_index_definition, const Po
     Array params;
     if (text_index_definition && !text_index_definition->children.empty())
         params = convertASTArgumentsToParams(text_index_definition);
+
+    std::unordered_set<String> explicit_keys;
+    for (const auto & param : params)
+    {
+        const auto & s = param.safeGet<String>();
+        String key = s.substr(0, s.find('='));
+
+        /// The explicit codec is persisted in the part metadata and validated again by
+        /// `createPostingListTypeFromPartMetadata` on load. Reject an unsupported one up front,
+        /// otherwise the part would be written and then fail to load after a restart or `ATTACH`.
+        if (key == "posting_list_codec")
+        {
+            String value = s.substr(s.find('=') + 1);
+            if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'')
+                value = value.substr(1, value.size() - 2);
+            parsePostingListCodecType(value);
+        }
+
+        explicit_keys.insert(std::move(key));
+    }
+
+    /// The on-disk layout depends on the effective parameters, which may come from the `text_index_*`
+    /// table settings rather than from the index definition. Persist the effective values, so that
+    /// `createPostingListTypeFromPartMetadata` reconstructs the same layout regardless of the
+    /// settings in effect when the part is loaded.
+    auto add_effective = [&](const String & key, UInt64 value)
+    {
+        if (!explicit_keys.contains(key))
+            params.emplace_back(key + "=" + toString(value));
+    };
+    add_effective("dictionary_block_size", posting_list_params.dictionary_block_size);
+    add_effective("dictionary_block_frontcoding_compression", posting_list_params.dictionary_block_frontcoding_compression);
+    add_effective("posting_list_block_size", posting_list_params.posting_list_block_size);
+    add_effective("has_block_index", posting_list_params.has_block_index);
+    add_effective("enable_phrase_query_support", posting_list_params.enable_phrase_query_support);
 
     return buildPostingListType(params, posting_list_params);
 }

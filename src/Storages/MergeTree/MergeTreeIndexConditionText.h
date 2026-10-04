@@ -101,7 +101,6 @@ public:
         bool has_positions_,
         NameSet columns_shadowing_map_subcolumns_,
         JSONIndexArgumentTypes json_argument_types_,
-        bool enable_phrase_query_support_ = false,
         bool is_projection_index_ = false);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -272,7 +271,6 @@ private:
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;
-    [[maybe_unused]] bool enable_phrase_query_support = false;
     /// Whether this condition belongs to a projection text index. The projection index reader
     /// cannot evaluate pattern-only queries, so such queries must never advertise
     /// `TextIndexDirectReadMode::Exact` (see `traverseFunctionNode`).

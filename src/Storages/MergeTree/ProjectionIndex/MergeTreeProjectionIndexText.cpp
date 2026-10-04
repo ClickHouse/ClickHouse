@@ -662,13 +662,15 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         text_index->tokenizer.get(),
         text_index->preprocessor,
         text_index->postprocessor,
-        text_index->params.positions,
+        /// The projection writer ignores `support_phrase_search` (`params.positions`): position data is
+        /// written only with `enable_phrase_query_support`, and the phrase cursor also needs the block
+        /// index (`.pidx`). Without both, `hasPhrase` cannot be evaluated exactly and keeps the row-level filter.
+        /*has_positions_=*/ text_index->params.enable_phrase_query_support && text_index->params.has_block_index,
         /// A projection index is built without a storage metadata snapshot (see the constructors),
         /// so `getColumnsShadowingMapSubcolumns` cannot be evaluated here; the projection's own
         /// columns are the only ones this condition can read, so nothing shadows them.
         /*columns_shadowing_map_subcolumns_=*/ NameSet{},
         collectJSONIndexArgumentTypes(*text_index->index.expression),
-        text_index->params.enable_phrase_query_support,
         /*is_projection_index_=*/ true);
 }
 

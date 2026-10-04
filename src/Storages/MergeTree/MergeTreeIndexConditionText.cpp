@@ -193,7 +193,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_,
-    bool enable_phrase_query_support_,
     bool is_projection_index_)
     : WithContext(context_)
     , header(index_sample_block)
@@ -209,7 +208,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
-    , enable_phrase_query_support(enable_phrase_query_support_)
     , is_projection_index(is_projection_index_)
 {
     if (!predicate)

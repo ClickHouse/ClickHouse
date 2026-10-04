@@ -272,15 +272,19 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
         auto & granule_text = dynamic_cast<MergeTreeProjectionIndexGranuleText &>(*projection_granule);
         const auto & remaining_tokens = granule_text.getRemainingTokens();
 
+        /// `PhraseCursor` matches token `i` at position `base + i`, so it needs the phrase tokens
+        /// in their original order and with repetitions, not the sorted distinct `getTokens`.
+        const auto & phrase_tokens = search_query->getPhraseTokens();
+
         std::vector<ProjectionPostingListCursorPtr> phrase_token_cursors;
         std::vector<PositionCursorPtr> pos_cursors;
-        phrase_token_cursors.reserve(search_query->getTokens().size());
-        pos_cursors.reserve(search_query->getTokens().size());
+        phrase_token_cursors.reserve(phrase_tokens.size());
+        pos_cursors.reserve(phrase_tokens.size());
 
-        bool ok = true;
-        for (size_t i = 0; i < search_query->getTokens().size() && ok; ++i)
+        bool ok = !phrase_tokens.empty();
+        for (size_t i = 0; i < phrase_tokens.size() && ok; ++i)
         {
-            auto token_it = remaining_tokens.find(search_query->getTokens()[i]);
+            auto token_it = remaining_tokens.find(phrase_tokens[i]);
             if (token_it == remaining_tokens.end())
             {
                 ok = false;
