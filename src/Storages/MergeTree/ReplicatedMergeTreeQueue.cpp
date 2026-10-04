@@ -2289,10 +2289,13 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     std::map<std::string, MutationCommands> result;
     std::lock_guard lock(state_mutex);
 
-    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    /// The finished mutations are not necessarily a prefix of `mutations_by_znode`: a mutation
+    /// can be marked as done while an earlier one is still pending (see `tryFinalizeMutations`),
+    /// so all entries are checked.
+    for (const auto & [name, status] : mutations_by_znode)
     {
         if (status.is_done)
-            break;
+            continue;
         result.emplace(name, status.entry->commands);
     }
 
@@ -2304,10 +2307,11 @@ Strings ReplicatedMergeTreeQueue::getMutationsWithLegacyPartitionScope() const
     Strings result;
     std::lock_guard lock(state_mutex);
 
-    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    /// Not a prefix scan, see `getUnfinishedMutations`.
+    for (const auto & [name, status] : mutations_by_znode)
     {
         if (status.is_done)
-            break;
+            continue;
 
         /// The znode keeps the original literals whatever this replica pinned in memory, so every
         /// replica that loads the entry later (and this one after a restart) has to decode them again.

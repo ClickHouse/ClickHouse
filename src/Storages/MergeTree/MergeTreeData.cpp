@@ -11266,10 +11266,19 @@ bool MergeTreeData::isLegacyPartitionScopeRecoverableFromBlockNumbers(
     if (block_numbers.size() != 1)
         return false;
 
+    /// Every command has to be scoped to specific partitions (a value or an id, but not `ALL`).
+    /// A command already written as `IN PARTITION ID` does not have to be decoded, but it is
+    /// fine for it to share the entry with the commands that still carry a value literal: the
+    /// single partition of the block numbers is the scope of all of them.
     return std::ranges::all_of(commands, [](const auto & command)
     {
         auto alter = command.ast();
-        return alter && hasPartitionValueLiteral(getPartitionScopeLiterals(*alter));
+        if (!alter)
+            return false;
+
+        const auto literals = getPartitionScopeLiterals(*alter);
+        return !literals.empty()
+            && std::ranges::none_of(literals, [](const auto & literal) { return literal->template as<const ASTPartition &>().all; });
     });
 }
 

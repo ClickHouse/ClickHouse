@@ -1975,8 +1975,19 @@ void StorageMergeTree::loadMutations()
             continue;
         }
 
+        /// The upgrade only persists the scope that is already resolved in memory, and an entry that
+        /// is not upgraded stays in the same state as one on a non-writable disk: it is executable,
+        /// and the partition key type changes it is not safe with are refused (see
+        /// `getMutationsWithLegacyPartitionScope`). So a failed write must not fail the load of the table.
         LOG_INFO(log, "Upgrading legacy mutation file {} to persist the resolved partition scope", entry.file_name);
-        entry.upgradeFileWithResolvedPartitionScope(getContext()->getWriteSettings());
+        try
+        {
+            entry.upgradeFileWithResolvedPartitionScope(getContext()->getWriteSettings());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot upgrade legacy mutation file {} to the current format", entry.file_name));
+        }
     }
 
     if (!current_mutations_by_version.empty())
@@ -2001,7 +2012,9 @@ bool StorageMergeTree::mutationVersionsEquivalent(const MergeTreePartInfo & left
     {
         chassert(left.getPartitionId() == right.getPartitionId());
 
-        auto const & partition_id = left.getPartitionId();
+        /// A patch part lives in a synthetic partition, while the mutation entries store the ids
+        /// of the partitions of the regular parts, so the original partition id is checked.
+        auto partition_id = left.getOriginalPartitionId();
         auto [mutations_it, mutations_end_it] = left_data_version < right_data_version
             ? std::make_tuple(left_it, right_it)
             : std::make_tuple(right_it, left_it);
@@ -3027,11 +3040,31 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
 
     const time_t now = time(nullptr);
 
+    /// A transactional mutation is never marked as finished here, and the mutations after it that
+    /// may touch the same parts are not either. A transactional mutation scoped to some partitions
+    /// only holds back the later mutations of these partitions, so a later mutation of another
+    /// partition still finishes and gets cleaned up while the transaction is running.
+    PartitionIds partitions_of_transactional_mutations;
+
     size_t done_count = 0;
     for (auto & [version, entry] : current_mutations_by_version)
     {
         if (!entry.tid.isNonTransactional())
-            break;
+        {
+            if (entry.partition_ids.empty())
+                break;
+
+            partitions_of_transactional_mutations.insert(entry.partition_ids.begin(), entry.partition_ids.end());
+            continue;
+        }
+
+        if (!partitions_of_transactional_mutations.empty()
+            && (entry.partition_ids.empty()
+                || std::ranges::any_of(entry.partition_ids, [&](const auto & partition_id)
+                    {
+                        return partitions_of_transactional_mutations.contains(partition_id);
+                    })))
+            continue;
 
         if (hasPartsToMutate(entry, static_cast<Int64>(version), part_versions))
             continue;
