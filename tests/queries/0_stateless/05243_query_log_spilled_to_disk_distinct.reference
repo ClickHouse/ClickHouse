@@ -1,0 +1,3 @@
+05243_spill_a_distinct_spilled	['distinct']	1	0
+05243_spill_b_distinct_in_memory	[]	0	0
+05243_spill_c_sort_spilled	['sort']	0	1
