@@ -1,0 +1,6 @@
+1
+Filter column: or(like(__table1.s, \'%Hello%\'_String), like(__table1.s, \'%hello%\'_String)) (removed)
+1
+Filter column: or(like(__table1.s, \'%Hello%\'_String), like(__table1.s, \'%hello%\'_String)) (removed)
+1
+Filter column: or(startsWith(__table1.s, \'Hello,\'_String), startsWith(__table1.s, \'hello,\'_String)) (removed)

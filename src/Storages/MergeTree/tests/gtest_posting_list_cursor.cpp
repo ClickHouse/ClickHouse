@@ -2908,7 +2908,7 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogFourWay)
 // ===========================================================================================
 // Section: Arithmetic block skip optimization tests
 //
-// These tests verify that the TurboPFor constant/zero-delta block fast-skip
+// These tests verify that the abpfor constant/zero-delta block fast-skip
 // optimization produces identical results to full decompression.  Key scenarios:
 //   - Zero-delta blocks (consecutive doc_ids, step=1)
 //   - Constant-delta blocks (uniform step > 1)

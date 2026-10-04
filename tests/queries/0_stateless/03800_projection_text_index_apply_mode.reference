@@ -1,0 +1,61 @@
+Test basic queries: has_block_index=1 vs has_block_index=0
+101	Alick a01
+106	Alick a06
+111	Alick b01
+116	Alick b06
+101	Alick a01
+106	Alick a06
+111	Alick b01
+116	Alick b06
+101	Alick a01
+101	Alick a01
+101	Alick a01
+103	Click a03
+106	Alick a06
+108	Click a08
+111	Alick b01
+113	Click b03
+116	Alick b06
+118	Click b08
+101	Alick a01
+103	Click a03
+106	Alick a06
+108	Click a08
+111	Alick b01
+113	Click b03
+116	Alick b06
+118	Click b08
+101	Alick a01
+101	Alick a01
+101	Alick a01
+106	Alick a06
+101	Alick a01
+106	Alick a06
+Test after merge: has_block_index=1 vs has_block_index=0
+101	Alick a01
+201	rick c01
+101	Alick a01
+201	rick c01
+Test large dataset with block-level index boundary
+50
+50
+50
+50
+1
+1
+3
+3
+Test large dataset after merge
+50
+50
+50
+50
+Test UTF-8 with ngram tokenizer
+1	你好世界
+3	你好朋友
+1	你好世界
+3	你好朋友
+1	你好世界
+2	世界和平
+1	你好世界
+2	世界和平

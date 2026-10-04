@@ -10122,6 +10122,12 @@ If set to true, allow using the text index.
         {"26.2", true, true, "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}, \
         {"25.12", true, false, "Text index was moved to Beta."}, \
         {"24.6", true, false, "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_projection_text_index, false, R"(
+If set to true, allow creating projection-based text indexes (`PROJECTION ... TYPE text(...)`).
+This is a separate on-disk format from the GA skip text index and is still experimental; it must
+be explicitly opted into before a table or projection of this kind can be created or attached.
+)", 0, \
+        {"26.10", false, false, "New setting that gates the experimental projection-based text index (`PROJECTION ... TYPE text(...)`). Off by default; users must opt in before creating or attaching a table or projection that uses this on-disk format."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \

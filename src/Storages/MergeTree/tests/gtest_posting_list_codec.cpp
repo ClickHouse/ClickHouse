@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 #include <config.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <base/types.h>
+
+#include <abpfor.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <random>
 #include <span>
 #include <vector>
@@ -858,4 +862,76 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
 #else
     GTEST_SKIP() << "SSE not available on this platform.";
 #endif
+}
+
+/// The projection text index delta-1 encodes its offset and cumulative-byte arrays, all of
+/// which start at 0. delta-1 computes `delta[0] = values[0] - start - 1`, so `start == 0`
+/// makes the first delta `UINT64_MAX` — a full-width value that forces abpfor to fall back to
+/// its kRaw (uncompressed) block form. Using `(T)-1` as the start instead makes
+/// `delta[0] == values[0]`, which stays narrow.
+///
+/// This used to be a correctness requirement: abpfor's scalar delta-1 decoder mistook kRaw
+/// blocks (header 0xFF) for constant blocks, so offset 0 decoded back as 0x8000000000000000,
+/// became `index_offset`, reached `pread` and failed with EINVAL. That was an upstream bug,
+/// fixed in abpfor by amosbird/abpfor#1 (the constant branch now excludes `b == kRaw`), and
+/// the sentinel merely happened to steer clear of the broken path.
+///
+/// The sentinel is kept because it is the better encoding, not because it is a workaround: a
+/// `UINT64_MAX` first delta widens the whole block. The size assertions below pin that
+/// benefit, so the sentinel does not get removed as redundant now that both starts are
+/// correct. Measured with abpfor at the merge of #1.
+TEST(PostingListCodecTest, AbpforDelta1SentinelIsCorrectAndSmaller)
+{
+    /// Returns {decoded values, bytes written}. Also checks encode/decode agree on the length.
+    auto round_trip_u64 = [](const std::vector<UInt64> & values, UInt64 start)
+    {
+        std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt64>(values.size()) + 64, 0);
+        const auto n = static_cast<unsigned>(values.size());
+        const size_t written = abpfor::b256::encodeTailDelta1(values.data(), n, buf.data(), start);
+        std::vector<UInt64> decoded(values.size(), 0);
+        const size_t consumed = abpfor::b256::decodeTailDelta1(buf.data(), n, decoded.data(), start);
+        EXPECT_EQ(written, consumed) << "encode/decode byte counts must agree";
+        return std::pair<std::vector<UInt64>, size_t>{decoded, written};
+    };
+
+    /// Both starts must now round-trip. `{0}` is the shape that used to corrupt: a
+    /// single-large-block token whose offset array is just {0}, which is the common case and
+    /// is why the old bug fired on the very first query.
+    for (const std::vector<UInt64> & values :
+         {std::vector<UInt64>{0}, std::vector<UInt64>{0, 100}, std::vector<UInt64>{0, 64, 4096, 1 << 20}})
+    {
+        EXPECT_EQ(round_trip_u64(values, static_cast<UInt64>(-1)).first, values)
+            << "UInt64 delta-1 must round-trip with the (T)-1 sentinel";
+        EXPECT_EQ(round_trip_u64(values, 0).first, values)
+            << "start = 0 must also round-trip: abpfor#1 fixed the kRaw delta-1 misdecode. "
+               "If this fails, the abpfor submodule predates that fix";
+    }
+
+    /// Why the sentinel is kept: it encodes strictly smaller for arrays that begin at 0.
+    /// A `UINT64_MAX` first delta needs the full width and widens the whole block.
+    for (const std::vector<UInt64> & values :
+         {std::vector<UInt64>{0}, std::vector<UInt64>{0, 100}, std::vector<UInt64>{0, 2, 22, 32}})
+    {
+        const size_t with_zero = round_trip_u64(values, 0).second;
+        const size_t with_sentinel = round_trip_u64(values, static_cast<UInt64>(-1)).second;
+        EXPECT_LT(with_sentinel, with_zero)
+            << "the (T)-1 sentinel is kept for size, not correctness — if it stops paying off, "
+               "revisit both call sites rather than silently dropping it (n=" << values.size() << ")";
+    }
+
+    /// The most extreme case, pinned exactly: a lone zero offset costs one byte with the
+    /// sentinel and nine without (kRaw header + 8 raw bytes).
+    EXPECT_EQ(round_trip_u64({0}, static_cast<UInt64>(-1)).second, 1u);
+    EXPECT_EQ(round_trip_u64({0}, 0).second, 9u);
+
+    /// UInt32 range arrays deliberately keep `start == 0`: they are pairs of doc IDs rather
+    /// than offsets, so element 0 is not necessarily 0 and the sentinel would not help.
+    const std::vector<UInt32> ranges{0, 9, 10, 10};
+    std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt32>(ranges.size()) + 64, 0);
+    const auto n32 = static_cast<unsigned>(ranges.size());
+    const size_t written = abpfor::b256::encodeTailDelta1(ranges.data(), n32, buf.data(), 0);
+    std::vector<UInt32> decoded(ranges.size(), 0);
+    const size_t consumed = abpfor::b256::decodeTailDelta1(buf.data(), n32, decoded.data(), 0);
+    EXPECT_EQ(written, consumed);
+    EXPECT_EQ(decoded, ranges) << "UInt32 interleaved ranges must round-trip with start = 0";
 }
