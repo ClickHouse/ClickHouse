@@ -136,6 +136,14 @@ bool injectRequiredColumnsRecursively(
             add_column(column_name);
             return true;
         }
+
+        /// A column the part does not store is materialized on read from its `DEFAULT` expression, but a
+        /// patch part (a lightweight `UPDATE`) may supply its value. Read it, so that the patch is applied
+        /// to it, instead of substituting its own default into the expression of the column that reads it.
+        /// The column is not physical in this part, so this does not count as a column to read the row
+        /// count from.
+        if (alter_conversions && alter_conversions->getColumnsUpdatedInPatches().contains(column_in_storage->getNameInStorage()))
+            add_column(column_name);
     }
 
     /// Column doesn't have default value and don't exist in part

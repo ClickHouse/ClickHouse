@@ -65,6 +65,18 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate` (a subset of the requested
+    /// columns, present in `block`) once more and replaces their values in `block`. The other
+    /// columns of `block` are the inputs of the expressions. Used after patch parts have
+    /// overwritten a column that such an expression reads.
+    void evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const;
+
+    /// Returns the columns of `candidates`, which the part does not store, whose `DEFAULT` expression
+    /// reads one of `changed_columns`, directly or through another `DEFAULT` column the part does not
+    /// store. Only those have to be evaluated again after `changed_columns` are patched: evaluating
+    /// any other one again would change the value of a non-deterministic `DEFAULT` such as `rand()`.
+    NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
