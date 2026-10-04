@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1612,7 +1613,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     return {};
 }
 
-InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+InputOrder buildInputOrderInfo(
+    LimitByStep & limit_by, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings, size_t query_limit)
 {
     /// Here we allow LimitByStep to drive read-in-order.
     /// Example: SELECT * FROM t LIMIT 1 BY a; -- sorting key: a, b
@@ -1656,8 +1658,13 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
             return {};
 
+        /// `query_limit` is the enclosing `LIMIT`, if any: it sizes the first in-order task like the
+        /// `SortingStep` path does, instead of a full range per part.
         if (!reading->requestReadingInOrder(
-                order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
+                order_info.input_order->used_prefix_of_sorting_key_size,
+                order_info.input_order->direction,
+                order_info.input_order->limit,
+                query_limit))
             return {};
 
         /// This overload only fires without an upstream ORDER BY (otherwise the SortingStep
@@ -1685,7 +1692,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
-        if (!merge->requestReadingInOrder(order_info.input_order))
+        if (!merge->requestReadingInOrder(order_info.input_order, query_limit))
             return {};
 
         /// Same as the direct `ReadFromMergeTree` branch: LIMIT BY in streaming mode runs
@@ -1996,8 +2003,9 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
         distinct->applyOrder(std::move(order_info.sort_description));
 }
 
-void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeLimitByInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    auto & node = *stack.back().node;
     if (node.children.size() != 1)
         return;
 
@@ -2005,7 +2013,23 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
     if (!limit_by)
         return;
 
-    auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
+    /// An enclosing `LIMIT` (as in `LIMIT 3 BY a LIMIT 10`) bounds how much of the in-order read is
+    /// needed, so pass it on as the soft limit that sizes the first read task. Only expressions may
+    /// stand between the two: any other step could change the number of rows.
+    size_t query_limit = 0;
+    for (size_t i = stack.size() - 1; i > 0; --i)
+    {
+        const auto * parent_step = stack[i - 1].node->step.get();
+        if (const auto * limit = typeid_cast<const LimitStep *>(parent_step))
+        {
+            query_limit = limit->getLimitForSorting();
+            break;
+        }
+        if (!typeid_cast<const ExpressionStep *>(parent_step))
+            break;
+    }
+
+    auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings, query_limit);
     if (!order_info.input_order)
         return;
 
