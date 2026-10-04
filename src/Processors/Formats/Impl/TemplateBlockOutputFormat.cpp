@@ -72,6 +72,16 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(SharedHeader header_, Write
         if (row_format.escaping_rules[i] == EscapingRule::None)
             row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }
+
+    row_format_settings.reserve(row_format.columnsCount());
+    for (size_t i = 0; i < row_format.columnsCount(); ++i)
+    {
+        if (row_format.escaping_rules[i] == EscapingRule::CSV)
+            row_format_settings.push_back(
+                getFormatSettingsForCSVFieldDelimiter(settings, row_format.delimiters[i + 1], row_format.delimiters[i + 1]));
+        else
+            row_format_settings.push_back(settings);
+    }
 }
 
 TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResultsetPart(const String & part)
@@ -107,7 +117,13 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
         writeString(row_format.delimiters[j], out);
 
         size_t col_idx = *row_format.format_idx_to_column_idx[j];
-        serializeFieldByEscapingRule(*chunk.getColumns()[col_idx], *serializations[col_idx], out, row_num, row_format.escaping_rules[j], settings);
+        serializeFieldByEscapingRule(
+            *chunk.getColumns()[col_idx],
+            *serializations[col_idx],
+            out,
+            row_num,
+            row_format.escaping_rules[j],
+            row_format_settings[j]);
     }
     writeString(row_format.delimiters[columns], out);
 }

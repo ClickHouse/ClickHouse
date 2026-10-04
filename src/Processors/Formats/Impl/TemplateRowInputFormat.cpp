@@ -26,16 +26,28 @@ namespace ErrorCodes
                            std::to_string(row_num));
 }
 
-static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
+static void updateFormatSettingsIfNeeded(
+    FormatSettings::EscapingRule escaping_rule,
+    FormatSettings & settings,
+    const ParsedTemplateFormatString & row_format,
+    char default_csv_delimiter,
+    size_t file_column)
 {
     if (escaping_rule != FormatSettings::EscapingRule::CSV)
         return;
 
     /// Clean custom_delimiter from previous column.
     settings.csv.custom_delimiter.clear();
+    settings.csv.force_quote_date_time_types = false;
+    const auto & field_delimiter = row_format.delimiters[file_column + 1];
+    settings.csv.tuple_delimiter_matches_field_delimiter =
+        field_delimiter.size() == 1 && field_delimiter.front() == settings.csv.tuple_delimiter;
     /// If field delimiter is empty, we read until default csv delimiter.
     if (row_format.delimiters[file_column + 1].empty())
+    {
         settings.csv.delimiter = default_csv_delimiter;
+        settings.csv.force_quote_date_time_types = true;
+    }
     /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
     else if (row_format.delimiters[file_column + 1].size() == 1)
         settings.csv.delimiter = row_format.delimiters[file_column + 1].front();
@@ -44,7 +56,11 @@ static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_r
     /// We have special implementation for such case that uses custom delimiter, it's not so efficient,
     /// but works properly.
     else
+    {
         settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
+        settings.csv.force_quote_date_time_types = true;
+    }
+
 }
 
 TemplateRowInputFormat::TemplateRowInputFormat(
@@ -156,7 +172,12 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
     const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     EscapingRule escaping_rule = row_format.escaping_rules[file_column];
-    updateFormatSettingsIfNeeded(escaping_rule, settings, row_format, default_csv_delimiter, file_column);
+    updateFormatSettingsIfNeeded(
+        escaping_rule,
+        settings,
+        row_format,
+        default_csv_delimiter,
+        file_column);
 
     try
     {
@@ -523,7 +544,12 @@ std::optional<DataTypes> TemplateSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != row_format.columnsCount(); ++i)
     {
         format_reader.skipDelimiter(i);
-        updateFormatSettingsIfNeeded(row_format.escaping_rules[i], format_settings, row_format, default_csv_delimiter, i);
+        updateFormatSettingsIfNeeded(
+            row_format.escaping_rules[i],
+            format_settings,
+            row_format,
+            default_csv_delimiter,
+            i);
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
         data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], &json_inference_info));
     }
