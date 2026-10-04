@@ -470,7 +470,7 @@ std::unique_ptr<ReadBuffer> TemporaryDataBuffer::read()
     return std::make_unique<TemporaryDataReadBuffer>(readRaw());
 }
 
-std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
+std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw(size_t buffer_size)
 {
     finishWriting();
 
@@ -478,7 +478,7 @@ std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
         return std::make_unique<ReadBufferFromEmptyFile>();
 
     /// Keep buffer size less that file size, to avoid memory overhead for large amounts of small files
-    size_t buffer_size = std::min<size_t>(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE);
+    buffer_size = std::min<size_t>(stat.compressed_size, buffer_size);
     return file_holder->read(buffer_size);
 }
 

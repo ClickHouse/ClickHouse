@@ -227,7 +227,7 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
+    std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
