@@ -51,6 +51,8 @@ chain.log.2	34
 app.log	35
 -- matching hard link while detached
 app.log	36
+-- matching hard link to a rotated file removed after attach
+chain.log.2	37
 -- directory name with glob characters
 a.log	1
 -- errors

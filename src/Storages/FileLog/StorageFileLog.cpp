@@ -355,26 +355,33 @@ void StorageFileLog::loadFiles()
     }
 
     /// A file with several names (hard links) is read under one of them: the name it was read under, if that name
-    /// still has it. A file renamed to a non-matching name while it was read (log rotation) keeps being read.
-    std::unordered_set<UInt64> inodes_with_name;
-    for (auto * files : {&found_files, &rotated_files})
+    /// still has it (whether or not it matches the glob), otherwise a matching name, otherwise a non-matching one.
+    /// A file renamed to a non-matching name while it was read (log rotation) keeps being read.
+    std::ranges::sort(found_files);
+    std::ranges::sort(rotated_files);
+    auto has_stored_name = [this](const std::pair<String, UInt64> & file)
     {
-        std::ranges::sort(*files);
-        std::ranges::stable_partition(
-            *files,
-            [this](const auto & file)
-            {
-                auto meta = file_infos.meta_by_inode.find(file.second);
-                return meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.first;
-            });
-        for (auto & [file_name, inode] : *files)
+        auto meta = file_infos.meta_by_inode.find(file.second);
+        return meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.first;
+    };
+    std::unordered_set<UInt64> inodes_with_name;
+    auto add_files = [&](std::vector<std::pair<String, UInt64>> & files, bool only_stored_names)
+    {
+        for (auto & file : files)
         {
-            if (!inodes_with_name.insert(inode).second)
+            if (only_stored_names && !has_stored_name(file))
                 continue;
-            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-            file_infos.file_names.push_back(std::move(file_name));
+            /// A name added in the first pass has its inode in the set, so it is not visited again after the move.
+            if (!inodes_with_name.insert(file.second).second)
+                continue;
+            file_infos.context_by_name.emplace(file.first, FileContext{.inode = file.second});
+            file_infos.file_names.push_back(std::move(file.first));
         }
-    }
+    };
+    add_files(found_files, true);
+    add_files(rotated_files, true);
+    add_files(found_files, false);
+    add_files(rotated_files, false);
 
     /// Update file meta or create file meta
     std::vector<String> renamed_files;
