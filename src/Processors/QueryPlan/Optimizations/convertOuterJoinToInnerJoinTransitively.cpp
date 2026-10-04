@@ -26,6 +26,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -34,39 +35,54 @@ namespace
 {
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
+using NullRejectedCache = std::unordered_map<const ActionsDAG::Node *, NodeSet>;
 
-NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * node)
+NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * root)
 {
-    switch (node->type)
+    NodeSet result;
+    NodeSet visited;
+    std::vector<const ActionsDAG::Node *> stack{root};
+
+    while (!stack.empty())
     {
-        case ActionsDAG::ActionType::INPUT:
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
-            return isNullableOrLowCardinalityNullable(node->result_type) ? NodeSet{node} : NodeSet{};
-        case ActionsDAG::ActionType::ALIAS:
-            return !node->children.empty() ? collectNullPropagatingInputs(node->children.front()) : NodeSet{};
-        case ActionsDAG::ActionType::FUNCTION:
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        switch (node->type)
         {
-            if (!node->function || !node->function->isNullPropagating(node->result_type))
-                return {};
-            NodeSet result;
-            for (const auto * child : node->children)
-                result.merge(collectNullPropagatingInputs(child));
-            return result;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
+                if (isNullableOrLowCardinalityNullable(node->result_type))
+                    result.insert(node);
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                if (!node->children.empty())
+                    stack.push_back(node->children.front());
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (node->function && node->function->isNullPropagating(node->result_type))
+                    stack.insert(stack.end(), node->children.begin(), node->children.end());
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                break;
         }
-        case ActionsDAG::ActionType::COLUMN:
-        case ActionsDAG::ActionType::ARRAY_JOIN:
-            return {};
     }
 
-    return {};
+    return result;
 }
 
+const NodeSet & collectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache);
+
 /// Inputs that cannot be NULL in a row that passes `predicate`, because a NULL there would make the predicate NULL.
-NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
+NodeSet doCollectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache)
 {
     if (predicate->type == ActionsDAG::ActionType::ALIAS && !predicate->children.empty())
-        return collectNullRejectedInputs(predicate->children.front());
+        return collectNullRejectedInputs(predicate->children.front(), cache);
 
     if (predicate->type == ActionsDAG::ActionType::FUNCTION && predicate->function_base)
     {
@@ -76,16 +92,19 @@ NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
         {
             NodeSet result;
             for (const auto * child : predicate->children)
-                result.merge(collectNullRejectedInputs(child));
+            {
+                const auto & child_result = collectNullRejectedInputs(child, cache);
+                result.insert(child_result.begin(), child_result.end());
+            }
             return result;
         }
 
         if (name == "or" && !predicate->children.empty())
         {
-            NodeSet result = collectNullRejectedInputs(predicate->children.front());
+            NodeSet result = collectNullRejectedInputs(predicate->children.front(), cache);
             for (size_t i = 1; i < predicate->children.size() && !result.empty(); ++i)
             {
-                auto other = collectNullRejectedInputs(predicate->children[i]);
+                const auto & other = collectNullRejectedInputs(predicate->children[i], cache);
                 std::erase_if(result, [&](const auto * input) { return !other.contains(input); });
             }
             return result;
@@ -97,6 +116,21 @@ NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
 
     /// The predicate is rejecting wherever it becomes NULL.
     return collectNullPropagatingInputs(predicate);
+}
+
+const NodeSet & collectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache)
+{
+    if (auto it = cache.find(predicate); it != cache.end())
+        return it->second;
+
+    return cache.emplace(predicate, doCollectNullRejectedInputs(predicate, cache)).first->second;
+}
+
+
+NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
+{
+    NullRejectedCache cache;
+    return collectNullRejectedInputs(predicate, cache);
 }
 
 
@@ -259,8 +293,9 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
     if (join_operator.strictness != JoinStrictness::All)
         return;
 
-    /// A `JoinStepLogicalLookup` source expects a particular join kind.
-    auto is_storage_join = [&]()
+    /// A `Join` engine source expects its declared join kind, and only an outer join on a key-value
+    /// source must not be converted to prevent the optimizer from reordering it.
+    auto is_prepared_join_storage = [&]()
     {
         for (const auto * child : node.children)
         {
@@ -268,12 +303,12 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
                 child = child->children.front();
 
             if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
-                if (lookup_step->getPreparedJoinStorage().storage_join != nullptr)
+                if (lookup_step->getPreparedJoinStorage())
                     return true;
         }
         return false;
     }();
-    if (is_storage_join)
+    if (is_prepared_join_storage)
         return;
 
     /// A side is "safe" when the rows this join would null-extend on it cannot survive above.
