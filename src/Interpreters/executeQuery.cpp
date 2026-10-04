@@ -2,6 +2,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
 #include <Common/saturatedDuration.h>
@@ -191,6 +192,8 @@ namespace Setting
     extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -3219,8 +3222,15 @@ static BlockIO executeQueryImpl(
                 {
                     if (auto cached_entry = query_plan_cache->get(query_plan_cache_lookup_context->key))
                     {
-                        if (auto validated_cache_entry
-                            = validateQueryPlanCacheEntryAndBuildSnapshot(*query_plan_cache_lookup_context, context, *cached_entry))
+                        auto validated_cache_entry
+                            = validateQueryPlanCacheEntryAndBuildSnapshot(*query_plan_cache_lookup_context, context, *cached_entry);
+
+                        /// A row policy may have been created after the lookup key was built. The cached
+                        /// plan has no row-level filter, so it must not be used then.
+                        if (validated_cache_entry && hasRowPolicyForQueryPlanCache(context, query_plan_cache_lookup_context->storage_id))
+                            validated_cache_entry.reset();
+
+                        if (validated_cache_entry)
                         {
                             /// Revalidate semantic access rights for the current user. The physical
                             /// column selected for a trivial query is not an extra privilege requirement.
@@ -3245,6 +3255,12 @@ static BlockIO executeQueryImpl(
                                 std::move(validated_cache_entry->storage),
                                 std::move(validated_cache_entry->storage_snapshot),
                                 std::move(validated_cache_entry->table_lock));
+
+                            /// The plan-level thread limit was computed for the warm-up query; recompute it
+                            /// from the current `max_threads` and free memory.
+                            if (cached_entry->max_threads_follows_settings)
+                                plan.setMaxThreads(getMaxThreadsForAvailableMemory(
+                                    settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
 
                             /// Restore query-access logging skipped with analyzer construction.
                             if (!internal && context->hasQueryContext())
@@ -3283,7 +3299,12 @@ static BlockIO executeQueryImpl(
 
                 /// Query plan cache: on a miss, serialize and store the raw (pre-optimization) plan.
                 /// ProfileEvents (hits/misses) are emitted inside QueryPlanCache::get(); do not duplicate here.
-                if (query_plan_cache_lookup_context && !query_plan_cache_hit && interpreter_with_analyzer)
+                /// A plan built with a row-level filter is never cached: the policy may have been created
+                /// after the lookup key was built, and a policy applying to the current query is checked
+                /// again in case it was created after planning (always-true policies leave no filter).
+                if (query_plan_cache_lookup_context && !query_plan_cache_hit && interpreter_with_analyzer
+                    && interpreter_with_analyzer->getPlanner().getUsedRowPolicies().empty()
+                    && !hasRowPolicyForQueryPlanCache(context, query_plan_cache_lookup_context->storage_id))
                 {
                     /// Clone the plan immediately before any further use to avoid holding a reference
                     /// into planner.query_plan across subsequent operations.
@@ -3298,6 +3319,9 @@ static BlockIO executeQueryImpl(
                             serialized_plan.finalize();
                             QueryPlanCacheEntry entry;
                             entry.serialized_plan = serialized_plan.str();
+                            entry.max_threads_follows_settings = plan_copy.getMaxThreads()
+                                == getMaxThreadsForAvailableMemory(
+                                    settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
                             const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
                             entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
                             entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);

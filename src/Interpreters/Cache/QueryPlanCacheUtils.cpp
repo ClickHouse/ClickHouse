@@ -247,9 +247,7 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
         return {};
 
-    /// Row policies are deliberately outside the first version of the cache contract. Any
-    /// applicable policy, including an always-true policy, bypasses lookup and insertion.
-    if (context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER))
+    if (hasRowPolicyForQueryPlanCache(context, storage_id))
         return {};
 
     ASTPtr normalized_ast = normalizeASTForQueryPlanCache(ast);
@@ -268,6 +266,11 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
     lookup_context.storage_id = std::move(storage_id);
     lookup_context.has_wildcard = wildcard_data.has_wildcard;
     return lookup_context;
+}
+
+bool hasRowPolicyForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id)
+{
+    return context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER) != nullptr;
 }
 
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context)

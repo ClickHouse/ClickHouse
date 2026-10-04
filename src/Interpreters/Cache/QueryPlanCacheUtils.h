@@ -18,6 +18,11 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
+/// Row policies are outside the cache contract: any applicable policy, including an always-true
+/// one, bypasses lookup and insertion. Policies can be created or dropped while a query runs, so
+/// this is checked again on the hit path and before inserting a freshly built plan.
+bool hasRowPolicyForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id);
+
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
 Names getReadColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);

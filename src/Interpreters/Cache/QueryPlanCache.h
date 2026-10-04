@@ -102,6 +102,11 @@ struct QueryPlanCacheEntry
 
     /// Approximate key bytes charged to the cache entry weight.
     size_t key_size_in_bytes = 0;
+
+    /// Whether the plan-level thread limit of the cached plan is the memory-limited `max_threads` of
+    /// the warm-up query (rather than e.g. 1 chosen for a trivial `LIMIT`). Neither `max_threads` nor
+    /// the free memory is part of the key, so on a hit such a limit is recomputed for the current query.
+    bool max_threads_follows_settings = false;
 };
 
 /// Hasher for `QueryPlanCacheKey`. The exact AST identity is checked by `operator==`.
