@@ -1,0 +1,21 @@
+-- the arities of find
+1	alpha	100
+2	beta	200
+2	beta	200
+beta
+-- projections
+alpha	100
+beta	200
+alpha
+beta
+1	alpha
+2	beta
+1	alpha	100
+2	beta	200
+-- rejected arguments
+Code: 36. 'find' takes at most two arguments, a filter and a projection, got 3
+Code: 36. The filter of 'find' must be a document
+Code: 36. The projection of 'find' must be a document
+Code: 36. A projection must not mix inclusion and exclusion of fields, except an exclusion of '_id'
+Code: 36. A field name of a projection must not be empty
+Code: 36. 'aggregate' takes exactly one argument, got 0
