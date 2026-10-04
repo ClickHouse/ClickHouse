@@ -116,7 +116,7 @@ SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, max_number_of_merg
 
 -- Stop merges before inserting the expired part, so it cannot be dropped by a TTL merge
 -- before the read-only table is marked.
--- `optimize_on_insert` deletes the expired row on `INSERT`. This test turns it off.
+-- optimize_on_insert deletes the expired row on INSERT. This test turns it off.
 -- The background merge must drop the part.
 SYSTEM STOP MERGES t_readonly_ttl;
 SYSTEM STOP MERGES t_writable_ttl;
