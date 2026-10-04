@@ -48,6 +48,7 @@ IMergeTreeReader::IMergeTreeReader(
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
+    ColumnsCache * columns_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
     const MergeTreeReaderSettings & settings_,
@@ -58,6 +59,7 @@ IMergeTreeReader::IMergeTreeReader(
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
     , uncompressed_cache(uncompressed_cache_)
+    , columns_cache(columns_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
     , storage_settings(storage_settings_)
@@ -485,7 +487,11 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (containsObjectType(*column_in_part->getTypeInStorage()))
+    /// The part's cached serializations are keyed by the names of its physical columns. In Wide parts `part_columns`
+    /// collects flattened `Nested` members into a synthetic column (e.g. `n.a` becomes subcolumn `a` of `n`), which
+    /// has no entry in that cache, so only use it when the storage column exists in the part as is.
+    if (containsObjectType(*column_in_part->getTypeInStorage())
+        && data_part_info_for_read->getColumnPosition(column_in_part->getNameInStorage()))
     {
         auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
         if (serialization->supportsPooling())
@@ -554,6 +560,11 @@ void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
 {
     all_mark_ranges = ranges;
     last_mark_to_read = getLastMark(all_mark_ranges);
+}
+
+void IMergeTreeReader::updateReadRequestMap(MarkRangesPtr request_map)
+{
+    read_request_map = std::move(request_map);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
@@ -648,6 +659,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -662,6 +674,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -676,6 +689,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -691,6 +705,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
+            columns_cache,
             mark_cache,
             deserialization_prefixes_cache,
             reader_settings,
@@ -706,6 +721,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
+            columns_cache,
             mark_cache,
             deserialization_prefixes_cache,
             reader_settings,

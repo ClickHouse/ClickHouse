@@ -17,6 +17,11 @@
 #include <mutex>
 #include <optional>
 
+namespace re2
+{
+class RE2;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -77,6 +82,8 @@ public:
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
         std::optional<std::ifstream> reader = std::nullopt;
+        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
+        bool open_failed = false;
     };
 
     struct FileMeta
@@ -131,6 +138,13 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+    const LoggerPtr & getLog() const { return log; }
+
+    void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
+
+    /// The file name matches the globs of `path`, if any.
+    bool fileNameMatches(const String & file_name) const;
+
 private:
     friend class ReadFromStorageFileLog;
 
@@ -144,6 +158,9 @@ private:
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
     String metadata_base_path;
+
+    /// Set when the file name of `path` has globs.
+    std::shared_ptr<const re2::RE2> file_name_matcher;
 
     FileInfos file_infos;
 
@@ -168,6 +185,12 @@ private:
 
     std::mutex file_infos_mutex;
 
+    /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
+    std::atomic<bool> has_files_to_reopen = false;
+
+    /// Set by a stream that stopped after skipping broken records before the end of its files.
+    std::atomic<bool> read_more_after_skipped_records = false;
+
     struct TaskContext
     {
         BackgroundSchedulePoolTaskHolder holder;
@@ -183,6 +206,9 @@ private:
     void loadFiles();
 
     void loadMetaFiles(bool attach);
+
+    /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
+    bool isTrackedByDirectoryEvents(const String & file_name) const;
 
     void threadFunc();
 
@@ -206,6 +232,9 @@ private:
     /// and pushes the name into `file_names` exactly once.
     void onFileAppeared(const String & file_name, UInt64 inode);
 
+    /// The file is read under another name that still has it (a hard link).
+    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
+
     size_t getTableDependentCount() const;
 
     /// Used in shutdown()
@@ -225,5 +254,8 @@ private:
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
+
+/// Resolves a relative `path` against `user_files_path`, unless it is already inside `user_files_path` from the working directory.
+String resolveFileLogPath(const String & path, const String & user_files_path);
 
 }

@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operators",
           "pages": [
-            "reference/operators/index",
-            "reference/operators/exists",
-            "reference/operators/distributed-ddl"
+            "reference/operators/index"
           ]
         }
       ]
@@ -946,6 +944,7 @@
           ]
         },
         "reference/formats/SQLInsert",
+        "reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -970,15 +969,6 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "reference/interfaces/specs/NativeProtocol",
-        "reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1030,6 +1020,7 @@
         "reference/system-tables/codecs",
         "reference/system-tables/collations",
         "reference/system-tables/columns",
+        "reference/system-tables/columns_cache",
         "reference/system-tables/completions",
         "reference/system-tables/constraints",
         "reference/system-tables/contributors",

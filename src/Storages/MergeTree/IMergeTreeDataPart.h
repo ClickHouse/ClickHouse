@@ -118,6 +118,7 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
+    PINNED_BY_DELETE_BITMAP,
     REMOVE,
     REMOVE_ROLLED_BACK,
     REMOVE_RETRY,
@@ -270,6 +271,9 @@ public:
 
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
+
+    /// Whether the columns cache can hold entries of this part at all, by its type and its table.
+    bool mayStoreColumnsInColumnsCache() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
