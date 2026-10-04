@@ -4293,7 +4293,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+bool ReadFromMergeTree::canReadInOrder(size_t prefix_size, int direction) const
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -4309,6 +4309,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+        return false;
+
+    return true;
+}
+
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+{
+    /// if direction is not set, use current one
+    if (!direction)
+        direction = getSortDirection();
+
+    if (!canReadInOrder(prefix_size, direction))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order

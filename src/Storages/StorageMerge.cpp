@@ -2526,21 +2526,23 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::canReadInOrder(int direction)
+bool ReadFromMerge::canReadInOrder(size_t prefix_size, int direction)
 {
     filterTablesAndCreateChildrenPlans();
 
     if (direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
-    auto can_read_in_order = [direction](ReadFromMergeTree & read_from_merge_tree)
+    /// Ask the reader itself, so that every condition under which its `requestReadingInOrder`
+    /// refuses (such as a prefix longer than its own sorting key) is covered.
+    auto can_read_in_order = [prefix_size, direction](ReadFromMergeTree & read_from_merge_tree)
     {
-        return direction == 1 || !read_from_merge_tree.isQueryWithFinal();
+        return read_from_merge_tree.canReadInOrder(prefix_size, direction);
     };
 
-    auto can_read_in_order_nested = [direction](ReadFromMerge & nested_read_from_merge)
+    auto can_read_in_order_nested = [prefix_size, direction](ReadFromMerge & nested_read_from_merge)
     {
-        return nested_read_from_merge.canReadInOrder(direction);
+        return nested_read_from_merge.canReadInOrder(prefix_size, direction);
     };
 
     /// The object storage reader cannot preserve order when it is reached through a `Merge`
@@ -2574,10 +2576,11 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     /// narrowed stream budget, `has_outer_limit` and the per-part `PrefetchingConcat` safeguards
     /// applied: all of the cost of reading in order and none of its benefit.
     ///
-    /// `canReadInOrder` mirrors the rejection conditions of the mutating pass exactly (reverse
-    /// order with `FINAL`, an object storage child, and both recursively through a nested `Merge`),
-    /// so once it accepts, no child below can refuse.
-    if (!canReadInOrder(order_info_->direction))
+    /// `canReadInOrder` mirrors the rejection conditions of the mutating pass exactly (it asks every
+    /// `ReadFromMergeTree` child through `ReadFromMergeTree::canReadInOrder`, rejects an object
+    /// storage child, and recurses through a nested `Merge`), so once it accepts, no child below
+    /// can refuse.
+    if (!canReadInOrder(order_info_->used_prefix_of_sorting_key_size, order_info_->direction))
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)

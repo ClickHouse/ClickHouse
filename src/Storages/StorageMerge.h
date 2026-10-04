@@ -201,10 +201,10 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
 
-    /// Returns whether `requestReadingInOrder` can preserve the requested direction without
-    /// changing the child readers. Used by query-plan probes that must not advertise an order
-    /// which the eventual request will reject.
-    bool canReadInOrder(int direction);
+    /// Returns whether `requestReadingInOrder` can read the requested sorting key prefix in the
+    /// requested direction, without changing the child readers. Used as a preflight so that the
+    /// request is all-or-nothing.
+    bool canReadInOrder(size_t prefix_size, int direction);
 
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 

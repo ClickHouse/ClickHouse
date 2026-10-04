@@ -402,6 +402,10 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
 
+    /// Returns whether `requestReadingInOrder` with the same `prefix_size` and `direction` would
+    /// succeed, without changing anything.
+    bool canReadInOrder(size_t prefix_size, int direction) const;
+
     /// Set when downstream aggregation-in-order benefits from multiple
     /// input streams (parallel aggregation + memory-bound merging).
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
