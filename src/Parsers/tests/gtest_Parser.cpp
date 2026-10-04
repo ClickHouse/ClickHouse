@@ -76,11 +76,24 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
             "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
         },
         {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH FORMAT csv", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
         {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN (FORMAT csv, HEADER)", "COPY t FROM STDIN WITH (FORMAT CSV, HEADER)"},
         {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
         {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
         {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
+        {"COPY t FROM STDIN (FORMAT text)", "COPY t FROM STDIN"},
         {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t TO STDOUT CSV", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN CSV HEADER", "COPY t FROM STDIN WITH (FORMAT CSV, HEADER)"},
+        {"copy t from stdin csv header", "COPY t FROM STDIN WITH (FORMAT CSV, HEADER)"},
+        {"COPY t TO STDOUT CSV HEADER false", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT BINARY", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t FROM STDIN BINARY", "COPY t FROM STDIN WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT CSV DELIMITER AS ','", "COPY t TO STDOUT WITH (FORMAT CSV)"},
     };
 
     for (const auto & test_case : test_cases)
@@ -107,6 +120,29 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
         EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
         EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
         EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
+    }
+}
+
+TEST(ParserCopyQuery, RejectsInvalidOrUnsupportedOptionsWithoutWith)
+{
+    const std::vector<String> queries = {
+        "COPY t TO STDOUT FORMAT csv",
+        "COPY t FROM STDIN FORMAT csv",
+        "COPY t TO STDOUT (FORMAT csv HEADER)",
+        "COPY t TO STDOUT (FORMAT csv,)",
+        "COPY t TO STDOUT (FORMAT csv",
+        "COPY t TO STDOUT (FORMAT csv) CSV",
+        "COPY t TO STDOUT CSV DELIMITER ';'",
+        "COPY t FROM STDIN CSV QUOTE '|'",
+        "COPY t TO STDOUT BINARY HEADER",
+        "COPY t FROM STDIN (FORMAT binary, DELIMITER ',')",
+        "COPY t TO STDOUT CSV ENCODING 'UTF8'",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        EXPECT_THROW(parseQuery(parser, query, "", 0, 0, 0), DB::Exception) << "query: " << query;
     }
 }
 
