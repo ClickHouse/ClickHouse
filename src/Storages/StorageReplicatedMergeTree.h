@@ -382,6 +382,10 @@ private:
     size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
+    /// Remove the ZooKeeper part nodes covered by the drop ranges passed to scheduleRemovalOfStrandedParts
+    /// that have no part in the working set in any state. Returns the number of removed nodes.
+    size_t removeStrandedPartsFromZooKeeper();
+
     friend class ReplicatedMergeTreeSink;
     friend class ReplicatedMergeTreeSinkPatch;
     friend class ReplicatedMergeTreePartCheckThread;
@@ -683,6 +687,13 @@ private:
     /// Wait for parts in PreActive state within the drop range to finish committing.
     /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
     void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
+
+    /// Make the cleanup thread remove the stranded part nodes of a completed drop range. Only for a range
+    /// that cannot be satisfied by a live covering part instead.
+    void scheduleRemovalOfStrandedParts(const MergeTreePartInfo & drop_range);
+
+    std::mutex drop_ranges_with_stranded_parts_mutex;
+    std::vector<MergeTreePartInfo> drop_ranges_with_stranded_parts TSA_GUARDED_BY(drop_ranges_with_stranded_parts_mutex);
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
