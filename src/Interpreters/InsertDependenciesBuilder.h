@@ -130,6 +130,28 @@ public:
     /// drops rows when some sink actually deduplicates.
     static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether an `INSERT` into `source_table_id` reaches, through its dependent materialized views
+    /// (transitively: a view's target may have dependent views of its own), a sink that deduplicates
+    /// blocks - see `storageDeduplicatesBlocksOnInsert`. A source whose views only feed targets that
+    /// never consult the deduplication ids (`Memory`, a `MergeTree` with the deduplication window
+    /// disabled, ...) gains nothing from a per-chunk deduplication token, so a requirement attached to
+    /// producing that token must not apply to it. It fails closed (returns true) when a dependent view
+    /// or a target cannot be resolved, when a dependent view is not a `MaterializedView`, when a target
+    /// hides its own dependent views behind a nested `INSERT` (`forwardedInsertHidesDependentView`), or
+    /// when the graph is too deep.
+    static bool dependentViewsDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth = 0);
+
+    /// The opposite-direction counterpart of `dependentViewsDeduplicateBlocksOnInsert`: whether an
+    /// `INSERT` into `source_table_id` is known to deduplicate in every sink it reaches through its
+    /// dependent materialized views. Every dependent view (transitively) must be a `MaterializedView`
+    /// whose target is a MergeTree-family table with an enabled deduplication window (possibly behind
+    /// `Alias` / proxies). Anything unresolved or not cheaply known (`Distributed`, `Buffer`, a target
+    /// hiding its dependent views behind a nested `INSERT`, a too deep graph) returns false, and so
+    /// does a source without dependent views. It is meant for decisions that are only safe when a
+    /// repeated insert of the same blocks is certainly dropped, such as replaying a partially
+    /// inserted batch.
+    static bool dependentViewsCertainlyDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth = 0);
+
     /// Whether writing into `storage` forwards the data through a nested `INSERT` that stamps the
     /// deduplication info from scratch (`Distributed`, `Buffer`, or a forwarding chain ending in one).
     /// Such nested inserts restart the source block numbering per sink branch even when this query

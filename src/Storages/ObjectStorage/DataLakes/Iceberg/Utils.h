@@ -63,6 +63,20 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// A freshly created `version-hint.text` is only useful if later commits can advance it under a
+/// compare-and-swap on its `ETag`, and that header is optional. Reads the tag back through the same
+/// read path later commits use and, when the object storage reports none, removes the hint together
+/// with `files_to_take_back` (the files published by the same operation) and throws
+/// `UNSUPPORTED_METHOD`. Otherwise the table would become uncommittable on its first later write,
+/// which refuses to advance a hint without a tag. Nothing is removed when the hint cannot be read
+/// back or no longer holds `version`, the one this operation wrote.
+void takeBackVersionHintWithoutETag(
+    const DB::ObjectStoragePtr & object_storage,
+    const std::string & storage_version_hint_path,
+    Int32 version,
+    const std::vector<std::string> & files_to_take_back,
+    const DB::ContextPtr & context);
+
 struct TransformAndArgument
 {
     String transform_name;

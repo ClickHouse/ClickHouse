@@ -1031,6 +1031,7 @@ void IcebergMetadata::createInitial(
         {
             auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
             writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+            Iceberg::takeBackVersionHintWithoutETag(object_storage, filename_version_hint, /*version=*/ 1, {filename}, local_context);
         }
     }
 
