@@ -267,9 +267,9 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             pool.emplace_back("Delta");
             if (static_cast<const FloatType *>(leaf)->size >= 32)
             {
-                /// Gorilla, FPC, ALP support Float32 and Float64 but not BFloat16.
+                /// Gorilla, FPC, ALP, Wallaby support Float32 and Float64 but not BFloat16.
                 /// SZ3 is lossy and Float32/Float64-only (rejected on Map keys and untyped codec settings).
-                pool.insert(pool.end(), {"Gorilla", "FPC", "ALP", "SZ3"});
+                pool.insert(pool.end(), {"Gorilla", "FPC", "ALP", "SZ3", "Wallaby"});
             }
             break;
         case SQLTypeClass::DATE: pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"}); break;
@@ -936,6 +936,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_unaligned_array_join", trueOrFalseSetting},
     {"enable_url_encoding", trueOrFalseSettingNoOracle},
     {"enable_vertical_final", trueOrFalseSettingNoOracle},
+    {"enable_wallaby_codec", trueOrFalseSettingNoOracle},
     {"enable_writes_to_query_cache", trueOrFalseSetting},
     {"engine_file_allow_create_multiple_files", trueOrFalseSettingNoOracle},
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
