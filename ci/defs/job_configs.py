@@ -1446,65 +1446,6 @@ class JobConfigs:
         )
     )
 
-    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` label. By default they
-    # run the same configurations on the `arm_binary` build instead, which is several times faster
-    # than the coverage build and randomizes settings and runs `long` tests, which the coverage runs
-    # do not. The plain coverage batches and `excluded_from_llvm` need no replacement: the full
-    # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
-    # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
-    # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
-    functional_tests_arm_binary_coverage_replacement_pr_jobs = common_ft_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"arm_binary, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_BINARY],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
-        Job.ParamSet(
-            parameter="arm_binary, s3 storage, DBReplicated, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="arm_binary, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="arm_binary, AsyncInsert, s3 storage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-    )
-    # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`.
-    integration_test_arm_binary_coverage_replacement_pr_jobs = (
-        common_integration_test_job_config.parametrize(
-            *[
-                Job.ParamSet(
-                    parameter=f"arm_binary, {batch}/{total_batches}",
-                    runs_on=RunnerLabels.ARM_MEDIUM,
-                    requires=[ArtifactNames.CH_ARM_BINARY],
-                )
-                for total_batches in (4,)
-                for batch in range(1, total_batches + 1)
-            ],
-        )
-    )
-
     # PR replacement for the full integration runs: one job per configuration runs once
     # the changed test modules, the modules covering the changed lines (per-module
     # coverage from `integration_test_per_test_coverage_jobs`) and the tests that failed
