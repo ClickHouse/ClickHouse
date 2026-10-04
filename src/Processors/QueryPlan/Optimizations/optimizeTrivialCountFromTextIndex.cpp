@@ -16,8 +16,10 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -27,6 +29,7 @@
 #include <algorithm>
 #include <iterator>
 #include <set>
+#include <unordered_set>
 
 /// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
 /// The pass only rewrites the plan; the index is read at execution time by `ReadFromTextIndexCount`.
@@ -38,6 +41,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsBool use_partition_pruning;
 }
 namespace MergeTreeSetting
 {
@@ -76,12 +80,13 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 }
 
 /// Collects the text-index virtual columns a predicate DAG reduces to. Fails if any branch is not index-answerable.
-bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & out_columns)
+/// If `residual` is given, the non-answerable conjuncts of the top-level `and` chain are collected there instead.
+bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & out_columns, ActionsDAG::NodeRawConstPtrs * residual)
 {
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            return collectTextIndexPredicateColumns(node->children.front(), out_columns);
+            return collectTextIndexPredicateColumns(node->children.front(), out_columns, residual);
 
         case ActionsDAG::ActionType::INPUT:
             if (isTextIndexVirtualColumn(node->result_name))
@@ -89,34 +94,52 @@ bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & o
                 out_columns.insert(node->result_name);
                 return true;
             }
-            return false;
+            break;
 
         case ActionsDAG::ActionType::FUNCTION:
         {
             if (!node->function_base)
-                return false;
+                break;
 
             const auto & name = node->function_base->getName();
 
             if (name == "and")
             {
                 for (const auto * child : node->children)
-                    if (!collectTextIndexPredicateColumns(child, out_columns))
+                    if (!collectTextIndexPredicateColumns(child, out_columns, residual))
                         return false;
                 return true;
             }
 
             /// Transparent wrappers that do not change which rows pass.
             if ((name == "_CAST" || name == "CAST") && !node->children.empty())
-                return collectTextIndexPredicateColumns(node->children.front(), out_columns);
+            {
+                if (!residual)
+                    return collectTextIndexPredicateColumns(node->children.front(), out_columns, nullptr);
+
+                /// Outside a text predicate a cast can change which rows pass (`CAST(256, 'UInt8')` is 0), so keep it whole.
+                NameSet text_columns;
+                if (collectTextIndexPredicateColumns(node->children.front(), text_columns, nullptr))
+                {
+                    out_columns.insert(text_columns.begin(), text_columns.end());
+                    return true;
+                }
+                break;
+            }
 
             /// TODO: OR of text-index predicates (needs posting-list union cardinality).
-            return false;
+            break;
         }
 
         default:
-            return false;
+            break;
     }
+
+    if (!residual)
+        return false;
+
+    residual->push_back(node);
+    return true;
 }
 
 struct MatchedSubtree
@@ -125,6 +148,8 @@ struct MatchedSubtree
     QueryPlan::Node * read_node = nullptr;
     /// Text-index virtual columns gating the read (from FilterSteps and PREWHERE).
     NameSet predicate_columns;
+    /// The other conjuncts of PREWHERE. They are on table columns, so the partition min-max index can prove them.
+    ActionsDAG::NodeRawConstPtrs residual;
 };
 
 /// Matches Aggregating -> (Expression|Filter)* -> ReadFromMergeTree and collects its text-predicate columns.
@@ -152,7 +177,7 @@ std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
         {
             const ActionsDAG & dag = filter->getExpression();
             const auto * filter_node = &dag.findInOutputs(filter->getFilterColumnName());
-            if (!collectTextIndexPredicateColumns(filter_node, matched.predicate_columns))
+            if (!collectTextIndexPredicateColumns(filter_node, matched.predicate_columns, /*residual=*/ nullptr))
                 return {};
         }
         else if (!typeid_cast<ExpressionStep *>(step))
@@ -165,7 +190,7 @@ std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
     if (const auto & prewhere = matched.reading->getPrewhereInfo())
     {
         const auto * prewhere_node = &prewhere->prewhere_actions.findInOutputs(prewhere->prewhere_column_name);
-        if (!collectTextIndexPredicateColumns(prewhere_node, matched.predicate_columns))
+        if (!collectTextIndexPredicateColumns(prewhere_node, matched.predicate_columns, &matched.residual))
             return {};
     }
 
@@ -177,7 +202,7 @@ std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
 }
 
 /// Guards only proceed when the part-wide cardinalities equal the true row count.
-bool guardsHold(const ReadFromMergeTree & reading)
+bool guardsHold(const ReadFromMergeTree & reading, bool has_residual)
 {
     auto context = reading.getContext();
 
@@ -232,7 +257,10 @@ bool guardsHold(const ReadFromMergeTree & reading)
         return false;
 
     auto analysis = reading.getAnalyzedResult();
-    if (!analysis || analysis->total_marks_pk != analysis->selected_marks_pk)
+    if (!analysis)
+        return false;
+
+    if (!has_residual && analysis->total_marks_pk != analysis->selected_marks_pk)
         return false;
 
     const auto & indexes = reading.getIndexes();
@@ -260,6 +288,50 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
     return true;
 }
+
+/// Proves by the partition min-max index that the residual conjuncts hold for all rows of a part. A relaxed condition proves nothing.
+class ResidualCoverage
+{
+public:
+    ResidualCoverage(const ReadFromMergeTree & reading, const ActionsDAG::NodeRawConstPtrs & residual)
+    {
+        const auto metadata = reading.getStorageMetadata();
+        const auto data_settings = reading.getMergeTreeData().getSettings();
+        auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata->getPartitionKey(), data_settings);
+        if (minmax_columns.empty())
+            return;
+
+        auto residual_dag = ActionsDAG::buildFilterActionsDAG(residual);
+        if (!residual_dag || residual_dag->getOutputs().size() != 1)
+            return;
+
+        const auto context = reading.getContext();
+        auto minmax_expression = MergeTreeData::getMinMaxExpr(metadata->getPartitionKey(), data_settings, ExpressionActionsSettings(context));
+        minmax_condition.emplace(
+            ActionsDAGWithInversionPushDown(residual_dag->getOutputs().front(), context, /*boolean_context=*/ true), context,
+            minmax_columns.getNames(), minmax_expression,
+            /*single_point_=*/ false, /*skip_analysis_=*/ !context->getSettingsRef()[Setting::use_partition_pruning],
+            /*require_ready_sets_=*/ true);
+        minmax_types = minmax_columns.getTypes();
+        /// The part min-max bounds come from `getExtremes`, which skips NaN.
+        minmax_condition->relaxAtomsOverNaNHidingColumns(minmax_types);
+        if (minmax_condition->alwaysUnknownOrTrue() || minmax_condition->isRelaxed())
+            minmax_condition.reset();
+    }
+
+    bool canProve() const { return minmax_condition.has_value(); }
+
+    bool coversPart(const RangesInDataPart & part_with_ranges) const
+    {
+        const auto minmax_index = part_with_ranges.data_part->getMinMaxIndex();
+        return minmax_index && minmax_index->initialized
+            && !minmax_condition->checkInHyperrectangle(minmax_index->hyperrectangle, minmax_types).can_be_false;
+    }
+
+private:
+    std::optional<KeyCondition> minmax_condition;
+    DataTypes minmax_types;
+};
 
 using ResolvedQuery = ReadFromTextIndexCount::ResolvedQuery;
 
@@ -355,7 +427,9 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
 
     auto logger = getLogger("optimizeTrivialCountFromTextIndex");
 
-    if (!guardsHold(*matched->reading))
+    const bool has_residual = !matched->residual.empty();
+
+    if (!guardsHold(*matched->reading, has_residual))
     {
         LOG_DEBUG(logger, "Cannot apply the optimization: correctness guards do not hold");
         return false;
@@ -368,42 +442,64 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         return false;
     }
 
-    /// Split the parts by index materialization (checksum lookups if materialized)
-    const auto & text_index = *search_query->index.index;
-    auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
+    std::optional<ResidualCoverage> coverage;
+    if (has_residual)
     {
-        return !!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+        coverage.emplace(*matched->reading, matched->residual);
+        if (!coverage->canProve())
+        {
+            LOG_DEBUG(logger, "Cannot apply the optimization: the other conditions cannot be proven by the partition min-max index");
+            return false;
+        }
+    }
+
+    /// Split the parts into those counted from the index and those read as before (checksum lookups if materialized).
+    const auto & text_index = *search_query->index.index;
+    std::unordered_set<const IMergeTreeDataPart *> countable;
+
+    /// With residual conjuncts, partition pruning and the primary key may drop parts, so only the analysed parts are candidates.
+    const auto original_analysis = matched->reading->getAnalyzedResult();
+    const auto & candidate_parts = has_residual ? original_analysis->parts_with_ranges : matched->reading->getParts();
+    for (const auto & part_with_ranges : candidate_parts)
+    {
+        const auto & part = part_with_ranges.data_part;
+        if ((!coverage || coverage->coversPart(part_with_ranges)) && text_index.getDeserializedFormat(*part, text_index.getFileName()))
+            countable.insert(part.get());
+    }
+
+    auto is_countable_part = [&](const RangesInDataPart & part_with_ranges)
+    {
+        return countable.contains(part_with_ranges.data_part.get());
     };
 
-    const auto & all_parts = matched->reading->getParts();
-    const size_t num_materialized_parts = std::ranges::count_if(all_parts, is_materialized_part);
+    const auto & all_parts = candidate_parts;
+    const size_t num_countable_parts = countable.size();
 
-    if (num_materialized_parts == 0)
+    if (num_countable_parts == 0)
     {
-        LOG_DEBUG(logger, "Cannot apply the optimization because the text index is not materialized in any part");
+        LOG_DEBUG(logger, "Cannot apply the optimization because no part can be counted from the text index");
         return false;
     }
-    LOG_DEBUG(logger, "Applying the optimization: {} indexed parts, {} unindexed parts", num_materialized_parts, all_parts.size() - num_materialized_parts);
+    LOG_DEBUG(logger, "Applying the optimization: {} parts counted from the index, {} parts read", num_countable_parts, all_parts.size() - num_countable_parts);
 
-    const bool is_fully_materialized = num_materialized_parts == all_parts.size();
+    const bool count_all_parts = num_countable_parts == all_parts.size();
 
     RangesInDataParts indexed_parts;
-    if (is_fully_materialized)
+    if (count_all_parts)
     {
         indexed_parts = all_parts;
     }
     else
     {
-        /// Partially materialized index: count the indexed parts from the index and keep reading
-        /// the rows of the unindexed parts, the same way aggregate projections handle parent parts.
+        /// Count the countable parts from the index and read the others, the same way aggregate projections handle parent parts.
         /// Partition the cloned analysis in place, so the parts are copied once and split by moves.
         auto analysis = std::make_shared<ReadFromMergeTree::AnalysisResult>(*matched->reading->getAnalyzedResult());
         auto & analysis_parts = analysis->parts_with_ranges;
         auto first_indexed = std::stable_partition(
             analysis_parts.begin(), analysis_parts.end(),
-            [&](const RangesInDataPart & part_with_ranges) { return !is_materialized_part(part_with_ranges); });
+            [&](const RangesInDataPart & part_with_ranges) { return !is_countable_part(part_with_ranges); });
 
-        indexed_parts.reserve(num_materialized_parts);
+        indexed_parts.reserve(num_countable_parts);
         std::move(first_indexed, analysis_parts.end(), std::back_inserter(indexed_parts));
         analysis_parts.erase(first_indexed, analysis_parts.end());
 
@@ -428,7 +524,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         matched->reading->getNumStreams());
     source_node.step->setStepDescription(description, settings.max_step_description_length);
 
-    if (is_fully_materialized)
+    if (count_all_parts)
     {
         aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
         node.children.front() = &source_node;

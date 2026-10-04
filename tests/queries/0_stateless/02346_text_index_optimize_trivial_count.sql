@@ -281,3 +281,143 @@ SELECT count() FROM tab_unindexed WHERE hasToken(text, 'alpha');
 
 DROP TABLE tab_partial;
 DROP TABLE tab_unindexed;
+
+SELECT 'Other conditions proven for whole parts by the partition min-max index';
+
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, use_query_condition_cache = 0;
+
+-- Each arm: whether the count is answered from the index and whether rows are still read, then the count
+-- with the optimization on and off. Every part has several granules, so a wrong coverage decision changes the count.
+CREATE TABLE tab_days (
+	ts DateTime('UTC'),
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY toDate(ts)
+ORDER BY ts
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_days SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600, if(number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(72);
+
+SELECT '-- fires: every day is covered by the min-max index';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00';
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: two whole days, the third is pruned';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00';
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: the first day is partially covered and read';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00';
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- does not fire: no part is covered';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00' AND ts < '2026-01-01 18:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00' AND ts < '2026-01-01 18:00:00';
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 12:00:00' AND ts < '2026-01-01 18:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: a monotonic function of the partition key column';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND toDate(ts) = '2026-01-02');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND toDate(ts) = '2026-01-02';
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND toDate(ts) = '2026-01-02' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: the min-max index proves a disjunction';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND (ts < '2026-01-02 00:00:00' OR ts >= '2026-01-03 00:00:00'));
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND (ts < '2026-01-02 00:00:00' OR ts >= '2026-01-03 00:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND (ts < '2026-01-02 00:00:00' OR ts >= '2026-01-03 00:00:00') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- does not fire: a condition on a column outside both indexes';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' AND length(text) > 1);
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' AND length(text) > 1;
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' AND length(text) > 1 SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- does not fire: use_partition_pruning = 0';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00' SETTINGS use_partition_pruning = 0);
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00' SETTINGS use_partition_pruning = 0;
+
+CREATE TABLE tab_nullable (
+	ts Nullable(DateTime('UTC')),
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY toDate(ifNull(ts, toDateTime('2026-01-02 05:00:00', 'UTC')))
+ORDER BY tuple()
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_nullable SELECT if(number < 24, toDateTime('2026-01-02 00:00:00', 'UTC') + number * 3600, NULL), if(number >= 24 OR number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(32);
+
+SELECT '-- does not fire: NULL values do not satisfy the condition';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_nullable WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00');
+SELECT count() FROM tab_nullable WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00';
+SELECT count() FROM tab_nullable WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+CREATE TABLE tab_nan_mm (
+	x Float64,
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY x >= 0
+ORDER BY tuple()
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_nan_mm VALUES (-1, 'alpha'), (-2, 'alpha'), (nan, 'alpha'), (1, 'alpha');
+
+SELECT '-- does not fire: the min-max index does not show NaN';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_nan_mm WHERE hasToken(text, 'alpha') AND x < 0);
+SELECT count() FROM tab_nan_mm WHERE hasToken(text, 'alpha') AND x < 0;
+SELECT count() FROM tab_nan_mm WHERE hasToken(text, 'alpha') AND x < 0 SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+CREATE TABLE tab_cast (
+	x UInt16,
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY x
+ORDER BY tuple()
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_cast VALUES (1, 'alpha'), (1, 'alpha'), (256, 'alpha'), (256, 'alpha');
+
+SELECT '-- does not fire: a cast around another condition is kept whole';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_cast WHERE hasToken(text, 'alpha') AND CAST(x AS UInt8));
+SELECT count() FROM tab_cast WHERE hasToken(text, 'alpha') AND CAST(x AS UInt8);
+SELECT count() FROM tab_cast WHERE hasToken(text, 'alpha') AND CAST(x AS UInt8) SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+CREATE TABLE tab_partial_days (
+	ts DateTime('UTC'),
+	text String
+)
+ENGINE = MergeTree
+PARTITION BY toDate(ts)
+ORDER BY ts
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+
+SYSTEM STOP MERGES tab_partial_days;
+
+INSERT INTO tab_partial_days SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600, if(number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(24);
+ALTER TABLE tab_partial_days ADD INDEX idx text TYPE text(tokenizer = splitByNonAlpha);
+INSERT INTO tab_partial_days SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600, if(number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(24, 48);
+
+SELECT '-- fires: the part without the index is read';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_partial_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00');
+SELECT count() FROM tab_partial_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00';
+SELECT count() FROM tab_partial_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-01 00:00:00' SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+DELETE FROM tab_days WHERE ts = '2026-01-02 00:00:00';
+
+SELECT '-- does not fire after a lightweight delete';
+SELECT countIf(explain LIKE '%Trivial count from text index%'), countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00');
+SELECT count() FROM tab_days WHERE hasToken(text, 'alpha') AND ts >= '2026-01-02 00:00:00' AND ts < '2026-01-04 00:00:00';
+
+DROP TABLE tab_days;
+DROP TABLE tab_nullable;
+DROP TABLE tab_nan_mm;
+DROP TABLE tab_cast;
+DROP TABLE tab_partial_days;
