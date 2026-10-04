@@ -697,6 +697,10 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
+    /// Whether any of the aggregate functions supports parallel merging of large states
+    /// (see IAggregateFunction::isAbleToParallelizeMerge), e.g. uniqExact.
+    bool has_function_with_parallelizable_merge = false;
+
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
@@ -1047,6 +1051,34 @@ private:
         UInt32 total_worker;
     };
 
+    /// Pairs of states (with the function's state offset applied) whose merge `mergeDataImpl` deferred
+    /// because they are too large to merge serially; one entry per aggregate function.
+    /// A destination repeats once per source it has to absorb, so after grouping by destination the
+    /// group is merged in one parallel multi-way pass (`mergeDeferredLargeStates`).
+    struct DeferredMergePairs
+    {
+        PaddedPODArray<AggregateDataPtr> dst_places;
+        PaddedPODArray<AggregateDataPtr> src_places;
+    };
+    using DeferredMerges = std::vector<DeferredMergePairs>;
+
+    /// True if the query can benefit from deferring large state merges: some aggregate function
+    /// can parallelize its merge and there is a thread pool to run it on.
+    bool worthDeferringLargeMerges() const { return has_function_with_parallelizable_merge && params.max_threads > 1; }
+
+    /// Merge the pairs deferred by `mergeDataImpl` / `mergeSingleLevelPartitionImpl` / `mergeStreamsImplCase`,
+    /// using the thread pool. With `destroy_sources` the source states are destroyed afterwards (they were
+    /// detached from the source hash tables); without it they stay owned by the caller (aggregate columns
+    /// of a block of partial states). If `is_cancelled` is set, nothing is merged and only the destruction happens.
+    void mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled, bool destroy_sources) const;
+
+    /// The total number of deferred pairs of all aggregate functions.
+    static size_t numDeferredMerges(const DeferredMerges & deferred);
+
+    /// Destroy the deferred source states without merging (used on the exception path: the source
+    /// hash tables have already been detached from these states, so nothing else will destroy them).
+    void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -1055,11 +1087,15 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
+    /// If `deferred` is not null, pairs of states too large to merge serially are recorded there
+    /// (per aggregate function) instead of being merged; the caller must pass them to
+    /// `mergeDeferredLargeStates` afterwards.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -1085,7 +1121,8 @@ private:
     requires SetAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -1307,7 +1344,8 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states: merging a block back only re-registers its keys.
     template <typename State, typename Table>
@@ -1322,10 +1360,14 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
     /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
+    /// If `deferred` is not null, pairs of large states are collected there instead of being merged at the end of
+    /// the block, so that the caller can merge them together with the large states of other blocks via
+    /// `mergeDeferredLargeStates`; the caller must keep the block's columns alive until then.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         const Columns & columns,
@@ -1337,7 +1379,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys = nullptr) const;
+        Arena * arena_for_keys = nullptr,
+        DeferredMerges * deferred = nullptr) const;
 
     template <typename Method, typename Table>
     void mergeStreamsImpl(
@@ -1352,7 +1395,8 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         const Columns & columns,
