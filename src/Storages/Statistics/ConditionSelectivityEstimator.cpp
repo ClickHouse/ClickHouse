@@ -269,8 +269,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ContextPtr & context, const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
-    RPNBuilderTreeContext tree_context(context);
-    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
+    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, context));
 }
 
 /// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
@@ -351,10 +350,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
-            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
-            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
-            /// and extract constant value from it.
-            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
+            /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other
+            /// comparison takes the branches below, which read the constant of the other argument directly.
+            if (is_in_operator)
             {
                 const auto & rhs = func.getArgumentAt(1);
                 if (!rhs.isConstant())
@@ -369,7 +367,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// built yet simply cannot be analysed, and the condition falls back to the default
                 /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
                 /// became a `ColumnConst` and made these sets visible here.
-                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
                 {
                     ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
@@ -386,7 +384,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// sort or the per-element probes. The atom is finalized rather than turned into ranges:
                 /// a scalar selectivity cannot intersect with other predicates on the same column, only
                 /// multiply.
-                const auto max_set_size = node.getTreeContext().getQueryContext()->getSettingsRef()
+                const auto max_set_size = node.getContext()->getSettingsRef()
                     [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
                 if (max_set_size && columns[0]->size() > max_set_size)
                 {
