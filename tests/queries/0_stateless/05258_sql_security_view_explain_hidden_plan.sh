@@ -112,8 +112,13 @@ echo "-- nor does a user with ALLOW SQL SECURITY NONE"
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $reader"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
-echo "-- with the privileges to read everything, the same user sees both plans"
+echo "-- with the privileges to read everything, but without CREATE VIEW, the same user still does not see the plans"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, dictGet, READ, CREATE TEMPORARY TABLE, NAMED COLLECTION ON *.* TO $reader"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+
+echo "-- with CREATE VIEW as well, the same user sees both plans"
+${CLICKHOUSE_CLIENT} --query "GRANT CREATE VIEW ON $db.* TO $reader"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 

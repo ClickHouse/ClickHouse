@@ -12,7 +12,43 @@ namespace ErrorCodes
 
 void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << table_name;
+    ostr << "COPY " << table_name;
+
+    if (!column_names.empty())
+    {
+        ostr << " (";
+        for (size_t i = 0; i < column_names.size(); ++i)
+        {
+            if (i)
+                ostr << ", ";
+            ostr << column_names[i];
+        }
+        ostr << ')';
+    }
+
+    switch (type)
+    {
+        case QueryType::COPY_FROM:
+            ostr << " FROM STDIN";
+            break;
+        case QueryType::COPY_TO:
+            ostr << " TO STDOUT";
+            break;
+    }
+
+    if (format != Formats::TSV || header)
+    {
+        ostr << " WITH (";
+        if (format != Formats::TSV)
+            ostr << "FORMAT " << toString(format);
+        if (header)
+        {
+            if (format != Formats::TSV)
+                ostr << ", ";
+            ostr << "HEADER";
+        }
+        ostr << ')';
+    }
 }
 
 ASTPtr ASTCopyQuery::clone() const
