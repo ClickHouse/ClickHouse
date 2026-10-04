@@ -322,6 +322,20 @@ The number of columns in inserted MsgPack data. Used for automatic schema infere
     DECLARE(MsgPackUUIDRepresentation, output_format_msgpack_uuid_representation, FormatSettings::MsgPackUUIDRepresentation::EXT, R"(
 The way how to output UUID in MsgPack format.
 )", 0) \
+    DECLARE(Bool, allow_experimental_column_binary_format, false, R"(
+Allow the experimental `ColumnBinary` input and output format.
+
+`ColumnBinary` exposes a flat columnar wire format. Its frame header carries a magic and a
+format version, so an incompatible layout change is rejected rather than misparsed, but the
+layout is still evolving and no compatibility between versions is promised yet: a future
+version may refuse data written today. Do not persist `ColumnBinary` data until the layout
+is frozen.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting: gate the experimental `ColumnBinary` input and output format, whose wire layout is still evolving."}) \
+    DECLARE(Bool, column_binary_disable_preallocation, false, R"(
+Disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics.
+)", 0, \
+        {"26.10", false, false, "New setting: disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics."}) \
     DECLARE(UInt64, input_format_max_rows_to_read_for_schema_inference, 25000, R"(
 The maximum rows of data to read for automatic schema inference.
 )", 0) \

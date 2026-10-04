@@ -7,6 +7,7 @@ Buffers
 CSV
 CSVWithNames
 CSVWithNamesAndTypes
+ColumnBinary
 CustomSeparated
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
