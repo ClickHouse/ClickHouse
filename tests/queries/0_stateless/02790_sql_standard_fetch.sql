@@ -32,3 +32,12 @@ order by salary desc
 offset 3 rows
 fetch first 5 rows only
 format PrettyCompactNoEscapes;
+
+-- The SQL standard makes fetch_row_count optional and defaults it to 1.
+SELECT number FROM numbers(3) ORDER BY number FETCH FIRST ROW ONLY;
+SELECT number FROM numbers(3) ORDER BY number OFFSET 1 ROWS FETCH NEXT ROW ONLY;
+SELECT number % 2 FROM numbers(4) ORDER BY number % 2 FETCH FIRST ROW WITH TIES;
+
+-- ROW and ROWS are contextual keywords, so they can still be explicit count expressions.
+WITH 2 AS row SELECT number FROM numbers(3) ORDER BY number FETCH FIRST row ROWS ONLY;
+WITH 2 AS rows SELECT number FROM numbers(3) ORDER BY number FETCH FIRST rows ROWS ONLY;
