@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 
-#include <Columns/ColumnsCommon.h>
+#include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 
 #include <IO/ReadBuffer.h>
@@ -154,35 +154,6 @@ namespace
         return cleared;
     }
 
-    void containsBulkRangeAny(const roaring::Roaring & r, UInt64 begin, size_t n, uint8_t * out_keep)
-    {
-        if (r.isEmpty())
-        {
-            std::memset(out_keep, 1, n);
-            return;
-        }
-        constexpr UInt64 max_row = std::numeric_limits<UInt32>::max();
-        roaring::BulkContext ctx;
-        for (size_t i = 0; i < n; ++i)
-        {
-            const UInt64 v = begin + i;
-            if (v > max_row)
-                out_keep[i] = 1;
-            else
-                out_keep[i] = r.containsBulk(ctx, static_cast<UInt32>(v)) ? 0 : 1;
-        }
-    }
-    void containsBulkRangeAny(const roaring::Roaring64Map & r, UInt64 begin, size_t n, uint8_t * out_keep)
-    {
-        if (r.isEmpty())
-        {
-            std::memset(out_keep, 1, n);
-            return;
-        }
-        for (size_t i = 0; i < n; ++i)
-            out_keep[i] = r.contains(begin + i) ? 0 : 1;
-    }
-
     void addAny(roaring::Roaring & r, UInt64 row)
     {
         r.add(static_cast<UInt32>(row));
@@ -325,15 +296,6 @@ size_t DeleteBitmap::clearInFilter(UInt64 begin, size_t n, UInt8 * filter) const
     if (n == 0)
         return 0;
     return std::visit([&](const auto & p) { return clearInFilterAny(*p, begin, n, filter); }, bitmap);
-}
-
-size_t DeleteBitmap::buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const
-{
-    if (n == 0)
-        return 0;
-    auto * keep = reinterpret_cast<uint8_t *>(out_keep);
-    std::visit([&](const auto & p) { containsBulkRangeAny(*p, begin, n, keep); }, bitmap);
-    return countBytesInFilter(out_keep, 0, n);
 }
 
 void DeleteBitmap::add(UInt64 row)

@@ -1862,17 +1862,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     bool optimize_skip_merged_partitions,
     const std::function<void()> & on_wait_for_running_merges)
 {
-    /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
-    /// a DELETE's target part between part-resolution and marker publish (the
-    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
-    /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
-    /// merge here — the single chokepoint for both background selection and the
-    /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.
-    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
-    if (metadata_snapshot->hasUniqueKey())
+    /// TODO(unique-key): support TTL; only ATTACH'd tables get here.
+    if (metadata_snapshot->hasUniqueKey() && metadata_snapshot->hasAnyTTL())
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables with TTL"),
         });
 
     auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
@@ -2960,14 +2954,7 @@ bool StorageMergeTree::optimize(
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
-    /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
-    /// explicit OPTIMIZE up front with an actionable message rather than letting it
-    /// fall through to a no-op merge.
-    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
-    if (metadata_snapshot->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
-                        "to preserve DELETE correctness. Parts will not be compacted.");
+    checkUniqueKeyOptimizeIsPossible(*metadata_snapshot, deduplicate);
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     if (deduplicate && metadata_snapshot->hasProjections()
