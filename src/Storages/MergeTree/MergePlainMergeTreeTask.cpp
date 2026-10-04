@@ -181,8 +181,7 @@ void MergePlainMergeTreeTask::finish()
             .source_parts = future_part->parts,
             .merged_part = new_part,
             .read_snapshot = merge_task->getUniqueKeyReadSnapshot(),
-            .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets(),
-            .cancelled = &(*merge_list_entry)->is_cancelled});
+            .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets()});
     }
     else
     {

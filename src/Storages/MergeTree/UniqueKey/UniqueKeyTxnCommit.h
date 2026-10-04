@@ -59,8 +59,6 @@ public:
         const ReadSnapshot & read_snapshot;
         /// Where each row the input filter let through landed in `merged_part`.
         const MergedPartOffsets & merged_part_offsets;
-        /// The task's merge-list flag, which shutdown sets: stops the wait for a lost commit reply.
-        const std::atomic<bool> * cancelled = nullptr;
     };
 
     /// MERGE:

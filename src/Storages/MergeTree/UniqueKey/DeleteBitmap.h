@@ -79,10 +79,6 @@ public:
     /// True if `row` is set.
     bool contains(UInt64 row) const;
 
-    /// Build a per-row keep mask (1=keep, 0=deleted) for rows [`begin`, `begin` + `n`) into `out_keep`;
-    /// returns the number kept. Caller sizes `out_keep` to `n`.
-    size_t buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const;
-
     /// Zero `filter[row - begin]` for every set row in [`begin`, `begin` + `n`); returns how many rows that is.
     size_t clearInFilter(UInt64 begin, size_t n, UInt8 * filter) const;
 

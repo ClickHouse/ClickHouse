@@ -322,13 +322,12 @@ catch (...)
 
 size_t MergeTreeSequentialSource::applyDeleteBitmapFilter(Columns & columns, UInt64 begin, size_t num_rows)
 {
-    const auto & delete_bitmap = read_task_info->delete_bitmap;
-    if (delete_bitmap->rangeCardinality(begin, begin + num_rows) == 0)
+    IColumn::Filter filter(num_rows, 1);
+    const size_t dead = read_task_info->delete_bitmap->clearInFilter(begin, num_rows, filter.data());
+    if (dead == 0)
         return num_rows;
 
-    IColumn::Filter filter(num_rows);
-    const size_t kept = delete_bitmap->buildKeepFilterRange(begin, num_rows, filter.data());
-
+    const size_t kept = num_rows - dead;
     for (auto & column : columns)
         column = column->filter(filter, kept);
     return kept;

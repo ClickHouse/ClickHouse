@@ -576,7 +576,7 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
 void UniqueKeyTxnCommit::merge(StorageMergeTree & storage, MergeRequest request)
 {
     MergeCommit op(storage, request);
-    storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op, request.cancelled);
+    storage.uniqueKeyTxnManager().commitTransaction(request.transaction, op);
 
     const String & partition_id = request.merged_part->info.getPartitionId();
 
