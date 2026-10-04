@@ -146,6 +146,19 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
+/// Appending zero bytes keeps every term of a value, so `FixedString` padding never hides one.
+static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
+{
+    return type == ITokenizer::Type::SplitByNonAlpha
+        || type == ITokenizer::Type::Ngrams
+        || type == ITokenizer::Type::SparseGrams
+        || type == ITokenizer::Type::AsciiCJK
+#if USE_ICU
+        || type == ITokenizer::Type::Icu
+#endif
+        ;
+}
+
 /// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
 static bool isIndexedColumnArray(const Block & header)
 {
@@ -251,6 +264,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         if (requiresReadingAllTokens(element))
             global_search_mode = TextSearchMode::Any;
     }
+
+    std::vector<UInt128> pattern_hashes;
+    for (const auto & [query_hash, query] : all_search_queries)
+    {
+        if (!query->getPatterns().empty())
+            pattern_hashes.emplace_back(query_hash);
+    }
+    std::ranges::sort(pattern_hashes);
+
+    SipHash pattern_hash_state;
+    pattern_hash_state.update(pattern_hashes.size());
+    for (const auto & pattern_hash : pattern_hashes)
+        pattern_hash_state.update(pattern_hash);
+    search_patterns_hash = pattern_hash_state.get128();
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
@@ -1264,7 +1291,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -2259,7 +2286,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
 
