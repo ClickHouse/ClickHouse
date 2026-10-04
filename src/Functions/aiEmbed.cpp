@@ -165,8 +165,8 @@ public:
         });
 
         FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result);
+            *provider, model, dimensions, getName(), FunctionBaseAI::getQueryIdForAIRequest(getContext()), inputs, max_batch_size,
+            max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();

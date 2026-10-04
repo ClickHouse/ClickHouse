@@ -1790,6 +1790,33 @@ def test_function_name_header(started_cluster):
         assert last_request()["headers"].get("x-clickhouse-ai-function") == name
 
 
+def test_query_id_header(started_cluster):
+    """The OpenAI provider sends the `initial_query_id` as the `X-ClickHouse-Query-Id` header: a query run
+    on a remote shard carries the initiator's query id. Covers the chat and the embedding paths."""
+    cases = [
+        "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))",
+        "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        "SELECT aiGenerate(toString(dummy), map('credentials', 'ai_mock')) FROM remote('127.0.0.2', system.one)",
+        "SELECT aiEmbed(toString(dummy), 'test-embed-model', map('credentials', 'ai_embed')) FROM remote('127.0.0.2', system.one)",
+    ]
+    for i, query in enumerate(cases):
+        qid = unique_query_id(f"query_id_header_{i}")
+        instance.query(query, query_id=qid)
+        assert last_request()["headers"].get("x-clickhouse-query-id") == qid
+
+    # A background mutation has no `initial_query_id`, so the mutation task's own `current_query_id` is sent.
+    instance.query("DROP TABLE IF EXISTS query_id_header SYNC")
+    instance.query("CREATE TABLE query_id_header (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
+    instance.query("INSERT INTO query_id_header VALUES (1, 'a')")
+    instance.query(
+        "ALTER TABLE query_id_header UPDATE s = aiGenerate('hi', map('credentials', 'ai_mock')) WHERE 1",
+        settings={"mutations_sync": 2, "allow_nondeterministic_mutations": 1},
+    )
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'query_id_header'").strip()
+    assert last_request()["headers"].get("x-clickhouse-query-id") == f"{table_uuid}::all_1_1_0_2"
+    instance.query("DROP TABLE query_id_header SYNC")
+
+
 def test_embed_retry_respects_api_call_quota(started_cluster):
     """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
     retried past `ai_function_max_api_calls_per_query`."""

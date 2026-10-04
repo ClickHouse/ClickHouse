@@ -67,6 +67,8 @@ void OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts
         http_request.set("Authorization", "Bearer " + api_key);
     chassert(!ai_request.function_name.empty());
     http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
+    if (!ai_request.query_id.empty())
+        http_request.set("X-ClickHouse-Query-Id", ai_request.query_id);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -179,6 +181,8 @@ void OpenAIProvider::embed(
         http_request.set("Authorization", "Bearer " + api_key);
     chassert(!ai_embedding_request.function_name.empty());
     http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
+    if (!ai_embedding_request.query_id.empty())
+        http_request.set("X-ClickHouse-Query-Id", ai_embedding_request.query_id);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
