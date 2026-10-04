@@ -5,8 +5,13 @@
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -22,6 +27,60 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
             return true;
     }
     return false;
+}
+
+/// True if the subtree carries more than rows: a totals stream (a `TotalsHavingStep`, a remote read or a query result
+/// cache read) or one half of a subplan shared with the rest of the plan.
+static bool carriesMoreThanRows(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        const auto * step = node->step.get();
+        if (typeid_cast<const TotalsHavingStep *>(step)
+            || typeid_cast<const ReadFromRemote *>(step)
+            || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step)
+            || typeid_cast<const ReadFromQueryResultCacheStep *>(step)
+            || typeid_cast<const CommonSubplanStep *>(step)
+            || typeid_cast<const CommonSubplanReferenceStep *>(step))
+            return true;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
+        {
+            if (auto * child_root = child_plan ? child_plan->getRootNode() : nullptr)
+                stack.push_back(child_root);
+        }
+    }
+    return false;
+}
+
+size_t replaceJoinInputWithEmptySource(QueryPlan::Node & join_node, size_t side, QueryPlan::Nodes & nodes)
+{
+    auto * side_node = join_node.children[side];
+    if (typeid_cast<const ReadNothingStep *>(side_node->step.get()))
+        return 0;
+
+    /// A `JoinStepLogicalLookup` drives physical join building and carries StorageJoin/dictionary validation, so it
+    /// is never detached, also when filter push-down or a runtime-filter build has wrapped it in single-child steps.
+    for (const auto * node = side_node; node; node = node->children.size() == 1 ? node->children.front() : nullptr)
+    {
+        if (typeid_cast<const JoinStepLogicalLookup *>(node->step.get()))
+            return 0;
+    }
+
+    /// An emptied input would change the totals row the join builds from its inputs' totals, or strand the other half
+    /// of a shared subplan.
+    if (carriesMoreThanRows(*side_node))
+        return 0;
+
+    auto & empty_node = nodes.emplace_back();
+    empty_node.step = std::make_unique<ReadNothingStep>(join_node.step->getInputHeaders()[side]);
+    join_node.children[side] = &empty_node;
+    return 1;
 }
 
 /// When the JOIN ON condition folds to a constant false, replace each non-preserved input side
@@ -67,29 +126,11 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
     const bool left_preserved = isLeftOrFull(kind) && !is_semi;
     const bool right_preserved = isRightOrFull(kind) && !is_semi;
 
-    /// Replace one input's subtree with an empty source of the same header. Idempotent (a no-op when
-    /// the side is already empty). A `JoinStepLogicalLookup` input drives physical join building and
-    /// carries StorageJoin/dictionary validation, so it is never detached: correctness is kept and
-    /// only the optimization is skipped for that side (such build sides are in-memory and cheap).
-    auto empty_side = [&](size_t side) -> size_t
-    {
-        auto * side_node = parent_node->children[side];
-        if (typeid_cast<const ReadNothingStep *>(side_node->step.get()))
-            return 0;
-        if (typeid_cast<const JoinStepLogicalLookup *>(side_node->step.get()))
-            return 0;
-
-        auto & empty_node = nodes.emplace_back();
-        empty_node.step = std::make_unique<ReadNothingStep>(join->getInputHeaders()[side]);
-        parent_node->children[side] = &empty_node;
-        return 1;
-    };
-
     size_t changed = 0;
     if (!left_preserved)
-        changed += empty_side(/*side=*/0);
+        changed += replaceJoinInputWithEmptySource(*parent_node, /*side=*/0, nodes);
     if (!right_preserved)
-        changed += empty_side(/*side=*/1);
+        changed += replaceJoinInputWithEmptySource(*parent_node, /*side=*/1, nodes);
     return changed;
 }
 

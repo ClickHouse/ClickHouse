@@ -175,6 +175,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 /// join validation still runs.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Replace input `side` of a two-input join node with an empty source of the same header, unless the input
+/// carries more than rows (a lookup, totals, or a shared subplan). Returns 1 if it was replaced.
+size_t replaceJoinInputWithEmptySource(QueryPlan::Node & join_node, size_t side, QueryPlan::Nodes & nodes);
+
 /// Convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 

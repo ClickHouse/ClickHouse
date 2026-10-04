@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -228,6 +229,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
         return RelationStats{};
+
+    if (typeid_cast<const ReadNothingStep *>(step))
+        return RelationStats{.estimated_rows = 0, .table_name = {}};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {

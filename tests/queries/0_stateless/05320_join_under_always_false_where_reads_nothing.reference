@@ -1,0 +1,43 @@
+LEFT JOIN	69
+INNER JOIN	69
+FULL JOIN	0
+LEFT JOIN, aggregated right side	69
+plan: LEFT JOIN in the false branch
+1
+plan: false WHERE over LEFT JOIN
+1
+plan: false WHERE with a side effect is evaluated, not short-circuited
+0
+plan: false WHERE, right side WITH TOTALS is kept
+0
+plan: false ON, right side WITH TOTALS is kept
+0
+plan: false ON, right side without totals
+1
+correlated subquery under a false WHERE
+false ON keeps the totals row of the right side
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+a right side read from the query result cache keeps its totals row
+
+0	0	0
+
+0	0	0
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	100000
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	100000
+05320_cache_on_2	1
+05320_cache_where_2	1
