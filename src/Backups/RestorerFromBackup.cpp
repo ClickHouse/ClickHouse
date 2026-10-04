@@ -26,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
@@ -1019,7 +1020,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
         if (!restore_settings.shouldRestoreTableData())
         {
-            if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+            if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
             {
                 String metadata_path;
                 {
@@ -1113,7 +1114,7 @@ void RestorerFromBackup::insertDataToTableImpl(
         }
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
 
-        if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+        if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
         {
             if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
                 replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
