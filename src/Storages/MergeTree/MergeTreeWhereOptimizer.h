@@ -84,6 +84,9 @@ private:
         /// hence a column of unknown size is charged an estimated per-row size, never a row count.
         double bytes_per_rejected_row = 0;
 
+        /// Every conjunct is a join runtime filter, which is estimated to pass every row.
+        bool is_runtime_filter = false;
+
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -101,20 +104,22 @@ private:
             }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
+                "columns_size: {}, is_runtime_filter: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
+                is_runtime_filter,
                 bytes_per_rejected_row,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
+            return std::make_tuple(
+                !viable, !good, -min_position_in_primary_key, is_runtime_filter, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
