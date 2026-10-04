@@ -1,0 +1,15 @@
+-- constant key of the other UUID flavor (FunctionToSubcolumnsPass rewrite)
+0	0
+1	0
+2	2
+3	0
+-- non-constant key of the other UUID flavor (FunctionArrayElement::executeMap)
+0	0
+1	0
+2	2
+3	0
+-- matching flavor still works (sanity)
+0	0
+1	0
+2	2
+3	0

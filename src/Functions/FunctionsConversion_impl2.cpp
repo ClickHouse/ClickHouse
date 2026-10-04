@@ -32,6 +32,7 @@ template class FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecim
 template class FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 template class FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 template class FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+template class FunctionConvertFromString<DataTypeUUID2, NameToUUID2OrNull, ConvertFromStringExceptionMode::Null>;
 template class FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 template class FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 

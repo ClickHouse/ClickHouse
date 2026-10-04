@@ -277,6 +277,7 @@
           "group": "Specialized types",
           "pages": [
             "reference/data-types/uuid",
+            "reference/data-types/uuid2",
             "reference/data-types/enum",
             "reference/data-types/geo",
             "reference/data-types/qbit",

@@ -3,6 +3,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/BSONTypes.h>
 
+#include <Core/UUID.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -184,6 +186,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             return size + sizeof(BSONSizeT) + 1 + sizeof(IPv6); // Size of data + BSON binary subtype + 16 bytes of value
         }
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             return size + sizeof(BSONSizeT) + 1 + sizeof(UUID); // Size of data + BSON binary subtype + 16 bytes of value
         }
@@ -410,11 +413,19 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             break;
         }
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
             writeBSONSize(sizeof(UUID), out);
             writeBSONType(BSONBinarySubtype::UUID, out);
-            writeBinaryLittleEndian(assert_cast<const ColumnUUID &>(column).getElement(row_num), out);
+            UUID value = assert_cast<const ColumnUUID &>(column).getElement(row_num);
+            /// UUID2's binary interchange representation is the canonical big-endian bytes, as in RowBinary
+            /// and Native - that is the stored value written big-endian. UUID keeps its historical raw
+            /// storage layout.
+            if (data_type->getTypeId() == TypeIndex::UUID2)
+                writeBinaryBigEndian(value, out);
+            else
+                writeBinaryLittleEndian(value, out);
             break;
         }
         case TypeIndex::LowCardinality:

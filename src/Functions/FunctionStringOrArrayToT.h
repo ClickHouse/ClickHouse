@@ -69,6 +69,7 @@ public:
             && !isArray(arguments[0])
             && !isMap(arguments[0])
             && !isUUID(arguments[0])
+            && !isUUID2(arguments[0])
             && !isIPv6(arguments[0])
             && !isIPv4(arguments[0])
             && !(supportsQBit() && isQBit(arguments[0])))

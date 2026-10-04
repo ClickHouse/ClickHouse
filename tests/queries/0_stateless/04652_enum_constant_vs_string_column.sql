@@ -389,11 +389,10 @@ SELECT 'control_plain_string_constant', (SELECT groupArray(v) FROM pk_str WHERE 
 SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key = '1'
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = 8;
 
--- An Enum element inside a container is still converted to the number, because the Array/Tuple/Map
--- recursion of convertFieldToType passes no element type hint down. The cell below asserts the current
--- (wrong) value rather than the desired one, so the limitation is documented instead of hidden.
--- The hint propagation is added by https://github.com/ClickHouse/ClickHouse/pull/110084.
-SELECT 'known_limitation_array_element', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '33';
+-- An Enum element inside a container carries the element type hint down through the Array/Tuple/Map
+-- recursion of convertFieldToType, and through createColumnFromConstantArray in the bloom filter
+-- condition, so such an element is converted to the name and not to the number.
+SELECT 'array_element_uses_name', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '37';
 
 -- hasAny and hasAll go through createColumnFromConstantArray, which converts the elements with their
 -- own type as well, so their bloom filter lookup agrees with the function - as it does for has above.

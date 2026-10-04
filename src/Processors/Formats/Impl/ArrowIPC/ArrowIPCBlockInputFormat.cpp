@@ -645,7 +645,7 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
                 n, to_no_null->getName(), width);
     };
 
-    if (which.isUUID())
+    if (which.isUUID() || which.isUUID2())
     {
         require(16);
         auto out = ColumnVector<UUID>::create(rows);
@@ -655,6 +655,9 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
             memcpy(dst, &fixed.getChars()[i * 16], 16);
             std::reverse(dst, dst + 8);
             std::reverse(dst + 8, dst + 16);
+            /// The `UUID2` in-memory layout keeps the two halves in canonical order (swapped relative to `UUID`).
+            if (which.isUUID2())
+                out->getData()[i] = UUIDHelpers::swapHalves(out->getData()[i]);
         }
         return out;
     }
@@ -860,14 +863,19 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     }
 
     const WhichDataType which(to_leaf);
-    const bool raw_target = which.isUUID() || ArrowIPC::rawByteWidth(which) != 0;
+    const bool raw_target = which.isUUID() || which.isUUID2() || ArrowIPC::rawByteWidth(which) != 0;
     if (!raw_target)
         return {col, from_type};
 
     /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
     /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
     /// ranges); only the declared type needs reconciling then.
-    if (nested.getDataType() == to_leaf->getTypeId())
+    /// `UUID` and `UUID2` share `ColumnVector<UUID>` but store the two 64-bit halves in the opposite
+    /// order, so the physical column type cannot tell them apart: a column decoded as one of them and
+    /// requested as the other must not be relabeled, the later cast performs the swap.
+    const WhichDataType from_which(from_no_null);
+    const bool uuid_layout_differs = (from_which.isUUID() && which.isUUID2()) || (from_which.isUUID2() && which.isUUID());
+    if (!uuid_layout_differs && nested.getDataType() == to_leaf->getTypeId())
     {
         if (from_no_null->equals(*to_leaf))
             return {col, from_type};

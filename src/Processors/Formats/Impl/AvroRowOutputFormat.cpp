@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -327,6 +328,19 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
+                const auto serialized_uuid = formatUUID(uuid);
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
+            }};
+        }
+        case TypeIndex::UUID2:
+        {
+            auto schema = avro::StringSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID
+                /// value at the column boundary so that the serialized text matches UUID for the same value.
+                const auto uuid = UUIDHelpers::swapHalves(assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num));
                 const auto serialized_uuid = formatUUID(uuid);
                 encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
             }};

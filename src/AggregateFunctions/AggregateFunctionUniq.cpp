@@ -110,6 +110,13 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             using T = DataTypeUUID::FieldType;
             return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
         }
+        /// `UUID2` shares the physical representation with `UUID` (both use `ColumnVector<UUID>`), so it takes the same
+        /// fixed-width fast path instead of falling back to the generic variadic hash.
+        if (which.isUUID2())
+        {
+            using T = DataTypeUUID::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isIPv4())
         {
             using T = DataTypeIPv4::FieldType;
@@ -185,6 +192,13 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             return std::make_shared<AggregateFunctionUniq<T, ColumnFixedString, Data<T, is_able_to_parallelize_merge>>>(argument_types);
         }
         if (which.isUUID())
+        {
+            using T = DataTypeUUID::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
+        /// `UUID2` shares the physical representation with `UUID` (both use `ColumnVector<UUID>`), so it takes the same
+        /// fixed-width fast path instead of falling back to the generic variadic hash.
+        if (which.isUUID2())
         {
             using T = DataTypeUUID::FieldType;
             return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
