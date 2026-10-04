@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
+#include <optional>
 #include <ranges>
 
 #include <fmt/ranges.h>
@@ -34,6 +35,11 @@ extern const SettingsUInt64 max_rows_to_read_leaf;
 extern const SettingsOverflowMode read_overflow_mode;
 extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -275,7 +281,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+
+        /// Both predicates of two stacked `FilterStep`s have to reach the estimator: passing only
+        /// the inner one down would drop the outer one's selectivity and over-estimate the relation,
+        /// which is what the join order and `query_plan_hash_join_subset_keys_auto` are sized from.
+        /// The conjunction is owned by a DAG built here, so it must outlive the recursive call below.
+        std::optional<ActionsDAG> conjunction_dag;
+        const auto * filter_to_push = predicate ? predicate : filter;
+        if (filter && predicate)
+        {
+            conjunction_dag = ActionsDAG::buildFilterActionsDAG({filter, predicate});
+            if (!conjunction_dag || conjunction_dag->getOutputs().empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to combine filters for row count estimation");
+            filter_to_push = conjunction_dag->getOutputs().front();
+        }
+
+        auto stats = estimateReadRowsCount(*node.children.front(), filter_to_push);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }

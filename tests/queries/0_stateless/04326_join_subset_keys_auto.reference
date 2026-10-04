@@ -1,0 +1,15 @@
+count_on	50000
+off	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+on	Clauses: [(__table1.user_id) = (__table2.user_id)]
+on	Residual filter: equals(__table1.request_id, __table2.request_id)
+rows_gate	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+selectivity_gate	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+algo_gate_full_sorting_merge	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+algo_gate_parallel_full_sorting_merge	50000
+algo_gate_auto	50000
+right_any_count	5000
+right_any_plan	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+reorder_disabled	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+stats_on	Clauses: [(__table1.user_id) = (__table2.user_id)]
+stats_on	Residual filter: equals(__table1.request_id, __table2.request_id)
+filtered_below_min_rows	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
