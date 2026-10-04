@@ -1101,7 +1101,7 @@ and the generated `value` column uses `CODEC(ALP, ZSTD(3))`.
 
 Every inserted sample is written both to the samples table and to the recent samples table,
 except a sample whose timestamp is already older than the TTL window: the TTL would expire it on arrival,
-so it goes to the samples table only. A backfill of historical data therefore leaves the recent samples table empty
+so it goes to the samples table only (see the setting `apply_ttl_delete_on_insert`). A backfill of historical data therefore leaves the recent samples table empty
 instead of creating parts for the TTL to drop.
 Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
 because it's much smaller (this can be disabled with the query-level setting `time_series_prefer_recent_samples_table`).
@@ -1430,8 +1430,9 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 An external table can also be used as the [recent samples](#recent-samples-table) target (the `RECENT SAMPLES my_recent_samples_table` clause).
 Such a table must have the same columns as an external samples table, and it must retain at least
 [recent_samples_ttl_seconds](#settings) seconds of data, which is the user's responsibility.
-An external recent samples table receives the same writes as an inner one, so it also gets no sample
-whose timestamp is already older than that many seconds.
+The inserts into the recent samples table (an inner or an external one) are executed with the setting
+[apply_ttl_delete_on_insert](/reference/settings/session-settings#apply_ttl_delete_on_insert) enabled, so an external `MergeTree` table
+with a `TTL ... DELETE` doesn't get the rows which that TTL already expired.
 
 The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metric families table](#metric-families-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 

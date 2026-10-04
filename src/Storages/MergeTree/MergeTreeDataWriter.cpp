@@ -1,5 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -28,6 +29,7 @@
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -85,6 +87,7 @@ namespace Setting
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
+    extern const SettingsBool apply_ttl_delete_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
@@ -363,6 +366,60 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info);
+}
+
+/// Removes from `block` the rows which are already expired by a table-level `TTL ... DELETE` rule.
+/// The other kinds of TTL (`GROUP BY`, `RECOMPRESS`, moves and column TTLs) are not applied.
+void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
+{
+    TTLDescriptions delete_ttls = metadata_snapshot.getRowsWhereTTLs();
+    if (metadata_snapshot.hasRowsTTL())
+        delete_ttls.push_back(metadata_snapshot.getRowsTTL());
+
+    const size_t num_rows = block.rows();
+    if (delete_ttls.empty() || num_rows == 0)
+        return;
+
+    const time_t current_time = time(nullptr);
+    const auto & date_lut = DateLUT::instance();
+    IColumn::Filter filter(num_rows, 1);
+    PaddedPODArray<Int64> timestamps;
+
+    for (const auto & ttl_entry : delete_ttls)
+    {
+        auto expr_and_set = ttl_entry.buildExpression(context);
+        for (auto & subquery : expr_and_set.sets->getSubqueries())
+            subquery->buildSetInplace(context);
+
+        auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+        ITTLAlgorithm::extractTimestamps(ttl_column.get(), date_lut, timestamps);
+
+        ColumnPtr where_column;
+        if (ttl_entry.where_expression_ast)
+        {
+            auto where_expr_and_set = ttl_entry.buildWhereExpression(context);
+            for (auto & subquery : where_expr_and_set.sets->getSubqueries())
+                subquery->buildSetInplace(context);
+
+            where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
+            if (where_column)
+                where_column = where_column->convertToFullColumnIfConst();
+        }
+
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            bool expired = timestamps[i] && timestamps[i] <= current_time;
+            if (expired && (!where_column || where_column->getBool(i)))
+                filter[i] = 0;
+        }
+    }
+
+    size_t num_kept_rows = countBytesInFilter(filter);
+    if (num_kept_rows == num_rows)
+        return;
+
+    for (auto & column : block)
+        column.column = column.column->filter(filter, num_kept_rows);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -798,6 +855,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     const auto & data_settings = data.getSettings();
     const auto & global_settings = context->getSettingsRef();
+
+    if (!isPatchPartitionId(partition_id) && global_settings[Setting::apply_ttl_delete_on_insert])
+    {
+        removeRowsExpiredByTTL(context, *metadata_snapshot, block);
+
+        /// There is no need to create an empty part if all the rows are expired.
+        if (block.rows() == 0)
+            return temp_part;
+    }
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 

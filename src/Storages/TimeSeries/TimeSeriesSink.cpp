@@ -6,14 +6,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -33,8 +31,6 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
-#include <ctime>
-#include <limits>
 #include <ranges>
 
 
@@ -44,7 +40,6 @@ namespace DB
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsASTFunction id_generator;
-    extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
 }
@@ -234,24 +229,6 @@ namespace
         return count;
     }
 
-    /// Fills `filter` with 1 for samples whose timestamp is at or after `min_timestamp`.
-    /// Returns the number of such samples.
-    size_t buildNotExpiredSamplesFilter(const IColumn & timestamp_column, Int64 min_timestamp, IColumn::Filter & filter)
-    {
-        size_t num_rows = timestamp_column.size();
-        filter.resize(num_rows);
-        size_t count = 0;
-
-        for (size_t i = 0; i != num_rows; ++i)
-        {
-            UInt8 not_expired = (timestamp_column.getInt(i) >= min_timestamp);
-            filter[i] = not_expired;
-            count += not_expired;
-        }
-
-        return count;
-    }
-
     /// Marks the rows with a non-empty `metric_family` in `filter` and returns the number of such rows.
     /// The other rows must have empty `type`, `unit` and `help` too.
     /// The function returns 0 and leaves `filter` empty if there are no such rows.
@@ -404,6 +381,12 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
+
+    /// Reads use the recent samples table only for ranges starting at `now() - TTL + 60` seconds
+    /// (see `StorageTimeSeriesSelector::readImpl`), so a sample already expired by its TTL is never read from it.
+    /// Don't write such samples there: a backfill of historical data would create parts which only wait for the TTL to drop them.
+    if (kind == ViewTarget::RecentSamples)
+        pipeline->context->setSetting("apply_ttl_delete_on_insert", true);
 
     InterpreterInsertQuery interpreter(
         insert_query,
@@ -604,21 +587,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     /// The recent samples table (if any) receives a copy of every samples block.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-    {
         recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
-
-        /// Reads use the recent samples table only for ranges starting at `now() - TTL + 60` seconds
-        /// (see StorageTimeSeriesSelector::readImpl), so a sample older than `now() - TTL` is never read
-        /// from it and its part only waits for the TTL to drop it. The cutoff is computed once per
-        /// INSERT so that all the blocks of one query use the same TTL window.
-        using Wide = __int128;
-        UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
-        Wide min_timestamp = (static_cast<Wide>(std::time(nullptr))
-            - static_cast<Wide>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))
-            * static_cast<Wide>(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale));
-        min_recent_sample_timestamp = static_cast<Int64>(std::clamp<Wide>(
-            min_timestamp, std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()));
-    }
 }
 
 
@@ -794,28 +763,8 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_pipeline->push(samples_block);
 
         if (recent_samples_pipeline)
-            pushRecentSamples(std::move(samples_block));
+            recent_samples_pipeline->push(std::move(samples_block));
     }
-}
-
-
-void TimeSeriesSink::pushRecentSamples(Block samples_block)
-{
-    const auto & timestamp_column = *samples_block.getByName(TimeSeriesColumnNames::Timestamp).column;
-
-    IColumn::Filter filter;
-    size_t num_not_expired = buildNotExpiredSamplesFilter(timestamp_column, min_recent_sample_timestamp, filter);
-
-    if (!num_not_expired)
-        return;
-
-    if (num_not_expired != timestamp_column.size())
-    {
-        for (auto & column : samples_block)
-            column.column = column.column->filter(filter, num_not_expired);
-    }
-
-    recent_samples_pipeline->push(std::move(samples_block));
 }
 
 

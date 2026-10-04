@@ -76,10 +76,6 @@ private:
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
 
     void consumeTagsAndSamples(const Block & block);
-
-    /// Pushes a samples block to the recent samples table without the samples its TTL already expired.
-    void pushRecentSamples(Block samples_block);
-
     void consumeMetricFamilies(const Block & block);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
@@ -110,9 +106,6 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
-
-    /// Oldest timestamp the recent samples table keeps, in the units of its `timestamp` column.
-    Int64 min_recent_sample_timestamp = 0;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
