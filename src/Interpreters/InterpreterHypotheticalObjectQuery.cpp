@@ -17,6 +17,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -235,8 +236,21 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
 
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     table_id = table->getStorageID();
+    auto & store = context->getHypotheticalObjectStore();
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    /// Dropping only forgets a session entry, so it must not load a lazily loaded table.
+    if (query.kind == ASTHypotheticalObjectQuery::Drop)
+    {
+        auto object_name = query.object_name->as<ASTIdentifier &>().name();
+        if (is_projection)
+            store.removeProjection(table_id, object_name, query.if_exists);
+        else
+            store.remove(table_id, object_name, query.if_exists);
+        return {};
+    }
+
+    table = resolveStorageProxyLoading(table);
+    const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -253,18 +267,6 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             object_kind_name,
             table_id.getDatabaseName(),
             table_id.getTableName());
-
-    auto & store = context->getHypotheticalObjectStore();
-
-    if (query.kind == ASTHypotheticalObjectQuery::Drop)
-    {
-        auto object_name = query.object_name->as<ASTIdentifier &>().name();
-        if (is_projection)
-            store.removeProjection(table_id, object_name, query.if_exists);
-        else
-            store.remove(table_id, object_name, query.if_exists);
-        return {};
-    }
 
     auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
 

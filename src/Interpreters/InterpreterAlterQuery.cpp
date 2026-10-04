@@ -39,6 +39,7 @@
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -376,7 +377,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
@@ -478,11 +479,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// how it was written, see `DatabaseCatalog::resolveHierarchicalName`.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        /// Resolve once here so every branch below validates against the real structure instead of
+        /// the columns-only metadata a lazily loaded table reports.
+        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        /// NOLINT(storage-cast): `table` is resolved above.
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
@@ -582,6 +586,24 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*modify_query);
+    }
+
+    /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
+    /// context makes CTE expansion respect `enable_global_with_statement`, so a CTE name that is not
+    /// visible in a subquery is left there as a table name and is qualified below.
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+            continue;
+
+        for (IAST * expression : {command->predicate, command->update_assignments})
+        {
+            if (!expression)
+                continue;
+            ASTPtr expression_ptr = expression->ptr();
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+        }
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
