@@ -2168,7 +2168,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_type,
         transform_functions,
         chain_is_positive,
-        [this, is_order_comparison](const IFunctionBase & func, const IDataType & type)
+        [this, is_order_comparison](const IFunctionBase & func, const IDataType & type, bool is_first_argument)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
@@ -2227,20 +2227,24 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             ///
             /// The same holds for `ifNull(d, c)` and `coalesce(d, c)` with a constant `c`: a non-`NULL`
             /// `d` keeps its value, and a `NULL` row gets the key value `c`, which can only keep a
-            /// granule as a false positive. This requires the conversion of `d` to the common type to
-            /// preserve order, which holds for the same type and for numbers, but not, for example,
-            /// for an `Enum` converted to `String`. It is only done for order comparisons: a pattern
-            /// constant (`LIKE`, `startsWith`, `match`) would be changed by the conversion, e.g. padded
-            /// to a `FixedString`, or replaced by `c` in `ifNull(c, d)`.
+            /// granule as a false positive. Order comparisons need an order-preserving conversion to the
+            /// common type (not, e.g., `Enum` to `String`); a pattern (`LIKE`, `startsWith`, `match`) must
+            /// pass through unchanged, which holds for `String` but not `FixedString`, which pads it.
             const auto name = func.getName();
             if (name == "assumeNotNull")
                 return true;
 
-            if ((name == "ifNull" || name == "coalesce") && is_order_comparison)
+            if (name == "ifNull" || name == "coalesce")
             {
+                /// `ifNull(c, d)` is `c`, not `d`.
+                if (!is_first_argument)
+                    return false;
+
                 const auto arg_type = removeLowCardinalityAndNullable(type.getPtr());
                 const auto result_type = removeLowCardinalityAndNullable(func.getResultType());
-                return arg_type->equals(*result_type) || (isNumber(arg_type) && isNumber(result_type));
+                if (is_order_comparison)
+                    return arg_type->equals(*result_type) || (isNumber(arg_type) && isNumber(result_type));
+                return arg_type->equals(*result_type) && isString(arg_type);
             }
 
             /// Range is irrelevant in this case.
@@ -4169,7 +4173,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     DataTypePtr & out_key_column_type,
     MonotonicFunctionsChain & out_functions_chain,
     bool & out_chain_is_positive,
-    std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+    std::function<bool(const IFunctionBase &, const IDataType &, bool)> always_monotonic) const
 {
     out_chain_is_positive = true;
 
@@ -4212,7 +4216,8 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     /// next_node is the non-constant child of cur_node, so next_node->result_type
                     /// is the child's output type, which is the input type to cur_node's function.
                     if (is_valid_chain)
-                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
+                        is_valid_chain = always_monotonic(
+                            *cur_node->function_base, *next_node->result_type, next_node == cur_node->children.front());
 
                     cur_node = next_node;
                 }
@@ -4855,7 +4860,32 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
-                return false;
+            {
+                /// For a key `ifNull(expr, c)` or `coalesce(expr, c)`, `isNull(expr)` implies `key = c`.
+                /// The converse does not hold, so the atom is relaxed.
+                MonotonicFunctionsChain key_chain;
+                bool unused_chain_is_positive;
+                if (func_name != "isNull"
+                    || !extractMonotonicFunctionsChainFromKey(
+                        func.getContext(), func.getArgumentAt(0).getColumnName(), info, key_column_num, key_expr_type,
+                        key_chain, unused_chain_is_positive,
+                        [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
+                        { return is_first_argument && (key_func.getName() == "ifNull" || key_func.getName() == "coalesce"); })
+                    || key_chain.size() != 1)
+                    return false;
+
+                const auto & replace_null = *key_chain.front();
+                const auto null_type = getArgumentTypeOfMonotonicFunction(replace_null);
+                const auto key_of_null = replace_null.execute(
+                    {{null_type->createColumnConstWithDefaultValue(1), null_type, ""}}, replace_null.getResultType(), 1, /* dry_run = */ false);
+                const Field value = (*key_of_null)[0];
+                if (value.isNull() || value.isNaN())
+                    return false;
+
+                out.key_columns.push_back(key_column_num);
+                out.relaxed = true;
+                return atom_map.find("equals")->second(out, value);
+            }
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");

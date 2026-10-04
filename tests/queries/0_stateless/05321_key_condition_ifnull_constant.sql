@@ -11,10 +11,12 @@ DROP TABLE IF EXISTS t_ifnull;
 DROP TABLE IF EXISTS t_coalesce;
 DROP TABLE IF EXISTS t_enum;
 DROP TABLE IF EXISTS t_fixed;
+DROP TABLE IF EXISTS t_string;
+DROP TABLE IF EXISTS t_const_first;
 
 CREATE TABLE t_ifnull (y Nullable(UInt32))
 ENGINE = MergeTree ORDER BY ifNull(y, 0) SETTINGS index_granularity = 2, auto_statistics_types = '';
-INSERT INTO t_ifnull VALUES (NULL), (NULL), (1), (2), (3), (4), (5), (6), (7), (8);
+INSERT INTO t_ifnull VALUES (NULL), (NULL), (0), (1), (2), (3), (4), (5), (6), (7), (8);
 OPTIMIZE TABLE t_ifnull FINAL;
 
 CREATE TABLE t_coalesce (y Nullable(UInt32))
@@ -31,6 +33,15 @@ CREATE TABLE t_fixed (y Nullable(FixedString(3)))
 ENGINE = MergeTree ORDER BY ifNull(y, toFixedString('', 3)) SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO t_fixed VALUES ('abc'), ('abc'), ('abc'), ('abc');
 
+CREATE TABLE t_string (s Nullable(String))
+ENGINE = MergeTree ORDER BY ifNull(s, '') SETTINGS index_granularity = 2, auto_statistics_types = '';
+INSERT INTO t_string VALUES (NULL), (NULL), ('aa'), ('ab'), ('ba'), ('bb'), ('ca'), ('cb');
+OPTIMIZE TABLE t_string FINAL;
+
+CREATE TABLE t_const_first (s Nullable(String))
+ENGINE = MergeTree ORDER BY ifNull('abc', s) SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_const_first VALUES ('xyz'), ('xyz'), ('xyz'), ('xyz');
+
 -- { echo }
 
 SELECT arraySort(groupArray(ifNull(toString(y), 'NULL'))) FROM t_ifnull WHERE y >= 5;
@@ -43,16 +54,28 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE 
 -- The atom is relaxed, so exact counting must not count the NULL rows.
 SELECT count() FROM t_ifnull WHERE y <= 0 SETTINGS optimize_use_implicit_projections = 1;
 
+-- NULL rows have the key 0, as does the non-NULL row 0.
+SELECT count() FROM t_ifnull WHERE isNull(y) SETTINGS optimize_use_implicit_projections = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE isNull(y)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_coalesce WHERE y >= 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 
 -- `ifNull` converts the `Enum` to `String`, which is ordered differently, so the key is not used.
 SELECT count() FROM t_enum WHERE y > 'z';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_enum WHERE y > 'z') WHERE explain LIKE '%Condition%';
 
--- Only comparisons are pushed through `ifNull`: converting the prefix to `FixedString(3)` would pad it.
+SELECT arraySort(groupArray(s)) FROM t_string WHERE s LIKE 'c%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_string WHERE s LIKE 'c%') WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+
+-- A pattern is not pushed through `ifNull` to `FixedString(3)`, which would pad it.
 SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_condition_cache = 0;
+
+-- `ifNull('abc', s)` is not `s`.
+SELECT count() FROM t_const_first WHERE match(s, '^xyz') SETTINGS use_query_condition_cache = 0;
 
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
 DROP TABLE t_enum;
 DROP TABLE t_fixed;
+DROP TABLE t_string;
+DROP TABLE t_const_first;

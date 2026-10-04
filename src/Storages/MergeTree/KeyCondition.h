@@ -570,7 +570,7 @@ private:
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
         bool & out_chain_is_positive,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(const IFunctionBase &, const IDataType &, bool is_first_argument)> always_monotonic) const;
 
 
     bool extractDeterministicFunctionsDagFromKey(
