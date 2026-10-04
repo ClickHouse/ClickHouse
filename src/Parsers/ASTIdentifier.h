@@ -105,6 +105,9 @@ public:
     void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+protected:
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }
