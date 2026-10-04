@@ -3223,6 +3223,31 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             *from_decay_length,
             *to_decay_length);
 
+    if (cast_type == CastType::nonAccurate
+        && from_decay_length
+        && to_decay_length
+        && !from_type->equals(*to_type))
+    {
+        const auto & target = assert_cast<const DataTypeExponentialTimeDecaying &>(*to_type);
+        const auto target_key_width = target.getKeyWidth();
+        const Float64 decay_length = target.getDecayLength();
+
+        return [target_key_width, decay_length](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr &,
+                   const ColumnNullable *,
+                   size_t) -> ColumnPtr
+        {
+            ColumnPtr full = arguments[0].column->convertToFullColumnIfConst();
+            const auto & source = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
+            return materializeExponentialTimeDecayingStorageColumn(
+                source.getStorageColumn(),
+                decay_length,
+                "explicit ExponentialTimeDecaying width conversion",
+                target_key_width);
+        };
+    }
+
     /// Accurate conversions are used for implicit key coercion (for example by IN).
     /// A finalized decaying value must not become a layout-compatible plain Tuple, or
     /// silently change its decay length. Container conversions recurse through this path.
@@ -3469,7 +3494,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             const auto & raw_tuple = assert_cast<const DataTypeTuple &>(*raw_type);
             auto raw_wrapper = createTupleWrapper(from_type, &raw_tuple);
             const Float64 decay_length = decaying_type.getDecayLength();
-            return [wrapper = std::move(raw_wrapper), raw_type, decay_length]
+            const auto key_width = decaying_type.getKeyWidth();
+            return [wrapper = std::move(raw_wrapper), raw_type, decay_length, key_width]
                 (ColumnsWithTypeAndName & arguments,
                  const DataTypePtr &,
                  const ColumnNullable * nullable_source,
@@ -3478,7 +3504,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                 auto raw_column
                     = wrapper(arguments, raw_type, nullable_source, input_rows_count);
                 return materializeExponentialTimeDecayingStorageColumn(
-                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying");
+                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying", key_width);
             };
         }
         case TypeIndex::Map:
