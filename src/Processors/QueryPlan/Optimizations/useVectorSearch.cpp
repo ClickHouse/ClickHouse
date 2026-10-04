@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -395,7 +397,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
     /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
-    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+    if (read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getDeferredPrewhereInfo())
         return false;
 
     /// Not 100% sure but other sort types are likely not what we want
@@ -584,6 +586,14 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
             const auto result_type = sort_column_node->result_type;
 
+            /// Remember the position of the sort column among the outputs: the rewritten node must be
+            /// reinserted at the same position, because parent steps (e.g. a Limit above the Sorting, or
+            /// exchange steps in a distributed plan) were created with this output order and their headers
+            /// are not updated by this optimization. Appending it at the end would swap the header column
+            /// order and `makeDistributedPlan` would fail to rebuild the plan fragments with a logical error.
+            const auto & outputs = expression.getOutputs();
+            const size_t sort_column_pos = std::find(outputs.begin(), outputs.end(), sort_column_node) - outputs.begin();
+
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
@@ -600,7 +610,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
-            expression.getOutputs().push_back(new_output);
+            expression.getOutputs().insert(expression.getOutputs().begin() + sort_column_pos, new_output);
 
             /// Need to do same removal of the vector column from the Filter step. The removal has already been
             /// done on `pruned_filter_expression` above (where it also served as the bailout check).
