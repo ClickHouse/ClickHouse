@@ -203,7 +203,8 @@ public:
       * settings that tell it how to parse. Anything that keys an expression by a hash - the query
       * condition cache, the reuse of collected statistics - relies on this, so a function that
       * captures a setting must override this and hash it, as the conversions, the comparisons,
-      * the `JSON*` functions, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
+      * the `JSON*` functions, `JSONAllPaths*`, `JSONAllValues`, `has` / `indexOf` / `countEqual` and
+      * `empty` / `notEmpty` on `JSON`, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
       * function that does not is keyed by its name and types alone, and two sessions that differ in
       * the setting it captured share one key (the query condition cache still tells them apart by
       * `queryConditionCacheSettingsSalt`, the statistics cache does not).
