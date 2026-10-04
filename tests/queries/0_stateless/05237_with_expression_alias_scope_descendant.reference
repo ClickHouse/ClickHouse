@@ -1,7 +1,32 @@
 live	100
+mutation	100
 live array	100
+mutation array	100
+view direct	100
+materialized view	100
+modify query	100
 view	100
 stored alias is bare	1
+live off	10
+mutation off	10
+live same expression	100
+view same expression	100
+live shadowed	1
+view shadowed	1
+live shadowed top-level	1
+view shadowed top-level	1
+live shadowed array join	1
+view shadowed array join	1
+live shadowed join on	1
+view shadowed join on	1
+live shadowed table function	1
+view shadowed table function	1
+live lambda parameter	1
+view lambda parameter	1
+live lambda alias	1
+view lambda alias	1
+live table function lambda	10
+view table function lambda	10
 live lambda	10
 mutation lambda	10
 live subquery	10

@@ -16,6 +16,8 @@
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -46,6 +48,46 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
     return subquery_context;
 }
 
+bool hasOwnAliasScope(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+        return true;
+    const auto * function = ast.as<ASTFunction>();
+    return function && function->name == "lambda";
+}
+
+void forEachDescendantAlias(const ASTPtr & ast, const std::function<void(const String &, const ASTPtr &)> & callback)
+{
+    checkStackSize();
+
+    for (const auto & child : ast->children)
+    {
+        if (auto alias = child->tryGetAlias(); !alias.empty())
+            callback(alias, child);
+        if (!hasOwnAliasScope(*child))
+            forEachDescendantAlias(child, callback);
+    }
+}
+
+void registerExpressionAlias(const ASTPtr & node, ApplyWithSubqueryVisitor::Data & data, bool export_aliases)
+{
+    auto alias = node->tryGetAlias();
+    if (alias.empty())
+        return;
+    data.literals[alias] = node;
+    if (export_aliases)
+        data.exported_literals[alias] = node;
+}
+
+}
+
+void ApplyWithSubqueryVisitor::forEachExpressionAlias(
+    const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback)
+{
+    if (!hasOwnAliasScope(*expression))
+        forEachDescendantAlias(expression, callback);
+    if (auto alias = expression->tryGetAlias(); !alias.empty())
+        callback(alias, expression);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
@@ -56,23 +98,109 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
         visit(*node_select, data);
     else
     {
+        /// A lambda parameter and an alias declared in the lambda body hide an inherited alias of the same name.
+        std::optional<Data> lambda_data;
+        if (const auto * lambda = ast->as<ASTFunction>(); lambda && isASTLambdaFunction(*lambda) && !data.literals.empty())
+        {
+            std::vector<String> names;
+            for (const auto & parameter : lambda->arguments->children[0]->as<ASTFunction &>().arguments->children)
+            {
+                if (const auto * identifier = parameter->as<ASTIdentifier>())
+                    names.push_back(identifier->name());
+            }
+            forEachExpressionAlias(lambda->arguments->children[1], [&](const String & alias, const ASTPtr &) { names.push_back(alias); });
+            for (const auto & name : names)
+            {
+                if (!data.literals.contains(name))
+                    continue;
+                if (!lambda_data)
+                    lambda_data = data;
+                lambda_data->literals.erase(name);
+            }
+        }
+        const Data & scope = lambda_data ? *lambda_data : data;
+
         for (auto & child : ast->children)
-            visit(child, data);
+            visit(child, scope);
         if (auto * node_func = ast->as<ASTFunction>())
+            visit(*node_func, scope);
+        else if (auto * node_table = ast->as<ASTTableExpression>())
+            visit(*node_table, scope);
+    }
+}
+
+/// Like `visit`, but registers each alias as soon as its node is visited, so the rest of the expression sees it.
+void ApplyWithSubqueryVisitor::visitWithExpression(ASTPtr & ast, Data & data, bool export_aliases)
+{
+    checkStackSize();
+
+    if (hasOwnAliasScope(*ast))
+        visit(ast, data);
+    else
+    {
+        for (auto & child : ast->children)
+            visitWithExpression(child, data, export_aliases);
+        if (auto * node_func = ast->as<ASTFunction>())
+        {
             visit(*node_func, data);
+            /// `visit` can replace an argument with a copy of a registered node.
+            if (node_func->arguments)
+            {
+                for (const auto & argument : node_func->arguments->children)
+                    registerExpressionAlias(argument, data, export_aliases);
+            }
+        }
         else if (auto * node_table = ast->as<ASTTableExpression>())
             visit(*node_table, data);
     }
+
+    registerExpressionAlias(ast, data, export_aliases);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
+    /// An alias this select declares itself hides an inherited one of the same name.
+    std::vector<String> own_aliases;
+    auto add_own_alias = [&](const String & alias, const ASTPtr &) { own_aliases.push_back(alias); };
+    for (const auto & child : ast.children)
+    {
+        if (child != ast.tables())
+            forEachExpressionAlias(child, add_own_alias);
+    }
+    /// So do `ARRAY JOIN`, `JOIN ... ON` and the arguments of a table function, unlike a table alias.
+    if (ast.tables())
+    {
+        for (const auto & element : ast.tables()->children)
+        {
+            const auto * table_element = element->as<ASTTablesInSelectQueryElement>();
+            if (!table_element)
+                continue;
+            if (const auto * array_join = table_element->array_join ? table_element->array_join->as<ASTArrayJoin>() : nullptr;
+                array_join && array_join->expression_list)
+                forEachExpressionAlias(array_join->expression_list, add_own_alias);
+            if (const auto * table_join = table_element->table_join ? table_element->table_join->as<ASTTableJoin>() : nullptr;
+                table_join && table_join->on_expression)
+                forEachExpressionAlias(table_join->on_expression, add_own_alias);
+            if (const auto * table_expression = table_element->table_expression ? table_element->table_expression->as<ASTTableExpression>() : nullptr;
+                table_expression && table_expression->table_function)
+            {
+                if (const auto * table_function = table_expression->table_function->as<ASTFunction>(); table_function && table_function->arguments)
+                    forEachExpressionAlias(table_function->arguments, add_own_alias);
+            }
+        }
+    }
+
     /// The elements this select declares itself are registered below either way: only the inherited
     /// ones are out of scope here.
     std::optional<Data> scope_data;
-    if (data.context)
+    if (data.context || std::ranges::any_of(own_aliases, [&](const String & alias) { return data.literals.contains(alias); }))
     {
         scope_data = data;
+        for (const auto & alias : own_aliases)
+            scope_data->literals.erase(alias);
+    }
+    if (data.context)
+    {
         scope_data->context = getSubqueryContext(ast, data.context);
         const auto & scope_settings = scope_data->context->getSettingsRef();
         /// A common table expression is reached by looking into an enclosing scope, so a select that does
@@ -94,23 +222,22 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
+        const bool export_aliases
+            = scope.context && !scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement];
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : scope);
-            auto * ast_with_elem = child->as<ASTWithElement>();
-            auto child_alias = child->tryGetAlias();
-            if (ast_with_elem || !child_alias.empty())
+            if (auto * ast_with_elem = child->as<ASTWithElement>())
+            {
+                visit(child, new_data ? *new_data : scope);
+                if (!new_data)
+                    new_data = scope;
+                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+            }
+            else
             {
                 if (!new_data)
                     new_data = scope;
-                if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
-                else
-                {
-                    new_data->literals[child_alias] = child;
-                    if (new_data->context && !new_data->context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
-                        new_data->exported_literals[child_alias] = child;
-                }
+                visitWithExpression(child, *new_data, export_aliases);
             }
         }
     }

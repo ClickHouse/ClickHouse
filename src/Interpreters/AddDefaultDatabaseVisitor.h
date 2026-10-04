@@ -18,6 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -407,26 +408,15 @@ private:
             }
             else if (!only_recursive_with_hides_table)
             {
-                collectWithExpressionAliases(*child);
+                collectWithExpressionAliases(child);
             }
         }
     }
 
-    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
-    /// a lambda or a subquery: those aliases are their own.
-    void collectWithExpressionAliases(const IAST & ast) const
+    void collectWithExpressionAliases(const ASTPtr & ast) const
     {
-        String alias = ast.tryGetAlias();
-        if (!alias.empty())
-            with_expression_aliases.insert(alias);
-
-        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
-            return;
-        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-            return;
-
-        for (const auto & child : ast.children)
-            collectWithExpressionAliases(*child);
+        ApplyWithSubqueryVisitor::forEachExpressionAlias(
+            ast, [&](const String & alias, const ASTPtr &) { with_expression_aliases.insert(alias); });
     }
 
     bool isExpressionAlias(const String & name) const
@@ -524,8 +514,21 @@ private:
     /// their aliases are collected when the visitor descends into them.
     void collectAliases(const ASTPtr & ast) const
     {
-        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
             return;
+
+        /// The alias of a table expression names a table, but the aliases in the arguments of a table function belong
+        /// to the select query, as in the analyzer, except inside a lambda or a subquery.
+        if (const auto * table_expression = ast->as<ASTTableExpression>())
+        {
+            if (const auto * table_function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
+                table_function && table_function->arguments)
+            {
+                ApplyWithSubqueryVisitor::forEachExpressionAlias(
+                    table_function->arguments, [&](const String & alias, const ASTPtr &) { expression_aliases.insert(alias); });
+            }
+            return;
+        }
 
         String alias = ast->tryGetAlias();
         if (!alias.empty())
