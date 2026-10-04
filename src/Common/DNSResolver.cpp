@@ -409,11 +409,11 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.clear();
-    impl->cache_address.clear();
-
+    /// Under `update_mutex`, so that an update in progress cannot put the entries back.
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
+    impl->cache_host.clear();
+    impl->cache_address.clear();
     impl->known_hosts.clear();
     impl->known_addresses.clear();
     impl->new_hosts.clear();
