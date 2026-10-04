@@ -1,6 +1,7 @@
 #if defined(WYRD_ADVERSARY)
 
 #include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
@@ -87,13 +88,10 @@ TEST(Wyrd, AdversaryNothingInstalledMeansNoFaults)
 {
     EXPECT_EQ(adversary(), nullptr);
 
-    runTest(
-        []
-        {
-            Atomic<int> value{0};
-            int expected = 0;
-            EXPECT_TRUE(value.compare_exchange_weak(expected, 1));
-        });
+    Atomic<int> value{0};
+    int expected = 0;
+    EXPECT_TRUE(value.compare_exchange_weak(expected, 1));
+    EXPECT_FALSE(spuriousFailure());
 }
 
 #endif
