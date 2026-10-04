@@ -1,0 +1,126 @@
+-- { echoOn }
+
+-- standard escape sequences are decoded, the result is checked byte by byte
+SELECT hex(x['key1']), hex(x['key2']) FROM (SELECT extractKeyValuePairsWithEscaping('key1:a\\xFF key2:a\\n\\t\\r') AS x);
+61FF	610A090D
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0');
+{'age':'a\n\n\0'}
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0');
+{'age':'a\\x0A\\n\\0'}
+-- quoting character inside a quoted value must be escaped
+SELECT extractKeyValuePairsWithEscaping('a:"aaaa\\"bbb" c:d');
+{'a':'aaaa"bbb','c':'d'}
+SELECT extractKeyValuePairs('a:"aaaa\\"bbb" c:d');
+{'a':'aaaa\\','c':'d'}
+-- non-standard escape sequences keep the backslash
+SELECT extractKeyValuePairsWithEscaping('ke\\y:va\\lue k\\x41:v');
+{'ke\\y':'va\\lue','kA':'v'}
+-- invalid escape sequence at the end of the value: best effort, the value is kept
+SELECT extractKeyValuePairsWithEscaping('valid_key:valid_value key:invalid_val\\');
+{'valid_key':'valid_value','key':'invalid_val'}
+SELECT extractKeyValuePairs('valid_key:valid_value key:invalid_val\\');
+{'valid_key':'valid_value','key':'invalid_val\\'}
+SELECT extractKeyValuePairsWithEscaping('valid_key:valid_value key:invalid_val\\ third_key:third_value');
+{'valid_key':'valid_value','key':'invalid_val\\ third_key:third_value'}
+SELECT extractKeyValuePairs('valid_key:valid_value key:invalid_val\\ third_key:third_value');
+{'valid_key':'valid_value','key':'invalid_val\\','third_key':'third_value'}
+SELECT extractKeyValuePairsWithEscaping('valid_key:valid_value key:"invalid val\\ " "third key":"third value"');
+{'valid_key':'valid_value','key':'invalid val\\ ','third key':'third value'}
+SELECT extractKeyValuePairs('valid_key:valid_value key:"invalid val\\ " "third key":"third value"');
+{'valid_key':'valid_value','key':'invalid val\\ ','third key':'third value'}
+-- incomplete hex escape sequence
+SELECT extractKeyValuePairsWithEscaping('k\\x4');
+{}
+SELECT extractKeyValuePairsWithEscaping('k\\x4:v a:b');
+{'a':'b'}
+SELECT extractKeyValuePairsWithEscaping('a:v\\x4');
+{'a':'v'}
+SELECT extractKeyValuePairsWithEscaping('a:"v\\x4" b:c');
+{}
+-- leading escape sequences are skipped in keys and are invalid for values
+SELECT extractKeyValuePairsWithEscaping('\\:name:val');
+{'name':'val'}
+SELECT extractKeyValuePairsWithEscaping('\\\\"name":val');
+{'name':'val'}
+SELECT extractKeyValuePairsWithEscaping('a:\\N b:c');
+{'b':'c'}
+SELECT extractKeyValuePairsWithEscaping('a:x\\N b:c');
+{'a':'x','b':'c'}
+SELECT extractKeyValuePairsWithEscaping('"\\N":5 a:b');
+{'a':'b'}
+-- escape sequences inside quoted keys
+SELECT extractKeyValuePairsWithEscaping('"name\\n\\x4E":1');
+{'name\nN':'1'}
+SELECT hex(x['name\nN']) FROM (SELECT extractKeyValuePairsWithEscaping('"name\\n\\x4E":1') AS x);
+31
+-- single quote as quoting character, both variants
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'');
+{'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}
+SELECT extractKeyValuePairsWithEscaping('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'');
+{'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}
+-- unexpected quoting character strategies with escaping
+SELECT extractKeyValuePairsWithEscaping('name"abc:5', ':', ' ,;', '"', 'INVALID');
+{'abc':'5'}
+SELECT extractKeyValuePairsWithEscaping('name"abc":5', ':', ' ,;', '"', 'INVALID');
+{}
+SELECT extractKeyValuePairsWithEscaping('name"abc:5', ':', ' ,;', '"', 'ACCEPT');
+{'name"abc':'5'}
+SELECT extractKeyValuePairsWithEscaping('name"abc":5', ':', ' ,;', '"', 'ACCEPT');
+{'name"abc"':'5'}
+SELECT extractKeyValuePairsWithEscaping('name"abc:5', ':', ' ,;', '"', 'PROMOTE');
+{}
+SELECT extractKeyValuePairsWithEscaping('name"abc":5', ':', ' ,;', '"', 'PROMOTE');
+{'abc':'5'}
+SELECT extractKeyValuePairsWithEscaping('k:v"x y:z', ':', ' ,;', '"', 'INVALID');
+{'y':'z'}
+SELECT extractKeyValuePairsWithEscaping('k:v"x y:z', ':', ' ,;', '"', 'ACCEPT');
+{'k':'v"x','y':'z'}
+SELECT extractKeyValuePairsWithEscaping('k:v"x y:z', ':', ' ,;', '"', 'PROMOTE');
+{}
+-- long tokens: keys and values longer than the vector width, delimiters at various offsets
+SELECT extractKeyValuePairs(concat(repeat('k', 100), ':', repeat('v', 300), ' ', repeat('a', 17), ':', repeat('b', 15), ',', repeat('c', 16), ':', repeat('d', 16)));
+{'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk':'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv','aaaaaaaaaaaaaaaaa':'bbbbbbbbbbbbbbb','cccccccccccccccc':'dddddddddddddddd'}
+SELECT extractKeyValuePairsWithEscaping(concat(repeat('k', 100), ':', repeat('v', 300), ' ', repeat('a', 17), ':', repeat('b', 15), ',', repeat('c', 16), ':', repeat('d', 16)));
+{'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk':'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv','aaaaaaaaaaaaaaaaa':'bbbbbbbbbbbbbbb','cccccccccccccccc':'dddddddddddddddd'}
+SELECT extractKeyValuePairs(concat('"', repeat('q', 50), '":"', repeat('w', 70), '"', repeat(' ', 40), 'z:1'));
+{'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq':'wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww','z':'1'}
+SELECT extractKeyValuePairsWithEscaping(concat('"', repeat('q', 50), '":"', repeat('w', 30), '\\t', repeat('w', 30), '"', repeat(' ', 40), 'z:1'));
+{'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq':'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww\twwwwwwwwwwwwwwwwwwwwwwwwwwwwww','z':'1'}
+SELECT extractKeyValuePairsWithEscaping(concat('k:', repeat('v', 200), '\\n', repeat('v', 200), ' a:b'));
+{'k':'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv','a':'b'}
+SELECT extractKeyValuePairs(concat(repeat(':', 17), 'a:b', repeat(' ', 31)));
+{'a':'b'}
+SELECT extractKeyValuePairs(repeat('x', 100));
+{}
+SELECT extractKeyValuePairs(concat(repeat('x', 100), ':', repeat('y', 100)));
+{'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx':'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy'}
+SELECT length(extractKeyValuePairs(concat('k:', repeat('a', 2000), ' q:"', repeat('b', 2000), '" z:1')));
+3
+SELECT arraySort(mapKeys(extractKeyValuePairs(arrayStringConcat(arrayMap(i -> concat('k', toString(i), ':', toString(i)), range(30)), ' '))));
+['k0','k1','k10','k11','k12','k13','k14','k15','k16','k17','k18','k19','k2','k20','k21','k22','k23','k24','k25','k26','k27','k28','k29','k3','k4','k5','k6','k7','k8','k9']
+-- non-ASCII bytes in keys and values
+SELECT extractKeyValuePairs('ключ:значение, 键:值 "цитата":"кавычки"');
+{'ключ':'значение','键':'值','цитата':'кавычки'}
+SELECT extractKeyValuePairsWithEscaping('ключ:значение, 键:值 "цитата":"кавычки"');
+{'ключ':'значение','键':'值','цитата':'кавычки'}
+SELECT extractKeyValuePairs('a:\xff\xfe b:\x80');
+{'a':'��','b':'�'}
+-- delimiters with bytes outside ASCII
+SELECT extractKeyValuePairs('a\x80b\x91c\xa2d', '\x80', '\x91\xa2', '\xb3');
+{'a':'b'}
+SELECT extractKeyValuePairs('k1\xf0v1\x80k2\xf0\xb3v 2\xb3\x91k3\xf0v3', '\xf0', '\x80\x91\xa2\xc4\xd5\xe6\x0a\x09', '\xb3');
+{'k1':'v1','k2':'v 2','k3':'v3'}
+SELECT extractKeyValuePairsWithEscaping('k1\xf0v1\x80k2\xf0\xb3v 2\xb3\x91k3\xf0v\\n3', '\xf0', '\x80\x91\xa2\xc4\xd5\xe6\x0a\x09', '\xb3');
+{'k1':'v1','k2':'v 2','k3':'v\n3'}
+-- FixedString input
+SELECT extractKeyValuePairs(toFixedString('a:b c:d', 10));
+{'a':'b','c':'d\0\0\0'}
+-- multiple rows, mix of empty and non-empty strings
+SELECT extractKeyValuePairs(s), extractKeyValuePairsWithEscaping(s) FROM (SELECT arrayJoin(['', 'a:b', ' ', 'k:"v', 'x:y\\', '::', 'a:b:c d']) AS s);
+{}	{}
+{'a':'b'}	{'a':'b'}
+{}	{}
+{}	{}
+{'x':'y\\'}	{'x':'y'}
+{}	{}
+{'a':'b:c'}	{'a':'b:c'}
