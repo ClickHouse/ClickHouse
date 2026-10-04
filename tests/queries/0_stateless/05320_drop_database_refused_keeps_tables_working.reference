@@ -1,0 +1,18 @@
+dependency	['mt','rmt','src']
+dependency	mt	1	2
+dependency	rmt	1	2
+dependency	0
+size	['mt','rmt','src']
+size	mt	1	3
+size	rmt	1	3
+size	0
+truncate	['mt','rmt','src']
+truncate	3	3	1
+truncate	mt	1	4
+truncate	rmt	1	4
+truncate	0
+transaction	['mt','rmt','src']
+transaction	mt	1	5
+transaction	rmt	1	5
+transaction	0
+dropped	0

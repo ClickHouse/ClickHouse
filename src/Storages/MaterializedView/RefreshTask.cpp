@@ -1432,6 +1432,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
+    SCOPE_EXIT({ execution.temp_table_created.store(false); });
     auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
@@ -1489,6 +1490,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             QueryScope query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, table_to_drop, stream_cursor);
             new_table_id = refresh_query->table_id;
+            if (table_to_drop.has_value())
+                execution.temp_table_created.store(true);
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
             query_for_logging = refresh_query->formatForLogging(
