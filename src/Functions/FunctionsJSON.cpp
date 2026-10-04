@@ -117,15 +117,15 @@ public:
                                 "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
-            /// For JSON/Object type input, the value at a constant string path is read directly as a
-            /// subcolumn, which is what the value-extracting functions need and is much cheaper than
-            /// going through the document.
+            /// For JSON/Object type input, the value at a string path is read directly as a subcolumn,
+            /// which is what the value-extracting functions need and is much cheaper than going through
+            /// the document. Non-constant string keys are handled the same way, per group of rows with
+            /// equal keys.
             /// Every other call shape serializes each row back to JSON text and is handled by the string
             /// implementation below, so that a `JSON` column always gives the same answer as the
             /// equivalent JSON string. This covers the root form without any path key, which has no
             /// subcolumn to read, the functions that navigate the document rather than read one value out
-            /// of it, and the paths that a subcolumn name cannot express - integer indices and
-            /// non-constant keys.
+            /// of it, and the paths that a subcolumn name cannot express - integer indices.
             ColumnsWithTypeAndName arguments_holder;
             if (is_object_input)
             {
