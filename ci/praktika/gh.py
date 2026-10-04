@@ -711,10 +711,10 @@ class GH:
             "pullRequest(number:$pr){"
             "reviewThreads(first:100,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "nodes{id isResolved isOutdated resolvedBy{login} path line diffSide "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "nodes{databaseId createdAt author{login} authorAssociation viewerDidAuthor body path line originalLine}"
             "}}}}}}"
         )
         comments_query = (
@@ -722,7 +722,7 @@ class GH:
             "node(id:$id){... on PullRequestReviewThread{"
             "comments(first:50,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "nodes{databaseId createdAt author{login} authorAssociation viewerDidAuthor body path line originalLine}"
             "}}}}"
         )
 
@@ -1089,7 +1089,7 @@ class GH:
         TAG_COMMENT_END = "<!-- CI automatic comment end :{TAG}: -->"
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
-            --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
+            --jq \'[.[] | {{id: .id, body: .body, bot: (.user.type == "Bot")}}]\' --paginate'
         # Idempotent read: retry transient GitHub failures so a flake does not
         # give up and leave a stale review/status comment in place.
         output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
@@ -1116,6 +1116,10 @@ class GH:
             end_tag = TAG_COMMENT_END.format(TAG=tag)
             if not comment_to_update:
                 for comment in comments:
+                    # Only a comment the CI app posted: anyone can paste the
+                    # tags into a comment of their own.
+                    if not comment.get("bot", True):
+                        continue
                     if start_tag in comment["body"] and end_tag in comment["body"]:
                         comment_to_update = comment
                         id_to_update = comment["id"]

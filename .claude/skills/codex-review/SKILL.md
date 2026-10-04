@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, AskUserQuestion
 
 # Local codex review
 
-Run the same AI review CI runs (`ci/jobs/copilot_review_job.py`), but locally against the current branch,
+Run the same AI review CI runs (`ci/jobs/ai_review_job.py`), but locally against the current branch,
 before pushing. The point is an **independent** model with a **general** prompt: a Claude subagent shares
 this session's context and blind spots. Spawn a real `codex` process, never a subagent.
 
@@ -40,16 +40,17 @@ MODEL=$(git config --global --get codex-review.model)
 EFFORT=$(git config --global --get codex-review.effort)
 ```
 
-If either is empty, or `--model` was passed, find the model CI uses:
+If either is empty, or `--model` was passed, find the model and effort CI uses:
 
 ```bash
-grep -oP 'f"-m \K[\w.-]+' ci/jobs/copilot_review_job.py | head -1
+grep -oP '^MODEL = "\K[^"]+' ci/jobs/ai_review_job.py
+grep -oP '^REASONING_EFFORT = "\K[^"]+' ci/jobs/ai_review_job.py
 ```
 
 Ask with `AskUserQuestion` (one call, two questions):
 - Model: the CI model (Recommended), plus `codex default` (pass no `-m`; codex uses its own
   `~/.codex/config.toml`). The user can type any other model name via "Other".
-- Effort: `xhigh` (Recommended, same as CI), `high`, `medium`.
+- Effort: the CI effort (Recommended), and the levels next to it (`xhigh`, `high`, `medium`).
 
 Persist the answers (`default` for the codex default model):
 

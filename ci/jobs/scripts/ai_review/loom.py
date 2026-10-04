@@ -1,0 +1,1036 @@
+"""
+Loom code index client for the AI code review job.
+
+Loom indexes ClickHouse master with a compiler-resolved call graph (scip-clang),
+a test map, PR/issue history and a tracker. The review uses it for the parts of
+a review that the diff does not show: the unchanged callers and sibling
+implementations of a changed function, the tests that cover it, and earlier
+issues in the same area.
+
+Two entry points:
+
+  * `write_brief()` - called by the job before the agent starts. Writes a short
+    Markdown brief (touched functions and their fan-in, blast radius, linked
+    tests, maintainer conventions, similar tracker items, index freshness) plus
+    the raw JSON answers into the review context directory.
+  * `python3 -m ci.jobs.scripts.ai_review.loom <command>` - the CLI the agent
+    calls during the review (symbol bodies, callers, grep, ...).
+
+Every call fails soft: when Loom is not configured, unreachable, slow, or
+answers with an error, the client returns None / prints a short "unavailable"
+line and the review proceeds with plain `git grep`. A Loom outage must never
+fail or delay the review.
+
+Configuration comes from the environment (`LOOM_BASE_URL`, `LOOM_TOKEN`,
+`LOOM_NAMESPACE`, `LOOM_REPO`, `LOOM_PR_NUMBER`), set by the job for the agent
+process from per-repository SSM secrets (`REPO_CONFIG`). A repository without an
+entry, or with a missing secret, runs without Loom.
+
+Only master is indexed. Code that exists only on the PR branch is not in the
+index, except through the open-PR overlay of `review_brief` / `impact` /
+`callers` for public PRs, which the Loom mirror follows.
+"""
+
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+from ci.jobs.scripts.ai_review import rulings as review_rulings
+from ci.jobs.scripts.ai_review import units as review_units
+
+ORG = "clickhouse"
+CONSUMER = "ci-code-review"
+
+# Per-repository Loom configuration. Only the public repository uses Loom; a
+# repository without an entry (ClickHouse-private, forks) is reviewed without
+# it. Should a private repository be added, its namespace must be a private
+# one: `_refuse_cross_boundary` rejects a private repository configured with
+# the public namespace, so a misconfiguration cannot send private diffs or code
+# to the public index. `pr_overlay` marks repositories whose open PRs the Loom
+# mirror follows (the PR-number based ops only work there).
+PUBLIC_NAMESPACE = "code-clickhouse"
+# Every namespace holding public content; a private repository may use none.
+PUBLIC_NAMESPACES = frozenset({PUBLIC_NAMESPACE, "clickhouse-gh"})
+REPO_CONFIG = {
+    "ClickHouse/ClickHouse": {
+        "base_url_secret": "/ci/loom/base_url",
+        "token_secret": "/ci/loom/api_key",
+        "namespace": PUBLIC_NAMESPACE,
+        # The review's own memory: one record per review thread and its outcome.
+        "memory_namespace": "clickhouse-gh",
+        "private": False,
+        "pr_overlay": True,
+    },
+}
+
+# Client-side timeouts per op, in seconds. Loom publishes a p99 budget per op;
+# these are a few times that, so a slow answer is dropped instead of stalling
+# the review. The brief ops are built on demand for an open PR and take longer.
+_TIMEOUTS = {
+    "code.review_brief": 30,
+    "code.impact": 15,
+    "code.test_gate": 15,
+    "code.conventions": 20,
+    "code.verify_citations": 15,
+    "code.search": 10,
+    "code.blame_range": 20,
+    "code.symbol_history": 10,
+    "tracker.similar": 10,
+    "tracker.test_signal": 15,
+    "code.setting_facts": 10,
+    "code.path_guards": 15,
+}
+_DEFAULT_TIMEOUT = 8
+
+# Per-process call log, appended to LOOM_CALL_LOG when set: one JSON line per
+# call (op, status, ms). Attached to the job result so Loom's effect on reviews
+# can be measured.
+_CALL_LOG_ENV = "LOOM_CALL_LOG"
+
+_MAX_DIFF_BYTES = 200_000
+_MAX_FILES = 50
+
+
+class Config:
+    def __init__(self, base_url="", token="", namespace="", repo="", pr_number=0, private=False, pr_overlay=False,
+                 memory_namespace=""):
+        self.base_url = (base_url or "").rstrip("/")
+        self.token = token or ""
+        self.namespace = namespace or ""
+        self.memory_namespace = memory_namespace or ""
+        self.repo = repo or ""
+        self.pr_number = int(pr_number or 0)
+        self.private = bool(private)
+        self.pr_overlay = bool(pr_overlay)
+
+    def available(self):
+        return bool(self.base_url and self.token and self.namespace)
+
+    def env(self):
+        """Environment for the agent process, so the CLI sees the same config.
+        The token can also write review memory; what the job reads back from
+        memory is checked against GitHub before it affects anything (see
+        `_verified_memory` in the job)."""
+        return {
+            "LOOM_BASE_URL": self.base_url,
+            "LOOM_TOKEN": self.token,
+            "LOOM_NAMESPACE": self.namespace,
+            "LOOM_REPO": self.repo,
+            "LOOM_PR_NUMBER": str(self.pr_number),
+            "LOOM_PRIVATE": "1" if self.private else "0",
+            "LOOM_PR_OVERLAY": "1" if self.pr_overlay else "0",
+        }
+
+    @classmethod
+    def from_env(cls):
+        return cls(
+            base_url=os.environ.get("LOOM_BASE_URL", ""),
+            token=os.environ.get("LOOM_TOKEN", ""),
+            namespace=os.environ.get("LOOM_NAMESPACE", ""),
+            repo=os.environ.get("LOOM_REPO", ""),
+            pr_number=os.environ.get("LOOM_PR_NUMBER", "0") or 0,
+            private=os.environ.get("LOOM_PRIVATE", "1") != "0",
+            pr_overlay=os.environ.get("LOOM_PR_OVERLAY", "0") == "1",
+        )
+
+    @classmethod
+    def for_repo(cls, repo, pr_number, get_secret):
+        """Resolve the config of `repo` from SSM via `get_secret(name) -> str`.
+        Returns an unavailable Config when the repository has no entry or a
+        secret cannot be read."""
+        entry = REPO_CONFIG.get(repo)
+        if not entry:
+            print(f"Loom: no configuration for repository [{repo}], reviewing without Loom")
+            return cls(repo=repo, pr_number=pr_number)
+        try:
+            base_url = get_secret(entry["base_url_secret"])
+            token = get_secret(entry["token_secret"])
+            namespace = entry.get("namespace") or get_secret(entry["namespace_secret"])
+        except Exception as e:  # noqa: BLE001 - a missing secret means "no Loom", not a failed review
+            # The AWS error names the role and the parameter, never its value.
+            print(f"Loom: configuration for [{repo}] is not readable ({type(e).__name__}: {str(e)[:500]}), reviewing without Loom")
+            return cls(repo=repo, pr_number=pr_number)
+        return cls(
+            base_url=(base_url or "").strip(),
+            token=(token or "").strip(),
+            namespace=(namespace or "").strip(),
+            repo=repo,
+            pr_number=pr_number,
+            private=entry["private"],
+            pr_overlay=entry["pr_overlay"],
+            memory_namespace=entry.get("memory_namespace", ""),
+        )
+
+
+def _refuse_cross_boundary(config, namespace):
+    return config.private and namespace in PUBLIC_NAMESPACES
+
+
+def _log_call(op, status, ms):
+    path = os.environ.get(_CALL_LOG_ENV)
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"op": op, "status": status, "ms": ms, "at": int(time.time())}) + "\n")
+    except OSError:
+        pass
+
+
+def call(config, op, body, namespace=None):
+    """POST /v1/<op>. Returns the answer (a dict), or None on any failure;
+    never raises. A 404 (name not found) returns the answer with `_not_found`
+    set, because "this symbol does not exist on master" is itself useful, and
+    any other 4xx carries Loom's validation message in `_error`, so callers
+    that show answers to the agent can say what was wrong with the request.
+    `namespace` overrides the code namespace (the memory ops use the memory
+    namespace)."""
+    if not config.available():
+        return None
+    namespace = namespace or config.namespace
+    if _refuse_cross_boundary(config, namespace):
+        print(f"Loom: REFUSED {op}: private repository and public namespace {namespace}")
+        _log_call(op, "refused_cross_boundary", 0)
+        return None
+    payload = {**body, "org": ORG, "namespace": namespace, "consumer": CONSUMER, "agent": CONSUMER}
+    started = time.time()
+    try:
+        request = urllib.request.Request(
+            f"{config.base_url}/v1/{op}",
+            data=json.dumps(payload).encode(),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {config.token}",
+                "Content-Type": "application/json",
+                "X-Request-Id": uuid.uuid4().hex,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=_TIMEOUTS.get(op, _DEFAULT_TIMEOUT)) as response:
+            data = json.loads(response.read().decode() or "{}")
+        _log_call(op, "ok", int((time.time() - started) * 1000))
+        return data if isinstance(data, dict) else None
+    except urllib.error.HTTPError as e:
+        ms = int((time.time() - started) * 1000)
+        _log_call(op, "not_found" if e.code == 404 else f"http{e.code}", ms)
+        if e.code >= 500:
+            return None
+        try:
+            data = json.loads(e.read().decode() or "{}")
+        except Exception:  # noqa: BLE001
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        if e.code == 404:
+            data["_not_found"] = True
+            return data
+        detail = data.get("detail")
+        return {"_error": (detail.get("message") or json.dumps(detail)[:800]) if isinstance(detail, dict) else str(detail or e)[:800],
+                **({"errors": detail.get("errors")} if isinstance(detail, dict) and detail.get("errors") else {})}
+    except Exception as e:  # noqa: BLE001 - timeouts, DNS, TLS, bad JSON: all mean "no answer"
+        _log_call(op, f"error:{type(e).__name__}", int((time.time() - started) * 1000))
+        return None
+
+
+def _answer(config, op, body, namespace=None):
+    """`call` for the job's own use: only a successful answer, else None."""
+    data = call(config, op, body, namespace=namespace)
+    return None if not data or data.get("_not_found") or data.get("_error") else data
+
+
+# ── Brief written by the job before the agent starts ─────────────────────────
+
+
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _zero_context(patch):
+    """`patch` with its context lines dropped: one hunk per run of changed
+    lines, as `git diff -U0` writes it. Loom counts every function a hunk
+    spans as changed, so with GitHub's three lines of context the neighbours
+    of a change (and the function named in the hunk header) would be reported
+    as changed, with all their callers as impact."""
+    out, run, old, new = [], [], 0, 0
+
+    def flush():
+        if run:
+            removed = [l for l in run if l.startswith("-")]
+            added = [l for l in run if l.startswith("+")]
+            old_start = run_old if removed else run_old - 1
+            new_start = run_new if added else run_new - 1
+            out.append(f"@@ -{old_start},{len(removed)} +{new_start},{len(added)} @@")
+            out.extend(removed + added)
+            run.clear()
+
+    for line in patch.split("\n"):
+        m = _HUNK_RE.match(line)
+        if m:
+            flush()
+            old, new = int(m.group(1)), int(m.group(2))
+            continue
+        if line.startswith("\\"):
+            continue  # "\ No newline at end of file"
+        if line.startswith(("-", "+")):
+            if not run:
+                run_old, run_new = old, new
+            run.append(line)
+            if line.startswith("-"):
+                old += 1
+            else:
+                new += 1
+        else:
+            flush()
+            old, new = old + 1, new + 1
+    flush()
+    return "\n".join(out)
+
+
+def _diff_text(files):
+    """A zero-context unified diff assembled from the GitHub `pulls/<n>/files` rows."""
+    parts = []
+    for f in files:
+        patch = f.get("patch")
+        if not patch:
+            continue
+        name = f["filename"]
+        parts.append(f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n{_zero_context(patch)}\n")
+    return "".join(parts)[:_MAX_DIFF_BYTES]
+
+
+def source_first(paths):
+    return sorted(paths, key=lambda p: (not p.startswith("src/"), p.startswith("tests/"), p))
+
+
+def _render_index_status(d, base_sha):
+    if not d:
+        return []
+    cov = d.get("commit_coverage") or {}
+    lines = [f"- Index: master at `{(d.get('scip_commit') or d.get('git_head') or '?')[:12]}` (C++ call graph)."]
+    if base_sha and cov:
+        tiers = {t.get("label"): t for t in cov.get("tiers") or []}
+        cpp = tiers.get("C++") or {}
+        if cpp and not cpp.get("covered", True):
+            lines.append(
+                f"- The index does not yet include the PR base `{base_sha[:12]}`: code merged to master since the "
+                f"indexed commit is missing from Loom answers. Mention this under \"Missing context\" if it matters."
+            )
+    return lines
+
+
+_ANON_RE = re.compile(r"\$anonymous_namespace_[^:]*::")
+
+
+def _name(qualified):
+    """`DB::$anonymous_namespace_src/X.cpp::f` -> `DB::f`."""
+    return _ANON_RE.sub("", qualified or "?")
+
+
+def _is_test_path(path):
+    path = path or ""
+    return path.startswith("tests/") or "/tests/" in path or "gtest_" in path
+
+
+def _is_runnable_test(path):
+    """A test file, as opposed to test configs and harness helpers."""
+    path = path or ""
+    if path.startswith("tests/queries/"):
+        return path.endswith((".sql", ".sh", ".py", ".j2", ".expect"))
+    if path.startswith("tests/integration/"):
+        return os.path.basename(path).startswith("test") and path.endswith(".py") and "/helpers/" not in path
+    return "gtest_" in path and path.endswith(".cpp")
+
+
+def _render_overlay(d, pr):
+    """Loom's view of the PR's own code is an overlay of the PR head it last
+    fetched. Right after a push it can still be the previous head."""
+    if not d or not d.get("overlay"):
+        return []
+    overlay_sha = d.get("overlay_head_sha") or ""
+    head_sha = (pr.get("head") or {}).get("sha") or ""
+    if overlay_sha and head_sha and not head_sha.startswith(overlay_sha[:12]):
+        return [f"- Loom's view of this PR is at `{overlay_sha[:12]}`, not the head `{head_sha[:12]}`: answers about "
+                f"code the PR adds or changes may describe an earlier push; read that code in the checkout."]
+    return []
+
+
+def _render_review_brief(d, changed=None, detailed=()):
+    """`changed`: the functions the PR changes, from `impact` on the
+    zero-context diff. `review_brief` derives its own set from the PR with
+    context lines, which takes in the neighbours of a change; its rows are
+    kept only for functions in `changed` when that is known. `detailed`: the
+    functions whose earlier PRs are listed by `_render_function_history`."""
+    if not d or d.get("_not_found") or d.get("source") == "missing":
+        return []
+    out = []
+    secs = d.get("sections") or {}
+    decisions = d.get("decisions") or {}
+
+    def keep(name):
+        return not changed or name in changed
+
+    if decisions.get("test_only"):
+        out.append("- Test-only change: no source function is touched.")
+    symbols = [r for r in (secs.get("symbols") or {}).get("rows") or []
+               if isinstance(r, dict) and not _is_test_path(r.get("path")) and keep(r.get("qualified_name"))]
+    if symbols:
+        out.append("- Functions the PR changes, with their number of call sites outside tests (fan-in):")
+        for r in symbols[:15]:
+            out.append(
+                f"  - `{_name(r.get('qualified_name'))}` {r.get('path') or '?'}:{r.get('start_line') or '?'}"
+                f" (fan-in {r.get('fan_in_nontest', r.get('fan_in', '?'))})"
+            )
+        if len(symbols) > 15:
+            out.append(f"  - ... {len(symbols) - 15} more in `loom/review_brief.json`")
+    tests = (secs.get("tests") or {}).get("rows") or []
+    covered = [r for r in tests if isinstance(r, dict) and r.get("kind", "symbol") == "symbol"
+               and r.get("verdict") == "covered_by" and r.get("tests") and keep(r.get("subject"))]
+    if covered:
+        out.append("- Tests that exercise the changed functions:")
+        for r in covered[:10]:
+            more = (r.get("tests_total") or 0) - len((r.get("tests") or [])[:3])
+            out.append(f"  - `{_name(r.get('subject'))}`: " + ", ".join(f"`{t}`" for t in (r.get("tests") or [])[:3])
+                       + (f" (+{more})" if more > 0 else ""))
+    history = (secs.get("history") or {}).get("rows") or []
+    risky = [r for r in history if isinstance(r, dict) and keep(r.get("qualified_name"))
+             and r.get("qualified_name") not in detailed
+             and ((r.get("caused_issues") or 0) or (r.get("reverts") or 0) or (r.get("open_issues_naming") or 0))]
+    for r in risky[:8]:
+        parts = []
+        if r.get("caused_issues"):
+            parts.append(f"{r['caused_issues']} issue(s) caused by earlier changes")
+        if r.get("reverts"):
+            parts.append(f"{r['reverts']} revert(s)")
+        if r.get("open_issues_naming"):
+            parts.append(f"{r['open_issues_naming']} open issue(s) naming it")
+        out.append(f"- History of `{_name(r.get('qualified_name'))}`: {', '.join(parts)}.")
+    do_not_flag = (secs.get("do_not_flag") or {}).get("rows") or []
+    for r in do_not_flag[:6]:
+        out.append(f"- Known false positive here, do not flag: {str(r.get('rule') or r.get('text') or r)[:200]}")
+    return out
+
+
+def _risky_functions(brief, changed, limit=4):
+    """The changed functions whose history has regressions, riskiest first."""
+    rows = ((((brief or {}).get("sections") or {}).get("history") or {}).get("rows")) or []
+    rows = [r for r in rows if isinstance(r, dict) and r.get("qualified_name") and (not changed or r["qualified_name"] in changed)
+            and ((r.get("caused_issues") or 0) or (r.get("reverts") or 0))]
+    rows.sort(key=lambda r: -((r.get("caused_issues") or 0) + 2 * (r.get("reverts") or 0)))
+    return [r["qualified_name"] for r in rows[:limit]]
+
+
+def _render_function_history(histories):
+    """Per risky function, its latest fix and revert PRs, so the agent sees
+    what went wrong there before without a lookup of its own. Returns the
+    lines and the functions covered."""
+    out, covered = [], set()
+    for name, d in histories:
+        prs = [p for p in (d or {}).get("prs") or [] if isinstance(p, dict) and p.get("pr_number")
+               and not str(p.get("title") or "").startswith(("Backport #", "Cherry pick #"))]
+        notable = [p for p in prs if "pr-bugfix" in (p.get("labels") or []) or str(p.get("title") or "").startswith("Revert")]
+        if not notable:
+            continue
+        covered.add(name)
+        out.append(f"- Earlier fixes and reverts in `{_name(name)}` (`loom history --name` for more):")
+        for p in notable[:3]:
+            title = " ".join(str(p.get("title") or "").split())
+            out.append(f"  - #{p['pr_number']} ({str(p.get('merged_at') or '')[:10]}): {title[:150]}")
+    return out, covered
+
+
+def _render_impact(d, pr_paths):
+    if not d:
+        return []
+    out = []
+    by_file = {}
+    touched = {(t.get("qualified_name") if isinstance(t, dict) else t) for t in d.get("touched_symbols") or []}
+    for s in d.get("impacted_symbols") or []:
+        if not isinstance(s, dict):
+            continue
+        path = s.get("path")
+        # The PR's own functions are not "unchanged code"; their unchanged
+        # callers are, even in a file the PR touches.
+        if (not path or _is_test_path(path) or s.get("tier") == "overlay"
+                or s.get("qualified_name") in touched):
+            continue
+        hop = s.get("hop") if isinstance(s.get("hop"), int) else 9
+        entry = by_file.setdefault(path, {"hop": hop, "names": []})
+        entry["hop"] = min(entry["hop"], hop)
+        entry["names"].append(_name(s.get("qualified_name")))
+    if by_file:
+        files = sorted(by_file.items(), key=lambda kv: (kv[1]["hop"], -len(kv[1]["names"]), kv[0]))
+        total = sum(len(v["names"]) for v in by_file.values())
+        out.append(f"- Unchanged code that calls into the change ({total} functions in {len(by_file)} files, "
+                   f"up to 2 calls away; direct callers first). Check that the changed contract still holds there:")
+        for path, v in files[:15]:
+            names = v["names"]
+            shown = ", ".join(f"`{n}`" for n in names[:3]) + (f" (+{len(names) - 3})" if len(names) > 3 else "")
+            out.append(f"  - {path} ({'direct' if v['hop'] == 1 else 'indirect'}): {shown}")
+        if len(files) > 15:
+            out.append(f"  - ... {len(files) - 15} more files in `loom/impact.json`")
+    missing = d.get("co_change_missing") or []
+    if missing:
+        out.append("- Files that usually change together with the touched ones but are not in this PR: " + ", ".join(
+            f"`{m.get('path')}` ({m.get('prs')} of {m.get('of')} PRs)" if isinstance(m, dict) else f"`{m}`"
+            for m in missing[:8]))
+    reverts = d.get("reverts") or []
+    if reverts:
+        out.append(f"- {len(reverts)} earlier revert(s) touched this code; see `loom/impact.json`.")
+    return out
+
+
+def _render_test_gate(d):
+    if not d:
+        return []
+    out = []
+    seen = set()
+    tests = []
+    for t in d.get("tests") or []:
+        if t.get("why") == "changed_test" or not _is_runnable_test(t.get("test_path")):
+            continue
+        key = t.get("run") or t.get("test_path")
+        if key in seen:
+            continue
+        seen.add(key)
+        tests.append(t)
+    if tests:
+        out.append("- Existing tests that reach the changed code (the PR's own tests excluded):")
+        for t in tests[:12]:
+            out.append(f"  - `{t.get('test_path')}`")
+    untested = [u for u in d.get("untested") or [] if isinstance(u, dict) and not _is_test_path(u.get("path"))]
+    if untested:
+        out.append("- Changed functions no existing test reaches in the test map (a lower bound, not proof): " + ", ".join(
+            f"`{_name(u.get('qualified_name'))}`" for u in untested[:10])
+            + (f" (+{len(untested) - 10})" if len(untested) > 10 else ""))
+    return out
+
+
+def _render_conventions(d):
+    if not d:
+        return []
+    out = []
+    for r in d.get("rules") or []:
+        verdict = r.get("verdict")
+        if verdict in ("satisfied", "not_applicable", "", None):
+            continue
+        where = ""
+        ev = r.get("evidence") or []
+        if ev and isinstance(ev[0], dict) and ev[0].get("path"):
+            where = f" at `{ev[0].get('path')}:{ev[0].get('line')}`"
+        out.append(f"- Maintainer convention `{r.get('rule')}`: {verdict}{where}. {r.get('note') or ''}".rstrip())
+    return out
+
+
+# A tracker item whose text is this close to the PR (cosine distance of the
+# vector leg) is shown; lexical-only matches are mostly shared vocabulary.
+_SIMILAR_MAX_DISTANCE = 0.42
+
+
+def _render_similar(d, pr_number):
+    if not d:
+        return []
+    def relevant(i):
+        distance = i.get("distance")
+        return ((i.get("relation") or "none") != "none" or "mentions" in (i.get("why") or [])
+                or (isinstance(distance, (int, float)) and distance <= _SIMILAR_MAX_DISTANCE))
+
+    items = [i for i in d.get("items") or []
+             if isinstance(i, dict) and not (i.get("kind") == "pr" and i.get("number") == pr_number) and relevant(i)]
+    if not items:
+        return []
+    out = ["- Tracker items similar to this PR (reference one when a finding matches it):"]
+    for i in items[:6]:
+        out.append(f"  - {i.get('kind')} #{i.get('number')} [{i.get('state')}]: {i.get('title')}")
+    return out
+
+
+_BOT_REVIEWERS = ("clickhouse-gh", "robot-", "github-actions", "copilot", "coderabbit")
+
+
+_STATUS_REPLY_RE = re.compile(r"(resolved|fixed|done|addressed|updated|thanks|thank you|ok|lgtm)\b", re.I)
+
+
+def _maintainer_remarks(histories, limit=8):
+    """Human review remarks from the history of the touched files, newest
+    first. Left out: replies by agents (marked 🕵) and bots, the PR author's
+    own answers, and status replies ("Resolved in ...", "Done")."""
+    remarks = []
+    for h in histories:
+        for pr in (h or {}).get("prs") or []:
+            for r in pr.get("reviews") or []:
+                who = r.get("reviewer") or ""
+                text = " ".join((r.get("excerpt") or "").split())
+                if (not text or text.startswith("🕵") or any(b in who.lower() for b in _BOT_REVIEWERS)
+                        or who == pr.get("author") or _STATUS_REPLY_RE.match(text) or len(text.split()) < 4):
+                    continue
+                remarks.append({"pr": pr.get("pr_number"), "reviewer": who, "path": r.get("path"),
+                                "line": r.get("line"), "text": text, "at": r.get("created_at") or ""})
+    remarks.sort(key=lambda r: r["at"], reverse=True)
+    per_pr, kept = {}, []
+    for r in remarks:  # at most two per PR, so one long discussion does not fill the list
+        if per_pr.get(r["pr"], 0) < 2:
+            per_pr[r["pr"]] = per_pr.get(r["pr"], 0) + 1
+            kept.append(r)
+    return kept[:limit]
+
+
+def _render_remarks(remarks):
+    if not remarks:
+        return []
+    out = ["- What maintainers asked for in recent reviews of these files (their norms, not findings):"]
+    for r in remarks:
+        out.append(f"  - {r['reviewer']} on #{r['pr']} at `{r['path']}:{r['line']}`: {r['text'][:220]}")
+    return out
+
+
+_CI_BLOCK_RE = re.compile(r"<!-- CI automatic block start.*?(<!-- CI automatic block end[^>]*-->|$)", re.S)
+_TEMPLATE_RE = re.compile(r"<!--.*?-->|^#+ .*$", re.S | re.M)
+
+
+def _plain(text):
+    """PR description without the template's comments and headings, which
+    otherwise dominate a similarity query."""
+    return _TEMPLATE_RE.sub("", text or "").strip()
+
+
+def _render_test_gate_after_brief(answers, lines):
+    # review_brief lists tests per changed function; test_gate is the fallback
+    # for repositories without the PR overlay. Its untested list is kept.
+    gate = _render_test_gate(answers.get("test_gate"))
+    if any("Tests that exercise the changed functions" in line for line in lines):
+        gate = [line for line in gate if line.startswith("- Changed functions no existing test")]
+    return gate
+
+
+def write_brief(config, pr, files, out_dir):
+    """Fetch the Loom brief for this PR into `out_dir` (brief.md + raw JSON).
+    Returns the Markdown brief, or "" when Loom gave nothing."""
+    if not config.available():
+        return ""
+    os.makedirs(out_dir, exist_ok=True)
+    paths = source_first([f["filename"] for f in files])[:_MAX_FILES]
+    pr_paths = set(paths)
+    diff = _diff_text(files)
+    author = (pr.get("user") or {}).get("login") or ""
+    base_sha = (pr.get("base") or {}).get("sha") or ""
+    overlay = config.pr_overlay and config.pr_number > 0
+
+    requests = {
+        "index_status": ("code.index_status", {"brief": True, **({"commit": base_sha} if base_sha else {})}),
+        "similar": ("tracker.similar", {"text": f"{pr.get('title') or ''}\n\n{_plain(pr.get('body'))[:2000]}", "top_k": 8}),
+    }
+    if paths:
+        requests["impact"] = ("code.impact", {
+            "files": paths, "diff": diff, "depth": 2,
+            **({"exclude_authors": [author]} if author else {}),
+            **({"pr_number": config.pr_number} if overlay else {}),
+        })
+        requests["test_gate"] = ("code.test_gate", {"files": paths, "diff": diff, "depth": 2, "limit": 30})
+        requests["conventions"] = ("code.conventions", {"files": paths, "diff": diff})
+    if overlay:
+        requests["review_brief"] = ("code.review_brief", {
+            "pr_number": config.pr_number, "tier": "standard", "open": True,
+            "sections": ["paths", "symbols", "tests", "history", "do_not_flag"]})
+    # What maintainers recently asked for on the files the PR touches: the
+    # codebase's actual review norms, on the code at hand.
+    for i, path in enumerate([p for p in paths if p.startswith(("src/", "base/", "programs/"))][:5]):
+        requests[f"history_{i}"] = ("code.history", {"path": path, "limit": 10, "reviews_per_pr": 10})
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(requests)) as pool:
+        futures = {name: pool.submit(_answer, config, op, body) for name, (op, body) in requests.items()}
+        answers = {name: f.result() for name, f in futures.items()}
+
+    changed = {t.get("qualified_name") for t in (answers.get("impact") or {}).get("touched_symbols") or []
+               if isinstance(t, dict) and t.get("qualified_name")}
+    risky = _risky_functions(answers.get("review_brief"), changed)
+    if risky:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(risky)) as pool:
+            function_history = list(zip(risky, pool.map(
+                lambda name: _answer(config, "code.history", {"name": name, "limit": 10}), risky)))
+    else:
+        function_history = []
+
+    try:
+        history_lines, detailed = _render_function_history(function_history)
+    except Exception as e:  # noqa: BLE001 - as for the other sections below
+        print(f"WARNING: Loom brief section skipped: {type(e).__name__}: {e}")
+        history_lines, detailed = [], set()
+
+    histories = [answers.pop(k) for k in sorted(k for k in answers if k.startswith("history_"))]
+    answers["review_remarks"] = {"remarks": _maintainer_remarks(histories)} if any(histories) else None
+    for name, data in answers.items():
+        if data is not None:
+            with open(os.path.join(out_dir, f"{name}.json"), "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=1)
+
+    lines = []
+    renderers = [
+        lambda: _render_index_status(answers.get("index_status"), base_sha),
+        lambda: _render_overlay(answers.get("review_brief"), pr),
+        lambda: _render_review_brief(answers.get("review_brief"), changed, detailed),
+        lambda: history_lines,
+        lambda: _render_impact(answers.get("impact"), pr_paths),
+        lambda: _render_test_gate_after_brief(answers, lines),
+        lambda: _render_conventions(answers.get("conventions")),
+        lambda: _render_similar(answers.get("similar"), config.pr_number),
+        lambda: _render_remarks((answers.get("review_remarks") or {}).get("remarks")),
+    ]
+    for render in renderers:
+        try:  # an answer of an unexpected shape loses its section, not the brief
+            lines += render()
+        except Exception as e:  # noqa: BLE001
+            print(f"WARNING: Loom brief section skipped: {type(e).__name__}: {e}")
+    if not any(answers.values()):
+        return ""
+    brief = "\n".join(lines) + "\n"
+    with open(os.path.join(out_dir, "brief.md"), "w", encoding="utf-8") as f:
+        f.write(brief)
+    return brief
+
+
+# ── Review memory ────────────────────────────────────────────────────────────
+
+
+def thread_state(thread):
+    if not thread.get("isResolved"):
+        return "open"
+    resolved_by = ((thread.get("resolvedBy") or {}).get("login") or "")
+    return "resolved_by_review" if resolved_by.startswith("clickhouse-gh") else "resolved_by_author"
+
+
+def _is_bot_login(login):
+    login = (login or "").lower()
+    return login.endswith("[bot]") or any(b in login for b in _BOT_REVIEWERS)
+
+
+def thread_record(repo, pr_number, thread, is_ours, units=None):
+    """The memory row for one review thread of ours, or None. Keyed by the
+    thread's first comment, so each run upserts the same row as the thread's
+    state and replies change (the server skips an unchanged row). Tagged with
+    the file and, from this PR's review units, the qualified function, so a
+    later PR finds it after the function moved to another file."""
+    comments = (thread.get("comments") or {}).get("nodes") or []
+    if not comments or not is_ours(thread) or not comments[0].get("databaseId"):
+        return None
+    first = comments[0]
+    replies = [c for c in comments[1:] if (c.get("body") or "").strip()]
+    others = [c for c in replies if not (c.get("viewerDidAuthor") or _is_bot_login((c.get("author") or {}).get("login")))]
+    state = thread_state(thread)
+    lines = [
+        f"Review finding on {repo}#{pr_number} at {thread.get('path')}:{thread.get('line') or first.get('originalLine') or '?'} "
+        f"(state: {state}{', outdated' if thread.get('isOutdated') else ''}).",
+        "",
+        (first.get("body") or "").strip(),
+    ]
+    for c in replies:
+        lines += ["", f"Reply by {(c.get('author') or {}).get('login')}:", (c.get("body") or "").strip()]
+    tags = [f"repo:{repo}", f"pr:{pr_number}", f"state:{state}", "kind:review_thread"]
+    rule = re.search(r"<!-- ai-review-rule: ([a-z_]+) -->", first.get("body") or "")
+    if rule:
+        tags += ["lens:simplicity", f"rule:{rule.group(1)}"]
+    if others:
+        tags.append("author_replied")
+    if thread.get("path"):
+        tags.append(f"path:{thread['path']}")
+        side = thread.get("diffSide") or "RIGHT"
+        line = thread.get("line") or first.get("line")
+        unit = review_units.unit_for_line(units or [], thread["path"], line, side) if isinstance(line, int) else None
+        function = function_tag(unit["heading"]) if unit else ""
+        if function:
+            tags.append(function)
+    return {
+        "memory_key": f"review-thread:{repo}:{pr_number}:{first['databaseId']}",
+        "value": "\n".join(lines)[:20000],
+        "memory_type": "episodic",
+        "tags": tags,
+        **({"files": [thread["path"]]} if thread.get("path") else {}),
+    }
+
+
+def function_tag(heading):
+    """`fn:<qualified name>` for a unit heading, or "": only qualified names, as
+    a bare `execute` or `read` would match unrelated code everywhere."""
+    name = review_rulings.function_name(heading)
+    return f"fn:{name}" if "::" in name else ""
+
+
+def record_threads(config, repo, pr_number, threads, is_ours, units=None):
+    """Upsert one memory row per review thread of ours: what was found, what
+    the author answered, and how the thread ended. This is the record later
+    reviews of the same files read back (`recall_outcomes`): which findings
+    authors fixed, which they dismissed and why. Returns the number of rows
+    written."""
+    if not (config.available() and config.memory_namespace):
+        return 0
+    rows = [r for r in (thread_record(repo, pr_number, t, is_ours, units) for t in threads or []) if r]
+    if not rows:
+        return 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+        results = list(pool.map(lambda r: _answer(config, "memory.set", r, namespace=config.memory_namespace), rows))
+    return sum(1 for r in results if r is not None)
+
+
+_STATE_TEXT = {
+    "resolved_by_review": "resolved by the review, the issue no longer held",
+    "resolved_by_author": "resolved by the author",
+    "open": "still open at the last review",
+}
+# Per pool: threads a person replied to (candidate rulings) and the others
+# (outcomes), so a busy file's outcomes cannot crowd out its rulings.
+_MAX_RECALLED = 15
+
+
+def recall_outcomes(config, pr_number, paths, functions=()):
+    """Earlier review threads of ours on the files and functions this PR
+    changes, from other PRs, newest first: `path`, `pr`, `state` and the
+    `comment_id` of the thread's first comment. The job checks each against
+    GitHub and splits them into outcomes for the agent and rulings it applies
+    itself (`rulings.py`); the memory's own copy of the text is not used,
+    since the agent holds the token that could rewrite it."""
+    if not (config.available() and config.memory_namespace and paths):
+        return []
+
+    # `tags` matches any of the given tags (at most 64): one query for all the
+    # paths and functions, the rest checked here.
+    path_tags = [f"path:{p}" for p in paths[:20]]
+    function_tags = sorted({t for t in (function_tag(h) for h in functions) if t})
+    wanted = set(path_tags + function_tags[:64 - len(path_tags)])
+    answer = _answer(config, "memory.list", {"tags": sorted(wanted), "limit": 300, "preview_chars": 200},
+                     namespace=config.memory_namespace)
+    if answer is None:
+        print("WARNING: Loom memory.list failed; no earlier findings recalled")
+    entries = [e for e in (answer or {}).get("entries") or []
+               if isinstance(e, dict) and isinstance(e.get("tags"), list) and wanted & set(e["tags"])
+               and "kind:review_thread" in e["tags"]
+               and (not config.repo or f"repo:{config.repo}" in e["tags"] or not any(t.startswith("repo:") for t in e["tags"]))]
+    pools = {True: [], False: []}
+    seen = set()
+    for e in sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True):
+        tags = set(e.get("tags") or [])
+        if e.get("memory_key") in seen or f"pr:{pr_number}" in tags:
+            continue  # this PR's own threads are in threads.md
+        seen.add(e.get("memory_key"))
+        pool = pools["author_replied" in tags]
+        if len(pool) >= _MAX_RECALLED:
+            continue
+        state = next((t.split(":", 1)[1] for t in tags if t.startswith("state:")), "")
+        path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
+        pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
+        key = str(e.get("memory_key") or "")
+        comment_id = key.rsplit(":", 1)[-1] if key.startswith("review-thread:") else ""
+        if comment_id.isdigit():
+            pool.append({"path": path, "state": state, "pr": pr, "comment_id": int(comment_id)})
+    return pools[True] + pools[False]
+
+
+def render_outcomes(records):
+    """`memory.md`: per earlier thread that ended without a dispute, the
+    finding, how it ended and the replies by people."""
+    out = []
+    for r in records:
+        excerpt = " ".join((r.get("finding") or "").split())
+        if len(excerpt) > 700:
+            excerpt = excerpt[:700] + " ..."
+        out.append(f"- `{r['path']}`, PR #{r['pr']}, {_STATE_TEXT.get(r['state'], r['state'])}: {excerpt}")
+        for reply in r.get("replies") or []:
+            body = " ".join(reply["body"].split())
+            out.append(f"  - Reply by {reply['login']}: {body[:500] + ' ...' if len(body) > 500 else body}")
+    return "\n".join(out) + "\n" if out else ""
+
+
+def record_decisions(config, repo, pr_number, decisions):
+    """One memory row per ruling check of this run: which finding, which
+    earlier ruling, the decision and what the job did with it, so wrong
+    suppressions can be found and the check measured. Returns the number of
+    rows written."""
+    if not (config.available() and config.memory_namespace and decisions):
+        return 0
+    rows = []
+    for d in decisions:
+        rows.append({
+            "memory_key": f"review-ruling:{repo}:{pr_number}:{d['path']}:{d['line']}:{d['ruling_comment_id']}",
+            "value": (f"Ruling check on {repo}#{pr_number} at {d['path']}:{d['line']} ({d['severity']}) against the "
+                      f"ruling of #{d['ruling_pr']} (comment {d['ruling_comment_id']}, {d['ruling_basis']}): "
+                      f"{d['decision']}, {d['applied']}. {d['reason']}"),
+            "memory_type": "episodic",
+            "tags": [f"repo:{repo}", f"pr:{pr_number}", "kind:ruling_decision", f"decision:{d['decision']}",
+                     f"applied:{d['applied']}", f"path:{d['path']}", f"ruling_pr:{d['ruling_pr']}"],
+            "files": [d["path"]],
+        })
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+        results = list(pool.map(lambda r: _answer(config, "memory.set", r, namespace=config.memory_namespace), rows))
+    return sum(1 for r in results if r is not None)
+
+
+# ── CLI used by the agent ─────────────────────────────────────────────────────
+
+
+def _cli_body(args, config):
+    overlay = {"pr_number": config.pr_number} if (config.pr_overlay and config.pr_number) else {}
+    if args.command == "symbol":
+        return "code.symbol", {"name": args.name, "include_body": not args.no_body, "uses_brief": args.uses,
+                               "include_examples": False, "include_lessons": False, **overlay}
+    if args.command == "callers":
+        return "code.callers", {"name": args.name, "depth": max(1, min(args.depth, 3)),
+                                "max_nodes": max(1, min(args.limit, 500)), **overlay}
+    if args.command == "grep":
+        body = {"pattern": args.pattern, "regex": args.regex, "mode": args.mode, "limit": max(1, min(args.limit, 500))}
+        if args.path_prefix:
+            body["path_prefix"] = args.path_prefix
+        return "code.grep", body
+    if args.command == "search":
+        body = {"query": args.query, "top_k": args.limit}
+        if args.path_prefix:
+            body["path_prefix"] = args.path_prefix
+        return "code.search", body
+    if args.command == "outline":
+        return "code.outline", {"path": args.path, "token_budget": 4000}
+    if args.command == "enclosing":
+        return "code.enclosing", {"locations": list(args.locations)[:200], "include_body": True, "token_budget": 6000}
+    if args.command == "tests-for":
+        facets = [{"kind": kind, "name": name} for kind, names in (
+            ("setting", args.setting), ("function", args.function), ("engine", args.engine),
+            ("format", args.format), ("error_code", args.error_code)) for name in names]
+        for facet in args.facet:
+            kind, _, name = facet.partition("=")
+            facets.append({"kind": kind, "name": name})
+        if not facets:
+            raise SystemExit("tests-for needs at least one facet, e.g. --setting max_block_size")
+        return "code.tests_for", {"facets": facets, "closest": not args.all, "limit": args.limit}
+    if args.command == "history":
+        body = {"limit": max(1, min(args.limit, 20)), "reviews_per_pr": 10 if args.reviews else 0}
+        if args.path:
+            body["path"] = args.path
+        if args.name:
+            body["name"] = args.name
+        return "code.history", body
+    if args.command == "blame":
+        return "code.blame_range", {"path": args.path, "start_line": args.start, "end_line": args.end, "limit": 10}
+    if args.command == "similar":
+        return "tracker.similar", {"text": args.text, "top_k": args.limit}
+    if args.command == "issue":
+        return "tracker.item", {"numbers": [int(n.lstrip("#")) for n in args.numbers if n.lstrip("#").isdigit()]}
+    if args.command == "setting":
+        return "code.setting_facts", {"name": args.name, "history_limit": 10}
+    if args.command == "guards":
+        return "code.path_guards", {"from_symbol": args.from_symbol, "to_symbol": args.to_symbol, "depth": args.depth}
+    if args.command == "test-signal":
+        return "tracker.test_signal", {"test_name": args.test_name, "window_days": 30, "code_namespace": config.namespace}
+    if args.command == "verify-citations":
+        with open(args.file, "r", encoding="utf-8") as f:
+            text = f.read()
+        return "code.verify_citations", {"text": text[:60000], "limit": 200, **overlay}
+    raise ValueError(args.command)
+
+
+# Answer fields that only matter to Loom itself; dropped from CLI output so the
+# agent does not spend tokens reading them.
+_NOISE_KEYS = {"unit_id", "symbol_id", "from_symbol_id", "to_symbol_id", "trace_run_id", "tokens_returned",
+               "next_cursor", "took_ms", "ignored_args", "legs", "embedding_model"}
+
+
+def _compact(value):
+    if isinstance(value, dict):
+        return {k: _compact(v) for k, v in value.items()
+                if k not in _NOISE_KEYS and v not in (None, "", [], {})}
+    if isinstance(value, list):
+        return [_compact(v) for v in value]
+    return value
+
+
+def _parser():
+    p = argparse.ArgumentParser(prog="python3 -m ci.jobs.scripts.ai_review.loom",
+                                description="Query the Loom code index of ClickHouse master.")
+    sub = p.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("symbol", help="definition(s) of a function/class, with the body")
+    s.add_argument("name", help="qualified name preferred, e.g. DB::MergeTreeData::loadDataParts")
+    s.add_argument("--no-body", action="store_true", help="location only")
+    s.add_argument("--uses", action="store_true", help="also list the main use sites")
+    s = sub.add_parser("callers", help="who calls this function (call graph, overrides included)")
+    s.add_argument("name")
+    s.add_argument("--depth", type=int, default=1)
+    s.add_argument("--limit", type=int, default=60)
+    s = sub.add_parser("grep", help="literal or regex search over master")
+    s.add_argument("pattern")
+    s.add_argument("--regex", action="store_true")
+    s.add_argument("--mode", choices=["matches", "files"], default="matches")
+    s.add_argument("--path-prefix", default="")
+    s.add_argument("--limit", type=int, default=40)
+    s = sub.add_parser("search", help="semantic search over code, e.g. 'where are TTL moves scheduled'")
+    s.add_argument("query")
+    s.add_argument("--path-prefix", default="")
+    s.add_argument("--limit", type=int, default=8)
+    s = sub.add_parser("outline", help="the functions/classes in a file, with line ranges")
+    s.add_argument("path")
+    s = sub.add_parser("enclosing", help="the function around each path:line, with its body")
+    s.add_argument("locations", nargs="+", metavar="PATH:LINE")
+    s = sub.add_parser("tests-for", help="SQL tests that use these settings/functions/engines/formats/error codes")
+    s.add_argument("--setting", action="append", default=[])
+    s.add_argument("--function", action="append", default=[], help="SQL function name")
+    s.add_argument("--engine", action="append", default=[])
+    s.add_argument("--format", action="append", default=[])
+    s.add_argument("--error-code", action="append", default=[])
+    s.add_argument("--facet", action="append", default=[], metavar="KIND=NAME", help="any other facet kind")
+    s.add_argument("--all", action="store_true", help="only tests carrying every facet (default: closest first)")
+    s.add_argument("--limit", type=int, default=20)
+    s = sub.add_parser("history", help="PRs and issues that touched a path or function")
+    s.add_argument("--path", default="")
+    s.add_argument("--name", default="")
+    s.add_argument("--reviews", action="store_true", help="include the review remarks of those PRs")
+    s.add_argument("--limit", type=int, default=15)
+    s = sub.add_parser("blame", help="which PRs last changed these lines, with their review discussion")
+    s.add_argument("path")
+    s.add_argument("start", type=int)
+    s.add_argument("end", type=int)
+    s = sub.add_parser("similar", help="issues/PRs similar to a description")
+    s.add_argument("text")
+    s.add_argument("--limit", type=int, default=8)
+    s = sub.add_parser("issue", help="tracker items by number")
+    s.add_argument("numbers", nargs="+")
+    s = sub.add_parser("setting", help="a setting's declaration, default, history and whether CI randomizes it")
+    s.add_argument("name")
+    s = sub.add_parser("guards", help="whether every call path from one function to another passes a check")
+    s.add_argument("from_symbol")
+    s.add_argument("to_symbol")
+    s.add_argument("--depth", type=int, default=4)
+    s = sub.add_parser("test-signal", help="whether a failing test is flaky, infrastructure, or a regression candidate")
+    s.add_argument("test_name")
+    s = sub.add_parser("verify-citations", help="check every file:line and name cited in a Markdown file")
+    s.add_argument("file")
+    return p
+
+
+def main(argv=None):
+    args = _parser().parse_args(argv)
+    config = Config.from_env()
+    if not config.available():
+        print("Loom is not available in this run. Use `git grep` and read files from the checkout.")
+        return 0
+    op, body = _cli_body(args, config)
+    data = call(config, op, body)
+    if data is None:
+        print(f"Loom did not answer {op} (timeout or error). Use `git grep` and read files from the checkout.")
+        return 0
+    if data.get("_error"):
+        print(f"Loom rejected the request: {data['_error']}" + (f" {json.dumps(data.get('errors'))[:800]}" if data.get("errors") else ""))
+        return 0
+    if op == "code.symbol" and not data.get("definitions") and not data.get("candidates"):
+        print(f"`{args.name}` is not in Loom's index of master or of this PR. If the PR adds it, read it from "
+              "the checkout; otherwise try the qualified name, or `grep -rn` in the checkout.")
+        return 0
+    if op == "code.history":
+        # PR descriptions there are mostly the PR template; their first lines
+        # are enough to tell what a PR was about.
+        for pr in data.get("prs") or []:
+            if isinstance(pr, dict) and isinstance(pr.get("body_excerpt"), str):
+                pr["body_excerpt"] = " ".join(_plain(_CI_BLOCK_RE.sub("", pr["body_excerpt"])).split())[:300]
+    print(json.dumps(_compact(data), ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
