@@ -19,6 +19,8 @@ namespace DB
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
+class IMergingTransformBase;
+using MergingTransformPtr = std::shared_ptr<IMergingTransformBase>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
@@ -26,12 +28,10 @@ class MergeSortingTransform final : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    /// merge_mode - the mode of the merges that form each spilled run and that merge the rows still in memory
-    /// at the end. With `MergeUniqueChunks` every input chunk must be unique on the sort description, and
-    /// these merges keep one row per key; a merge step that consumes only duplicates yields a chunk without
-    /// rows. The final merge of spilled runs keeps every row, so a key can appear once per run, and the
-    /// consumer removes these adjacent repeats. `limit` must be 0 in this mode, because that merge would
-    /// count the repeats.
+    /// merge_mode - the mode of the merges that form each spilled run and the output. With
+    /// `MergeUniqueChunks` the sort description has no collators, every input chunk must be unique on it, and
+    /// the output keeps one row per key; a merge step that consumes only duplicates yields a chunk without
+    /// rows. `limit` must be 0 in this mode, because the merge of spilled runs takes no limit.
     /// external_merge_event - counts the final merges of spilled runs, for the operator that the sort serves.
     MergeSortingTransform(
         SharedHeader header,
@@ -80,7 +80,7 @@ private:
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
-    ProcessorPtr external_merging_sorted;
+    MergingTransformPtr external_merging_sorted;
 
     TopKThresholdTrackerPtr threshold_tracker;
 

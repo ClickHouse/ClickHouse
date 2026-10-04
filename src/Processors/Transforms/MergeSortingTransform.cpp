@@ -4,6 +4,7 @@
 #include <iterator>
 
 #include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -62,7 +63,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 
     auto & source = processors.front();
 
-    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput(header_without_constants);
+    external_merging_sorted->addInput(header_without_constants);
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)
@@ -75,7 +76,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
     }
     else
         /// Generate
-        static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
+        external_merging_sorted->setHaveAllInputs();
 
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
@@ -157,10 +158,20 @@ void MergeSortingTransform::consume(Chunk chunk)
             if (!external_merging_sorted)
             {
                 bool have_all_inputs = false;
-                bool use_average_block_sizes = false;
-                bool apply_virtual_row = false;
 
-                external_merging_sorted = std::make_shared<MergingSortedTransform>(
+                if (merge_mode == MergeSorter::Mode::MergeUniqueChunks)
+                {
+                    /// The merges in memory make each input unique, as `DistinctSortedTransform` requires.
+                    external_merging_sorted = std::make_shared<DistinctSortedTransform>(
+                        SharedHeaders{}, shared_header_without_constants, description,
+                        /*already_emitted_flag_column=*/ std::nullopt, max_merged_block_size, have_all_inputs);
+                }
+                else
+                {
+                    bool use_average_block_sizes = false;
+                    bool apply_virtual_row = false;
+
+                    external_merging_sorted = std::make_shared<MergingSortedTransform>(
                         shared_header_without_constants,
                         0,
                         description,
@@ -176,6 +187,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         apply_virtual_row,
                         /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
+                }
 
                 processors.emplace_back(external_merging_sorted);
             }
