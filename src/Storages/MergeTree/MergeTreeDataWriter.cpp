@@ -1,5 +1,7 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -9,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
@@ -50,6 +53,7 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <fmt/ranges.h>
@@ -63,6 +67,8 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterCompressedBytes;
     extern const Event MergeTreeDataWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataWriterMergingBlocksMicroseconds;
+    extern const Event MergeTreeDataWriterBlocksMergeSkipped;
+    extern const Event MergeTreeDataWriterBlocksMergedOnKeyColumns;
     extern const Event MergeTreeDataWriterProjectionsCalculationMicroseconds;
     extern const Event MergeTreeDataProjectionWriterBlocks;
     extern const Event MergeTreeDataProjectionWriterBlocksAlreadySorted;
@@ -579,6 +585,61 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     return result;
 }
 
+namespace
+{
+
+/// Whether the block holds no value the insert merge rejects: `is_deleted` above 1 for Replacing, or a sign other
+/// than 1 and -1 for Collapsing.
+bool hasOnlyValuesAcceptedByMerge(const Block & block, const MergeTreeData::MergingParams & merging_params)
+{
+    if (merging_params.mode == MergeTreeData::MergingParams::Replacing && !merging_params.is_deleted_column.empty())
+    {
+        ColumnPtr column = recursiveRemoveSparse(block.getByName(merging_params.is_deleted_column).column);
+        const auto * is_deleted = typeid_cast<const ColumnUInt8 *>(column.get());
+        return is_deleted && std::ranges::none_of(is_deleted->getData(), [](UInt8 value) { return value > 1; });
+    }
+
+    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    {
+        ColumnPtr column = recursiveRemoveSparse(block.getByName(merging_params.sign_column).column);
+        const auto * sign = typeid_cast<const ColumnInt8 *>(column.get());
+        return sign && std::ranges::all_of(sign->getData(), [](Int8 value) { return value == 1 || value == -1; });
+    }
+
+    return true;
+}
+
+/// Builds the column of the rows `rows` (all rows in their order when null) the way a merge emitting them builds it.
+ColumnPtr buildColumnOfRows(const ColumnPtr & column, const IColumn::Permutation * rows, size_t num_rows)
+{
+    /// A merge picks the structure of a dynamic column and the statistics of a column from the rows it reads.
+    if (column->hasDynamicStructure() || column->hasStatistics())
+    {
+        ColumnPtr source = recursiveRemoveSparse(column);
+        auto result = source->cloneEmpty();
+        VectorWithMemoryTracking<ColumnPtr> source_columns{source};
+        if (result->hasDynamicStructure())
+            result->chooseDynamicStructureForMerge(source_columns, /*max_dynamic_subcolumns=*/std::nullopt);
+        if (result->hasStatistics())
+            result->takeOrCalculateStatisticsFrom(source_columns);
+
+        for (size_t row = 0; row < num_rows; ++row)
+            result->insertFrom(*source, rows ? (*rows)[row] : row);
+        return result;
+    }
+
+    ColumnPtr result = recursiveRemoveSparse(column);
+    if (rows)
+        result = result->permute(*rows, num_rows);
+
+    /// Statistics are built from the dictionary, which can hold values of dropped rows and of other partitions.
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(result.get()))
+        result = low_cardinality->cutAndCompact(0, num_rows);
+    return result;
+}
+
+}
+
 Block MergeTreeDataWriter::mergeBlock(
     Block && block,
     const StorageMetadataPtr & metadata_snapshot,
@@ -593,6 +654,48 @@ Block MergeTreeDataWriter::mergeBlock(
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
 
+    /// Replacing, Collapsing and VersionedCollapsing merges only select rows, which is why they support vertical merges.
+    const bool merge_only_selects_rows = merging_params.mode == MergeTreeData::MergingParams::Replacing
+        || merging_params.mode == MergeTreeData::MergingParams::Collapsing
+        || merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
+    /// Such a merge keeps every row when no two rows share a sorting key.
+    if (merge_only_selects_rows && hasUniqueSortingKey(*header, sort_description, permutation)
+        && hasOnlyValuesAcceptedByMerge(*header, merging_params))
+    {
+        Columns columns = header->getColumns();
+        for (auto & column : columns)
+            column = buildColumnOfRows(column, permutation, block_size);
+
+        permutation = nullptr;
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksMergeSkipped);
+        return header->cloneWithColumns(columns);
+    }
+
+    /// Otherwise it reads only its own columns and records the rows it keeps, as the first stage of a vertical merge.
+    SharedHeader merge_header = header;
+    PaddedPODArray<UInt8> row_sources;
+    std::optional<WriteBufferFromVector<PaddedPODArray<UInt8>>> row_sources_buf;
+    if (merge_only_selects_rows)
+    {
+        NameSet merge_column_names{merging_params.version_column, merging_params.is_deleted_column, merging_params.sign_column};
+        for (const auto & column : sort_description)
+            merge_column_names.insert(column.column_name);
+
+        Block merge_block;
+        for (const auto & column : *header)
+            if (merge_column_names.contains(column.name))
+                merge_block.insert(column);
+
+        if (merge_block.columns() < header->columns())
+        {
+            merge_header = std::make_shared<const Block>(std::move(merge_block));
+            row_sources.reserve(block_size);
+            row_sources_buf.emplace(row_sources);
+        }
+    }
+    WriteBuffer * out_row_sources_buf = row_sources_buf ? &*row_sources_buf : nullptr;
+
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
         switch (merging_params.mode)
@@ -602,11 +705,11 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
+                    merge_header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, out_row_sources_buf);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
-                    header, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
+                    merge_header, 1, sort_description, merging_params.sign_column,
+                    false, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, getLogger("MergeTreeDataWriter"), out_row_sources_buf,
                     /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing: {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
@@ -637,7 +740,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     merging_params.allow_tuple_element_aggregation);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
+                    merge_header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, out_row_sources_buf);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, merging_params.graphite_params, time(nullptr));
@@ -658,7 +761,7 @@ Block MergeTreeDataWriter::mergeBlock(
 
     span.addAttribute("clickhouse.merging_algorithm", merging_algorithm->getName());
 
-    Chunk chunk(header->getColumns(), block_size);
+    Chunk chunk(merge_header->getColumns(), block_size);
 
     IMergingAlgorithm::Input input;
     input.set(std::move(chunk));
@@ -681,9 +784,43 @@ Block MergeTreeDataWriter::mergeBlock(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge is not finished after the second merge.");
 
     /// Merged Block is sorted and we don't need to use permutation anymore
+    const IColumn::Permutation * sort_permutation = permutation;
     permutation = nullptr;
 
-    return header->cloneWithColumns(status.chunk.getColumns());
+    if (!row_sources_buf)
+        return header->cloneWithColumns(status.chunk.getColumns());
+
+    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksMergedOnKeyColumns);
+    row_sources_buf->finalize();
+    if (row_sources.size() != block_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge of an inserted block recorded {} row sources for {} rows", row_sources.size(), block_size);
+
+    const size_t num_kept_rows = status.chunk.getNumRows();
+    if (num_kept_rows == 0)
+        return header->cloneEmpty();
+
+    /// The row sources follow the sort order, one per row, and the merged rows keep that order.
+    IColumn::Permutation kept_rows;
+    kept_rows.reserve(num_kept_rows);
+    const auto * sources = reinterpret_cast<const RowSourcePart *>(row_sources.data());
+    for (size_t i = 0; i < block_size; ++i)
+        if (!sources[i].getSkipFlag())
+            kept_rows.push_back(sort_permutation ? (*sort_permutation)[i] : i);
+
+    if (kept_rows.size() != num_kept_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge of an inserted block kept {} rows, but its row sources keep {}", num_kept_rows, kept_rows.size());
+
+    const auto & merged_columns = status.chunk.getColumns();
+    Columns columns = header->getColumns();
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (auto merged_position = merge_header->findPositionByName(header->getByPosition(i).name))
+            columns[i] = merged_columns[*merged_position];
+        else
+            columns[i] = buildColumnOfRows(columns[i], &kept_rows, num_kept_rows);
+    }
+
+    return header->cloneWithColumns(columns);
 }
 
 
