@@ -2945,7 +2945,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
+                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning],
                 require_ready_sets};
             /// The part minmax bound comes from `getExtremes`, which skips NaN.
             condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
