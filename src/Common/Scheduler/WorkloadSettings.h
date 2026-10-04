@@ -35,6 +35,9 @@ struct WorkloadSettings
     Float64 max_queries_per_second = 0; // Zero means unlimited
     Float64 max_burst_queries = 0; // default is `default_burst_seconds * max_queries_per_second`
 
+    /// Intra-workload scheduling algorithm for the time-shared leaf: "fifo" (default), "fair", "las", or "priority".
+    String scheduler = "fifo";
+
     /// Limits total number of concurrent resource requests that are allowed to consume
     Int64 max_io_requests = unlimited;
 
