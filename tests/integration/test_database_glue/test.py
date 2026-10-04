@@ -843,7 +843,8 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
-def test_create_without_engine_arguments(started_cluster):
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
@@ -862,12 +863,16 @@ def test_create_without_engine_arguments(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3",
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
         settings={
             "allow_experimental_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
 
     node.query(
         f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
@@ -880,7 +885,8 @@ def test_create_without_engine_arguments(started_cluster):
     assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
-def test_create_without_engine_arguments_no_database_location(started_cluster):
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_no_database_location(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_no_location_{uuid.uuid4()}"
@@ -895,69 +901,7 @@ def test_create_without_engine_arguments_no_database_location(started_cluster):
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     with pytest.raises(Exception) as exc:
         node.query(
-            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3",
-            settings={
-                "allow_experimental_database_glue_catalog": 1,
-                "write_full_path_in_iceberg_metadata": 1,
-            },
-        )
-    assert "cannot tell where table" in str(exc.value), str(exc.value)
-
-
-def test_create_without_engine(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_create_without_engine_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
-    )
-    glue_client.create_database(
-        DatabaseInput={
-            "Name": root_namespace,
-            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
-        }
-    )
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` "
-        "(id Int64, val String) SETTINGS allow_experimental_insert_into_iceberg = 1",
-        settings={
-            "allow_experimental_database_glue_catalog": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-
-    assert node.query(
-        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
-    ) == f"{root_namespace}.{table_name}\n"
-
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1, 'a');",
-        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
-    )
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "1\ta\n"
-
-
-def test_create_without_engine_no_database_location(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_create_without_engine_no_location_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
-    )
-    glue_client.create_database(DatabaseInput={"Name": root_namespace})
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    with pytest.raises(Exception) as exc:
-        node.query(
-            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, val String)",
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
             settings={"allow_experimental_database_glue_catalog": 1},
         )
     assert "cannot tell where table" in str(exc.value), str(exc.value)

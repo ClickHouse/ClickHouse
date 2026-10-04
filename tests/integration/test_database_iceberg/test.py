@@ -1388,7 +1388,8 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
-def test_create_without_engine_arguments(started_cluster):
+@pytest.mark.parametrize("engine_clause", [" ENGINE = Iceberg", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
@@ -1397,12 +1398,16 @@ def test_create_without_engine_arguments(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = Iceberg",
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
         settings={
             "allow_experimental_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
 
     node.query(
         f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
@@ -1418,35 +1423,17 @@ def test_create_without_engine_arguments(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
-def test_create_without_engine_arguments_storage_mismatch(started_cluster):
+@pytest.mark.parametrize("namespace_exists", [False, True])
+def test_create_without_engine_arguments_storage_mismatch(started_cluster, namespace_exists):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_storage_mismatch_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    with pytest.raises(QueryRuntimeException) as exc:
-        node.query(
-            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergLocal",
-            settings={
-                "allow_experimental_database_iceberg": 1,
-                "write_full_path_in_iceberg_metadata": 1,
-            },
-        )
-    assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
-    assert (root_namespace,) not in load_catalog_impl(started_cluster).list_namespaces()
-
-
-def test_create_without_engine_arguments_existing_namespace(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_create_without_engine_arguments_existing_namespace_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
     catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
+    if namespace_exists:
+        catalog.create_namespace(root_namespace)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     with pytest.raises(QueryRuntimeException) as exc:
@@ -1455,7 +1442,7 @@ def test_create_without_engine_arguments_existing_namespace(started_cluster):
             settings={"allow_experimental_database_iceberg": 1},
         )
     assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
-    assert (root_namespace,) in catalog.list_namespaces()
+    assert ((root_namespace,) in catalog.list_namespaces()) == namespace_exists
 
 
 def test_create_without_engine_arguments_outside_catalog(started_cluster):
@@ -1466,38 +1453,6 @@ def test_create_without_engine_arguments_outside_catalog(started_cluster):
     with pytest.raises(QueryRuntimeException) as exc:
         node.query(f"CREATE TABLE default.{table_name} (x String) ENGINE = IcebergS3")
     assert "requires 1 to" in str(exc.value), str(exc.value)
-
-
-def test_create_without_engine(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_create_without_engine_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` "
-        "(id Int64, val String) SETTINGS allow_experimental_insert_into_iceberg = 1",
-        settings={
-            "allow_experimental_database_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-
-    assert node.query(
-        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
-    ) == f"{root_namespace}.{table_name}\n"
-
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1, 'a');",
-        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
-    )
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "1\ta\n"
-
-    catalog = load_catalog_impl(started_cluster)
-    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
-    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 def test_create_gzip_metadata(started_cluster):
