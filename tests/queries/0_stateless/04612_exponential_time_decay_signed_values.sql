@@ -2,7 +2,7 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The aggregate forms preserve signed values.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6)
 FROM VALUES('value Float64, time Float64', (-10, 0), (20, 10), (-5, 5));
 
@@ -11,14 +11,14 @@ WITH
     direct AS
     (
         SELECT
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)) AS sum,
+            exponentialTimeDecayedSum(10)(value, time) AS sum,
             exponentialTimeDecayedAvg(10)(value, time) AS avg
         FROM VALUES('value Float64, time Float64', (-10, 0), (20, 10), (-5, 5))
     ),
     merged AS
     (
         SELECT
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)) AS sum,
+            exponentialTimeDecayedSumMerge(10)(sum_state) AS sum,
             exponentialTimeDecayedAvgMerge(10)(avg_state) AS avg
         FROM
         (
@@ -126,9 +126,10 @@ SELECT
     exponentialTimeDecaying(10)(1, toFloat64(0))
     < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 
--- The compact UInt64 ordering prefix intentionally merges neighboring Float64
--- unit timestamps that differ only in the discarded low-order bit. A prefix
--- collision must not become logical equality or a logical hash collision.
+-- The compact UInt64 key intentionally merges neighboring curves when the
+-- discarded timestamp precision maps them to the same key. The key is the
+-- complete logical identity of ExponentialTimeDecaying64, so a collision is
+-- equality for comparison, hashing, GROUP BY, and DISTINCT.
 WITH
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
@@ -154,6 +155,36 @@ FROM
         SELECT exponentialTimeDecaying(1)(
             1.,
             reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2)) AS value
+    )
+    GROUP BY value
+);
+
+-- The 128-bit type spends the wider key on additional unit-timestamp precision,
+-- so the same pair remains distinct.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    CAST((1., t1), 'ExponentialTimeDecaying128(1)') AS a,
+    CAST((1., t2), 'ExponentialTimeDecaying128(1)') AS b
+SELECT
+    a = b,
+    a < b,
+    a > b,
+    cityHash64(a) = cityHash64(b);
+
+SELECT count()
+FROM
+(
+    SELECT value
+    FROM
+    (
+        SELECT CAST(
+            (1., reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            'ExponentialTimeDecaying128(1)') AS value
+        UNION ALL
+        SELECT CAST(
+            (1., reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2)),
+            'ExponentialTimeDecaying128(1)') AS value
     )
     GROUP BY value
 );
@@ -205,21 +236,20 @@ WHERE
     )
 ) != 1;
 
--- Negative prefixes discard the low sortable-timestamp bit in the opposite
--- ordering domain. Adjacent timestamps below share one compact UInt64 prefix,
--- but the full logical-key fallback must keep them distinct and reverse their
--- order correctly for negative curves.
+-- The same compact-key identity rule applies in the negative domain.
 WITH
     toFloat64(1) AS t1,
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
     exponentialTimeDecaying(1)(-1., t1) AS a,
     exponentialTimeDecaying(1)(-1., t2) AS b
 SELECT 'negative prefix-collision mismatch'
-WHERE
+WHERE NOT (
     a = b
-    OR a < b
-    OR NOT (a > b)
-    OR cityHash64(a) = cityHash64(b);
+    AND a <= b
+    AND a >= b
+    AND NOT (a < b)
+    AND NOT (a > b)
+    AND cityHash64(a) = cityHash64(b));
 
 SELECT 'negative prefix-collision GROUP BY mismatch'
 WHERE
@@ -238,7 +268,15 @@ WHERE
         )
         GROUP BY value
     )
-) != 2;
+) != 1;
+
+WITH
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
+    CAST((-1., t1), 'ExponentialTimeDecaying128(1)') AS a,
+    CAST((-1., t2), 'ExponentialTimeDecaying128(1)') AS b
+SELECT 'negative 128-bit ordering mismatch'
+WHERE NOT (a > b AND a != b);
 
 -- Exact opposite curves cancel to the canonical zero representation, which
 -- must remain ordered strictly between the negative and positive domains.
@@ -268,7 +306,7 @@ WHERE abs(
             exponentialTimeDecayedSum(value),
             toFloat64(100))
         FROM VALUES(
-            'value ExponentialTimeDecaying(10)',
+            'value ExponentialTimeDecaying64(10)',
             ((-1., 0., 10.)),
             ((-2., 100., 10.)))
     ) + 2) > 1e-12;
@@ -281,7 +319,7 @@ DROP TABLE IF EXISTS time_decay_signed_index;
 CREATE TABLE time_decay_signed_index
 (
     id UInt8,
-    value ExponentialTimeDecaying(1),
+    value ExponentialTimeDecaying64(1),
     INDEX value_minmax value TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -291,7 +329,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO time_decay_signed_index
 SELECT *
 FROM VALUES(
-    'id UInt8, value ExponentialTimeDecaying(1)',
+    'id UInt8, value ExponentialTimeDecaying64(1)',
     (1, (-1., 0., 1.)),
     (2, (-1., 1., 1.)),
     (3, (0., 0., 1.)),
@@ -359,9 +397,8 @@ WHERE NOT (
     AND exponentialTimeDecayingValueAtUnitTime(negative) < -1
     AND exponentialTimeDecayingValueAtUnitTime(negative) > -1.000000000000001);
 
--- Within one compact unit-time bucket, the residual value carries the remaining
--- ordering precision. The direction must agree with native curve ordering in
--- both sign domains.
+-- Within one compact 64-bit bucket there is no residual tie-breaker: the
+-- ordering key itself is the complete identity.
 WITH
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
@@ -369,18 +406,14 @@ WITH
     exponentialTimeDecaying(1)(1., t2) AS positive_b,
     exponentialTimeDecaying(1)(-1., toFloat64(1)) AS negative_a,
     exponentialTimeDecaying(1)(-1., t1) AS negative_b
-SELECT 'unit-time pair ordering mismatch'
+SELECT 'unit-time bucket identity mismatch'
 WHERE NOT (
     exponentialTimeDecayingUnitTime(positive_a)
         = exponentialTimeDecayingUnitTime(positive_b)
-    AND exponentialTimeDecayingValueAtUnitTime(positive_a)
-        < exponentialTimeDecayingValueAtUnitTime(positive_b)
-    AND positive_a < positive_b
+    AND positive_a = positive_b
     AND exponentialTimeDecayingUnitTime(negative_a)
         = exponentialTimeDecayingUnitTime(negative_b)
-    AND exponentialTimeDecayingValueAtUnitTime(negative_a)
-        > exponentialTimeDecayingValueAtUnitTime(negative_b)
-    AND negative_a > negative_b);
+    AND negative_a = negative_b);
 
 -- Equivalent curves must expose the same ordered pair regardless of the anchor
 -- used to construct them.

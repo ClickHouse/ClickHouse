@@ -15,24 +15,24 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The implicit default must preserve the decay-length marker encoded in the type.
 SELECT
-    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'value_at_anchor') = 0
-    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying(10)'), 'anchor_time') = 0
-    AND exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying(10)')) = 10;
+    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'value_at_anchor') = 0
+    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'anchor_time') = 0
+    AND exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying64(10)')) = 10;
 
 -- Direct typed input uses the validating serialization, including when nested.
 SELECT exponentialTimeDecayingDecayLength(value) = 10
-FROM VALUES('value ExponentialTimeDecaying(10)', ((1., 0., 10.)));
+FROM VALUES('value ExponentialTimeDecaying64(10)', ((1., 0., 10.)));
 SELECT exponentialTimeDecayingDecayLength(values[1]) = 10
-FROM VALUES('values Array(ExponentialTimeDecaying(10))', ([(1., 0., 10.)]));
+FROM VALUES('values Array(ExponentialTimeDecaying64(10))', ([(1., 0., 10.)]));
 SELECT *
-FROM VALUES('value ExponentialTimeDecaying(10)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
+FROM VALUES('value ExponentialTimeDecaying64(10)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
 SELECT *
-FROM VALUES('values Array(ExponentialTimeDecaying(10))', ([(1., 0., 20.)])); -- { serverError BAD_ARGUMENTS }
+FROM VALUES('values Array(ExponentialTimeDecaying64(10))', ([(1., 0., 20.)])); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE time_decay_default_insert
 (
     id UInt8,
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 INSERT INTO time_decay_default_insert (id) VALUES (1);
@@ -42,7 +42,7 @@ FROM time_decay_default_insert;
 CREATE TABLE time_decay_default_alter (id UInt8) ENGINE = Memory;
 INSERT INTO time_decay_default_alter VALUES (1);
 ALTER TABLE time_decay_default_alter
-    ADD COLUMN value ExponentialTimeDecaying(10);
+    ADD COLUMN value ExponentialTimeDecaying64(10);
 SELECT tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0
 FROM time_decay_default_alter;
 
@@ -51,7 +51,7 @@ CREATE TABLE time_decay_default_simple_aggregate
     id UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying(10))
+        ExponentialTimeDecaying64(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id;
@@ -69,7 +69,7 @@ DROP TABLE time_decay_default_simple_aggregate;
 -- Reject it at the conversion boundary even when its values happen to look valid.
 CREATE TABLE time_decay_layout_compatible_insert
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 INSERT INTO time_decay_layout_compatible_insert
@@ -85,7 +85,7 @@ DROP TABLE time_decay_layout_compatible_insert;
 
 CREATE TABLE time_decay_nested_layout_compatible_insert
 (
-    values Array(ExponentialTimeDecaying(10))
+    values Array(ExponentialTimeDecaying64(10))
 )
 ENGINE = Memory;
 INSERT INTO time_decay_nested_layout_compatible_insert
@@ -104,7 +104,7 @@ CREATE TABLE time_decay_layout_compatible_simple_aggregate_insert
     id UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying(10))
+        ExponentialTimeDecaying64(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id;
@@ -125,7 +125,7 @@ DROP TABLE time_decay_layout_compatible_simple_aggregate_insert;
 
 CREATE TABLE time_decay_feature_gate
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 
@@ -148,7 +148,7 @@ CREATE TABLE time_decay_simple_aggregate_reattach
     id UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying(10))
+        ExponentialTimeDecaying64(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id;
@@ -156,7 +156,7 @@ DETACH TABLE time_decay_simple_aggregate_reattach;
 
 CREATE TABLE time_decay_mv_source
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 
@@ -175,7 +175,7 @@ SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError
 
 -- User-supplied type names must apply the same experimental gate to both
 -- finalized values and aggregate-state types, including combinator wrappers.
-SELECT defaultValueOfTypeName('ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT defaultValueOfTypeName('ExponentialTimeDecaying64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)'); -- { serverError BAD_ARGUMENTS }
 SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)'); -- { serverError BAD_ARGUMENTS }
 SELECT JSONExtract('{}', 'AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)'); -- { serverError BAD_ARGUMENTS }
@@ -215,7 +215,7 @@ SELECT count() FROM time_decay_mv_reattach;
 -- the same experimental type gate as CREATE.
 ATTACH TABLE time_decay_full_attach_blocked
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ATTACH TABLE time_decay_aggregate_attach_blocked
@@ -231,14 +231,14 @@ ENGINE = Memory
 AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
 ATTACH MATERIALIZED VIEW time_decay_mv_attach_blocked
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory
 AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
 
 CREATE MATERIALIZED VIEW time_decay_mv_nested_type_blocked
 (
-    value Array(ExponentialTimeDecaying(10))
+    value Array(ExponentialTimeDecaying64(10))
 )
 ENGINE = Memory
 AS SELECT [value] FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
@@ -275,16 +275,16 @@ SET allow_suspicious_low_cardinality_types = 0;
 
 CREATE TABLE time_decay_feature_gate_blocked
 (
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE time_decay_feature_gate
-    ADD COLUMN blocked ExponentialTimeDecaying(10); -- { serverError ILLEGAL_COLUMN }
+    ADD COLUMN blocked ExponentialTimeDecaying64(10); -- { serverError ILLEGAL_COLUMN }
 
 -- Persisted metadata can still be reconstructed internally for recovery, but user
 -- expression conversion into or out of the experimental type requires opting in.
-SELECT toTypeName(CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_COLUMN }
-SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying64(10)')); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying64(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
@@ -407,20 +407,20 @@ WITH
         FROM batch_states
     )
 SELECT
-    abs(exponentialTimeDecayingValueAt(direct.decaying_sum, expected.max_time) - expected.weighted_sum)
+    abs(direct.decaying_sum - expected.weighted_sum)
         <= 1e-12 * greatest(1., abs(expected.weighted_sum)),
     abs(direct.weighted_avg - expected.weighted_sum / expected.weight)
         <= 1e-12 * greatest(1., abs(expected.weighted_sum / expected.weight)),
-    abs(exponentialTimeDecayingValueAt(direct.decaying_count, expected.max_time) - expected.weight)
+    abs(direct.decaying_count - expected.weight)
         <= 1e-12 * greatest(1., abs(expected.weight)),
-    abs(exponentialTimeDecayingValueAt(merged.decaying_sum, expected.max_time) - expected.weighted_sum)
+    abs(merged.decaying_sum - expected.weighted_sum)
         <= 1e-11 * greatest(1., abs(expected.weighted_sum)),
     abs(merged.weighted_avg - expected.weighted_sum / expected.weight)
         <= 1e-12 * greatest(1., abs(expected.weighted_sum / expected.weight)),
-    abs(exponentialTimeDecayingValueAt(merged.decaying_count, expected.max_time) - expected.weight)
+    abs(merged.decaying_count - expected.weight)
         <= 1e-11 * greatest(1., abs(expected.weight)),
-    isFinite(tupleElement(direct.decaying_sum, 'anchor_time')),
-    isFinite(tupleElement(merged.decaying_sum, 'anchor_time'))
+    toTypeName(direct.decaying_sum) = 'Float64',
+    toTypeName(merged.decaying_sum) = 'Float64'
 FROM expected
 CROSS JOIN direct
 CROSS JOIN merged;
@@ -461,16 +461,16 @@ WITH
             (4, 0.875))
     )
 SELECT
-    abs(exponentialTimeDecayingValueAt(datetime64.decaying_sum, toFloat64(1577836800.875)) - exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875))) < 1e-12,
+    abs(datetime64.decaying_sum - numeric.decaying_sum) < 1e-12,
     abs(datetime64.weighted_avg - numeric.weighted_avg) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(datetime64.decaying_count, toFloat64(1577836800.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875))) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(decimal.decaying_sum, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875)))
-        <= 1e-6 * greatest(1., abs(exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875)))),
+    abs(datetime64.decaying_count - numeric.decaying_count) < 1e-12,
+    abs(decimal.decaying_sum - numeric.decaying_sum)
+        <= 1e-6 * greatest(1., abs(numeric.decaying_sum)),
     abs(decimal.weighted_avg - numeric.weighted_avg) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(decimal.decaying_count, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))
-        <= 1e-6 * greatest(1., abs(exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))),
-    isFinite(tupleElement(datetime64.decaying_sum, 'anchor_time')),
-    isFinite(tupleElement(decimal.decaying_sum, 'anchor_time'))
+    abs(decimal.decaying_count - numeric.decaying_count)
+        <= 1e-6 * greatest(1., abs(numeric.decaying_count)),
+    toTypeName(datetime64.decaying_sum) = 'Float64',
+    toTypeName(decimal.decaying_sum) = 'Float64'
 FROM numeric
 CROSS JOIN datetime64
 CROSS JOIN decimal;
@@ -488,7 +488,7 @@ FROM
     FROM VALUES('value Float64, time Float64', (8, 0), (4, 10), (2, 5))
 )
 WHERE
-    toTypeName(constructed) != 'ExponentialTimeDecaying(10)'
+    toTypeName(constructed) != 'ExponentialTimeDecaying64(10)'
     OR abs(exponentialTimeDecayingValueAt(constructed, time) - value) >= 1e-12
     OR exponentialTimeDecayingDecayLength(constructed) != 10;
 
@@ -530,8 +530,8 @@ FROM
             at,
             bv,
             bt,
-            CAST((av, at, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS a,
-            CAST((bv, bt, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS b
+            CAST((av, at, toFloat64(10)), 'ExponentialTimeDecaying64(10)') AS a,
+            CAST((bv, bt, toFloat64(10)), 'ExponentialTimeDecaying64(10)') AS b
         FROM VALUES(
             'id UInt8, av Float64, at Float64, bv Float64, bt Float64',
             (1, 8, 0, 4, 10),
@@ -547,7 +547,7 @@ WHERE NOT
     AND abs(exponentialTimeDecayingValueAt(operator_result, latest_time) - exponentialTimeDecayingValueAt(function_result, latest_time))
         <= 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(function_result, latest_time)))
     AND tupleElement(operator_result, 'anchor_time') = tupleElement(function_result, 'anchor_time')
-    AND toTypeName(operator_result) = 'ExponentialTimeDecaying(10)'
+    AND toTypeName(operator_result) = 'ExponentialTimeDecaying64(10)'
 )
 ORDER BY id;
 
@@ -559,7 +559,7 @@ WITH
     (
         SELECT
             id,
-            CAST((value, time, toFloat64(10)), 'ExponentialTimeDecaying(10)') AS decaying_value
+            CAST((value, time, toFloat64(10)), 'ExponentialTimeDecaying64(10)') AS decaying_value
         FROM VALUES(
             'id UInt8, value Float64, time Float64',
             (1, 8, 0),
@@ -605,7 +605,7 @@ CREATE TABLE exponential_time_decay_non_integral
     key UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying(0.1))
+        ExponentialTimeDecaying64(0.1))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;
@@ -630,21 +630,21 @@ DROP TABLE exponential_time_decay_non_integral;
 SELECT exponentialTimeDecayedSum(10)(toFloat64('nan'), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64('inf')); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayingValueAt(
-    CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying(10)'),
+    CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying64(10)'),
     toFloat64('-inf')); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayingAdd(
-    CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecaying(10)'),
-    CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying(10)')); -- { serverError BAD_ARGUMENTS }
+    CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecaying64(10)'),
+    CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying64(10)')); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedSum(decaying_value)
 FROM
 (
     SELECT CAST(
         (toFloat64(1), toFloat64(0), toFloat64(20)),
-        'ExponentialTimeDecaying(10)') AS decaying_value
+        'ExponentialTimeDecaying64(10)') AS decaying_value
 ); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedSum(toFloat64(1), toFloat64(0)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT exponentialTimeDecayedSum(10, 20)(toFloat64(1), toFloat64(0)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT CAST((toFloat64(1), toFloat64(0), toFloat64(-1)), 'ExponentialTimeDecaying(-1)'); -- { serverError BAD_ARGUMENTS }
+SELECT CAST((toFloat64(1), toFloat64(0), toFloat64(-1)), 'ExponentialTimeDecaying64(-1)'); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedSumMerge(20)(state)
 FROM
 (
@@ -655,110 +655,110 @@ FROM
 SELECT count()
 FROM
 (
-    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS value
+    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS value
 )
 GROUP BY value; -- { serverError BAD_ARGUMENTS }
 
 SELECT DISTINCT _CAST(
     [(1., 0., 20.)],
-    'Array(ExponentialTimeDecaying(10))'); -- { serverError BAD_ARGUMENTS }
+    'Array(ExponentialTimeDecaying64(10))'); -- { serverError BAD_ARGUMENTS }
 
 -- Reconstruction validates malformed rows before generic tuple comparison and sorting.
 WITH
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS malformed,
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS valid
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS valid
 SELECT malformed = valid; -- { serverError BAD_ARGUMENTS }
 
 WITH
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS malformed,
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS valid
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS valid
 SELECT malformed < valid; -- { serverError BAD_ARGUMENTS }
 
 SELECT value
 FROM
 (
-    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS value
+    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS value
     UNION ALL
-    SELECT _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
+    SELECT _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS value
 )
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
 
 -- Validation at the conversion boundary also protects sorting helpers which
 -- invoke the native column comparator directly instead of sortBlock.
 SELECT arraySort([
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)'),
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)')
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)'),
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)')
 ]); -- { serverError BAD_ARGUMENTS }
 
 -- Reconstruction validates malformed values before set-backed membership on either side.
 WITH
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS malformed,
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS valid
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS valid
 SELECT malformed IN (valid); -- { serverError BAD_ARGUMENTS }
 
 WITH
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS malformed,
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS valid
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS valid
 SELECT valid IN (malformed); -- { serverError BAD_ARGUMENTS }
 
 WITH
-    _CAST((1., 0., 20.), 'ExponentialTimeDecaying(10)') AS malformed,
-    _CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS valid
+    _CAST((1., 0., 20.), 'ExponentialTimeDecaying64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS valid
 SELECT malformed NOT IN (valid); -- { serverError BAD_ARGUMENTS }
 
 -- Pairwise compatibility is enforced recursively before generic tuple
 -- comparison and set hashing.
 WITH
-    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS left_value,
-    CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecaying(20))') AS right_value
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))') AS left_value,
+    CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecaying64(20))') AS right_value
 SELECT left_value = right_value; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH
-    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS decaying,
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))') AS decaying,
     CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT decaying = plain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH
-    CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS decaying,
+    CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS decaying,
     CAST((1., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS plain
 SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH
-    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS decaying,
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))') AS decaying,
     CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Empty-set shortcuts must retain pairwise type compatibility even though row validity is checked at reconstruction.
-WITH _CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecaying(10))') AS malformed
+WITH _CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecaying64(10))') AS malformed
 SELECT malformed IN
 (
-    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))')
+    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))')
     FROM numbers(0)
 ); -- { serverError BAD_ARGUMENTS }
 
 WITH CAST((1., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS plain
 SELECT tuple(plain) IN
 (
-    SELECT tuple(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'))
+    SELECT tuple(CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)'))
     FROM numbers(0)
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT plain NOT IN
 (
-    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))')
+    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))')
     FROM numbers(0)
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Compatible direct and nested values must retain normal IN semantics. These
 -- queries stay silent on success and expose a reference diff on a false negative.
-WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS value
 SELECT 'direct decaying IN false negative' WHERE NOT (value IN (value));
 
-WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS value
 SELECT 'direct decaying multi-value IN false negative' WHERE NOT (value IN (value, value));
 
-WITH CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))') AS value
+WITH CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying64(10))') AS value
 SELECT 'nested decaying IN false negative' WHERE NOT (value IN (value));
 
 -- MergeTree set indexes may sort internal blocks without type metadata. Optional
@@ -781,13 +781,13 @@ SETTINGS aggregate_functions_null_for_empty = 1;
 -- Parameterized views must not capture the experimental type while disabled.
 SET allow_experimental_time_decay_aggregate_functions = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
-SELECT tupleElement({value:ExponentialTimeDecaying(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+SELECT tupleElement({value:ExponentialTimeDecaying64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
 CREATE VIEW time_decay_nested_parameterized_view_gate AS
-SELECT length({values:Array(ExponentialTimeDecaying(10))}); -- { serverError ILLEGAL_COLUMN }
+SELECT length({values:Array(ExponentialTimeDecaying64(10))}); -- { serverError ILLEGAL_COLUMN }
 -- Full ATTACH definitions are rejected before type validation, so they cannot
 -- bypass the experimental setting.
 ATTACH VIEW time_decay_parameterized_view_attach_gate AS
-SELECT tupleElement({value:ExponentialTimeDecaying(10)}, 1); -- { serverError BAD_ARGUMENTS }
+SELECT tupleElement({value:ExponentialTimeDecaying64(10)}, 1); -- { serverError BAD_ARGUMENTS }
 
 -- Identifier parameters are query syntax, not data types, and must remain valid.
 DROP TABLE IF EXISTS time_decay_identifier_source;
@@ -801,13 +801,13 @@ DROP TABLE time_decay_identifier_source;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 CREATE VIEW time_decay_parameterized_view_gate AS
-SELECT tupleElement({value:ExponentialTimeDecaying(10)}, 1);
+SELECT tupleElement({value:ExponentialTimeDecaying64(10)}, 1);
 SELECT 'typed parameter preserved';
 DROP VIEW time_decay_parameterized_view_gate;
 
 -- A short ATTACH reloads existing metadata and remains available while disabled.
 CREATE VIEW time_decay_parameterized_view_reattach AS
-SELECT tupleElement({value:ExponentialTimeDecaying(10)}, 1);
+SELECT tupleElement({value:ExponentialTimeDecaying64(10)}, 1);
 DETACH TABLE time_decay_parameterized_view_reattach;
 SET allow_experimental_time_decay_aggregate_functions = 0;
 ATTACH TABLE time_decay_parameterized_view_reattach;
@@ -820,7 +820,7 @@ DROP TABLE IF EXISTS time_decay_default_identity;
 CREATE TABLE time_decay_default_identity
 (
     id UInt8,
-    value ExponentialTimeDecaying(10)
+    value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 INSERT INTO time_decay_default_identity
@@ -828,7 +828,7 @@ SELECT 1, exponentialTimeDecaying(10)(5., -10.);
 INSERT INTO time_decay_default_identity (id) VALUES (2);
 
 WITH
-    defaultValueOfTypeName('ExponentialTimeDecaying(10)') AS empty_value,
+    defaultValueOfTypeName('ExponentialTimeDecaying64(10)') AS empty_value,
     exponentialTimeDecaying(10)(5., -10.) AS observed_value,
     exponentialTimeDecayingAdd(empty_value, observed_value) AS combined
 SELECT

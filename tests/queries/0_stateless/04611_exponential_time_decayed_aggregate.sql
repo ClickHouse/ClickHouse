@@ -9,7 +9,10 @@ SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FU
 
 -- Boolean keywords enable and disable the experimental feature.
 SET allow_experimental_time_decay_aggregate_functions = true;
-SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'value_at_anchor');
+SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0));
+SELECT
+    toTypeName(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0))),
+    toTypeName(exponentialTimeDecayedCount(10)(toFloat64(0)));
 
 SET allow_experimental_time_decay_aggregate_functions = false;
 SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
@@ -21,16 +24,16 @@ SELECT exponentialTimeDecaying(10)(1, toFloat64(0)); -- { serverError UNKNOWN_FU
 
 -- User-facing type-name helpers must not materialize the experimental type,
 -- including when it is nested, while the feature is disabled.
-SELECT defaultValueOfTypeName('ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT defaultValueOfTypeName('Array(ExponentialTimeDecaying(10))'); -- { serverError ILLEGAL_COLUMN }
-SELECT JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT JSONExtract('[[1, 0, 10]]', 'Array(ExponentialTimeDecaying(10))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT defaultValueOfTypeName('ExponentialTimeDecaying64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT defaultValueOfTypeName('Array(ExponentialTimeDecaying64(10))'); -- { serverError ILLEGAL_COLUMN }
+SELECT JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying64(10)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtract('[[1, 0, 10]]', 'Array(ExponentialTimeDecaying64(10))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
-SELECT exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying(10)'));
+SELECT exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'));
 SELECT exponentialTimeDecayingValueAt(
-    JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying(10)'),
+    JSONExtract('[1, 0, 10]', 'ExponentialTimeDecaying64(10)'),
     toFloat64(0));
 
 -- Function documentation must be materializable through system.functions.
@@ -40,14 +43,14 @@ WHERE name = 'exponentialTimeDecayingDecayLength';
 
 -- Three-field raw casts carry (value, timestamp, decay_length). When the target
 -- type is parameterized, the supplied decay length must agree with the type.
-SELECT toTypeName(CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying(10)'));
+SELECT toTypeName(CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecaying64(10)'));
 
 SELECT exponentialTimeDecayingValueAt(
-    CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecaying(10)'),
+    CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecaying64(10)'),
     toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 
 -- Addition preserves the input category: scalars remain scalar and decaying
--- values remain ExponentialTimeDecaying.
+-- values remain ExponentialTimeDecaying64.
 SELECT
     toTypeName(toFloat64(1) + toFloat64(2)),
     toTypeName(
@@ -57,9 +60,9 @@ SELECT
 -- Preserve the existing decay-length semantics: a value observed one decay
 -- length before the greatest timestamp has weight 1/e.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCount(10)(time), 6)
 FROM VALUES('value Float64, time Float64', (2, 0), (0, 10));
 
 SELECT weighted_sum, weighted_avg, weight
@@ -77,16 +80,16 @@ ORDER BY time DESC
 LIMIT 1;
 
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCount(10)(time), 6)
 FROM VALUES('value Float64, time Float64', (10, 0), (20, 10), (5, 5));
 
 -- The aggregation result must not depend on row order.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCount(10)(time), 6)
 FROM
 (
     SELECT *
@@ -95,9 +98,9 @@ FROM
 )
 UNION ALL
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCount(10)(time), 6)
 FROM
 (
     SELECT *
@@ -107,16 +110,16 @@ FROM
 
 -- Rows at the anchor time have unit weight without evaluating a decay.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCount(10)(time), 6)
 FROM VALUES('value Float64, time Float64', (2, 10), (4, 10), (6, 10));
 
 -- States with the same anchor time merge without evaluating a decay.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSumMerge(10)(sum_state), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCountMerge(10)(count_state), 6)
 FROM
 (
     SELECT
@@ -134,9 +137,9 @@ FROM
 
 -- Independently aggregated states must merge to the same result.
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSumMerge(10)(sum_state), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCountMerge(10)(count_state), 6)
 FROM
 (
     SELECT
@@ -183,24 +186,22 @@ FROM VALUES('value Float64, time Float64', (10, 0), (5, 5));
 OPTIMIZE TABLE exponential_time_decayed_aggregate FINAL;
 
 SELECT
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
+    round(exponentialTimeDecayedSumMerge(10)(sum_state), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
+    round(exponentialTimeDecayedCountMerge(10)(count_state), 6)
 FROM exponential_time_decayed_aggregate;
 
 DROP TABLE exponential_time_decayed_aggregate;
 
 -- Decimal values and DateTime64 time arguments use their scaled values.
+-- Raw aggregate input finalizes to raw numeric output at the aggregate anchor.
 SELECT
-    round(exponentialTimeDecayingValueAt(decaying_sum, toFloat64(1577836810)), 6),
+    round(decaying_sum, 6),
     round(decaying_avg, 6),
-    round(exponentialTimeDecayingValueAt(decaying_count, toFloat64(1577836810)), 6),
+    round(decaying_count, 6),
     toTypeName(decaying_sum),
     toFloat64(1577836810),
-    round(exponentialTimeDecayingDecayLength(decaying_sum), 6),
-    round(exponentialTimeDecayingValueAt(
-        decaying_sum,
-        toFloat64(1577836820)), 6)
+    toTypeName(decaying_count)
 FROM
 (
     SELECT
@@ -250,7 +251,7 @@ SELECT
 DROP TABLE IF EXISTS exponential_time_decaying_values;
 CREATE TABLE exponential_time_decaying_values
 (
-    decaying_value ExponentialTimeDecaying(10)
+    decaying_value ExponentialTimeDecaying64(10)
 )
 ENGINE = Memory;
 
@@ -278,7 +279,7 @@ CREATE TABLE exponential_time_decaying_simple_aggregate
     key UInt8,
     decaying_value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying(10))
+        ExponentialTimeDecaying64(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;
@@ -342,7 +343,7 @@ WITH
                     + 17 * log(toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000),
                 toFloat64(17)
             ),
-            'ExponentialTimeDecaying(17)'),
+            'ExponentialTimeDecaying64(17)'),
         range(64)) AS values,
     arrayFold(
         (acc, value) -> acc + value,
@@ -399,9 +400,9 @@ WITH
     first_direct AS
     (
         SELECT
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(500)(value, time), toFloat64(10000)) AS expected_sum,
+            exponentialTimeDecayedSum(500)(value, time) AS expected_sum,
             exponentialTimeDecayedAvg(500)(value, time) AS expected_avg,
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(500)(time), toFloat64(10000)) AS expected_count
+            exponentialTimeDecayedCount(500)(time) AS expected_count
         FROM
         (
             SELECT value, time
@@ -412,9 +413,9 @@ WITH
     second_direct AS
     (
         SELECT
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(500)(value, time), toFloat64(10000)) AS reordered_sum,
+            exponentialTimeDecayedSum(500)(value, time) AS reordered_sum,
             exponentialTimeDecayedAvg(500)(value, time) AS reordered_avg,
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(500)(time), toFloat64(10000)) AS reordered_count
+            exponentialTimeDecayedCount(500)(time) AS reordered_count
         FROM
         (
             SELECT value, time
@@ -443,9 +444,9 @@ WITH
     (
         SELECT
             batch_count,
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(500)(sum_state), toFloat64(10000)) AS actual_sum,
+            exponentialTimeDecayedSumMerge(500)(sum_state) AS actual_sum,
             exponentialTimeDecayedAvgMerge(500)(avg_state) AS actual_avg,
-            exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(500)(count_state), toFloat64(10000)) AS actual_count
+            exponentialTimeDecayedCountMerge(500)(count_state) AS actual_count
         FROM batch_states
         GROUP BY batch_count
     )
