@@ -1,5 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -54,6 +55,58 @@ TEST(Lexer, NullInputWithMaxQuerySize)
     Lexer lexer(nullptr, nullptr, 262144);
     Token token = lexer.nextToken();
     EXPECT_EQ(TokenType::EndOfStream, token.type);
+}
+
+TEST(ParserCopyQuery, FormattingPreservesTableCopy)
+{
+    struct TestCase
+    {
+        String query;
+        String formatted;
+    };
+
+    const std::vector<TestCase> test_cases = {
+        {"COPY t TO STDOUT", "COPY t TO STDOUT"},
+        {"COPY t FROM STDIN", "COPY t FROM STDIN"},
+        {"COPY db.t (a, b) TO STDOUT", "COPY db.t (a, b) TO STDOUT"},
+        {"COPY db.t (a, b) FROM STDIN", "COPY db.t (a, b) FROM STDIN"},
+        {
+            R"(COPY "db name"."table name" ("first col", second) TO STDOUT)",
+            "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
+        },
+        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
+        {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+    };
+
+    for (const auto & test_case : test_cases)
+    {
+        ParserQuery parser(test_case.query.data() + test_case.query.size());
+        ASTPtr ast = parseQuery(parser, test_case.query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << test_case.query;
+
+        const auto * before = ast->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, before) << "query: " << test_case.query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(test_case.formatted, formatted) << "query: " << test_case.query;
+
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "formatted query: " << formatted;
+
+        const auto * after = reparsed->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, after) << "formatted query: " << formatted;
+
+        EXPECT_EQ(before->type, after->type) << "query: " << test_case.query;
+        EXPECT_EQ(before->table_name, after->table_name) << "query: " << test_case.query;
+        EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
+        EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
+        EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
+    }
 }
 
 /// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
@@ -200,6 +253,22 @@ TEST(ParserShowTablesQuery, PreserveEmptyLike)
         "SHOW MERGES NOT LIKE ''",
         "SHOW SETTINGS LIKE ''",
         "SHOW CHANGED SETTINGS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
+    }
+}
+
+TEST(ParserShowFunctionsQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW FUNCTIONS LIKE ''",
+        "SHOW FUNCTIONS ILIKE ''",
     };
 
     for (const auto & query : queries)
