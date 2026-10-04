@@ -6877,6 +6877,10 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
+    DECLARE(Bool, optimize_rewrite_intersect_except_to_join, true, R"(
+Execute `INTERSECT` and `EXCEPT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns, so that they use the join algorithms and their optimizations. The `DISTINCT` modes are followed by `DISTINCT`; the `ALL` modes run as a multiset join, where each right row matches at most one left row, which only the `hash` and `parallel_hash` algorithms execute. `NULL` values match each other like in the set operations. The set operations are executed as before when `join_algorithm` enables no algorithm that can execute the join.
+)", 0, \
+        {"26.10", false, true, "New setting to execute `INTERSECT` and `EXCEPT` as a semi or anti join on all columns: the `DISTINCT` modes followed by `DISTINCT`, the `ALL` modes as a multiset join."}) \
     DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
 Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
 )", 0, \

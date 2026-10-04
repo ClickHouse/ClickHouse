@@ -180,6 +180,8 @@ private:
     /// Decision by the planner whether to enable row store tranformation or not.
     bool enable_row_store = false;
 
+    bool reads_left_while_filling_right = false;
+
     ASTs key_asts_left;
     ASTs key_asts_right;
 
@@ -286,6 +288,13 @@ public:
 
     JoinKind kind() const;
     void setKind(JoinKind kind);
+
+    /// Whether the left side is asked for data before the right one is filled, the way `IntersectOrExceptStep`
+    /// reads its inputs. Both sides of a set operation are whole queries, and the left one would otherwise not
+    /// start any of its work until the right one is done. An ordinary join keeps the left side waiting so that
+    /// it is read with the runtime filters of the right side and not at all when the join returns nothing.
+    bool readsLeftWhileFillingRight() const { return reads_left_while_filling_right; }
+    void setReadsLeftWhileFillingRight(bool value) { reads_left_while_filling_right = value; }
     JoinStrictness strictness() const;
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
@@ -368,6 +377,8 @@ public:
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
     void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    /// See `JoinOperator::multiset`.
+    bool isMultiset() const { return join_operator && join_operator->multiset; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

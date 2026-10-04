@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -574,7 +575,7 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 step_version) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
     serializeNodeList(out, node_to_id, expression);
@@ -583,6 +584,15 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    /// The multiset flag changes what the join computes, so a peer that cannot read it must not get the join at all.
+    if (step_version >= 1)
+        writeIntBinary(static_cast<UInt8>(multiset), out);
+    else if (multiset)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a multiset join requires query plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN);
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -607,7 +617,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -621,13 +631,20 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
 
+    if (step_version >= 1)
+    {
+        UInt8 multiset = 0;
+        readIntBinary(multiset, in);
+        result.multiset = multiset != 0;
+    }
+
     return result;
 }
 
 String JoinOperator::dump() const
 {
-    return fmt::format("JoinOperator(kind={}, strictness={}, locality={}, expression=[{}], residual_filter=[{}])",
-        toString(kind), toString(strictness), toString(locality),
+    return fmt::format("JoinOperator(kind={}, strictness={}{}, locality={}, expression=[{}], residual_filter=[{}])",
+        toString(kind), toString(strictness), multiset ? " multiset" : "", toString(locality),
         fmt::join(expression | std::views::transform(&JoinActionRef::dump), ", "),
         fmt::join(residual_filter | std::views::transform(&JoinActionRef::dump), ", "));
 }

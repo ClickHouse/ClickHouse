@@ -1,6 +1,6 @@
 <test>
-    <!-- INTERSECT ALL / EXCEPT ALL build a multiset (occurrence counts) of the right side
-         and decrement it while filtering the left side. The counting hash map is keyed on the
+    <!-- INTERSECT ALL / EXCEPT ALL run as a multiset SEMI / ANTI LEFT JOIN on the row: the join counts
+         the right rows of a key and takes one per matching left row. The count map is keyed on the
          row value, exercising the key64 / keys128 / key_string dispatch. -->
 
     <!-- Single UInt64 key (key64). -->
