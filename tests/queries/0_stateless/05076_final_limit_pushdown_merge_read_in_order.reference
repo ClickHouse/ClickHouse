@@ -1,0 +1,14 @@
+filter step, children read in order
+2	1
+prewhere, children read in order
+2	1
+results
+0	0
+0	3
+0	6
+0	9
+0	12
+0	15
+0	18
+0	21
+40	40

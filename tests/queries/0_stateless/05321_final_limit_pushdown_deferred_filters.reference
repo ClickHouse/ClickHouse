@@ -1,0 +1,22 @@
+prewhere after final, pushdown off
+50	100
+51	102
+52	104
+prewhere after final, pushdown on
+50	100
+51	102
+52	104
+prewhere after final, pushed-down limit in pipeline
+0
+row policy after final, pushdown off
+50	100
+51	102
+52	104
+row policy after final, pushdown on
+50	100
+51	102
+52	104
+row policy after final, pushed-down limit in pipeline
+0
+no deferred filters, pushed-down limit in pipeline
+1
