@@ -1228,19 +1228,23 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             RowPolicyDataOpt row_policy_data_opt;
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
+            /// An `Alias` reports its target's metadata, so the columns belong to the target, and an
+            /// `Alias` may point at another one, so follow the whole chain down to the storage that
+            /// actually owns the columns.
+            const StoragePtr columns_owner = StorageAlias::tryResolveChain(storage);
+            const bool alias_target_missing = !columns_owner;
+
+            /// A parameterized view cannot be read through a `Merge` table at all, because there is
+            /// no way to supply the parameter values. Do not infer that from an empty column list:
+            /// a parameterized view whose definition declares an explicit column list does report
+            /// columns, so ask the view itself.
+            const auto * view = alias_target_missing ? nullptr : columns_owner->as<StorageView>();
+            if (view && view->isParameterizedView())
+                throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
+
             if (storage_metadata_snapshot->getColumns().empty())
             {
-                /// An `Alias` reports its target's metadata, so the empty column list belongs to the target.
-                const auto * alias = storage->as<StorageAlias>();
-                const StoragePtr alias_target = alias ? alias->tryGetTargetTable() : nullptr;
-                const IStorage * columns_owner = alias ? alias_target.get() : storage.get();
-
-                /// (Assuming that view has empty list of columns if it's parameterized.)
-                const auto * view = columns_owner ? columns_owner->as<StorageView>() : nullptr;
-                if (view && view->isParameterizedView())
-                    throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
-
-                if (alias && !alias_target)
+                if (alias_target_missing)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
