@@ -756,6 +756,10 @@ Check each uploaded object to s3 with head request to be sure that upload was su
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
         {"26.7", false, true, "New setting to detect concurrent in-place overwrites of S3/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."}) \
+    DECLARE(Bool, azure_validate_etag_on_read, true, R"(
+When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `azureBlobStorageCluster` table functions or the `AzureBlobStorage` table engine, pin every `GET` request to the generation of the blob that was observed when it was listed by sending its `ETag` in `If-Match`, and check the `ETag` of the response. A single file read issues many ranged `GET` requests; if the blob is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different generations of the blob and surface as a corrupted checksum or parse error. The size recorded at listing time is also used as the right bound of the read, so it is only correct for the generation it was recorded for. When a mismatch is detected the read fails with `AZURE_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read blobs that are being overwritten and can tolerate inconsistent reads.
+)", 0, \
+        {"26.10", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."}) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
@@ -5248,6 +5252,8 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
         {"25.2", 0., 0., "New setting"}) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
+
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
 Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
@@ -10171,6 +10177,11 @@ Whether to cache text index tokens that are absent from a data part.
 The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
 )", 0, \
         {"26.8", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."}) \
+    DECLARE(Bool, use_text_index_pattern_bypass_cache, true, R"(
+Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
+The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+)", 0, \
+        {"26.10", false, true, "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
