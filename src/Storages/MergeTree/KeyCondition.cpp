@@ -4856,36 +4856,37 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
+        /// For a key `ifNull(expr, c)` or `coalesce(expr, c)`, `expr IS NULL` implies `key = c`.
+        /// The converse does not hold, so the atom is relaxed.
+        auto analyze_is_null_with_if_null_key = [&, this](const RPNBuilderTreeNode & expr) -> bool
+        {
+            MonotonicFunctionsChain key_chain;
+            bool unused_chain_is_positive;
+            if (!extractMonotonicFunctionsChainFromKey(
+                    func.getContext(), expr.getColumnName(), info, key_column_num, key_expr_type, key_chain, unused_chain_is_positive,
+                    [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
+                    { return is_first_argument && (key_func.getName() == "ifNull" || key_func.getName() == "coalesce"); })
+                || key_chain.size() != 1)
+                return false;
+
+            const auto & replace_null = *key_chain.front();
+            const auto null_type = getArgumentTypeOfMonotonicFunction(replace_null);
+            const auto key_of_null = replace_null.execute(
+                {{null_type->createColumnConstWithDefaultValue(1), null_type, ""}}, replace_null.getResultType(), 1, /* dry_run = */ false);
+            const Field value = (*key_of_null)[0];
+            if (value.isNull() || value.isNaN())
+                return false;
+
+            out.key_columns.push_back(key_column_num);
+            out.relaxed = true;
+            return atom_map.find("equals")->second(out, value);
+        };
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
-            {
-                /// For a key `ifNull(expr, c)` or `coalesce(expr, c)`, `isNull(expr)` implies `key = c`.
-                /// The converse does not hold, so the atom is relaxed.
-                MonotonicFunctionsChain key_chain;
-                bool unused_chain_is_positive;
-                if (func_name != "isNull"
-                    || !extractMonotonicFunctionsChainFromKey(
-                        func.getContext(), func.getArgumentAt(0).getColumnName(), info, key_column_num, key_expr_type,
-                        key_chain, unused_chain_is_positive,
-                        [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
-                        { return is_first_argument && (key_func.getName() == "ifNull" || key_func.getName() == "coalesce"); })
-                    || key_chain.size() != 1)
-                    return false;
-
-                const auto & replace_null = *key_chain.front();
-                const auto null_type = getArgumentTypeOfMonotonicFunction(replace_null);
-                const auto key_of_null = replace_null.execute(
-                    {{null_type->createColumnConstWithDefaultValue(1), null_type, ""}}, replace_null.getResultType(), 1, /* dry_run = */ false);
-                const Field value = (*key_of_null)[0];
-                if (value.isNull() || value.isNaN())
-                    return false;
-
-                out.key_columns.push_back(key_column_num);
-                out.relaxed = true;
-                return atom_map.find("equals")->second(out, value);
-            }
+                return func_name == "isNull" && analyze_is_null_with_if_null_key(func.getArgumentAt(0));
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -4957,14 +4958,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 /// `key <=> NULL` means "key IS NULL", not "key = NULL". Reuse the existing `isNull`
                 /// atom (same handling as bare `key IS NULL`) so a Nullable PK / minmax index prunes
-                /// to the NULL granule exactly, instead of declining and scanning every granule.
+                /// to the NULL granule exactly, instead of declining and scanning every granule. For a
+                /// key `ifNull(expr, c)`, `expr <=> NULL` is handled like `isNull(expr)`.
                 if (func_name == "isNotDistinctFrom")
                 {
                     size_t key_arg_pos = 1 - const_arg_pos;
                     auto key_arg = func.getArgumentAt(key_arg_pos);
                     if (!isKeyPossiblyWrappedByMonotonicFunctions(
                             key_arg, info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
-                        return false;
+                        return analyze_is_null_with_if_null_key(key_arg);
 
                     if (key_column_num == static_cast<size_t>(-1))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");

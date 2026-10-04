@@ -57,6 +57,8 @@ SELECT count() FROM t_ifnull WHERE y <= 0 SETTINGS optimize_use_implicit_project
 -- NULL rows have the key 0, as does the non-NULL row 0.
 SELECT count() FROM t_ifnull WHERE isNull(y) SETTINGS optimize_use_implicit_projections = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE isNull(y)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM t_ifnull WHERE y <=> NULL SETTINGS optimize_use_implicit_projections = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull WHERE y <=> NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_coalesce WHERE y >= 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 
