@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Load databases synchronously so the DDL worker is up before the test drops the database. -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
