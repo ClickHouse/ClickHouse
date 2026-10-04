@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-fasttest, no-replicated-database
 # no-parallel: the PAUSEABLE_ONCE failpoint fires exactly once globally, so a `RENAME DATABASE` from
 #   another parallel test could take the pause meant for this test's rename.
+# no-fasttest: a test that arms a fail point runs alone, and such tests are kept out of the fast test.
 # no-replicated-database: failpoints are single-server, and table DDL inside a Replicated database
 #   goes through the DDL queue instead of taking the database DDL lock directly.
 
