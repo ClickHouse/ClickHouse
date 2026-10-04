@@ -1,0 +1,47 @@
+1
+-- { echoOn }
+
+SELECT * FROM (SELECT 1 AS k) AS t1 FULL OUTER JOIN (SELECT k, 1 AS k) AS t2 ON t2.k > t1.k ORDER BY 1 DESC;
+1	0	0
+0	1	1
+SELECT * FROM (SELECT 1 AS k) AS t1 FULL JOIN (SELECT k, 1 AS k) AS t2 ON t2.k > t1.k ORDER BY 1, 2, 3 SETTINGS join_use_nulls = 1;
+1	\N	\N
+\N	1	1
+SELECT t2.k FROM (SELECT 1 AS k) AS t1 FULL JOIN (SELECT k, 1 AS k) AS t2 ON t2.k > t1.k ORDER BY 1;
+0
+1
+SELECT count() FROM (SELECT 1 AS k) AS t1 FULL JOIN (SELECT k, 1 AS k) AS t2 ON t2.k > t1.k;
+2
+SELECT * FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT JOIN (SELECT number AS k, k FROM numbers(3)) AS t2 ON t1.k < t2.k ORDER BY 1, 2, 3;
+0	1	1
+0	2	2
+1	2	2
+2	0	0
+SELECT * FROM (SELECT number AS k, k FROM numbers(3)) AS t1 RIGHT JOIN (SELECT number AS k FROM numbers(3)) AS t2 ON t1.k > t2.k ORDER BY 1, 2, 3;
+0	0	2
+1	1	0
+2	2	0
+2	2	1
+SELECT * FROM (SELECT number AS k, k FROM numbers(3)) AS t1 FULL JOIN (SELECT number + 1 AS k, k FROM numbers(3)) AS t2 ON t1.k > t2.k ORDER BY 1, 2, 3, 4;
+0	0	0	0
+0	0	2	2
+0	0	3	3
+1	1	0	0
+2	2	1	1
+SELECT * FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT ANY JOIN (SELECT number AS k, k FROM numbers(3)) AS t2 ON t2.k > t1.k AND t2.k < t1.k + 2 ORDER BY 1, 2, 3;
+0	1	1
+1	2	2
+2	0	0
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELECT number AS k, k FROM numbers(3)) AS t2 ON t1.k < t2.k ORDER BY 1;
+0
+1
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT ANTI JOIN (SELECT number AS k, k FROM numbers(3)) AS t2 ON t1.k < t2.k ORDER BY 1;
+2
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELECT number AS k, * FROM (SELECT number, number + 10 AS k FROM numbers(3))) AS t2 ON t2.k >= t1.k AND t2.k <= t1.k ORDER BY 1;
+0
+1
+2
+SELECT t1.k FROM (SELECT number AS k FROM numbers(3)) AS t1 LEFT SEMI JOIN (SELECT number AS k, * FROM (SELECT number, number + 10 AS k FROM numbers(3))) AS t2 ON t2.k = t1.k ORDER BY 1;
+0
+1
+2
