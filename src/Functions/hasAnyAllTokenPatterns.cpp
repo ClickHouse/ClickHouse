@@ -57,7 +57,7 @@ struct TokenLikeMatcher
             kind = has_leading_percent ? Kind::Contains : Kind::StartsWith;
         else
         {
-            regexp.emplace(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(pattern));
+            regexp.emplace(Regexps::createRegexp</*like*/ true, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern));
             literal = regexp->getRequiredSubstring();
         }
     }

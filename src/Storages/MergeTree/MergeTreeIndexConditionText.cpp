@@ -1882,7 +1882,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Compile all patterns like the function does, so an invalid one always throws.
         std::vector<OptimizedRegularExpression> patterns;
         for (const auto & needle : needles)
-            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
         /// The index is used only if the function sees the stored tokens (no preprocessor, no postprocessor)
         /// and no needle is empty, since an empty needle or array matches every token or none.
