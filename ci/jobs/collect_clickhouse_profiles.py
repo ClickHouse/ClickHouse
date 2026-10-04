@@ -346,8 +346,8 @@ def install_perf_python_deps():
     )
 
 
-def test_has_shell_query(test_path):
-    """Whether a performance-test file contains a shell-script query.
+def performance_test_skip_reason(test_path):
+    """Why a performance test cannot collect profiles, or `None` if it can.
 
     Profile collection runs every `tests/performance/*.xml` against a single,
     instrumented server started with only `--tcp_port` (its perf config removes
@@ -357,14 +357,19 @@ def test_has_shell_query(test_path):
     from `--http-port`. Here they would pick up whatever `clickhouse` is in `PATH`
     (not the instrumented binary) and hit an HTTP endpoint that is not listening, so
     such tests are skipped for profile collection rather than collecting profiles for
-    the wrong executable or failing the pass. A parse error is treated as "no shell
-    query" so the test still runs and `perf.py` reports the real error.
+    the wrong executable or failing the pass. Tests that require S3 are also skipped
+    because this runner does not start object storage. A parse error is not skipped,
+    so `perf.py` reports the real error.
     """
     try:
         root = ET.parse(test_path).getroot()
     except ET.ParseError:
-        return False
-    return any(q.get("type") == "shell" for q in root.findall("query"))
+        return None
+    if root.get("requires_s3") == "1":
+        return "requires S3, not available during profile collection"
+    if any(q.get("type") == "shell" for q in root.findall("query")):
+        return "shell-script query test, not used for profile collection"
+    return None
 
 
 def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
@@ -400,12 +405,9 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     # For profile collection we run against a single server (left=right on same port)
     for i, test_file in enumerate(test_files):
         test_name = test_file.removesuffix(".xml")
-        # Shell-script queries need the instrumented `--binary` and an HTTP port,
-        # neither of which profile collection passes; they exercise startup / HTTP
-        # timing rather than query code paths, so they are useless for PGO/BOLT
-        # profiles. Skip them here (logged, never silently dropped).
-        if test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
-            print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+        skip_reason = performance_test_skip_reason(f"{repo_path}/tests/performance/{test_file}")
+        if skip_reason:
+            print(f"  Skipping {test_name}: {skip_reason}")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
