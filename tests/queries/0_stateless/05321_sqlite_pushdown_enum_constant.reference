@@ -1,0 +1,80 @@
+s = E
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` = '7'
+E = s
+7
+Query: SELECT `s` FROM `tbl` WHERE '7' = `s`
+s != E
+3,x
+Query: SELECT `s` FROM `tbl` WHERE `s` != '7'
+s < E
+3
+Query: SELECT `s` FROM `tbl` WHERE `s` < '7'
+s IN (E)
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7')
+s IN (E, E2)
+3,7
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7', '3')
+s NOT IN (E)
+3,x
+Query: SELECT `s` FROM `tbl`
+s IN (E, x)
+7,x
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7', 'x')
+(s, n) IN ((E, 3))
+7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) IN (('7', 3))
+(s, n) IN ((E, 3), (E2, 3))
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) IN (('7', 3), ('3', 3))
+(s, n) < (E, 4)
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 4)
+(s, n) < (E, 2.5)
+3
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 2.5)
+s = toNullable(E)
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` = '7'
+s = E OR n = 42
+7,x
+Query: SELECT `s`, `n` FROM `tbl` WHERE (`s` = '7') OR (`n` = 42)
+s = Dynamic(E)
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` = '7'
+s = Dynamic(max_types = 0)(E)
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` = '7'
+s IN (Dynamic(E), Dynamic(E2))
+3,7
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7', '3')
+s = Variant(E)
+7
+Query: SELECT `s` FROM `tbl` WHERE `s` = '7'
+n = Variant(E)
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE `n` = 3
+s IN (Variant(E), Variant(E2))
+3,7
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7', '3')
+n IN (Variant(E), Variant(E2))
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE `n` IN (3, 4)
+s IN (Variant(7), Variant(x))
+7,x
+Query: SELECT `s` FROM `tbl` WHERE `s` IN ('7', 'x')
+(s, f) < (E, toDecimal64(4, 1))
+3,7
+Query: SELECT `s`, `f` FROM `tbl` WHERE (`s`, `f`) < ('7', '4')
+n = E
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE `n` = 3
+n IN (E)
+3,7
+Query: SELECT `s`, `n` FROM `tbl` WHERE `n` IN (3)
+f = E
+7
+Query: SELECT `s`, `f` FROM `tbl` WHERE `f` = 3
+(s, n) < (E, x)
+TYPE_MISMATCH

@@ -55,7 +55,12 @@ public:
 
     static void visit(ASTPtr & node, Block & block_with_constants)
     {
-        if (!node->as<ASTFunction>())
+        const auto * function = node->as<ASTFunction>();
+        if (!function)
+            return;
+
+        /// A constant row value or `IN` list keeps its structure, its elements are folded one by one.
+        if (function->name == "tuple")
             return;
 
         std::string name = node->getColumnName();
