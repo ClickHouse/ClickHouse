@@ -224,8 +224,34 @@ public:
                 required_size,
                 bytes.size());
 
-        auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
-        getSkUnion()->update(sk);
+        try
+        {
+            auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+            getSkUnion()->update(sk);
+        }
+        catch (const DB::Exception &)
+        {
+            throw;
+        }
+        catch (const std::bad_alloc &)
+        {
+            /// Memory pressure on `compact_theta_sketch::deserialize`, `getSkUnion`,
+            /// or `theta_union.update` is not data corruption; let it propagate.
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            /// `datasketches` throws `std::invalid_argument` / `std::out_of_range` on
+            /// malformed input. These are not `DB::Exception`, so without translation
+            /// they escape `SerializationAggregateFunction`'s `catch (...)` block, reach
+            /// the top level as `LOGICAL_ERROR` (code 1001), and abort the process via
+            /// `abortOnFailedAssertion`. Translate to `CORRUPTED_DATA` so the bad input
+            /// is rejected cleanly.
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot deserialize Theta sketch state: {}",
+                e.what());
+        }
     }
 
     void write(DB::WriteBuffer & out) const
