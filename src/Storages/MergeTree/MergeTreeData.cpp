@@ -3,8 +3,9 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
@@ -1591,6 +1592,66 @@ void MergeTreeData::setProperties(
         setInMemoryMetadata(new_metadata);
         patch_parts_sorting_keys_cache.clear();
     }
+
+    /// Invalidate the columns cache when column identity changes: cache keys identify
+    /// columns by name, so any operation that makes a name refer to a different column
+    /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
+    /// name is reintroduced as a new column) can otherwise serve stale data. We also
+    /// invalidate on type or default changes for the same name, since `MODIFY COLUMN`
+    /// can change how the data is interpreted on read.
+    ///
+    /// We compare columns by sequence position rather than only by name: the prefix
+    /// of old columns must match the prefix of new columns by `(name, type, default)`.
+    /// If any old position now holds a column with a different name, the column at
+    /// that position has been dropped, renamed, or reordered, and any cached entries
+    /// for the old name are stale. This catches the `RENAME a TO b, ADD COLUMN a`
+    /// case even when the reintroduced `a` has the same type and default as the old
+    /// one: the new `a` is appended at the end, so the position previously occupied
+    /// by `a` now holds `b`.
+    ///
+    /// Leftover columns on either side also count as an identity change. Leftover old
+    /// columns mean columns were dropped or renamed away at the end. Leftover new
+    /// columns cannot be assumed to be pure additions: `RENAME a TO b, ADD COLUMN a
+    /// AFTER <the column preceding a>` puts the reintroduced `a` back into `a`'s old
+    /// slot and leaves only the renamed `b` as the new suffix, producing exactly the
+    /// same positional prefix as a plain `ADD COLUMN b` — the metadata alone cannot
+    /// distinguish the two, so we conservatively invalidate whenever the column list
+    /// changed at all. Schema changes are rare enough that flushing the table's cache
+    /// on every one of them is acceptable.
+    ///
+    /// This check runs regardless of `attach`: callers that reload the table's own
+    /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
+    /// the loop below finds no identity change for them, but callers that apply a
+    /// genuine schema change while passing `attach = true` to skip unrelated checks
+    /// still need the cache invalidated.
+    {
+        const auto & old_columns = old_metadata.columns;
+        const auto & new_columns = new_metadata.columns;
+        bool columns_identity_changed = false;
+        auto old_it = old_columns.begin();
+        auto new_it = new_columns.begin();
+        for (; old_it != old_columns.end() && new_it != new_columns.end(); ++old_it, ++new_it)
+        {
+            if (old_it->name != new_it->name
+                || !old_it->type->equals(*new_it->type)
+                || !(old_it->default_desc == new_it->default_desc))
+            {
+                columns_identity_changed = true;
+                break;
+            }
+        }
+        /// Any leftover columns on either side: dropped/renamed-away old columns, or a
+        /// new suffix that may hide a rename whose reintroduced name landed in its old
+        /// slot via `AFTER` (see the comment above).
+        if (!columns_identity_changed && (old_it != old_columns.end() || new_it != new_columns.end()))
+            columns_identity_changed = true;
+        if (columns_identity_changed)
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+    }
+
     {
         std::lock_guard lock(patch_parts_metadata_mutex);
         patch_parts_metadata_cache.clear();
@@ -3499,31 +3560,52 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     PartLoadingTreeNodes parts_to_add;
 
+    /// Only an already-indexed active part shadows its subtree. Must be called with the parts lock held.
+    std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
+    {
+        auto it = data_parts_by_info.find(node->info);
+        if (it == data_parts_by_info.end())
+        {
+            parts_to_add.emplace_back(node);
+            return;
+        }
+        if ((*it)->getState() != DataPartState::Active)
+            for (const auto & [_, child] : node->children)
+                seed(child);
+    };
+
     {
         auto part_lock = lockParts();
-
-        /// Collect only "the most covering" parts from the top level of the tree.
-        loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
-        {
-            if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
-                parts_to_add.emplace_back(node);
-        });
+        loading_tree.traverse(/*recursive=*/ false, [&](const auto & node) { seed(node); });
     }
 
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    for (const auto & my_part : parts_to_add)
+    /// `seed` appends to `parts_to_add` inside the loop, so iterators and references into it do not stay valid.
+    /// NOLINTNEXTLINE(modernize-loop-convert)
+    for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
+        /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+        auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        if (res.is_broken)
+        /// A part loaded `Outdated` (e.g. rolled back) must not be committed: that would reset it to `PreActive`.
+        if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+            if (res.is_broken)
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+
+            if (!my_part->children.empty())
+            {
+                auto part_lock = lockParts();
+                for (const auto & [_, child] : my_part->children)
+                    seed(child);
+            }
         }
         else
         {
@@ -4632,10 +4714,11 @@ try
         part_log_elem.table_name = table_id.table_name;
         part_log_elem.table_uuid = table_id.uuid;
 
+        PartitionKeySamples partition_key_samples;
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.getPartitionId();
-            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            part_log_elem.partition = part->partition.serializeToString(partition_key_samples.get(*part));
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -5205,6 +5288,17 @@ void MergeTreeData::dropAllData()
 
         LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
         data_parts_indexes.clear();
+
+        /// Invalidate every deferred columns-cache write and reclaim part
+        /// generation tombstones left by the per-part cleanup above. This is
+        /// done only after all part removal has succeeded: on failure the
+        /// table remains usable and the per-part invalidations must stay.
+        if (getStorageID().hasUUID())
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+
         all_data_dropped = true;
     }
     catch (...)
@@ -7139,7 +7233,12 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
 
     if (new_statistics_types.isNull())
-        return std::make_pair(old_settings[MergeTreeSetting::auto_statistics_types], false);
+    {
+        /// Not set in the table definition, either never or since a reset: the engine default applies.
+        String default_types = (*getDefaultSettings())[MergeTreeSetting::auto_statistics_types];
+        String old_types = old_settings[MergeTreeSetting::auto_statistics_types];
+        return std::make_pair(default_types, default_types != old_types);
+    }
 
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
@@ -10522,11 +10621,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto part_metadata_snapshot = existing_part_in_partition->getMetadataSnapshot();
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value {} does not match partition value {} "
                             "of the existing part {} with the same partition ID",
-                            partition.serializeToString(part_metadata_snapshot),
-                            existing_part_in_partition->partition.serializeToString(part_metadata_snapshot),
+                            partition.serializeToString(key_sample_block),
+                            existing_part_in_partition->partition.serializeToString(key_sample_block),
                             existing_part_in_partition->name);
         }
     }
@@ -13479,9 +13577,9 @@ try
         element.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
 
         if (result_part)
-            element.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
+            element.partition = result_part->partition.serializeToString(*result_part);
         else if (!source_parts.empty())
-            element.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
+            element.partition = source_parts.front()->partition.serializeToString(*source_parts.front());
 
         element.part_name = new_part_name;
 

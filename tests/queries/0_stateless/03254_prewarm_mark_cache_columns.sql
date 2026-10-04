@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
 
+SET use_columns_cache = 0;
+
 DROP TABLE IF EXISTS t_prewarm_columns;
 
 CREATE TABLE t_prewarm_columns (a UInt64, b UInt64, c UInt64, d UInt64)

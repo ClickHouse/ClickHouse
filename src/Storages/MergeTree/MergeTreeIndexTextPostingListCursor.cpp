@@ -854,18 +854,20 @@ namespace
 {
 
 /// Two-cursor intersection. The lagging cursor advances to the leading cursor's doc_id.
-void intersectTwo(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, size_t row_offset, size_t effective_end)
+bool intersectTwo(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid())
     {
         uint32_t v0 = c0->value();
         uint32_t v1 = c1->value();
         if (v0 >= effective_end || v1 >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
         }
@@ -878,11 +880,13 @@ void intersectTwo(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, s
             c1->advance(v0);
         }
     }
+    return found;
 }
 
 /// Three-cursor intersection. All cursors behind the maximum advance forward.
-void intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, size_t row_offset, size_t effective_end)
+bool intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid() && c2->valid())
     {
         uint32_t v0 = c0->value();
@@ -891,11 +895,12 @@ void intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1,
 
         uint32_t max_val = std::max({v0, v1, v2});
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1 && v1 == v2)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
             c2->next();
@@ -907,11 +912,13 @@ void intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1,
             if (v2 < max_val) c2->advance(max_val);
         }
     }
+    return found;
 }
 
 /// Four-cursor intersection.
-void intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, PostingListCursor * c3, size_t row_offset, size_t effective_end)
+bool intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, PostingListCursor * c3, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid() && c2->valid() && c3->valid())
     {
         uint32_t v0 = c0->value();
@@ -921,11 +928,12 @@ void intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, 
 
         uint32_t max_val = std::max({v0, v1, v2, v3});
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1 && v1 == v2 && v2 == v3)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
             c2->next();
@@ -939,16 +947,18 @@ void intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, 
             if (v3 < max_val) c3->advance(max_val);
         }
     }
+    return found;
 }
 
 /// N-way leapfrog intersection (N <= 8): linear scan for min/max.
-void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
     std::vector<uint32_t> vals(n);
     for (size_t i = 0; i < n; ++i)
         vals[i] = cursors[i]->value();
 
+    bool found = false;
     while (true)
     {
         uint32_t min_val = vals[0];
@@ -963,16 +973,17 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *>
         }
 
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (min_val == max_val)
         {
             out[min_val - row_offset] = 1;
+            found = true;
             for (size_t i = 0; i < n; ++i)
             {
                 cursors[i]->next();
                 if (!cursors[i]->valid())
-                    return;
+                    return found;
 
                 vals[i] = cursors[i]->value();
             }
@@ -985,7 +996,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *>
                 {
                     cursors[i]->advance(max_val);
                     if (!cursors[i]->valid())
-                        return;
+                        return found;
 
                     vals[i] = cursors[i]->value();
                 }
@@ -1006,7 +1017,7 @@ struct HeapItem
 };
 
 /// N-way leapfrog intersection (N > 8): min-heap.
-void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
 
@@ -1021,16 +1032,18 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> &
     }
     std::make_heap(heap.begin(), heap.end(), std::greater<>{});
 
+    bool found = false;
     while (true)
     {
         if (max_val >= effective_end)
-            return;
+            return found;
 
         uint32_t min_val = heap.front().val;
 
         if (min_val == max_val)
         {
             out[min_val - row_offset] = 1;
+            found = true;
             max_val = 0;
 
             for (size_t i = 0; i < n; ++i)
@@ -1038,11 +1051,11 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> &
                 uint32_t idx = heap[i].idx;
                 cursors[idx]->next();
                 if (!cursors[idx]->valid())
-                    return;
+                    return found;
 
                 uint32_t val = cursors[idx]->value();
                 if (val >= effective_end)
-                    return;
+                    return found;
 
                 heap[i].val = val;
                 max_val = std::max(max_val, val);
@@ -1056,11 +1069,11 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> &
 
             cursors[min_idx]->advance(max_val);
             if (!cursors[min_idx]->valid())
-                return;
+                return found;
 
             uint32_t new_val = cursors[min_idx]->value();
             if (new_val >= effective_end)
-                return;
+                return found;
 
             max_val = std::max(max_val, new_val);
             heap.back() = {new_val, min_idx};
@@ -1070,33 +1083,21 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> &
 }
 
 /// Dispatch to the best leapfrog variant based on cursor count.
-void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     if (cursors.size() == 2)
-    {
-        intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
-        return;
-    }
+        return intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
 
     if (cursors.size() == 3)
-    {
-        intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
-        return;
-    }
+        return intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
 
     if (cursors.size() == 4)
-    {
-        intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
-        return;
-    }
+        return intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
 
     if (cursors.size() <= 8)
-    {
-        intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
-        return;
-    }
+        return intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
 
-    intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
+    return intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
 }
 
 #if USE_MULTITARGET_CODE
@@ -1137,15 +1138,16 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 /// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
-/// `out` must be passed with all-zero bytes.
-void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t num_rows, LazyPostingsStats & stats)
+/// `out` must be passed with all-zero bytes. Returns false only if no byte of `out` is set.
+/// May return true when no row survives the final pass.
+bool intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t num_rows, LazyPostingsStats & stats)
 {
     const PostingsApplyWindow first = cursors[0]->linearOr(out, row_offset, num_rows);
 
     if (first.empty())
     {
         ++stats.brute_force_early_exits;
-        return;
+        return false;
     }
 
     PostingsApplyWindow window = first;
@@ -1158,7 +1160,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & c
         {
             ++stats.brute_force_early_exits;
             memset(out + (first.begin - row_offset), 0, first.end - first.begin);
-            return;
+            return false;
         }
 
         chassert(written.begin >= window.begin && written.end <= window.end);
@@ -1170,6 +1172,8 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & c
         chassert(cursors.size() < 256);
         finalizeCounters(out + (first.begin - row_offset), first.end - first.begin, static_cast<UInt8>(cursors.size()));
     }
+
+    return true;
 }
 
 } // anonymous namespace
@@ -1214,7 +1218,7 @@ TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(const std::ve
     return TextIndexPostingsIntersectionAlgorithm::Leapfrog;
 }
 
-void lazyUnionPostingLists(
+bool lazyUnionPostingLists(
     IColumn & column,
     const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
@@ -1226,11 +1230,14 @@ void lazyUnionPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
+    bool any_set = false;
     for (auto * cursor : cursors)
-        cursor->linearOr(out, row_offset, num_rows);
+        any_set |= !cursor->linearOr(out, row_offset, num_rows).empty();
+
+    return any_set;
 }
 
-void lazyIntersectPostingLists(
+bool lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
@@ -1241,7 +1248,7 @@ void lazyIntersectPostingLists(
 {
     const size_t n = cursors.size();
     if (n == 0)
-        return;
+        return false;
 
     requireRowOffsetRepresentable(row_offset);
 
@@ -1251,7 +1258,7 @@ void lazyIntersectPostingLists(
 
     if (n == 1)
     {
-        cursors.front()->linearOr(out, row_offset, num_rows);
+        return !cursors.front()->linearOr(out, row_offset, num_rows).empty();
     }
     else if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
     {
@@ -1260,7 +1267,7 @@ void lazyIntersectPostingLists(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Brute-force intersection of {} posting lists would overflow its counters", n);
 
         ++stats.brute_force_intersections;
-        intersectBruteForce(out, cursors, row_offset, num_rows, stats);
+        return intersectBruteForce(out, cursors, row_offset, num_rows, stats);
     }
     else if (algorithm == TextIndexPostingsIntersectionAlgorithm::Leapfrog)
     {
@@ -1268,11 +1275,11 @@ void lazyIntersectPostingLists(
         {
             cursors[i]->advance(static_cast<uint32_t>(row_offset));
             if (!cursors[i]->valid() || cursors[i]->value() >= end)
-                return;
+                return false;
         }
 
         ++stats.leapfrog_intersections;
-        intersectLeapfrog(out, cursors, row_offset, end);
+        return intersectLeapfrog(out, cursors, row_offset, end);
     }
     else
     {
