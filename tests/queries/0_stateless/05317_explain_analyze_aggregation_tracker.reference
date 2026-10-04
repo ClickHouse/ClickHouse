@@ -1,0 +1,4 @@
+single_thread	1
+parallel	1
+scalar	1
+projection	1	1
