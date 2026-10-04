@@ -13,9 +13,10 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
+#include <Common/PartitionedRecordBuffer.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation.h>
-#include <Interpreters/AdaptivePartitions.h>
+#include <Interpreters/AdaptivePartitionLayout.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
@@ -199,6 +200,9 @@ struct AdaptiveAggregationSession
     {
     }
 
+    /// Maps a merge claim to its bucket, ordered by pruning bounds when pruning is enabled.
+    UInt32 bucketToMerge(UInt32 claim) const;
+
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
@@ -209,7 +213,7 @@ struct AdaptiveAggregationSession
     /// `Aggregator::finishAdaptiveProducer`). The merge tasks read them without the mutex: they are created after
     /// the finish barrier, which ordered every hand-over before them.
     std::mutex producer_buffers_mutex;
-    std::vector<AdaptivePartitionBuffersPtr> producer_buffers;
+    std::vector<std::unique_ptr<PartitionedRecordBuffer>> producer_buffers;
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
     /// merge-work estimates, and each staged record contributes one unit per aggregate using this merge.
@@ -358,7 +362,7 @@ struct AdaptiveAggregationProducer
 
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
     /// merge. Handed over to the session when the producer finishes.
-    AdaptivePartitionBuffersPtr partitions;
+    std::unique_ptr<PartitionedRecordBuffer> partitions;
     /// The producer's staged records, including those already written to disk, for the merge-work estimate.
     size_t total_staged_records = 0;
 

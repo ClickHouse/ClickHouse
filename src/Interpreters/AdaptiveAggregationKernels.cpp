@@ -13,6 +13,7 @@
 #include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ProfileEvents.h>
+#include <Common/memory.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/memcpySmall.h>
@@ -231,9 +232,9 @@ namespace
     /// has a fixed-width key and stores no hash: the merge rehashes the key in a few instructions,
     /// which costs less than eight more bytes in a record of a dozen or two, written by the staging,
     /// read by the merge, and written to disk and read back by a spill.
-    constexpr size_t alignStagedRecord(size_t bytes)
+    size_t alignStagedRecord(size_t bytes)
     {
-        return (bytes + 3) & ~size_t{3};
+        return ::Memory::alignUp(bytes, alignof(UInt32));
     }
 
     /// Zeroes the padding `alignStagedRecord` put after the last field of a record, which ends at `fields_end`. The merge
@@ -879,7 +880,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
         return;
 
     auto & partitions = *adaptive.partitions;
-    const AdaptivePartitionLayout layout = partitions.layout();
+    const AdaptivePartitionLayout layout = adaptive.session->layout;
     const auto * hashes = adaptive.miss_hashes.data();
     const auto * source_rows = adaptive.miss_source_rows.data();
     const auto * staged_key_sizes = adaptive.miss_key_sizes.data();

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <functional>
 #include <numeric>
 #include <optional>
 
@@ -147,9 +148,9 @@ void Aggregator::prepareAdaptiveTopKPruning(AdaptiveAggregationSession & shared,
     std::ranges::stable_sort(pruning.bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
 }
 
-UInt32 Aggregator::adaptiveBucketToMerge(const AdaptiveAggregationSession & shared, UInt32 claim) const
+UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
 {
-    return shared.top_k_pruning ? shared.top_k_pruning->bucket_order[claim] : claim;
+    return top_k_pruning ? top_k_pruning->bucket_order[claim] : claim;
 }
 
 void Aggregator::spillFrozenAdaptiveTable(
@@ -185,7 +186,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    const size_t partitions_per_bucket = partitions.layout().partitionsPerBucket();
+    const size_t partitions_per_bucket = shared.layout.partitionsPerBucket();
     partitions.finishAppending();
 
     /// The producers that cross the threshold together start at different buckets, so they do not queue on the same
@@ -235,7 +236,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
             partitions.releasePartition(first_partition + sub);
     }
 
-    partitions.resetHeldBytes();
+    partitions.clear();
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpills);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledRecords, spilled_records);
@@ -298,7 +299,7 @@ void Aggregator::mergeAdaptiveSourceStates(
         {
             order.resize(merges);
             std::iota(order.begin(), order.end(), 0);
-            std::ranges::stable_sort(order, [&](UInt32 lhs, UInt32 rhs) { return places[lhs] < places[rhs]; });
+            std::ranges::stable_sort(order, [&](UInt32 lhs, UInt32 rhs) { return std::less<AggregateDataPtr>{}(places[lhs], places[rhs]); });
             ordered = true;
         }
         auto & group = scratch.merge_group;

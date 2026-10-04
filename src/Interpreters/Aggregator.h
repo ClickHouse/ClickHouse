@@ -389,10 +389,6 @@ public:
     /// producer's records by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
-    /// The bucket the merge claim number `claim` takes: the buckets in the order of their bounds when the session
-    /// prunes (see `AdaptiveTopKPruning`), in their own order otherwise.
-    UInt32 adaptiveBucketToMerge(const AdaptiveAggregationSession & shared, UInt32 claim) const;
-
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time. A unit is a run
     /// of the bucket's partitions: its records from every producer and the cells of the sources' bucket tables that
     /// fall into it are merged into the destination's bucket table, grown for them, which is converted into one
@@ -787,8 +783,7 @@ private:
         size_t row_end,
         bool all_keys_are_const) const;
 
-    /// Sets the session up once, at the first freeze: the partitioning of the staged records and the temporary data
-    /// scope of their spill streams.
+    /// Sets up the session's pruning state and temporary data scope for spill streams once, at the first freeze.
     void initAdaptiveSession(AdaptiveAggregationSession & shared) const;
 
     /// The freeze transition: initializes the session once, flips the producer's phase, and

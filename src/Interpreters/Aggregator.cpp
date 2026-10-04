@@ -1432,7 +1432,10 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     /// A table that was written to disk freezes again with the records and the bins it already has.
     if (!adaptive.partitions)
     {
-        adaptive.partitions = std::make_unique<AdaptivePartitionBuffers>(adaptive.session->layout);
+        /// Share allocation blocks across 16 consecutive buckets, so their memory is released as merge tasks
+        /// advance through the bucket order, while retaining the same grouping when pruning reorders buckets.
+        const auto & layout = adaptive.session->layout;
+        adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(layout.numPartitions(), 16 * layout.partitionsPerBucket());
         adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
     }
     if (adaptive.session->top_k_pruning && !adaptive.count_bins)
@@ -2486,7 +2489,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// records on every block while the query stays over the threshold.
     if (adaptive && adaptive->partitions && params.max_bytes_before_external_group_by
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && adaptive->partitions->heldBytes()
+        && adaptive->partitions->allocatedChunkBytes()
             >= std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads)))
         spillAdaptivePartitions(*adaptive);
 
@@ -4001,7 +4004,7 @@ Aggregator::convertToBlockImpl(
         {
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
             /// Like the general paths below: the inline count values are copied out (final)
-            /// or rebuilt as arena states (non-final), so the table releases its buffer now.
+            /// or rebuilt as arena states (non-final), so the table can be cleared or released.
             finishConvertedTable(data, keep_table_buffer);
             return chunks;
         }

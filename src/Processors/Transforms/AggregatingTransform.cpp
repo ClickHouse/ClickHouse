@@ -396,7 +396,7 @@ private:
                 data.reset();
                 return {};
             }
-            const UInt32 bucket_num = params->aggregator.adaptiveBucketToMerge(*adaptive_session, claim);
+            const UInt32 bucket_num = adaptive_session->bucketToMerge(claim);
 
             size_t full_group_count = 0;
             auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
