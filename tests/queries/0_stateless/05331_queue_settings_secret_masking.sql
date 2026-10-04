@@ -6,6 +6,7 @@
 
 DROP TABLE IF EXISTS t_s3queue;
 DROP TABLE IF EXISTS t_azurequeue;
+DROP TABLE IF EXISTS t_s3queue_unset;
 
 CREATE TABLE t_s3queue (a String)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/t_s3queue/*', NOSIGN, 'CSV')
@@ -21,11 +22,21 @@ SETTINGS mode = 'unordered',
     after_processing_move_connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_05331_5;',
     after_processing_move_container = 'visible_container';
 
+CREATE TABLE t_s3queue_unset (a String)
+ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/t_s3queue_unset/*', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered';
+
 SELECT table, name, value FROM system.s3_queue_settings
 WHERE database = currentDatabase() AND name LIKE 'after_processing_move_%' AND value != '' ORDER BY table, name;
 
 SELECT table, name, value FROM system.azure_queue_settings
 WHERE database = currentDatabase() AND name LIKE 'after_processing_move_%' AND value != '' ORDER BY table, name;
 
+-- An unset secret is empty, not hidden.
+SELECT table, name, value, changed FROM system.s3_queue_settings
+WHERE database = currentDatabase() AND table = 't_s3queue_unset'
+    AND name IN ('after_processing_move_secret_access_key', 'after_processing_move_connection_string') ORDER BY name;
+
 DROP TABLE t_s3queue;
 DROP TABLE t_azurequeue;
+DROP TABLE t_s3queue_unset;

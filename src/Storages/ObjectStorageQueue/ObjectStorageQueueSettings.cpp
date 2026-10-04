@@ -151,7 +151,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
         String value = convertFieldToString(change.getValue());
-        if (!show_secrets)
+        if (!show_secrets && !value.empty())
             maskSecretSettingValue(name, change.getValue(), value);
         res_columns[i++]->insert(value);
         res_columns[i++]->insert(change.getTypeName());
