@@ -24,17 +24,15 @@ query_log:
     engine: "ENGINE = Memory"
 YAML
 
-# Works like `run` and also logs the queries, so that a report can tell what each query did with its sets.
+# Works like `run` and also logs the queries for the report.
 run_logged()
 {
     run "$@" --config-file "${LOCAL_DIR}/query-log.yaml" --log_queries 1
 }
 
-# These queries cover every key representation of the in-memory set, with hits, misses and `NULL`s
-# on both sides, casts of the left side, and `NOT IN`. Each line counts and checksums the rows
-# found. With a threshold of 1 byte, every set spills to disk before its first chunk; small blocks
-# make the sorter write a run for each chunk, so keys repeat across runs, and lookups cross the
-# blocks of the file. The report below checks this for each query.
+# One query per key representation of the set, plus `NULL`s, casts and constants, each counting and
+# checksumming the rows found. With a threshold of 1 byte, every set spills to disk before its first chunk, and
+# blocks of 1000 rows make the sorter write a run for each chunk.
 PARITY_QUERIES=$(cat <<'SQL'
 WITH rhs AS (SELECT toUInt8(number * 7 % 101) FROM numbers(3000))
 SELECT 'key8', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
@@ -70,7 +68,7 @@ WITH rhs AS (SELECT (toString(number * 3), number % 7) FROM numbers(3000))
 SELECT 'hashed tuple', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, (toString(number), number % 7) AS x FROM numbers(10000));
 
--- These keys hold bytes that are not text: zero bytes, non-ASCII bytes, and keys of several KiB.
+-- Keys with zero and non-ASCII bytes, of up to several KiB.
 WITH rhs AS (SELECT concat(toString(number * 3), repeat(char(0, 120, 255), 1 + number * 3 % 5 * 1024)) FROM numbers(1000))
 SELECT 'key_string bytes', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, concat(toString(number), repeat(char(0, 120, 255), 1 + number % 5 * 1024)) AS x FROM numbers(3000));
@@ -83,7 +81,7 @@ WITH rhs AS (SELECT number * 3, 1 FROM numbers(3000))
 SELECT 'constant key element', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, (number, 1) AS x FROM numbers(10000));
 
--- `NULL`s are skipped in the set and never found, or kept in the set and found with `transform_null_in`.
+-- `NULL`s are skipped, or kept and found with `transform_null_in`.
 WITH rhs AS (SELECT if(number % 5 = 0, NULL, number * 3) FROM numbers(3000))
 SELECT 'Nullable key64', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, if(number % 7 = 0, NULL, number) AS x FROM numbers(10000));
@@ -104,8 +102,8 @@ SELECT 'nullable_keys256 tuple', countIf(x IN rhs), countIf(x NOT IN rhs), sum(c
 FROM (SELECT number, (if(number % 7 = 0, NULL, number), number % 3, number % 5) AS x FROM numbers(10000))
 SETTINGS transform_null_in = 1;
 
--- These sets hold `NULL` alone, `LowCardinality(Nullable(String))` keys, a subquery with a single
--- tuple column, and a tuple with `LowCardinality` and `Nullable` elements.
+-- Sets of `NULL` alone, of `LowCardinality(Nullable(String))` keys, of a tuple column, and of a tuple with
+-- `LowCardinality` and `Nullable` elements.
 SELECT 'null sets', 1 IN (SELECT NULL), NULL IN (SELECT NULL), 1 IN (SELECT NULL WHERE 0);
 SELECT 'null sets transform_null_in', NULL IN (SELECT NULL) SETTINGS transform_null_in = 1;
 SELECT 'LowCardinality Nullable', groupArray(x IN (SELECT toLowCardinality(if(number % 3 = 0, NULL, toString(number))) FROM numbers(10)))
@@ -132,19 +130,18 @@ WITH rhs AS (SELECT toString(number * 3) FROM numbers(3000))
 SELECT 'cast LowCardinality to String', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toLowCardinality(toString(number)) AS x FROM numbers(10000));
 
--- Special floating-point values are compared by their binary representation, in memory and on disk alike.
+-- Special floating-point values compare by their binary representation, in memory and on disk alike.
 SELECT 'floats', groupArray(x IN (SELECT arrayJoin([0., nan, inf, 1.5]))), groupArray(x NOT IN (SELECT arrayJoin([0., nan, inf, 1.5])))
 FROM (SELECT arrayJoin([0., -0., nan, -nan, inf, -inf, 1.5, 2.5]) AS x);
 
--- These queries cover constant left sides, an empty set, a set used twice, and `IN` outside of a filter
--- conjunct.
+-- A constant left side, an empty set, a set used twice, and `IN` in a disjunction.
 SELECT 'constant', 5 IN (SELECT number FROM numbers(10)), 50 IN (SELECT number FROM numbers(10)), 5 NOT IN (SELECT number FROM numbers(10));
 SELECT 'empty', countIf(number IN (SELECT number FROM numbers(0))), countIf(number NOT IN (SELECT number FROM numbers(0))) FROM numbers(10);
 WITH rhs AS (SELECT number * 3 FROM numbers_mt(3335))
 SELECT 'shared', countIf((number IN rhs) != (number % 3 = 0)), countIf((number NOT IN rhs) != (number % 3 != 0)) FROM numbers_mt(10005);
 SELECT 'disjunction', groupArray(number) FROM numbers(20) WHERE number = 19 OR number IN (SELECT number * 5 FROM numbers(3));
 
--- Index analysis builds the set before the query reads the table, and the filter still applies to every row.
+-- Index analysis builds the set before the table is read, and the filter still applies to every row.
 DROP TABLE IF EXISTS lhs;
 CREATE TABLE lhs (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
 INSERT INTO lhs SELECT number FROM numbers(100000);
@@ -153,9 +150,8 @@ DROP TABLE lhs;
 SQL
 )
 
-# The report shows, for each query of a case by the label of its first column, the sets that it
-# filled, how many of them spilled to disk, how many times the runs of its sets were merged, and
-# whether its lookups read the sets from disk. The lines of the report start with `report`.
+# For each query by its label: the sets it filled, how many spilled, how many times their runs were merged,
+# and whether its lookups read the disk.
 PARITY_REPORT=$(cat <<'SQL'
 SYSTEM FLUSH LOGS query_log;
 SELECT 'report', extract(query, 'SELECT \'([^\']+)\'') AS label, ProfileEvents['SetsBuiltFromSubquery'],
@@ -175,10 +171,8 @@ done
 diff -u <(grep -v '^report' "${LOCAL_DIR}/parity-0.out") <(grep -v '^report' "${LOCAL_DIR}/parity-1.out")
 grep -v '^report' "${LOCAL_DIR}/parity-1.out"
 
-# With the threshold of 1 byte, every set that receives a chunk spills to disk before inserting it, the sorter
-# writes each chunk as a run and merges the runs into the finished set, and lookups read the set from disk;
-# exact memory tracking makes the runs deterministic. A set of an empty subquery receives no chunk, and a set
-# of `NULL`s alone keeps no key to merge or to read. Without a threshold, no set spills to disk.
+# With 1 byte, every set that receives a chunk spills, merges its runs and is read from disk; the empty set
+# receives no chunk, and the set of `NULL`s keeps no key. Without a threshold, nothing spills.
 grep '^report' "${LOCAL_DIR}/parity-1.out"
 grep '^report' "${LOCAL_DIR}/parity-0.out" | awk -F'\t' '{ built += $3; spilled += $4 } END { print "in memory", built, spilled }'
 
@@ -188,9 +182,8 @@ event()
     echo "SELECT sum(value) FROM system.events WHERE event = '$1';"
 }
 
-# The runs of the external sort and the finished set use the codec of `temporary_files_codec`: the keys
-# compress with `LZ4` and take more space than their own bytes with `NONE`, which adds a header to each block.
-# The sets on disk find the same keys with either codec, for the narrowest and the widest keys on disk.
+# The runs and the set use `temporary_files_codec`: `LZ4` compresses the keys, and `NONE` adds a header to each
+# block. Both find the same keys, for keys of 8 and 32 bytes.
 for codec in LZ4 NONE; do
     run "codec-${codec}" --max_bytes_before_external_set 1 --temporary_files_codec "${codec}" --multiquery <<SQL
 SELECT countIf(number IN (SELECT number * 3 FROM numbers(30000))) FROM numbers(90000);
@@ -232,7 +225,7 @@ expect_error BAD_ARGUMENTS "SELECT 1 IN (SELECT number FROM numbers(10)) SETTING
 expect_error TOO_MANY_ROWS_OR_BYTES "SELECT 1 IN (SELECT number FROM numbers(10000)) SETTINGS max_temporary_data_on_disk_size_for_query = 1"
 expect_error NOT_ENOUGH_SPACE "SELECT 1 IN (SELECT number FROM numbers(100)) SETTINGS min_free_disk_space_for_temporary_data = 1000000000000000"
 
-# When writing the set stops before its end, as at the time limit in the `break` overflow mode, the incomplete
-# set is not used: the query stops with an exception.
+# A set whose writing stops before its end, as at the time limit in the `break` overflow mode, is not used: the
+# query throws.
 expect_error QUERY_WAS_CANCELLED "SYSTEM ENABLE FAILPOINT disk_set_builder_stop_before_finish;
     SELECT count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(1000))"

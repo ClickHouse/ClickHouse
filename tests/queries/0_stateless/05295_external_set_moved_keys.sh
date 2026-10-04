@@ -16,11 +16,9 @@ query_log:
     engine: "ENGINE = Memory"
 YAML
 
-# Each set is built from 200,000 random keys in chunks of 8,192 rows. A set whose table grows to the
-# threshold of 1 MiB spills to disk before the next chunk, and the keys of its table spill to disk
-# first: every key representation of the in-memory set takes this path, except the fixed tables of
-# `UInt8` and `UInt16` keys, which never grow to the threshold and stay in memory. Each line counts
-# and checksums the probes found, in memory and after spilling alike.
+# Each set gets 200,000 random keys in chunks of 8,192 rows. Once its table reaches the 1 MiB threshold, it
+# spills before the next chunk and moves the keys of its table first. Every key representation does, except the
+# fixed tables of `UInt8` and `UInt16` keys, which never grow that large.
 QUERIES=$(cat <<'SQL'
 WITH rhs AS (SELECT toUInt8(n % 256) FROM (SELECT cityHash64(number) AS n FROM numbers(200000)))
 SELECT 'key8', sum(found), sum(cityHash64(number) * found)
@@ -66,8 +64,7 @@ SETTINGS transform_null_in = 1;
 SQL
 )
 
-# The report shows, for each query by the label of its first column, how many sets spilled to disk.
-# The lines of the report start with `report`.
+# For each query by its label, how many sets spilled.
 REPORT=$(cat <<'SQL'
 SYSTEM FLUSH LOGS query_log;
 SELECT 'report', extract(query, 'SELECT \'([^\']+)\'') AS label, ProfileEvents['SetsSpilledToDisk']
@@ -87,8 +84,7 @@ diff -u <(grep -v '^report' "${LOCAL_DIR}/0.out") <(grep -v '^report' "${LOCAL_D
 grep -v '^report' "${LOCAL_DIR}/1048576.out"
 grep '^report' "${LOCAL_DIR}/1048576.out"
 
-# Every set that spilled to disk held keys in memory: the trace log reports how many. Without a threshold, no
-# set spills to disk.
+# Every spilled set moved keys from memory, as the trace log reports; without a threshold, none spills.
 grep -o -E 'Switching the set of IN to external mode: [^(]*\(keys in memory: [0-9]+' "${LOCAL_DIR}/1048576.log" \
     | grep -o -E '[0-9]+$' | awk '{ total += 1; moved += ($1 > 0) } END { print total, moved }'
 grep -c 'Switching the set of IN to external mode' "${LOCAL_DIR}/0.log" || true

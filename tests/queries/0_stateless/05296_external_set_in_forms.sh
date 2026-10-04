@@ -16,9 +16,8 @@ query_log:
     engine: "ENGINE = Memory"
 YAML
 
-# These queries cover every form of `IN` whose set is filled while the query runs: with a subquery or a table,
-# in each clause and in every kind of query, under both analyzers, and the set that the conversion of `JOIN`
-# to `IN` builds. Each query has its own `log_comment`, and the lines count or checksum what the sets find.
+# Every form of `IN` whose set is filled while the query runs: a subquery or a table, in each clause and kind of
+# query, under both analyzers, and the set of the conversion of `JOIN` to `IN`. Each has its own `log_comment`.
 QUERIES=$(cat <<'SQL'
 CREATE TABLE keys (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO keys SELECT number * 3 FROM numbers(10000);
@@ -80,8 +79,7 @@ ON l.number = r.n SETTINGS query_plan_convert_join_to_in = 1, log_comment = 'joi
 SQL
 )
 
-# The report shows, for each form, the sets that its query filled, how many of them spilled to disk,
-# and whether the lookups read them from disk. The lines of the report start with `report`.
+# For each form: the sets filled, how many spilled, and whether the lookups read the disk.
 REPORT=$(cat <<'SQL'
 SYSTEM FLUSH LOGS query_log;
 SELECT 'report', log_comment, sum(ProfileEvents['SetsBuiltFromSubquery']), sum(ProfileEvents['SetsSpilledToDisk']),
@@ -99,8 +97,8 @@ for threshold in 0 1; do
 ${REPORT}" > "${LOCAL_DIR}/${threshold}.out"
 done
 
-# The forms give the same results whether their sets are in memory or on disk. With the threshold of 1 byte,
-# every set of every form spills to disk before its first chunk; without a threshold, none does.
+# The results match in memory and on disk. With 1 byte every set spills before its first chunk, and without a
+# threshold none does.
 diff -u <(grep -v '^report' "${LOCAL_DIR}/0.out") <(grep -v '^report' "${LOCAL_DIR}/1.out")
 grep -v '^report' "${LOCAL_DIR}/1.out"
 grep '^report' "${LOCAL_DIR}/1.out"
@@ -126,9 +124,8 @@ diff -u <(head -n 1 "${LOCAL_DIR}/mutations-0.out") <(head -n 1 "${LOCAL_DIR}/mu
 cat "${LOCAL_DIR}/mutations-1.out"
 tail -n 1 "${LOCAL_DIR}/mutations-0.out"
 
-# Lazy `FINAL` builds a set of primary keys only for index analysis, which needs the values of the set, and
-# the size limits of the set bound its memory: the set stays in memory with the threshold of 1 byte, and lazy
-# `FINAL` applies. The parts are never merged.
+# The set of lazy `FINAL` serves only index analysis, which needs its values, so it stays in memory with a
+# threshold of 1 byte and lazy `FINAL` applies. The parts are never merged.
 for threshold in 0 1; do
     ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/lazy-final-${threshold}" --max_bytes_before_external_set "${threshold}" \
         --send_logs_level trace --multiquery > "${LOCAL_DIR}/lazy-final-${threshold}.out" \
