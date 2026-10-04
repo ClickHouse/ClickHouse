@@ -36,7 +36,7 @@ import urllib.parse
 import urllib.request
 
 from ci.jobs.scripts.ai_review import context as review_context
-from ci.jobs.scripts.ai_review import loom, prompt, publish, sandbox
+from ci.jobs.scripts.ai_review import loom, prompt, publish, rulings, sandbox
 from ci.praktika import Secret
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -53,6 +53,9 @@ LOOM_CALL_LOG = f"{WORK_DIR}/loom_calls.jsonl"
 
 MODEL = "gpt-6.1-sol"
 REASONING_EFFORT = "high"
+# The check of an earlier ruling against one finding (`rulings.py`): a short
+# question about two quoted findings and their code.
+RULING_CHECK_EFFORT = "medium"
 
 # Number of attempts at a full agent run. The agents make model-provider API
 # calls during execution, which can hit transient 5xx errors that no single
@@ -328,10 +331,11 @@ def _verified_memory(repo, records):
     The agent holds the Loom token, so a prompt-injected agent could write a
     record that claims an author dismissed some finding, or rewrite one. Of a
     record only the comment id is used: the comment must exist and have been
-    posted by the app, and the finding, the thread's state and path and every
-    reply by a person are taken from GitHub."""
+    posted by the app, and the finding, its code, the thread's state and path,
+    every reply by a person with the replier's role, and the author of the
+    earlier PR are taken from GitHub."""
     out = []
-    pr_threads = {}  # one listing per earlier PR, however many of its threads were recalled
+    pr_threads, pr_authors = {}, {}  # one listing per earlier PR, however many of its threads were recalled
     for r in records or []:
         comment = review_context.gh_json(f"/repos/{repo}/pulls/comments/{r['comment_id']}") or {}
         pr = (comment.get("pull_request_url") or "").rsplit("/", 1)[-1]
@@ -344,19 +348,36 @@ def _verified_memory(repo, records):
             except Exception as e:  # noqa: BLE001 - unverifiable means not used
                 print(f"WARNING: could not list the review threads of PR #{pr}: {e}")
                 pr_threads[pr] = []
+            pr_authors[pr] = ((review_context.gh_json(f"/repos/{repo}/pulls/{pr}") or {}).get("user") or {}).get("login") or ""
         thread = next((t for t in pr_threads[pr]
                        if ((t.get("comments") or {}).get("nodes") or [{}])[0].get("databaseId") == r["comment_id"]), None)
         if not thread:
             print(f"Memory record for comment {r['comment_id']} not confirmed by GitHub; not used")
             continue
-        replies = [((c.get("author") or {}).get("login") or "?", review_context.untrusted(c.get("body")))
+        replies = [{"login": (c.get("author") or {}).get("login") or "?", "body": review_context.untrusted(c.get("body")),
+                    "association": c.get("authorAssociation") or ""}
                    for c in thread["comments"]["nodes"][1:]
                    if (c.get("body") or "").strip() and not c.get("viewerDidAuthor")
                    and not review_context.is_automation((c.get("author") or {}).get("login"))]
-        out.append({"path": thread.get("path") or comment.get("path") or "", "pr": pr,
+        out.append({"path": thread.get("path") or comment.get("path") or "", "pr": pr, "pr_author": pr_authors[pr],
                     "state": loom.thread_state(thread), "comment_id": r["comment_id"],
-                    "finding": review_context.untrusted(comment.get("body")), "replies": replies})
+                    "finding": review_context.untrusted(comment.get("body")), "replies": replies,
+                    "rule": rulings.rule_of(comment.get("body")),
+                    "function": rulings.function_name(rulings.hunk_heading(comment.get("diff_hunk"))),
+                    "diff_hunk": review_context.untrusted(comment.get("diff_hunk"))})
     return out
+
+
+def _ruling_check():
+    """The ruling check for `publish`, or None when the key is unavailable
+    (the findings are then posted as they are)."""
+    try:
+        key = _ssm(OPENAI_KEY_SECRET)
+    except Exception as e:  # noqa: BLE001 - without the check, no finding is held back
+        print(f"WARNING: no ruling check: {type(e).__name__}: {e}")
+        return None
+    _mask(key)
+    return rulings.openai_check(key, MODEL, RULING_CHECK_EFFORT)
 
 
 def _print_loom_usage():
@@ -453,16 +474,23 @@ def review():
     print(f"Loom brief: {'written' if brief else 'not available'}")
     try:
         memory = loom.recall_outcomes(
-            loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]))
+            loom_config, info.pr_number, loom.source_first([f["filename"] for f in ctx.files]),
+            [u["heading"] for u in ctx.units or []])
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: Loom memory recall failed: {type(e).__name__}: {e}")
         memory = []
     memory = _verified_memory(repo, memory)
-    memory_md = loom.render_outcomes(memory)
+    # The agent sees how undisputed findings ended. The disputed ones stay out
+    # of the review: the job applies the maintainers' rulings among them to
+    # the findings afterwards, one finding at a time.
+    outcomes = [r for r in memory if rulings.is_outcome(r)]
+    earlier_rulings, hints = rulings.select(memory)
+    memory_md = loom.render_outcomes(outcomes)
     if memory_md:
         with open(f"{CONTEXT_DIR}/memory.md", "w", encoding="utf-8") as f:
             f.write("# Earlier review findings on the files this PR changes\n\n" + memory_md)
-    print(f"Loom memory: {len(memory)} earlier finding(s) recalled")
+    print(f"Loom memory: {len(memory)} earlier finding(s) recalled: {len(outcomes)} outcome(s) for the agent, "
+          f"{len(earlier_rulings)} maintainer ruling(s) to apply, {len(hints)} dispute(s) without a maintainer not used")
 
     # A backport copies reviewed code; simplicity findings there are noise.
     is_backport = (ctx.pr.get("title") or "").startswith("Backport") or any(
@@ -523,18 +551,26 @@ def review():
             os.unlink(action_file)
 
     summary, _ = publish._read_body({"body_file": SUMMARY_FILE}, OUTPUT_DIR)
-    summary = publish.publish(GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary,
-                              ctx.units, ctx.previous_state, simplicity=not is_backport, activity=ctx.activity)
+    summary, decisions = publish.publish(
+        GH, repo, info.pr_number, ctx.head_sha, ctx.files, threads, OUTPUT_DIR, summary, ctx.units,
+        ctx.previous_state, simplicity=not is_backport, activity=ctx.activity, rulings=earlier_rulings,
+        check=_ruling_check() if earlier_rulings else None)
     _post_summary(summary, ctx.head_sha, model)
 
     # Record every review thread of ours, with its current state and replies,
     # in the review's Loom memory. Best effort: the review is already posted.
     try:
         threads = GH.list_pr_review_threads(pr=info.pr_number, repo=repo)
-        written = loom.record_threads(loom_config, repo, info.pr_number, threads, review_context.thread_is_ours)
+        written = loom.record_threads(loom_config, repo, info.pr_number, threads, review_context.thread_is_ours,
+                                      ctx.units)
         print(f"Loom memory: {written} review thread record(s) written")
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: recording review threads in Loom failed: {e}")
+    try:
+        written = loom.record_decisions(loom_config, repo, info.pr_number, decisions)
+        print(f"Loom memory: {written} ruling decision record(s) written")
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: recording ruling decisions in Loom failed: {e}")
 
     return [p for p in (PROMPT_FILE, SUMMARY_FILE, LOOM_CALL_LOG) if os.path.exists(p)]
 

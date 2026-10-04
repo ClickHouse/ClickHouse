@@ -42,6 +42,9 @@ import urllib.error
 import urllib.request
 import uuid
 
+from ci.jobs.scripts.ai_review import rulings as review_rulings
+from ci.jobs.scripts.ai_review import units as review_units
+
 ORG = "clickhouse"
 CONSUMER = "ci-code-review"
 
@@ -704,10 +707,12 @@ def _is_bot_login(login):
     return login.endswith("[bot]") or any(b in login for b in _BOT_REVIEWERS)
 
 
-def thread_record(repo, pr_number, thread, is_ours):
+def thread_record(repo, pr_number, thread, is_ours, units=None):
     """The memory row for one review thread of ours, or None. Keyed by the
     thread's first comment, so each run upserts the same row as the thread's
-    state and replies change (the server skips an unchanged row)."""
+    state and replies change (the server skips an unchanged row). Tagged with
+    the file and, from this PR's review units, the qualified function, so a
+    later PR finds it after the function moved to another file."""
     comments = (thread.get("comments") or {}).get("nodes") or []
     if not comments or not is_ours(thread) or not comments[0].get("databaseId"):
         return None
@@ -731,6 +736,12 @@ def thread_record(repo, pr_number, thread, is_ours):
         tags.append("author_replied")
     if thread.get("path"):
         tags.append(f"path:{thread['path']}")
+        side = thread.get("diffSide") or "RIGHT"
+        line = thread.get("line") or first.get("line")
+        unit = review_units.unit_for_line(units or [], thread["path"], line, side) if isinstance(line, int) else None
+        function = function_tag(unit["heading"]) if unit else ""
+        if function:
+            tags.append(function)
     return {
         "memory_key": f"review-thread:{repo}:{pr_number}:{first['databaseId']}",
         "value": "\n".join(lines)[:20000],
@@ -740,7 +751,14 @@ def thread_record(repo, pr_number, thread, is_ours):
     }
 
 
-def record_threads(config, repo, pr_number, threads, is_ours):
+def function_tag(heading):
+    """`fn:<qualified name>` for a unit heading, or "": only qualified names, as
+    a bare `execute` or `read` would match unrelated code everywhere."""
+    name = review_rulings.function_name(heading)
+    return f"fn:{name}" if "::" in name else ""
+
+
+def record_threads(config, repo, pr_number, threads, is_ours, units=None):
     """Upsert one memory row per review thread of ours: what was found, what
     the author answered, and how the thread ended. This is the record later
     reviews of the same files read back (`recall_outcomes`): which findings
@@ -748,7 +766,7 @@ def record_threads(config, repo, pr_number, threads, is_ours):
     written."""
     if not (config.available() and config.memory_namespace):
         return 0
-    rows = [r for r in (thread_record(repo, pr_number, t, is_ours) for t in threads or []) if r]
+    rows = [r for r in (thread_record(repo, pr_number, t, is_ours, units) for t in threads or []) if r]
     if not rows:
         return 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
@@ -761,58 +779,91 @@ _STATE_TEXT = {
     "resolved_by_author": "resolved by the author",
     "open": "still open at the last review",
 }
+# Per pool: threads a person replied to (candidate rulings) and the others
+# (outcomes), so a busy file's outcomes cannot crowd out its rulings.
 _MAX_RECALLED = 15
 
 
-def recall_outcomes(config, pr_number, paths):
-    """Earlier review threads of ours on the files this PR changes, from other
-    PRs, newest first: `path`, `pr`, `state` and the `comment_id` of the
-    thread's first comment. The job checks each against GitHub and renders
-    the confirmed ones (`render_outcomes`); the memory's own copy of the text
-    is not used, since the agent holds the token that could rewrite it."""
+def recall_outcomes(config, pr_number, paths, functions=()):
+    """Earlier review threads of ours on the files and functions this PR
+    changes, from other PRs, newest first: `path`, `pr`, `state` and the
+    `comment_id` of the thread's first comment. The job checks each against
+    GitHub and splits them into outcomes for the agent and rulings it applies
+    itself (`rulings.py`); the memory's own copy of the text is not used,
+    since the agent holds the token that could rewrite it."""
     if not (config.available() and config.memory_namespace and paths):
         return []
 
-    # `tags` matches any of the given tags: one query for all the paths, the
-    # rest checked here.
-    wanted = {f"path:{p}" for p in paths[:20]}
-    answer = _answer(config, "memory.list", {"tags": sorted(wanted), "limit": 100, "preview_chars": 200},
+    # `tags` matches any of the given tags (at most 64): one query for all the
+    # paths and functions, the rest checked here.
+    path_tags = [f"path:{p}" for p in paths[:20]]
+    function_tags = sorted({t for t in (function_tag(h) for h in functions) if t})
+    wanted = set(path_tags + function_tags[:64 - len(path_tags)])
+    answer = _answer(config, "memory.list", {"tags": sorted(wanted), "limit": 300, "preview_chars": 200},
                      namespace=config.memory_namespace)
+    if answer is None:
+        print("WARNING: Loom memory.list failed; no earlier findings recalled")
     entries = [e for e in (answer or {}).get("entries") or []
                if isinstance(e, dict) and isinstance(e.get("tags"), list) and wanted & set(e["tags"])
                and "kind:review_thread" in e["tags"]
                and (not config.repo or f"repo:{config.repo}" in e["tags"] or not any(t.startswith("repo:") for t in e["tags"]))]
-    records, seen = [], set()
+    pools = {True: [], False: []}
+    seen = set()
     for e in sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True):
         tags = set(e.get("tags") or [])
         if e.get("memory_key") in seen or f"pr:{pr_number}" in tags:
             continue  # this PR's own threads are in threads.md
         seen.add(e.get("memory_key"))
+        pool = pools["author_replied" in tags]
+        if len(pool) >= _MAX_RECALLED:
+            continue
         state = next((t.split(":", 1)[1] for t in tags if t.startswith("state:")), "")
         path = next((t.split(":", 1)[1] for t in tags if t.startswith("path:")), "")
         pr = next((t.split(":", 1)[1] for t in tags if t.startswith("pr:")), "?")
         key = str(e.get("memory_key") or "")
         comment_id = key.rsplit(":", 1)[-1] if key.startswith("review-thread:") else ""
         if comment_id.isdigit():
-            records.append({"path": path, "state": state, "pr": pr, "comment_id": int(comment_id)})
-        if len(records) >= _MAX_RECALLED:
-            break
-    return records
+            pool.append({"path": path, "state": state, "pr": pr, "comment_id": int(comment_id)})
+    return pools[True] + pools[False]
 
 
 def render_outcomes(records):
-    """`memory.md`: per earlier thread, the finding, how it ended and every
-    reply by a person, so the agent can tell a fix from a pushback."""
+    """`memory.md`: per earlier thread that ended without a dispute, the
+    finding, how it ended and the replies by people."""
     out = []
     for r in records:
         excerpt = " ".join((r.get("finding") or "").split())
         if len(excerpt) > 700:
             excerpt = excerpt[:700] + " ..."
         out.append(f"- `{r['path']}`, PR #{r['pr']}, {_STATE_TEXT.get(r['state'], r['state'])}: {excerpt}")
-        for login, body in r.get("replies") or []:
-            reply = " ".join(body.split())
-            out.append(f"  - Reply by {login}: {reply[:500] + ' ...' if len(reply) > 500 else reply}")
+        for reply in r.get("replies") or []:
+            body = " ".join(reply["body"].split())
+            out.append(f"  - Reply by {reply['login']}: {body[:500] + ' ...' if len(body) > 500 else body}")
     return "\n".join(out) + "\n" if out else ""
+
+
+def record_decisions(config, repo, pr_number, decisions):
+    """One memory row per ruling check of this run: which finding, which
+    earlier ruling, the decision and what the job did with it, so wrong
+    suppressions can be found and the check measured. Returns the number of
+    rows written."""
+    if not (config.available() and config.memory_namespace and decisions):
+        return 0
+    rows = []
+    for d in decisions:
+        rows.append({
+            "memory_key": f"review-ruling:{repo}:{pr_number}:{d['path']}:{d['line']}:{d['ruling_comment_id']}",
+            "value": (f"Ruling check on {repo}#{pr_number} at {d['path']}:{d['line']} ({d['severity']}) against the "
+                      f"ruling of #{d['ruling_pr']} (comment {d['ruling_comment_id']}, {d['ruling_basis']}): "
+                      f"{d['decision']}, {d['applied']}. {d['reason']}"),
+            "memory_type": "episodic",
+            "tags": [f"repo:{repo}", f"pr:{pr_number}", "kind:ruling_decision", f"decision:{d['decision']}",
+                     f"applied:{d['applied']}", f"path:{d['path']}", f"ruling_pr:{d['ruling_pr']}"],
+            "files": [d["path"]],
+        })
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+        results = list(pool.map(lambda r: _answer(config, "memory.set", r, namespace=config.memory_namespace), rows))
+    return sum(1 for r in results if r is not None)
 
 
 # ── CLI used by the agent ─────────────────────────────────────────────────────

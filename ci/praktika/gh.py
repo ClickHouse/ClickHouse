@@ -711,10 +711,10 @@ class GH:
             "pullRequest(number:$pr){"
             "reviewThreads(first:100,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "nodes{id isResolved isOutdated resolvedBy{login} path line diffSide "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "nodes{databaseId createdAt author{login} authorAssociation viewerDidAuthor body path line originalLine}"
             "}}}}}}"
         )
         comments_query = (
@@ -722,7 +722,7 @@ class GH:
             "node(id:$id){... on PullRequestReviewThread{"
             "comments(first:50,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "nodes{databaseId createdAt author{login} authorAssociation viewerDidAuthor body path line originalLine}"
             "}}}}"
         )
 

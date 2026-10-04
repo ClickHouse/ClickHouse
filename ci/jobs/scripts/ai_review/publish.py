@@ -27,6 +27,8 @@ prompt rules:
   * Only threads the review created may be resolved; a thread is re-opened only
     when the review resolved it itself, or together with a reply in the same
     run. At most one reply per thread per run.
+  * A finding an earlier maintainer ruling covers is listed in the summary
+    instead of posted inline, unless it is a Blocker (`rulings.py`).
 """
 
 import json
@@ -36,8 +38,9 @@ import subprocess
 import tempfile
 import time
 
+from ci.jobs.scripts.ai_review import rulings as review_rulings
 from ci.jobs.scripts.ai_review import units as review_units
-from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot
+from ci.jobs.scripts.ai_review.context import thread_is_ours, is_bot, untrusted
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -262,7 +265,7 @@ def validate_comments(entries, files, threads, base_dir, units=None, known_findi
         seen.add((path, line, side))
         thread_texts.setdefault(path, []).append(body)
         comment = {"path": path, "line": line, "side": side, "body_file": posted.write(body),
-                   "_blocker": severity == "blocker", "_fingerprint": fingerprint}
+                   "_blocker": severity == "blocker", "_severity": severity, "_fingerprint": fingerprint}
         if start is not None:
             comment["start_line"] = start
             comment["start_side"] = side
@@ -334,6 +337,7 @@ def validate_simplicity(entries, files, threads, base_dir, units=None, known_fin
             inline.append({"path": path, "line": line, "side": side,
                            **({"start_line": start, "start_side": side} if start is not None else {}),
                            "body_file": posted.write(body, RULE_MARKER.format(rule=rule)),
+                           "_severity": "simplicity", "_rule": rule,
                            "_fingerprint": review_units.finding_fingerprint(path, unit["key"] if unit else "", body)})
         else:
             listed.append((e, body, rule))
@@ -474,6 +478,32 @@ def local_links_to_github(text, repo, sha):
     return _LOCAL_LINK_RE.sub(repl, text or "")
 
 
+def apply_rulings(comments, rulings, check, files, units, repo):
+    """The inline comments still to post after checking them against the
+    earlier rulings, with a note appended to those a ruling may cover, and
+    (ruled, decisions) as `rulings.apply` returns them."""
+    patches = {f["filename"]: f.get("patch") for f in files}
+    findings = []
+    for c in comments:
+        with open(c["body_file"], "r", encoding="utf-8") as f:
+            body = _RULE_RE.sub("", f.read()).strip()
+        unit = review_units.unit_for_line(units or [], c["path"], c["line"], c["side"])
+        findings.append({"comment": c, "path": c["path"], "line": c["line"], "body": body,
+                         "severity": c.get("_severity") or "major", "rule": c.get("_rule", ""),
+                         "fingerprint": c.get("_fingerprint", ""),
+                         "function": review_rulings.function_name(unit["heading"]) if unit else "",
+                         "code": untrusted(review_rulings.hunk_excerpt(patches.get(c["path"]), c["line"], c["side"]))})
+    kept, ruled, decisions = review_rulings.apply(findings, rulings, check, repo)
+    for f in kept:
+        if f.get("note"):
+            with open(f["comment"]["body_file"], "a", encoding="utf-8") as out:
+                out.write("\n" + f["note"] + "\n")
+    for d in decisions:
+        print(f"Ruling check: {d['path']}:{d['line']} ({d['severity']}) against #{d['ruling_pr']} "
+              f"comment {d['ruling_comment_id']}: {d['decision']}, {d['applied']}. {d['reason']}")
+    return [f["comment"] for f in kept], ruled, decisions
+
+
 def _post_review_once(repo, pr_number, head_sha, comments):
     """Post the inline comments as one review. A failed POST is not simply
     retried: GitHub may have created the review before the connection broke,
@@ -520,10 +550,12 @@ def _post_review_once(repo, pr_number, head_sha, comments):
 
 
 def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_text,
-            units=None, previous_state=None, simplicity=True, activity=""):
+            units=None, previous_state=None, simplicity=True, activity="", rulings=None, check=None):
     """Post the inline review and the thread actions. `gh` is the praktika GH
-    class (injected for tests). Returns the summary text to post, with the
-    comments that could not be attached inline appended."""
+    class (injected for tests). `rulings` are the earlier maintainer rulings
+    and `check(ruling, finding)` the check of one against a finding (see
+    `rulings.py`). Returns the summary text to post, with the comments that
+    could not be attached inline appended, and the ruling decisions."""
     known = {f.get("fp") for f in (previous_state or {}).get("findings") or []}
     posted = _Posted(output_dir, repo, head_sha)
     comments, moved = validate_comments(
@@ -536,6 +568,9 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
             posted=posted)
         print(f"Simplicity findings: {len(simplicity_inline)} inline, {len(simplicity_listed)} in the summary")
     comments = comments + simplicity_inline
+    ruled, decisions = [], []
+    if comments and rulings and check:
+        comments, ruled, decisions = apply_rulings(comments, rulings, check, files, units, repo)
     late = [m for m in moved if m[2] == "code unchanged since the previous review"]
     gaps = coverage_gaps(output_dir, units)
     print(f"Review units: {sum(1 for u in units or [] if review_units.in_scope(u))} in scope, "
@@ -577,6 +612,7 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
 
     summary = posted.clean(summary_text)
     summary = (summary.rstrip() + "\n" + simplicity_markdown(simplicity_listed) + coverage_markdown(gaps)
+               + review_rulings.markdown(ruled, repo)
                + moved_findings_markdown(moved) + failed_actions_markdown(failed, repo, pr_number, output_dir))
     if units is not None:
         findings = list((previous_state or {}).get("findings") or [])
@@ -589,4 +625,4 @@ def publish(gh, repo, pr_number, head_sha, files, threads, output_dir, summary_t
         summary += "\n" + review_units.encode_state(
             [u for u in units if u["id"] not in gap_ids], findings[-200:],
             contract or (previous_state or {}).get("contract", ""), activity) + "\n"
-    return summary
+    return summary, decisions

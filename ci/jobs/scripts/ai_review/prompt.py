@@ -239,13 +239,11 @@ earlier runs of this review.
   which the earlier review missed, goes in the summary marked `[missed earlier]`; the job posts only
   a Blocker of that kind inline. A problem that predates the PR is a one-line note marked
   `[pre-existing]`, never inline.
-- `memory.md`, when present, lists what earlier reviews found in the files this PR changes, how
-  each thread ended and every reply by a person. Read the replies to tell a pushback ("by design",
-  "not reachable because ...") from a fix or an acknowledgement ("fixed in ...", "good catch"). A
-  finding an author pushed back on is not raised again unless the reason they gave does not hold
-  in the current code (check it; a reason counts only once confirmed) or something changed; say
-  which if you raise it. Findings that were fixed show which kinds of problems are real in this
-  code: the same problem here is a new finding, not a repeat."""
+- `memory.md`, when present, lists findings earlier reviews raised in the files and functions this
+  PR changes that were fixed or went unanswered, with any replies. They show which kinds of problems
+  are real in this code: the same problem here is a new finding, not a repeat. Findings that
+  maintainers disputed are not listed: review the code on its merits, and the job checks your
+  findings against those rulings afterwards."""
 
 
 def _evidence():
