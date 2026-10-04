@@ -508,7 +508,6 @@ static String getLogicalPath(
     return findLogicalPath(delta_schema.getNames(), delta_schema.getTypes(), name_in_storage, {}).value_or(name_in_storage);
 }
 
-/// Two substreams are the same step if they are the same kind and name the same element (as in FunctionToSubcolumnsPass).
 static bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
 {
     return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
