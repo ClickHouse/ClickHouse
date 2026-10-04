@@ -10683,10 +10683,76 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// parts that `updateLightweightImpl` reads, rather than merely serving as an optimization
     /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
     /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
-    auto contains_deferred_set = [](const ASTPtr & ast, const auto & self) -> bool
+    ///
+    /// A deferred set can also hide behind a column name: an `ALIAS` column may itself contain
+    /// `partition_key IN some_table`, and the analysis below deliberately expands such columns
+    /// against the storage (`collectSourceColumns` with `keep_alias_columns = false`), so the set
+    /// still reaches `collectSets` while the raw predicate mentions only the column name. Follow
+    /// an identifier into its column definition to see it. Only a read-time carrier is expanded:
+    /// a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so its definition is
+    /// not evaluated by either pass and following it would only lose pruning for a safe predicate.
+    /// `EPHEMERAL` is followed for symmetry with the non-determinism check below. A column
+    /// definition cannot reference itself, but keep the set of visited columns anyway, so that
+    /// malformed metadata cannot make the recursion unbounded.
+    ///
+    /// The identifiers are the raw text of the predicate, not resolved yet, so a column may be
+    /// spelled qualified (`table.column`, `database.table.column`), while `ColumnsDescription` is
+    /// keyed by the bare storage name. The analysis below resolves such qualified names against
+    /// the storage all the same, so strip the qualifier that names this very table.
+    const auto & columns_description = metadata_snapshot->getColumns();
+    const auto storage_id = getStorageID();
+    auto unqualified_column_name = [&](const ASTIdentifier & identifier) -> String
+    {
+        const auto & name_parts = identifier.name_parts;
+        size_t qualifier_size = 0;
+        if (name_parts.size() > 2 && name_parts[0] == storage_id.database_name && name_parts[1] == storage_id.table_name)
+            qualifier_size = 2;
+        else if (name_parts.size() > 1 && name_parts[0] == storage_id.table_name)
+            qualifier_size = 1;
+
+        String result;
+        for (size_t i = qualifier_size; i < name_parts.size(); ++i)
+        {
+            if (i > qualifier_size)
+                result += ".";
+            result += name_parts[i];
+        }
+        return result;
+    };
+
+    std::unordered_set<String> visited_columns;
+    /// The parameters of the lambdas enclosing the node being visited. Inside a lambda body such a
+    /// name shadows a storage column of the same name, so it must not be followed into that
+    /// column's definition: e.g. `arrayExists(x -> x = 1, arr)` with `x ALIAS p IN keys`.
+    std::vector<String> deferred_set_lambda_parameters;
+    auto contains_deferred_set = [&](const ASTPtr & ast, const auto & self) -> bool
     {
         if (ast->as<ASTSubquery>())
             return true;
+
+        /// Skip the parameter list of a lambda, which contains only identifiers, and visit the
+        /// body, remembering the parameters it binds.
+        if (const auto * function = ast->as<ASTFunction>();
+            function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & arguments = function->arguments->children;
+            const size_t enclosing_parameters = deferred_set_lambda_parameters.size();
+            const auto & parameters = arguments[0];
+            if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
+            {
+                for (const auto & parameter : parameters_tuple->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        deferred_set_lambda_parameters.push_back(parameter_identifier->name());
+            }
+            else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>())
+            {
+                deferred_set_lambda_parameters.push_back(parameter_identifier->name());
+            }
+
+            const bool body_contains_deferred_set = self(arguments[1], self);
+            deferred_set_lambda_parameters.resize(enclosing_parameters);
+            return body_contains_deferred_set;
+        }
 
         if (const auto * function = ast->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
         {
@@ -10694,7 +10760,18 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             if (arguments.size() >= 2)
             {
                 const auto & right_argument = arguments[1];
-                if (right_argument->as<ASTTableIdentifier>())
+                /// A parsed `IN some_table` carries a plain `ASTIdentifier`, while an already
+                /// resolved one carries an `ASTTableIdentifier`; both spellings have to be listed,
+                /// because `IAST::as` is an exact-type cast rather than a `dynamic_cast`, and
+                /// `MarkTableIdentifiersVisitor` rewrites the node in place - including inside a
+                /// column default expression that the storage metadata keeps.
+                ///
+                /// Nothing else can stand there: a column of the storage (e.g. `x IN arr`) is not
+                /// accepted in a mutation predicate or in a column default, because
+                /// `AddDefaultDatabaseVisitor` qualifies such an identifier with the database as a
+                /// table, so an identifier always names a table whose contents the analyzer turns
+                /// into a prepared set.
+                if (right_argument->as<ASTIdentifier>() || right_argument->as<ASTTableIdentifier>())
                     return true;
 
                 /// A non-literal function in the right-hand side may be a table function. It is
@@ -10717,6 +10794,38 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
                 if (right_argument->as<ASTFunction>() && !is_literal_enumeration(right_argument, is_literal_enumeration))
                     return true;
+            }
+        }
+
+        /// A name bound by an enclosing lambda is that lambda's parameter, or a subcolumn of it,
+        /// and never a storage column - even if a column of the same name exists.
+        if (const auto * identifier = ast->as<ASTIdentifier>(); identifier
+            && (identifier->name_parts.empty()
+                || std::ranges::find(deferred_set_lambda_parameters, identifier->name_parts.front()) == deferred_set_lambda_parameters.end()))
+        {
+            /// The name may also address a subcolumn (`column.subcolumn`), so look up every prefix
+            /// that ends at a name boundary: an accidental match only costs a pruning opportunity.
+            const auto name = unqualified_column_name(*identifier);
+            for (size_t end = name.find('.'); ; end = name.find('.', end + 1))
+            {
+                const auto column_name = name.substr(0, end);
+                if (const auto column_default = columns_description.getDefault(column_name);
+                    column_default && column_default->expression
+                    && (column_default->kind == ColumnDefaultKind::Alias || column_default->kind == ColumnDefaultKind::Ephemeral)
+                    && visited_columns.emplace(column_name).second)
+                {
+                    /// The column definition is a separate expression: the lambdas of the predicate
+                    /// do not bind any names in it.
+                    std::vector<String> enclosing_lambda_parameters;
+                    enclosing_lambda_parameters.swap(deferred_set_lambda_parameters);
+                    const bool definition_contains_deferred_set = self(column_default->expression, self);
+                    deferred_set_lambda_parameters.swap(enclosing_lambda_parameters);
+                    if (definition_contains_deferred_set)
+                        return true;
+                }
+
+                if (end == String::npos)
+                    break;
             }
         }
 
