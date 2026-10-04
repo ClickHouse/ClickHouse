@@ -30,7 +30,9 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0,
+    -- The implicit minmax indices would add their own `Granules` lines to the plans below.
+    add_minmax_index_for_numeric_columns = 0;
 
 -- One part with four granules of two rows.
 INSERT INTO tab SELECT

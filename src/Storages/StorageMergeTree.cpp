@@ -497,16 +497,21 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    const auto default_storage_settings = getDefaultSettings();
+    auto maybe_mutation_commands = commands.getMutationCommands(
+        new_metadata,
+        query_settings[Setting::materialize_ttl_after_modify],
+        local_context,
+        /*with_alters*/ false,
+        (*old_storage_settings)[MergeTreeSetting::share_nested_offsets],
+        default_storage_settings.get());
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
-    auto settings_defaults = getDefaultSettings();
-    commands.apply(
-        new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
+    commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], default_storage_settings.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -550,6 +555,12 @@ void StorageMergeTree::alter(
             disableBackgroundWorkers();
         }
 
+        /// `changeSettings` installs the old metadata plus the new settings. When the ALTER also
+        /// changed derived metadata (implicit statistics, or implicit skip indices gated by a
+        /// mutable setting such as `enable_block_number_column`), the running table must get the
+        /// recomputed metadata too, otherwise it only appears after `DETACH` / `ATTACH` or restart.
+        const bool new_metadata_installed = statistics_changed || implicitIndicesChanged(old_metadata, new_metadata);
+
         StartedBackgroundWorkers started_workers;
         bool workers_disabled_for_readonly_commit = false;
         try
@@ -570,8 +581,15 @@ void StorageMergeTree::alter(
                 workers_disabled_for_readonly_commit = true;
             }
 
-            if (statistics_changed)
+            if (new_metadata_installed)
             {
+                /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
+                /// into `new_metadata` so that installing it does not revert the index filename policy.
+                auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+                new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+                for (auto & index : new_metadata.secondary_indices)
+                    index.escape_filenames = committed_metadata->escape_index_filenames;
+
                 /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(new_metadata);
@@ -608,6 +626,9 @@ void StorageMergeTree::alter(
         }
         catch (...)
         {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE. `changeSettings`
+            /// only swaps the `SETTINGS` clause back; whenever the recomputed metadata was installed
+            /// above (implicit statistics or implicit indices), restore the whole old metadata too.
             /// Restore the settings and statistics metadata before propagating a failed commit.
             /// The worker lifecycle is restored too: the assignees that `startBackgroundWorkers`
             /// created for this `ALTER` are torn down again, so a table that was attached read-only
@@ -616,7 +637,7 @@ void StorageMergeTree::alter(
             /// running, are left as they were (disabled, see above). The cleanup thread is stopped
             /// as on a 0 -> 1 toggle: a read-only table never cleans its disk.
             changeSettings(old_metadata.settings_changes, table_lock_holder);
-            if (statistics_changed)
+            if (new_metadata_installed)
                 setInMemoryMetadata(old_metadata);
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
             {

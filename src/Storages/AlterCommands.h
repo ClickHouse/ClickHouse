@@ -196,14 +196,15 @@ struct AlterCommand
     /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
     /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
     /// a typo, because an expression added to the sorting key may use nothing else.
-    /// `settings_defaults` are the engine's config defaults, used to rebuild the metadata derived
-    /// from the `MergeTree` settings. Engines without such metadata pass nothing.
+    /// `default_merge_tree_settings` are the settings a MergeTree table inherits when it states nothing
+    /// itself (server config and `compatibility`); a settings-only ALTER recomputes the implicit skip
+    /// index policy on top of them. When absent, the non-replicated server defaults of `context` are used.
     void apply(
         StorageInMemoryMetadata & metadata,
         ContextPtr context,
         bool share_nested_offsets = true,
         const ColumnsDescription * columns_before_alter = nullptr,
-        const MergeTreeSettings * settings_defaults = nullptr) const;
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
@@ -229,7 +230,13 @@ struct AlterCommand
     /// metadata changes.
     /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
     /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `default_merge_tree_settings` is forwarded too, so the implicit-index policy is recomputed
+    /// against the same inherited defaults as the real apply (see `AlterCommand::apply`).
+    std::optional<MutationCommand> tryConvertToMutationCommand(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 };
 
 class Context;
@@ -255,12 +262,12 @@ public:
     /// Commands have to be prepared before apply.
     /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
     /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
-    /// `settings_defaults` is threaded to AlterCommand::apply (see there).
+    /// `default_merge_tree_settings`: see `AlterCommand::apply`.
     void apply(
         StorageInMemoryMetadata & metadata,
         ContextPtr context,
         bool share_nested_offsets = true,
-        const MergeTreeSettings * settings_defaults = nullptr) const;
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
@@ -280,8 +287,16 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
-    /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    /// IF NOT EXISTS nested adds (see AlterCommand::apply). `default_merge_tree_settings` is threaded
+    /// the same way, so a mixed batch like `MODIFY SETTING enable_block_number_column = 1, DROP INDEX
+    /// auto_minmax_index__block_number` is planned against the defaults the table really inherits.
+    MutationCommands getMutationCommands(
+        StorageInMemoryMetadata metadata,
+        bool materialize_ttl,
+        ContextPtr context,
+        bool with_alters = false,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

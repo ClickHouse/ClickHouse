@@ -5565,7 +5565,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
+        const auto default_storage_settings = getDefaultSettings();
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata,
+            settings[Setting::materialize_ttl_after_modify],
+            local_context,
+            /*with_alters*/ false,
+            (*settings_from_storage)[MergeTreeSetting::share_nested_offsets],
+            default_storage_settings.get());
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5797,8 +5804,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    auto settings_defaults = getDefaultSettings();
-    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+    const auto default_storage_settings = getDefaultSettings();
+    commands.apply(new_metadata, local_context, share_nested_offsets, default_storage_settings.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -7169,6 +7176,36 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     }
 
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
+}
+
+bool MergeTreeData::implicitIndicesChanged(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    auto implicit_index_names = [](const IndicesDescription & indices)
+    {
+        std::set<String> names;
+        for (const auto & index : indices)
+            if (index.is_implicitly_created)
+                names.insert(index.name);
+        return names;
+    };
+
+    if (implicit_index_names(old_metadata.secondary_indices) != implicit_index_names(new_metadata.secondary_indices))
+        return true;
+
+    /// A projection inherits the table's implicit-index policy (see `ProjectionDescription::getProjectionFromAST`),
+    /// and its implicit indices can change even when the table's own set does not, e.g. when every column of
+    /// the table already has an explicit min-max index, which suppresses the implicit one only in the table.
+    for (const auto & new_projection : new_metadata.projections)
+    {
+        if (!old_metadata.projections.has(new_projection.name))
+            continue;
+        const auto & old_projection = old_metadata.projections.get(new_projection.name);
+        if (!old_projection.metadata || !new_projection.metadata)
+            continue;
+        if (implicit_index_names(old_projection.metadata->secondary_indices) != implicit_index_names(new_projection.metadata->secondary_indices))
+            return true;
+    }
+    return false;
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

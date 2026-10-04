@@ -9,7 +9,9 @@ DROP TABLE IF EXISTS t_in_empty_set_pk;
 CREATE TABLE t_in_empty_set (a Int, b Int) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_in_empty_set VALUES (1, 2);
 
-CREATE TABLE t_in_empty_set_pk (a Int, b Int) ENGINE = MergeTree ORDER BY a;
+-- The `0-element set` count below is per index that analyzes the set: pin the implicit min-max
+-- index off so only the primary key of each shard reports it.
+CREATE TABLE t_in_empty_set_pk (a Int, b Int) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_in_empty_set_pk VALUES (1, 2);
 
 SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN ();

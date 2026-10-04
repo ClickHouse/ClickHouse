@@ -882,7 +882,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     {
         checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
         fresh = ProjectionDescription::getProjectionFromAST(
-            stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
+            stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE,
+            /*attach_short_syntax=*/ true, metadata.get());
     }
     catch (const Exception &)
     {

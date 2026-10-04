@@ -983,6 +983,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
 
+        /// Whether the table's own stored `SETTINGS` clause states this setting. The merged
+        /// `storage_settings` cannot answer that: it starts from the server-level defaults, and
+        /// `loadFromConfig` marks every `<merge_tree>` config override as `changed`, so an inherited
+        /// value is indistinguishable from one written in the table definition.
+        const auto is_stored_in_definition = [&](std::string_view name)
+        {
+            if (!args.storage_def->settings)
+                return false;
+            for (const auto & change : args.storage_def->settings->changes)
+                if (change.name == name)
+                    return true;
+            return false;
+        };
+
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
         /// could slip in through `SETTINGS default_compression_codec = ...`.
@@ -999,16 +1013,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// documented to skip all sanity checks and is left alone.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
-            const auto is_stored_in_definition = [&](std::string_view name)
-            {
-                if (!args.storage_def->settings)
-                    return false;
-                for (const auto & change : args.storage_def->settings->changes)
-                    if (change.name == name)
-                        return true;
-                return false;
-            };
-
             const auto validate_codec_setting = [&](std::string_view name, const String & codec)
             {
                 if (codec.empty())
@@ -1041,6 +1045,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     || metadata.add_minmax_index_for_temporal_columns
                     || metadata.add_minmax_index_for_block_number_column
                     || metadata.add_minmax_index_for_block_offset_column;
+                const bool has_explicit_implicit_index_setting =
+                       is_stored_in_definition("add_minmax_index_for_numeric_columns")
+                    || is_stored_in_definition("add_minmax_index_for_string_columns")
+                    || is_stored_in_definition("add_minmax_index_for_temporal_columns")
+                    || is_stored_in_definition("add_minmax_index_for_block_number_column")
+                    || is_stored_in_definition("add_minmax_index_for_block_offset_column");
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -1048,15 +1058,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                     /// Backward compatibility: older versions (before 25.12) stored implicit indices
                     /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
-                    auto & added = metadata.secondary_indices.back();
-                    String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-                    if (columns.has(col_name))
+                    if (has_explicit_implicit_index_setting)
                     {
-                        const auto & col_type = columns.get(col_name).type;
-                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            added.is_implicitly_created = true;
+                        auto & added = metadata.secondary_indices.back();
+                        String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+                        if (columns.has(col_name))
+                        {
+                            const auto & col_type = columns.get(col_name).type;
+                            if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                                added.is_implicitly_created = true;
+                        }
                     }
                 }
             }
@@ -1083,7 +1096,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax, &metadata);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)

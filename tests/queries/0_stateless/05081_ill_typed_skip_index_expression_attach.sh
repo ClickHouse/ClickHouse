@@ -15,7 +15,9 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${
 
 # A table declared before this check existed keeps loading, so an upgrade cannot strand one.
 echo 'D1 a table already carrying such an index still attaches'
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${ORD}.g (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1" \
+# The implicit min-max indices are pinned off: D4 below lists every index of this table by name, and the
+# implicit ones over `c1` and the column `x` added by D2 would show up there.
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${ORD}.g (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1 SETTINGS add_minmax_index_for_numeric_columns = 0" \
     && echo ok
 
 echo 'D2 an unrelated ALTER on it is still allowed'

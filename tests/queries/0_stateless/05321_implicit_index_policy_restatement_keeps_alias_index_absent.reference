@@ -1,0 +1,6 @@
+initial	auto_minmax_index_a
+initial	auto_minmax_index_x
+after REMOVE ALIAS	auto_minmax_index_x
+after restatement	auto_minmax_index_x
+10
+0

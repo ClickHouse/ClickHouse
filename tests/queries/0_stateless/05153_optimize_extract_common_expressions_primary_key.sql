@@ -23,7 +23,7 @@ CREATE TABLE t_extract_common_pk
 )
 ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_extract_common_pk SELECT number, number FROM numbers(100);
 

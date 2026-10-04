@@ -6,13 +6,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, prefer_optimize_projection = 0"
 
 # b is spread evenly over the parent order, c follows it, d repeats every 10 granules
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_scan; DROP TABLE IF EXISTS t_real_scan;
     CREATE TABLE t_scan (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_scan AS t_scan;
     ALTER TABLE t_real_scan ADD PROJECTION p_b (SELECT a, b, c, d ORDER BY b);
     ALTER TABLE t_real_scan ADD PROJECTION p_c (SELECT a, b, c, d ORDER BY c);

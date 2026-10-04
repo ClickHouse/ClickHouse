@@ -19,7 +19,7 @@ SET enable_parallel_replicas = 0;
 
 CREATE TABLE payroll (id UInt64, dept String, salary UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS auto_statistics_types = 'basic';
+SETTINGS auto_statistics_types = 'basic', add_minmax_index_for_numeric_columns = 0;
 
 -- Visible rows have `salary` below 150, hidden rows have `salary` up to 1999.
 INSERT INTO payroll SELECT number, if(number % 2 = 0, 'public', 'exec'), if(number % 2 = 0, 100 + number % 50, 1000 + number) FROM numbers(1000);

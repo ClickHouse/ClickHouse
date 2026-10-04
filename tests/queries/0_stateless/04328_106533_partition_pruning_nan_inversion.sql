@@ -54,7 +54,9 @@ DROP TABLE t_106533_float;
 
 DROP TABLE IF EXISTS t_106533_dec;
 
-CREATE TABLE t_106533_dec (d Decimal(10, 2)) ENGINE = MergeTree() ORDER BY d PARTITION BY d;
+-- The implicit minmax index on `d` would render one more matching condition line.
+CREATE TABLE t_106533_dec (d Decimal(10, 2)) ENGINE = MergeTree() ORDER BY d PARTITION BY d
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_106533_dec VALUES (1.0), (10.0), (100.0);
 
 SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0;
@@ -146,9 +148,11 @@ DROP TABLE t_106533_partlevel_finite;
 
 DROP TABLE IF EXISTS t_106533_sparse;
 
+-- The implicit minmax index on `val` would render one more `Parts: 1/1` line.
 CREATE TABLE t_106533_sparse (id UInt64, val Float64)
 ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, min_bytes_for_wide_part = 0;
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_106533_sparse SELECT number, 0. FROM numbers(1000);
 INSERT INTO t_106533_sparse VALUES (2000, 3.0), (2001, nan);
