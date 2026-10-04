@@ -9,7 +9,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -1833,7 +1832,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -1983,6 +1982,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers = VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

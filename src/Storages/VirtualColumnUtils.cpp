@@ -540,7 +540,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
-#if USE_PARQUET
+#if USE_PARQUET || USE_VORTEX
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
             if (chunk_info)
             {
@@ -561,7 +561,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
 #else
-            // If Parquet format is not used, we don't have row numbers info, so _row_number = NULL.
+            // If Parquet or Vortex are not used, we don't have row numbers info, so _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
 #endif
         }
@@ -589,7 +589,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         else if (virtual_column.name == "_row_id")
         {
             std::vector<UInt64> row_positions;
-#if USE_PARQUET
+#if USE_PARQUET || USE_VORTEX
             if (auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>(); chunk_info && virtual_values.first_row_id)
             {
                 const auto & applied_filter = chunk_info->applied_filter;

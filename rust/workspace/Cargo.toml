@@ -4,6 +4,7 @@ members = [
     "skim",
     "prql",
     "polyglot",
+    "vortex",
     "wasmtime",
 ]
 resolver = "2"
