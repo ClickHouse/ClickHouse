@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsDirectoryEntries.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
 #include <Common/CurrentMetrics.h>
@@ -33,7 +34,7 @@ struct DirectoryRemoteInfo
 struct FsNode : public std::enable_shared_from_this<FsNode>
 {
     std::optional<DirectoryRemoteInfo> info = {};
-    std::unordered_map<std::string, std::shared_ptr<FsNode>> subdirectories = {};
+    FsDirectoryEntries subdirectories;
 };
 
 /// Mutable snapshot of the virtual file system tree.
