@@ -1,0 +1,26 @@
+<test>
+    <create_query>
+        CREATE TABLE coalesce_short_circuit (n_10 Nullable(UInt64), n_50 Nullable(UInt64), n_100 Nullable(UInt64), s String) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO coalesce_short_circuit SELECT
+            if(number % 10 = 0, NULL, number),
+            if(number % 2 = 0, NULL, number),
+            NULL,
+            toString(number)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <!-- The second argument is needed only for 10% of the rows. -->
+    <query>SELECT sum(coalesce(n_10, length(replaceRegexpAll(s, '[0-9]', 'x')))) FROM coalesce_short_circuit</query>
+    <query>SELECT sum(ifNull(n_10, length(replaceRegexpAll(s, '[0-9]', 'x')))) FROM coalesce_short_circuit</query>
+
+    <!-- The second argument is needed for a half of the rows. -->
+    <query>SELECT sum(coalesce(n_50, length(replaceRegexpAll(s, '[0-9]', 'x')))) FROM coalesce_short_circuit</query>
+
+    <!-- The second argument is needed for every row: nothing can be skipped. -->
+    <query>SELECT sum(coalesce(n_100, length(replaceRegexpAll(s, '[0-9]', 'x')))) FROM coalesce_short_circuit</query>
+
+    <drop_query>DROP TABLE IF EXISTS coalesce_short_circuit</drop_query>
+</test>
