@@ -1365,6 +1365,12 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return total_rows;
     }
 
+    /// The snapshot summary does not provide a usable row count, so derive it from the manifest
+    /// files: the per-data-file `record_count` is a required field in every format version and
+    /// it describes a single data file, so summing it over the live data files is exact for
+    /// every writer that measures it, at the cost of opening the manifest files (served from the
+    /// Iceberg metadata cache on repeated queries). It is cross-checked against the snapshot
+    /// summary below, because that assumption does not hold for every writer.
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
@@ -1390,6 +1396,33 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         if (!manifest_rows.has_value())
             return {};
         result += *manifest_rows;
+    }
+
+    /// The snapshot summary's `total-records` counts the records of the live data files, and no
+    /// live delete file is left in the snapshot at this point, so it must equal the sum above.
+    /// It is the only record of that number that does not come from the manifest files, and it
+    /// is used as a cross-check rather than as a data source, because either side can be wrong:
+    /// - the summary is maintained incrementally (parent total plus this commit's delta), so a
+    ///   single corrupted commit in the table history poisons every later snapshot;
+    /// - ClickHouse itself used to stamp the summary's `added-records` and `added-files-size`
+    ///   into the `record_count` and `file_size_in_bytes` of *every* data file of a manifest it
+    ///   generated (fixed in https://github.com/ClickHouse/ClickHouse/pull/104329), so for a
+    ///   manifest describing N data files the sum above comes out N times too large.
+    /// A disagreement proves that one of the two is corrupted, without telling which one, so no
+    /// metadata-only count is trustworthy: fail closed to a real scan, which counts the rows of
+    /// the data files exactly (and reads only the file footers for Parquet and ORC data files).
+    if (actual_data_snapshot->total_rows.has_value() && *actual_data_snapshot->total_rows != result)
+    {
+        LOG_WARNING(
+            log,
+            "Iceberg snapshot summary of table {} claims {} total rows, but the manifest files of the snapshot "
+            "describe {} rows. The metadata is self-contradictory (possibly a corrupted commit in the table "
+            "history, or data files written with per-file row counts taken from the snapshot summary), so an "
+            "exact row count cannot be derived from it: counting the rows of the data files instead",
+            persistent_components.table_location,
+            *actual_data_snapshot->total_rows,
+            result);
+        return {};
     }
 
     return result;
