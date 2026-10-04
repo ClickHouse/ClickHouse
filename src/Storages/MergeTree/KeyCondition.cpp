@@ -2144,7 +2144,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    bool & out_chain_is_positive)
+    bool & out_chain_is_positive,
+    bool is_order_comparison)
 {
     out_chain_is_positive = true;
 
@@ -2167,7 +2168,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_type,
         transform_functions,
         chain_is_positive,
-        [this](const IFunctionBase & func, const IDataType & type)
+        [this, is_order_comparison](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
@@ -2228,12 +2229,14 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             /// `d` keeps its value, and a `NULL` row gets the key value `c`, which can only keep a
             /// granule as a false positive. This requires the conversion of `d` to the common type to
             /// preserve order, which holds for the same type and for numbers, but not, for example,
-            /// for an `Enum` converted to `String`.
+            /// for an `Enum` converted to `String`. It is only done for order comparisons: a pattern
+            /// constant (`LIKE`, `startsWith`, `match`) would be changed by the conversion, e.g. padded
+            /// to a `FixedString`, or replaced by `c` in `ifNull(c, d)`.
             const auto name = func.getName();
             if (name == "assumeNotNull")
                 return true;
 
-            if (name == "ifNull" || name == "coalesce")
+            if ((name == "ifNull" || name == "coalesce") && is_order_comparison)
             {
                 const auto arg_type = removeLowCardinalityAndNullable(type.getPtr());
                 const auto result_type = removeLowCardinalityAndNullable(func.getResultType());
@@ -5016,7 +5019,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive))
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive,
+                    /* is_order_comparison = */ !reverseComparisonOperator(func_name).empty()))
             {
                 condition_is_relaxed = true;
             }

@@ -10,6 +10,7 @@ SET parallel_replicas_local_plan = 1;
 DROP TABLE IF EXISTS t_ifnull;
 DROP TABLE IF EXISTS t_coalesce;
 DROP TABLE IF EXISTS t_enum;
+DROP TABLE IF EXISTS t_fixed;
 
 CREATE TABLE t_ifnull (y Nullable(UInt32))
 ENGINE = MergeTree ORDER BY ifNull(y, 0) SETTINGS index_granularity = 2, auto_statistics_types = '';
@@ -25,6 +26,10 @@ CREATE TABLE t_enum (y Nullable(Enum8('z' = 1, 'a' = 2)))
 ENGINE = MergeTree ORDER BY ifNull(y, '') SETTINGS index_granularity = 2, auto_statistics_types = '';
 INSERT INTO t_enum VALUES ('a'), ('a'), ('z'), ('z');
 OPTIMIZE TABLE t_enum FINAL;
+
+CREATE TABLE t_fixed (y Nullable(FixedString(3)))
+ENGINE = MergeTree ORDER BY ifNull(y, toFixedString('', 3)) SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_fixed VALUES ('abc'), ('abc'), ('abc'), ('abc');
 
 -- { echo }
 
@@ -44,6 +49,10 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_coalesce WHER
 SELECT count() FROM t_enum WHERE y > 'z';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_enum WHERE y > 'z') WHERE explain LIKE '%Condition%';
 
+-- Only comparisons are pushed through `ifNull`: converting the prefix to `FixedString(3)` would pad it.
+SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_condition_cache = 0;
+
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
 DROP TABLE t_enum;
+DROP TABLE t_fixed;

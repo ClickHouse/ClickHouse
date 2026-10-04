@@ -22,6 +22,10 @@ SELECT count() FROM t_enum WHERE y > 'z';
 2
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_enum WHERE y > 'z') WHERE explain LIKE '%Condition%';
 Condition: true
+-- Only comparisons are pushed through `ifNull`: converting the prefix to `FixedString(3)` would pad it.
+SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_condition_cache = 0;
+4
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
 DROP TABLE t_enum;
+DROP TABLE t_fixed;

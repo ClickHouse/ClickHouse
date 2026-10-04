@@ -587,7 +587,8 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool & out_chain_is_positive);
+        bool & out_chain_is_positive,
+        bool is_order_comparison);
 
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
