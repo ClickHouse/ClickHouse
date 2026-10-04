@@ -6,10 +6,12 @@
         the limit is satisfied. The last query is a control: the ORDER BY + LIMIT
         shape was optimized before and must not change.
     -->
+    <!-- Small granules, so that lazily reading the payload of the matching rows reads little more than those rows. -->
     <create_query>
         CREATE TABLE lazy_mat_final_limit (k UInt64, v UInt64, payload String)
         ENGINE = ReplacingMergeTree
         ORDER BY k
+        SETTINGS index_granularity = 256
     </create_query>
 
     <fill_query>SYSTEM STOP MERGES lazy_mat_final_limit</fill_query>
