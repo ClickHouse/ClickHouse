@@ -218,6 +218,7 @@
 
     <query>
         SELECT a, b, z FROM limit_by_in_pk_order_str
+        ORDER BY a, b
         LIMIT 1 BY a, b
         FORMAT NULL
     </query>

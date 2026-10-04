@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <numeric>
 #include <set>
 #include <string>
 #include <vector>
@@ -673,31 +674,35 @@ void runKeyTestsWithCoverage(const std::vector<KeyType> & types, int hint, const
         EXPECT_TRUE(run_lengths.contains(len)) << "no run of length " << len;
 }
 
+struct KeyTypes
+{
+    std::vector<KeyType> types;
+    int hint;
+    std::vector<size_t> last_sub_runs;
+};
+
+const std::vector<KeyTypes> & allKeyTypes()
+{
+    static const std::vector<KeyTypes> key_types{
+        {{KeyType::UInt64, KeyType::String}, 1, {1}},
+        {{KeyType::String, KeyType::String}, 1, {1}},
+        {{KeyType::NullableString, KeyType::Float64WithNaNAndZeros}, -1, {1}},
+        {{KeyType::LowCardinalityString, KeyType::UInt32}, 1, {1}},
+        {{KeyType::UInt64, KeyType::String, KeyType::UInt32}, 1, {1, 3, 8, 300}},
+    };
+    return key_types;
 }
 
-TEST(SortedEqualRuns, MultiColumnKeyUInt64String)
-{
-    runKeyTestsWithCoverage({KeyType::UInt64, KeyType::String}, 1, {1});
 }
 
-TEST(SortedEqualRuns, MultiColumnKeyStringString)
+TEST(SortedEqualRuns, MultiColumnKeyOracle)
 {
-    runKeyTestsWithCoverage({KeyType::String, KeyType::String}, 1, {1});
-}
-
-TEST(SortedEqualRuns, MultiColumnKeyNullableStringFloat64)
-{
-    runKeyTestsWithCoverage({KeyType::NullableString, KeyType::Float64WithNaNAndZeros}, -1, {1});
-}
-
-TEST(SortedEqualRuns, MultiColumnKeyLowCardinalityStringUInt32)
-{
-    runKeyTestsWithCoverage({KeyType::LowCardinalityString, KeyType::UInt32}, 1, {1});
-}
-
-TEST(SortedEqualRuns, MultiColumnKeyThreeColumns)
-{
-    runKeyTestsWithCoverage({KeyType::UInt64, KeyType::String, KeyType::UInt32}, 1, {1, 3, 8, 300});
+    for (const auto & key_types : allKeyTypes())
+    {
+        runKeyTestsWithCoverage(key_types.types, key_types.hint, key_types.last_sub_runs);
+        if (::testing::Test::HasFatalFailure())
+            return;
+    }
 }
 
 TEST(SortedEqualRuns, MultiColumnHelperSingleAndNoColumns)
@@ -731,25 +736,6 @@ TEST(SortedEqualRuns, MultiColumnHelperSingleAndNoColumns)
 namespace
 {
 
-struct KeyTypes
-{
-    std::vector<KeyType> types;
-    int hint;
-    std::vector<size_t> last_sub_runs;
-};
-
-const std::vector<KeyTypes> & allKeyTypes()
-{
-    static const std::vector<KeyTypes> key_types{
-        {{KeyType::UInt64, KeyType::String}, 1, {1}},
-        {{KeyType::String, KeyType::String}, 1, {1}},
-        {{KeyType::NullableString, KeyType::Float64WithNaNAndZeros}, -1, {1}},
-        {{KeyType::LowCardinalityString, KeyType::UInt32}, 1, {1}},
-        {{KeyType::UInt64, KeyType::String, KeyType::UInt32}, 1, {1, 3, 8, 300}},
-    };
-    return key_types;
-}
-
 ColumnRawPtrs rawPtrs(const Columns & columns)
 {
     ColumnRawPtrs res;
@@ -762,13 +748,41 @@ ColumnRawPtrs rawPtrs(const Columns & columns)
 template <typename Search>
 void checkSortedKeyRunsWalk(SortedKeyRuns & runs, const ColumnRawPtrs & key, size_t end, int hint, Search && search, const std::string & label)
 {
+    std::vector<size_t> cached_calls(key.size());
+    std::vector<size_t> stateless_calls(key.size());
+    size_t leading_runs = 0;
+    auto counted_cached = [&](size_t i, size_t from, size_t bound)
+    {
+        ++cached_calls[i];
+        return search(i, from, bound);
+    };
+    auto counted_stateless = [&](size_t i, size_t from, size_t bound)
+    {
+        ++stateless_calls[i];
+        return search(i, from, bound);
+    };
+
     for (size_t begin = 0; begin < end;)
     {
-        const size_t run_end = runs.findRunEnd(begin, end, search);
+        const size_t run_end = runs.findRunEnd(begin, end, counted_cached);
         ASSERT_GT(run_end, begin) << label << ": begin=" << begin << " end=" << end;
         ASSERT_EQ(run_end, oracleKeyRangeEnd(key, begin, end, hint)) << label << ": begin=" << begin << " end=" << end;
+        (void)findKeyRangeEndAssumeSorted(key.size(), begin, end, counted_stateless);
+        if (begin == 0 || key[0]->compareAt(begin - 1, begin, *key[0], hint) != 0)
+            ++leading_runs;
         begin = run_end;
     }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// `findRunEnd` checks every result against the stateless search through the same callback.
+    for (size_t i = 0; i < key.size(); ++i)
+        cached_calls[i] -= stateless_calls[i];
+#endif
+    EXPECT_EQ(cached_calls[0], leading_runs) << label << ": end=" << end;
+    EXPECT_LE(
+        std::accumulate(cached_calls.begin(), cached_calls.end(), size_t{0}),
+        std::accumulate(stateless_calls.begin(), stateless_calls.end(), size_t{0}))
+        << label << ": end=" << end;
 }
 
 }
