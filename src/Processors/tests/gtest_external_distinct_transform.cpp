@@ -875,13 +875,15 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
     {
         const auto header = std::make_shared<const Block>(Block{
             ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")});
-        /// Hashing retains distinct floating-point bit patterns. Sorting suppression keys must keep
-        /// every representation even when zeros or different NaNs compare equal in the sort order.
-        std::vector<UInt64> expected{0, 0x8000000000000000ULL, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
+        /// Hashing retains distinct `NaN` bit patterns. Sorting suppression keys must keep every
+        /// representation even when different NaNs compare equal in the sort order. The two zeros are
+        /// one key for hashing, so `-0.` is deduplicated against `0.` and only the first one is kept.
+        const std::vector<UInt64> input_bits{0, 0x8000000000000000ULL, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
+        std::vector<UInt64> expected{0, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
         auto keys = ColumnFloat64::create();
-        for (const auto bits : expected)
+        for (const auto bits : input_bits)
             keys->insertValue(std::bit_cast<Float64>(bits));
-        Chunk input(Columns{std::move(keys)}, expected.size());
+        Chunk input(Columns{std::move(keys)}, input_bits.size());
         constexpr size_t threshold = 64 << 20;
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{}, threshold,
             tmp_data, /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 1,

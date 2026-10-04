@@ -1,6 +1,8 @@
--- `DISTINCT` and `LIMIT BY` group their keys by hash equality, which tells `-0.0` and `0.0` apart, as
--- `GROUP BY` does. Their in-order variants group by comparison, which does not, so the same query
--- returned one row instead of two whenever the plan happened to pick the sorted variant.
+-- `DISTINCT` and `LIMIT BY` group their keys by hash equality, as `GROUP BY` does. Their in-order
+-- variants group by comparison, so the same query could return a different number of rows depending
+-- on which variant the plan picked; for a float key the hash variant runs now. Hash tables canonicalize
+-- negative zero, so `-0.0` and `0.0` are one group whichever plan runs, while distinct NaN payloads
+-- (not covered here) would still be kept apart only by the hash variant.
 
 DROP TABLE IF EXISTS t_signed_zero;
 DROP TABLE IF EXISTS t_signed_zero_out;
@@ -8,39 +10,39 @@ DROP TABLE IF EXISTS t_signed_zero_out;
 CREATE TABLE t_signed_zero (k UInt32, f Float64, a Array(Float64)) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_signed_zero VALUES (1, -0.0, [-0.0]), (2, 0.0, [0.0]), (3, 1.5, [1.5]);
 
--- The results go through a table because `-0.0` and `0.0` compare equal, so `ORDER BY f` does not
--- order them and only a canonical rendering of the bits is comparable.
+-- The results go through a table so that they can be rendered canonically: which of the two zeros
+-- represents the group depends on the order in which the rows arrive, so only the class is printed.
 CREATE TABLE t_signed_zero_out (f Float64) ENGINE = MergeTree ORDER BY tuple();
 
 SELECT 'distinct, in order';
 INSERT INTO t_signed_zero_out SELECT DISTINCT f FROM t_signed_zero ORDER BY f SETTINGS optimize_distinct_in_order = 1;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 SELECT 'distinct, by hash';
 INSERT INTO t_signed_zero_out SELECT DISTINCT f FROM t_signed_zero ORDER BY f SETTINGS optimize_distinct_in_order = 0;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 SELECT 'distinct of an array of floats, in order';
 INSERT INTO t_signed_zero_out SELECT a[1] FROM (SELECT DISTINCT a FROM t_signed_zero ORDER BY a SETTINGS optimize_distinct_in_order = 1);
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 SELECT 'limit by, in order';
 INSERT INTO t_signed_zero_out SELECT f FROM t_signed_zero ORDER BY f LIMIT 1 BY f;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 SELECT 'limit by, by hash';
 INSERT INTO t_signed_zero_out SELECT f FROM t_signed_zero LIMIT 1 BY f;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
--- `GROUP BY` is the reference: it has always kept the two zeros apart.
+-- `GROUP BY` is the reference: it puts the two zeros into one group as well.
 SELECT 'group by';
 INSERT INTO t_signed_zero_out SELECT f FROM t_signed_zero GROUP BY f SETTINGS optimize_aggregation_in_order = 0;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 -- The preliminary `DISTINCT` takes its groups from the sorting key of the table, so a float sorting key
@@ -52,7 +54,7 @@ INSERT INTO t_signed_zero_float_key SELECT 1.5;
 
 SELECT 'preliminary distinct on the float sorting key, no ORDER BY';
 INSERT INTO t_signed_zero_out SELECT DISTINCT f FROM t_signed_zero_float_key;
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 SELECT 'the same, with the sorted-stream transform kept out of the plan';
@@ -77,7 +79,7 @@ INSERT INTO t_signed_zero_pair SELECT 1, 1.5;
 
 SELECT 'distinct over an integer key extended by a float key';
 INSERT INTO t_signed_zero_out SELECT f FROM (SELECT DISTINCT k, f FROM t_signed_zero_pair ORDER BY k);
-SELECT hex(reinterpretAsUInt64(f)) FROM t_signed_zero_out ORDER BY 1;
+SELECT if(f = 0, 'zero', hex(reinterpretAsUInt64(f))) FROM t_signed_zero_out ORDER BY 1;
 TRUNCATE TABLE t_signed_zero_out;
 
 -- An integer key still groups in order. The number of streams, and with it the `× N` suffix of a
