@@ -88,8 +88,15 @@ ASTPtr IDatabase::getCreateTableQuery(const String & name, ContextPtr context) c
         }
         catch (...)
         {
+            /// A cancelled query must be reported as cancelled, not as a missing table, so let that
+            /// one reason through while every other failure keeps the original exception.
+            checkPromptingNotCancelled();
             tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to check whether the table exists while computing a hint for a missing table");
         }
+        /// Hint computation can also return normally after a cancellation arrives, in which case the
+        /// catch above never runs, so a cancelled query would be reported as a missing table.
+        if (table_is_missing)
+            checkPromptingNotCancelled();
         throw;
     }
 }
