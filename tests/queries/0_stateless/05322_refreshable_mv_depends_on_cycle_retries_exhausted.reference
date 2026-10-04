@@ -1,0 +1,5 @@
+-- the REFRESH EVERY view of the cycle fails
+resumed: 1
+-- a DEPENDS ON view of the cycle fails
+retries are rate limited: 1
+resumed: 1

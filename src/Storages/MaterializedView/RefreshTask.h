@@ -207,6 +207,9 @@ public:
     /// Doesn't assign `table` field.
     DependencyRefreshInfo getInfoForDependentViews() const;
 
+    /// The views this one DEPENDS ON.
+    std::vector<StorageID> getDependencies() const;
+
     /// Called when refresh scheduling needs to be reconsidered, e.g. after a refresh happens in
     /// any task that this task depends on.
     void notify();
@@ -434,6 +437,9 @@ private:
     bool collectDependencyStates(AllDependenciesInfo & out, std::unique_lock<std::mutex> & lock);
     bool collectDependencyStatesUnlocked(AllDependenciesInfo & out, const std::vector<StorageID> & deps);
     void syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context);
+    /// Whether this view is on a DEPENDS ON cycle: one of `deps` depends on it, directly or transitively.
+    /// Locks the other views' tasks, so must be called without holding `mutex`.
+    bool dependsOnItselfUnlocked(const std::vector<StorageID> & deps) const;
 
     /// Looks at time and dependencies and decides when to do next refresh.
     /// Returns:
