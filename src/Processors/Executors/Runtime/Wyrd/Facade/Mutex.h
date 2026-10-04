@@ -5,7 +5,7 @@
 #include <mutex>
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Atomic.h>
+#    include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #    include <base/types.h>
 #endif
 

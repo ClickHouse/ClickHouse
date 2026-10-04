@@ -1,7 +1,7 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Mutex.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Futex.h>
+#    include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #endif
 
 namespace DB::Runtime::Wyrd

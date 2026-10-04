@@ -1,6 +1,6 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/InjectFault.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Simulator.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Syscall.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulator.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
 
 namespace DB::Runtime::Wyrd
 {

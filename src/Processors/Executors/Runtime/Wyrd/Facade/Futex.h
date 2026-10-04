@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <base/types.h>
 
 #if !defined(WYRD_SIMULATION) && !defined(WYRD_ADVERSARY)

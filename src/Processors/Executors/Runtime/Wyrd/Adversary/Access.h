@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Adversary.h>
+#include <Processors/Executors/Runtime/Wyrd/Adversary/Adversary.h>
 
 namespace DB::Runtime::Wyrd
 {

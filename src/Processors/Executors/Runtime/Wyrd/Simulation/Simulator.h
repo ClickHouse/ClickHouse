@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/FutexTable.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Scheduler.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/FutexTable.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
 #include <Common/CoroutineStack.h>
 
 #include <exception>

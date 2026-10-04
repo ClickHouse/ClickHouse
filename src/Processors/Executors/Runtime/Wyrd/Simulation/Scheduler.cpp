@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Scheduler.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 namespace DB::Runtime::Wyrd
 {

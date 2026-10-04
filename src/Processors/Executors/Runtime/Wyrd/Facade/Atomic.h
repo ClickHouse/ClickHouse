@@ -5,9 +5,9 @@
 #include <type_traits>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #endif
 
 namespace DB::Runtime::Wyrd

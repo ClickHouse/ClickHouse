@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 #include <Common/randomSeed.h>
 

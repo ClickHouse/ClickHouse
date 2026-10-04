@@ -1,6 +1,6 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Simulator.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/SimulatedThread.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulator.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 

@@ -1,10 +1,10 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Thread.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Syscall.h>
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
 #    include <limits>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Access.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
 #endif
 
 namespace DB::Runtime::Wyrd

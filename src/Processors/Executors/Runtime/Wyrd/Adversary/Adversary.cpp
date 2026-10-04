@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Adversary.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Adversary/Adversary.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 #include <algorithm>
 #include <semaphore>

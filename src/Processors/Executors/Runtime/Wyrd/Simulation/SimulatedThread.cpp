@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/SimulatedThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
 #include <Common/CoroutineStack.h>
 
 namespace DB::Runtime::Wyrd
