@@ -106,7 +106,7 @@ if (NOT ENABLE_XRAY)
     set (ENABLE_XRAY 0)
 endif()
 
-if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE)
     message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
     set (ENABLE_XRAY 0)
 endif()
@@ -185,9 +185,14 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 
+    if (LINKER_NAME MATCHES "lld")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--fatal-warnings")
+    endif ()
+
     if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
         # Fold identical code and data sections to reduce binary size.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
+        # `safe` keeps address-taken functions distinct, as C and C++ require.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib
@@ -359,7 +364,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
+    # Only useful on Linux where we use lld with --icf=safe; Darwin's ld64
     # does not consume these sections.
     if (OS_LINUX)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
@@ -389,6 +394,14 @@ endif()
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
+
+# Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
+# the guard page into another mapping. Only functions with frames larger than a page pay for it.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
+# Note: it's not enabled on RISC-V64 due to bugs in LLVM.
+if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
@@ -675,6 +688,12 @@ if (NOT OS_DARWIN)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
 endif ()
 
+# Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
+# Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
+if (NOT OS_DARWIN AND NOT OS_WASM)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -828,14 +847,34 @@ if (FUZZER)
                 # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
                 # runs before any coverage runtime exists, so every executable would
                 # crash at startup.
+                #
+                # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
+                # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
+                # the small code model's `R_X86_64_PC32` relocations, and the link fails with `relocation
+                # R_X86_64_PC32 out of range`. The table takes 16 bytes per instrumented edge - about a
+                # quarter of the instrumented `.text` - in a writable section that the linker places
+                # between `.text` and `.bss`, right in that range. libFuzzer does not need it to fuzz:
+                # coverage feedback comes from the inline 8-bit counters, and the table only serves
+                # reporting (`cov:` in the progress lines - `ft:` stays - `NEW_FUNC`, `-print_pcs`,
+                # `-print_coverage`, `-print_funcs`) and `-focus_function`.
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
-                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
+                # Every fuzzer statically links the whole of ClickHouse with its own copy of the
+                # ASan-instrumented DWARF: ~5 GiB per binary, more than 80% of it `.debug_*`. Thirty
+                # of them exceed the CI runner disk while linking the last ones, so keep the debug
+                # sections compressed in the linked binary (2.5-3x smaller; the object files are
+                # already `-gz=zlib`, gated by the same option). `llvm-symbolizer`, which ASan and
+                # libFuzzer use for reports, reads compressed sections transparently; the in-process
+                # `Dwarf` reader skips them, which only costs line numbers in ClickHouse's own traces.
+                if (LINKER_NAME MATCHES "lld" AND COMPRESS_DEBUG_SECTIONS)
+                    target_link_options(${target} PRIVATE "-Wl,--compress-debug-sections=zlib")
+                endif ()
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
                 get_target_filename(${target} target_bin_name)
