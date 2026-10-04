@@ -4861,7 +4861,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         auto analyze_is_null_with_if_null_key = [&, this](const RPNBuilderTreeNode & expr) -> bool
         {
             MonotonicFunctionsChain key_chain;
-            bool unused_chain_is_positive;
+            bool unused_chain_is_positive = true;
             if (!extractMonotonicFunctionsChainFromKey(
                     func.getContext(), expr.getColumnName(), info, key_column_num, key_expr_type, key_chain, unused_chain_is_positive,
                     [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
