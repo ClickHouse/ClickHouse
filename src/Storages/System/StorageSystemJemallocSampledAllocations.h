@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
@@ -30,6 +32,11 @@ public:
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
+
+#if USE_JEMALLOC
+    /// Rows of the heap profile in `profile_path`; the file is removed when the source is destroyed.
+    static Pipe readHeapProfile(std::string profile_path, SharedHeader header, size_t max_block_size);
+#endif
 };
 
 }

@@ -100,6 +100,7 @@ protected:
                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                         "Malformed backtrace line in heap profile '{}': '{}'", filename, line);
                 current_stack.clear();
+                seen_backtrace = true;
                 continue;
             }
 
@@ -109,8 +110,8 @@ protected:
                 continue;
             record.remove_prefix(std::string_view("f:").size());
 
-            /// Allocation records are emitted only under a backtrace block.
-            if (current_addresses.empty())
+            /// Allocation records are emitted only under a backtrace block; its stack is empty if jemalloc could not unwind.
+            if (!seen_backtrace)
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                     "Allocation record without a preceding backtrace in heap profile '{}'", filename);
 
@@ -168,6 +169,7 @@ private:
     std::unique_ptr<ReadBufferFromFile> file_input;
     std::vector<UInt64> current_addresses;
     Array current_stack;
+    bool seen_backtrace = false;
     UInt64 sample_interval = 0;
     bool is_finished = false;
 };
@@ -242,12 +244,18 @@ Pipe StorageSystemJemallocSampledAllocations::read(
 
     auto profile_path = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
 
-    return Pipe(std::make_shared<JemallocSampledAllocationsSource>(
-        std::move(profile_path), std::make_shared<const Block>(std::move(header)), max_block_size));
+    return readHeapProfile(std::move(profile_path), std::make_shared<const Block>(std::move(header)), max_block_size);
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "jemalloc is not enabled");
 #endif
 }
+
+#if USE_JEMALLOC
+Pipe StorageSystemJemallocSampledAllocations::readHeapProfile(std::string profile_path, SharedHeader header, size_t max_block_size)
+{
+    return Pipe(std::make_shared<JemallocSampledAllocationsSource>(std::move(profile_path), std::move(header), max_block_size));
+}
+#endif
 
 }
 
