@@ -126,7 +126,7 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
              log_comment = '04257_pe_and_block_zero';
 
 -- Q8: leapfrog AND ['adense', 'dwide'], forced by the `leapfrog` algorithm.
---     intersectLeapfrog dispatches to intersectTwo, which calls advance() repeatedly.
+--     intersectLeapfrog advances the denser cursor to the doc ids of the sparser one.
 --     Triggers: LeapfrogIntersections, AdvanceCount.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
     SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
