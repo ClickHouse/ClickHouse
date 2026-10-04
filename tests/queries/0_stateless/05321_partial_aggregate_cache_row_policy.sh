@@ -13,6 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user_full="user_full_${CLICKHOUSE_DATABASE}"
 user_restricted="user_restricted_${CLICKHOUSE_DATABASE}"
 policy="policy_${CLICKHOUSE_DATABASE}"
+policy_full="policy_full_${CLICKHOUSE_DATABASE}"
 
 settings="SETTINGS use_partial_aggregate_cache = 1, optimize_aggregation_in_order = 0, max_rows_to_group_by = 0, group_by_overflow_mode = 'throw'"
 
@@ -20,7 +21,7 @@ $CLICKHOUSE_CLIENT -m -q "
 SYSTEM DROP AGGREGATE CACHE;
 DROP TABLE IF EXISTS test_partial_agg_cache_row_policy;
 DROP USER IF EXISTS ${user_full}, ${user_restricted};
-DROP ROW POLICY IF EXISTS ${policy} ON test_partial_agg_cache_row_policy;
+DROP ROW POLICY IF EXISTS ${policy}, ${policy_full} ON test_partial_agg_cache_row_policy;
 
 CREATE TABLE test_partial_agg_cache_row_policy (k UInt32, v Int64) ENGINE = MergeTree() ORDER BY k;
 SYSTEM STOP MERGES test_partial_agg_cache_row_policy;
@@ -29,7 +30,9 @@ INSERT INTO test_partial_agg_cache_row_policy VALUES (1, 10), (1, 100), (2, 20),
 CREATE USER ${user_full} IDENTIFIED WITH no_password;
 CREATE USER ${user_restricted} IDENTIFIED WITH no_password;
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.test_partial_agg_cache_row_policy TO ${user_full}, ${user_restricted};
-CREATE ROW POLICY ${policy} ON test_partial_agg_cache_row_policy USING v < 100 AS RESTRICTIVE TO ${user_restricted};
+CREATE ROW POLICY ${policy} ON test_partial_agg_cache_row_policy USING v < 100 TO ${user_restricted};
+-- Each user needs a permissive policy of its own: a table with row policies can be denied to users without any.
+CREATE ROW POLICY ${policy_full} ON test_partial_agg_cache_row_policy USING 1 TO ${user_full};
 "
 
 query="SELECT k, sum(v) FROM ${CLICKHOUSE_DATABASE}.test_partial_agg_cache_row_policy GROUP BY k ORDER BY k ${settings}"
@@ -43,7 +46,7 @@ echo "--- Unrestricted user again"
 $CLICKHOUSE_CLIENT --user "${user_full}" -q "${query}"
 
 $CLICKHOUSE_CLIENT -m -q "
-DROP ROW POLICY ${policy} ON test_partial_agg_cache_row_policy;
+DROP ROW POLICY ${policy}, ${policy_full} ON test_partial_agg_cache_row_policy;
 DROP USER ${user_full}, ${user_restricted};
 DROP TABLE test_partial_agg_cache_row_policy;
 "
