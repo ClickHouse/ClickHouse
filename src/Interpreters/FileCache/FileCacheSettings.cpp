@@ -184,6 +184,13 @@ void FileCacheSettings::loadFromConfig(
         impl->set(key, config.getString(config_prefix + "." + key));
     }
 
+    /// Every setting of the cache is an element this section supports, even if it is absent now:
+    /// some of them are changed later by a configuration reload (see `FileCacheFactory::updateSettingsFromConfig`),
+    /// which does not go through the disk. Look them up, so that a configuration tracking the read keys
+    /// (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows about them as well.
+    for (const auto & setting : impl->all())
+        config.has(config_prefix + "." + setting.getName());
+
     if ((*this)[FileCacheSetting::path].changed)
     {
         if (fs::path((*this)[FileCacheSetting::path].value).is_relative())

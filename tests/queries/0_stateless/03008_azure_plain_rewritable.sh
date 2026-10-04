@@ -22,8 +22,6 @@ settings disk = disk(
     metadata_type = plain_rewritable,
     object_storage_type = azure_blob_storage,
     name = '${container}',
-    path='/var/lib/clickhouse/disks/${container}/tables',
-    container_name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
