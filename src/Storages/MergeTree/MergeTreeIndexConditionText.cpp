@@ -146,6 +146,19 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
+/// Appending zero bytes keeps every term of a value, so `FixedString` padding never hides one.
+static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
+{
+    return type == ITokenizer::Type::SplitByNonAlpha
+        || type == ITokenizer::Type::Ngrams
+        || type == ITokenizer::Type::SparseGrams
+        || type == ITokenizer::Type::AsciiCJK
+#if USE_ICU
+        || type == ITokenizer::Type::Icu
+#endif
+        ;
+}
+
 /// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
 static bool isIndexedColumnArray(const Block & header)
 {
@@ -177,9 +190,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    NameSet columns_shadowing_map_subcolumns_)
+    NameSet columns_shadowing_map_subcolumns_,
+    JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(index_sample_block)
+    , json_argument_types(std::move(json_argument_types_))
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
@@ -249,6 +264,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         if (requiresReadingAllTokens(element))
             global_search_mode = TextSearchMode::Any;
     }
+
+    std::vector<UInt128> pattern_hashes;
+    for (const auto & [query_hash, query] : all_search_queries)
+    {
+        if (!query->getPatterns().empty())
+            pattern_hashes.emplace_back(query_hash);
+    }
+    std::ranges::sort(pattern_hashes);
+
+    SipHash pattern_hash_state;
+    pattern_hash_state.update(pattern_hashes.size());
+    for (const auto & pattern_hash : pattern_hashes)
+        pattern_hash_state.update(pattern_hash);
+    search_patterns_hash = pattern_hash_state.get128();
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
@@ -976,9 +1005,9 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     {
         std::vector<OptimizedRegularExpression> patterns;
         if (case_insensitive)
-            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, true>(pattern));
         else
-            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, false>(pattern));
         return patterns;
     };
 
@@ -1169,83 +1198,6 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
-namespace
-{
-
-/// Whether converting a value of type `from` to type `to` never changes it and never throws.
-/// `LowCardinality` may be added or dropped and `Nullable` may be added, at any depth of `Array`.
-/// `Nullable` cannot be dropped, because it may throw on NULL.
-bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
-{
-    auto from_type = removeLowCardinality(from);
-    auto to_type = removeLowCardinality(to);
-
-    if (to_type->isNullable())
-    {
-        from_type = removeNullable(from_type);
-        to_type = removeNullable(to_type);
-    }
-    else if (from_type->isNullable())
-    {
-        return false;
-    }
-
-    if (from_type->equals(*to_type))
-        return true;
-
-    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
-    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
-}
-
-/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` with a lossless conversion (see above).
-bool isLosslessConversionFunction(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return false;
-
-    const auto function_name = node.function_base->getName();
-    const size_t arguments_size = node.children.size();
-
-    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
-    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
-
-    if (!is_cast && !is_wrapper)
-        return false;
-
-    return isLosslessConversion(node.children.front()->result_type, node.result_type);
-}
-
-/// Strips lossless conversions from the node (see above).
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
-{
-    if (!node.isFunction())
-        return node;
-
-    /// Only the DAG form carries the types; the AST form is left as is.
-    const auto function = node.toFunctionNode();
-    const auto * function_dag_node = function.getDAGNode();
-
-    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
-        return node;
-
-    return unwrapLosslessConversion(function.getArgumentAt(0));
-}
-
-}
-
-const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
-{
-    const auto * node_without_alias = node;
-    while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
-        node_without_alias = node_without_alias->children.front();
-
-    if (!isLosslessConversionFunction(*node_without_alias))
-        return node;
-
-    return unwrapLosslessConversion(node_without_alias->children.front());
-}
-
 /// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
 /// `mapValues` stores neither.
 static bool isMapValueDefault(std::string_view value, const Block & header)
@@ -1292,7 +1244,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1339,7 +1291,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -1778,7 +1730,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
         const auto & pattern = value_field.safeGet<String>();
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
+        Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
         auto tokens_for_queries = regexpToTokensForQueries(pattern);
@@ -2225,7 +2177,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     auto output_column_name = outputs.front()->result_name;
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths", json_argument_types);
     if (!json_info)
         return false;
 
@@ -2271,7 +2223,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -2334,7 +2286,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && ITokenizer::splitsAtZeroByte(tokenizer->getType()),
+        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
 

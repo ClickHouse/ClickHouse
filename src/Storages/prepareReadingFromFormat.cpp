@@ -143,10 +143,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
-        /// If only virtual columns were requested, just read the smallest column.
+        /// If only virtual or hive partition columns were requested, just read the smallest column.
+        /// Prefer a non-partition column: partition columns are dropped from the format header below.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
+            NamesAndTypesList candidates;
+            for (const auto & column : columns_in_data_file)
+                if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
+                    candidates.push_back(column);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
 
         /// A requested column absent from the data file is computed from its `DEFAULT` expression
@@ -172,6 +177,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
         if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
     }
+
+    /// A structure of only hive partition columns: read them, an empty header yields no rows.
+    if (info.format_header.columns() == 0)
+        for (const auto & column : info.columns_description)
+            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
@@ -393,6 +403,14 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     }
 
     return res;
+}
+
+bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
+{
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+        if (format_header.has(column.name))
+            return true;
+    return false;
 }
 
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
