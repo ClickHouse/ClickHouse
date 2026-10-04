@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 #include <mutex>
 
@@ -35,6 +36,41 @@ struct FsNode : public std::enable_shared_from_this<FsNode>
     std::optional<DirectoryRemoteInfo> info = {};
     std::unordered_map<std::string, std::shared_ptr<FsNode>> subdirectories = {};
 };
+
+/// A write applied to a snapshot, in the form that can be replayed on top of a different snapshot.
+namespace FsEdits
+{
+    struct RecordDirectory
+    {
+        std::string path;
+        DirectoryRemoteInfo info;
+    };
+
+    struct MoveDirectory
+    {
+        std::string from;
+        std::string to;
+    };
+
+    struct RemoveDirectory
+    {
+        std::string path;
+    };
+
+    struct RecordFile
+    {
+        std::string path;
+        FileRemoteInfo info;
+    };
+
+    struct RemoveFile
+    {
+        std::string path;
+    };
+}
+
+using FsEdit = std::variant<FsEdits::RecordDirectory, FsEdits::MoveDirectory, FsEdits::RemoveDirectory, FsEdits::RecordFile, FsEdits::RemoveFile>;
+using FsJournal = std::vector<FsEdit>;
 
 /// Mutable snapshot of the virtual file system tree.
 class FsSnapshot
@@ -69,14 +105,25 @@ public:
     /// Snapshot Methods
 
     std::shared_ptr<FsNode> getRoot() const;
-    void setRoot(std::shared_ptr<FsNode> new_root);
+    /// Replaces the tree, resets the layout deltas and starts recording the subsequent writes into the journal.
+    void resetToRoot(std::shared_ptr<FsNode> new_root);
     std::pair<int64_t, int64_t> getRemoteLayoutDeltas() const;
 
+    /// Journal Methods
+
+    /// The writes applied since `resetToRoot`, in order. Empty for snapshots that were never reset.
+    FsJournal getJournal() const;
+    /// Applies the writes recorded by another snapshot on top of this one.
+    void replay(const FsJournal & journal);
+
 private:
+    void record(FsEdit edit) TSA_REQUIRES(mutex);
+
     mutable std::mutex mutex;
     std::shared_ptr<FsNode> root TSA_GUARDED_BY(mutex);
     mutable int64_t remote_layout_directories_delta TSA_GUARDED_BY(mutex) = 0;
     mutable int64_t remote_layout_files_delta TSA_GUARDED_BY(mutex) = 0;
+    std::optional<FsJournal> journal TSA_GUARDED_BY(mutex);
 };
 
 }

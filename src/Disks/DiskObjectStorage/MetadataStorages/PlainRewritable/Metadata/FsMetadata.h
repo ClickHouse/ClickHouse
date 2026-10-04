@@ -15,7 +15,9 @@ class FsMetadata
 public:
     FsMetadata(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name);
 
-    void applySnapshot(std::shared_ptr<FsSnapshot> snapshot);
+    /// Atomically publishes a new version of the tree: the latest one with the journal replayed on top of it.
+    /// Nothing is published if the replay throws.
+    void applyJournal(const FsJournal & journal);
     void applyLayout(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout);
 
     std::shared_ptr<FsSnapshot> takeReadWriteSnapshot() const;
