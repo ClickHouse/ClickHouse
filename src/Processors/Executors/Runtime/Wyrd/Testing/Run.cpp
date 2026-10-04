@@ -1,22 +1,18 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
 
-#include <base/types.h>
-
-#include <cstdlib>
-#include <string>
-
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
 #    include <Common/randomSeed.h>
 #    include <fmt/format.h>
 #    include <magic_enum.hpp>
+#    include <algorithm>
+#    include <limits>
+#    include <set>
 #    include <stdexcept>
-#    include <utility>
+#    include <unordered_map>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
 #    include <base/scope_guard.h>
 #    include <fmt/format.h>
-#    include <chrono>
 #    include <semaphore>
 #    include <thread>
 #endif
@@ -26,69 +22,58 @@ namespace DB::Runtime::Wyrd
 
 #if defined(WYRD_SIMULATION)
 
-static std::pair<UInt64, size_t> seedsFromEnvironment()
+void runTest(std::function<void()> body, TestParams params)
 {
-    if (const char * seed = std::getenv("WYRD_SEED")) // NOLINT(concurrency-mt-unsafe)
-        return {std::stoull(seed), 1};
+    std::vector<SimulationResult> results;
 
-    const char * count = std::getenv("WYRD_SEEDS"); // NOLINT(concurrency-mt-unsafe)
-    return {randomSeed(), count ? std::stoull(count) : 10};
-}
-
-void runTest(std::function<void()> body)
-{
-    auto [base_seed, seeds] = seedsFromEnvironment();
-
-    for (size_t i = 0; i < seeds; ++i)
+    for (size_t i = 0; i < params.runs; ++i)
     {
-        SimulationParams params;
-        params.seed = base_seed + i;
+        SimulationParams simulation = params.simulation;
+        simulation.seed = params.seed ? *params.seed : randomSeed();
 
-        SimulationResult first = Simulation(params, {}).run(body);
-        SimulationResult second = Simulation(params, {}).run(body);
+        SimulationResult first = Simulation(simulation, params.scheduler).run(body);
+        SimulationResult second = Simulation(simulation, params.scheduler).run(body);
 
         if (first.digest != second.digest)
             throw std::runtime_error(fmt::format(
                 "Simulation with seed {} is not deterministic: digests {} and {}, {} and {} steps",
-                params.seed, first.digest, second.digest, first.total_steps, second.total_steps));
+                simulation.seed, first.digest, second.digest, first.total_steps, second.total_steps));
 
         if (first.status != SimulationResult::Status::Ok)
             throw std::runtime_error(fmt::format(
                 "Simulation with seed {} ended with {} after {} steps. {}\nLast syscalls:\n{}",
-                params.seed, magic_enum::enum_name(first.status), first.total_steps, first.exception_message, first.last_syscalls));
+                simulation.seed, magic_enum::enum_name(first.status), first.total_steps, first.exception_message, first.last_syscalls));
+
+        results.push_back(std::move(first));
     }
+
+    size_t min_steps = std::numeric_limits<size_t>::max();
+    size_t max_steps = 0;
+    std::set<UInt64> digests;
+    for (const auto & result : results)
+    {
+        min_steps = std::min(min_steps, result.total_steps);
+        max_steps = std::max(max_steps, result.total_steps);
+        digests.insert(result.digest);
+    }
+
+    fmt::print(stderr, "Wyrd simulation: runs={} steps={}..{} distinct_schedules={}\n", results.size(), min_steps, max_steps, digests.size());
 }
 
 #elif defined(WYRD_ADVERSARY)
 
-static std::chrono::seconds watchdogTimeoutFromEnvironment()
+void runTest(std::function<void()> body, TestParams params)
 {
-    const char * seconds = std::getenv("WYRD_WATCHDOG_SECONDS"); // NOLINT(concurrency-mt-unsafe)
-    return std::chrono::seconds(seconds ? std::stoull(seconds) : 60);
-}
+    setAdversary(params.adversary);
+    SCOPE_EXIT({ resetAdversary(); });
 
-static scope_guard installDefaultAdversary()
-{
-    if (adversary())
-        return {};
-
-    setAdversary({});
-    return [] { resetAdversary(); };
-}
-
-void runTest(std::function<void()> body)
-{
-    scope_guard default_adversary = installDefaultAdversary();
-    adversary()->reset();
-
-    std::chrono::seconds timeout = watchdogTimeoutFromEnvironment();
     std::binary_semaphore finished{0};
     std::thread watchdog(
         [&]
         {
-            if (!finished.try_acquire_for(timeout))
+            if (!finished.try_acquire_for(params.watchdog))
             {
-                fmt::print(stderr, "Wyrd: the test body did not finish within {} seconds, aborting\n", timeout.count());
+                fmt::print(stderr, "Wyrd: the test body did not finish within {} seconds, aborting\n", params.watchdog.count());
                 std::abort();
             }
         });
@@ -98,15 +83,19 @@ void runTest(std::function<void()> body)
         watchdog.join();
     });
 
-    body();
+    for (size_t i = 0; i < params.runs; ++i)
+    {
+        adversary()->reset();
+        body();
 
-    AdversaryResult result = adversary()->report();
-    fmt::print(stderr, "Wyrd adversary: yields={} suspends={} spurious_failures={}\n", result.yields, result.suspends, result.spurious_failures);
+        AdversaryResult result = adversary()->report();
+        fmt::print(stderr, "Wyrd adversary #{}: yields={} suspends={} spurious_failures={}\n", i, result.yields, result.suspends, result.spurious_failures);
+    }
 }
 
 #else
 
-void runTest(std::function<void()> body)
+void runTest(std::function<void()> body, TestParams)
 {
     body();
 }
