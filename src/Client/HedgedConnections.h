@@ -126,6 +126,8 @@ public:
 
     std::string dumpAddresses() const override;
 
+    std::vector<ReplicaAddress> getFailedReplicaAddresses() const override;
+
     size_t size() const override { return offset_states.size(); }
 
     bool hasActiveConnections() const override { return active_connection_count > 0; }
@@ -173,6 +175,9 @@ private:
 
     void finishProcessReplica(ReplicaState & replica, bool disconnect);
 
+    /// Remember the address of a replica whose connection failed, see `failed_replica_addresses`.
+    void rememberFailedReplica(const ReplicaState & replica);
+
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
     HedgedConnectionsFactory hedged_connections_factory;
@@ -195,6 +200,11 @@ private:
 
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;
+
+    /// Addresses of the replicas whose connection failed with a network error (a receive timeout
+    /// or an exception while receiving a packet). Such a replica is dropped from `offset_states`
+    /// before the error is rethrown, so it is remembered here for `getFailedReplicaAddresses`.
+    std::vector<ReplicaAddress> failed_replica_addresses;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
