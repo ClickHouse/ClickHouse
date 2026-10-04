@@ -32,6 +32,8 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     Serializations serializations;
     DataTypes datatypes;
     FormatSettings format_settings;
+    /// Per index column, filled by the first `deserializeBinary`: whether its type contains an `Object`.
+    std::vector<bool> contains_object;
 };
 
 
