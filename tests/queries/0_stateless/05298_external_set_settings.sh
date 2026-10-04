@@ -34,7 +34,7 @@ WHERE number % 300000 IN (SELECT number * 7 % 300000 FROM numbers_mt(1000000))
 SETTINGS max_bytes_before_external_set = 0, max_threads = 8, log_comment = 'threads in memory';
 SELECT 'threads', count(), sum(cityHash64(number)) FROM numbers_mt(1000000)
 WHERE number % 300000 IN (SELECT number * 7 % 300000 FROM numbers_mt(1000000))
-SETTINGS max_bytes_before_external_set = '4M', max_threads = 8, log_comment = 'threads on disk';
+SETTINGS max_bytes_before_external_set = 1, max_threads = 8, log_comment = 'threads on disk';
 
 -- A positive ratio enables spilling even when it gives less than one byte, alone or with the
 -- absolute threshold.
