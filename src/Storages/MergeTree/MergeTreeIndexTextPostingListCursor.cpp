@@ -6,12 +6,12 @@
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/ProfileEvents.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/TargetSpecific.h>
 #include <config.h>
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <numeric>
 
@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event TextIndexLazySegmentsSkippedDense;
     extern const Event TextIndexLazySegmentsSkippedResolved;
     extern const Event TextIndexLazyBlocksSkippedResolved;
+    extern const Event TextIndexLazyBlocksSkippedDense;
 }
 
 namespace DB
@@ -125,6 +126,8 @@ PostingListCursor::~PostingListCursor()
         ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
     if (counters.blocks_skipped_resolved)
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
+    if (counters.blocks_skipped_dense)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedDense, counters.blocks_skipped_dense);
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)
@@ -573,72 +576,25 @@ template <PadOp op>
 inline void padDenseRange(UInt8 * __restrict out, size_t count)
 {
     if constexpr (op == PadOp::Or)
+    {
         memset(out, 1, count);
+    }
     else
+    {
         for (size_t i = 0; i < count; ++i)
             ++out[i];
-}
-
-#if USE_MULTITARGET_CODE
-DECLARE_X86_64_V3_SPECIFIC_CODE(
-/// Check whether a byte range contains no zero bytes (i.e., all positions are already set).
-/// Uses 256-bit (AVX2) loads with 4x loop unrolling for the hot path (128 bytes/iter).
-bool hasNoZeros(const UInt8 * data, size_t count)
-{
-    const __m256i * ptr = reinterpret_cast<const __m256i *>(data);
-
-    /// Process 128 bytes (4 × 32-byte vectors) per iteration.
-    size_t i = 0;
-    for (; i + 128 <= count; i += 128, ptr += 4)
-    {
-        __m256i v0 = _mm256_loadu_si256(ptr);
-        __m256i v1 = _mm256_loadu_si256(ptr + 1);
-        __m256i v2 = _mm256_loadu_si256(ptr + 2);
-        __m256i v3 = _mm256_loadu_si256(ptr + 3);
-
-        /// "Any byte in the 4 vectors is zero" — compare each vector to zero independently and OR the masks.
-        __m256i zero = _mm256_setzero_si256();
-        __m256i any_zero = _mm256_or_si256(
-            _mm256_or_si256(_mm256_cmpeq_epi8(v0, zero), _mm256_cmpeq_epi8(v1, zero)),
-            _mm256_or_si256(_mm256_cmpeq_epi8(v2, zero), _mm256_cmpeq_epi8(v3, zero)));
-
-        if (_mm256_movemask_epi8(any_zero) != 0)
-            return false;
     }
-
-    /// Scalar tail.
-    const UInt8 * tail = data + i;
-    size_t remaining = count - i;
-    return memchr(tail, 0, remaining) == nullptr;
-}
-) /// DECLARE_X86_64_V3_SPECIFIC_CODE
-#endif
-
-/// Runtime-dispatched `hasNoZeros`: returns true if all bytes in [data, data + count) are non-zero.
-bool hasNoZeros(const UInt8 * data, size_t count)
-{
-    if (count == 0)
-        return true;
-
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return TargetSpecific::x86_64_v3::hasNoZeros(data, count);
-#endif
-
-    return memchr(data, 0, count) == nullptr;
 }
 
-/// Whether the output region [data, data + count) needs no contribution from this posting list
-/// and the whole segment/block can be skipped:
-///   PadOp::Or  — already all-ones (every row set, nothing left to set);
-///   PadOp::And — already all-zeros (no row can ever reach count == n, so incrementing is pointless).
+/// Whether the output region [data, data + count) needs no contribution
+/// from this posting list and the whole segment/block can be skipped:
+///   PadOp::Or  — no byte is zero: every row is already set;
+///   PadOp::And — no counter equals `num_applied`: so no row can reach count == n and incrementing is pointless.
 template <PadOp op>
-inline bool canSkipRegion(const UInt8 * data, size_t count)
+inline bool canSkipRegion(const UInt8 * data, size_t count, UInt8 num_applied)
 {
-    if constexpr (op == PadOp::Or)
-        return hasNoZeros(data, count);
-    else
-        return memoryIsZero(data, 0, count);
+    const int value = op == PadOp::Or ? 0 : num_applied;
+    return memchr(data, value, count) == nullptr;
 }
 
 } // anonymous namespace
@@ -650,21 +606,21 @@ PostingsApplyWindow PostingListCursor::linearOr(UInt8 * data, size_t row_offset,
     if (is_embedded)
         return linearEmbedded<PadOp::Or>(data, row_offset, num_rows);
 
-    return linearSegments<PadOp::Or>(data, row_offset, num_rows);
+    return linearSegments<PadOp::Or>(data, row_offset, num_rows, 0);
 }
 
-PostingsApplyWindow PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows, UInt8 num_applied)
 {
     requireRowOffsetRepresentable(row_offset);
 
     if (is_embedded)
         return linearEmbedded<PadOp::And>(data, row_offset, num_rows);
 
-    return linearSegments<PadOp::And>(data, row_offset, num_rows);
+    return linearSegments<PadOp::And>(data, row_offset, num_rows, num_applied);
 }
 
 template <PadOp op>
-PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows, UInt8 num_applied)
 {
     PostingsApplyWindow window;
 
@@ -682,8 +638,12 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
         if (row_offset + num_rows <= seg_begin)
             break;
 
+        const bool segment_loaded = i == current_segment_idx && current_segment;
+
         /// Level 2a: segment-level skip. If the output region for this segment is already resolved
-        /// (all-ones for OR, all-zeros for AND), skip entirely — saving the I/O cost of prepareSegment.
+        /// (all-ones for OR, no surviving row for AND), skip entirely — saving the I/O cost of prepareSegment.
+        /// A loaded segment has no load cost left to save, so the check is left to its blocks.
+        if (!segment_loaded)
         {
             size_t clip_begin = std::max(seg_begin, row_offset);
             size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
@@ -693,7 +653,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
                 size_t clip_off = clip_begin - row_offset;
                 size_t clip_count = clip_end - clip_begin;
 
-                if (canSkipRegion<op>(data + clip_off, clip_count))
+                if (canSkipRegion<op>(data + clip_off, clip_count, num_applied))
                 {
                     ++counters.segments_skipped_resolved;
                     continue;
@@ -701,8 +661,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
             }
         }
 
-        /// Skip re-preparing the segment if it is already loaded.
-        if (i != current_segment_idx || !current_segment)
+        if (!segment_loaded)
             prepareSegment(i);
 
         /// Level 1: dense segment shortcut.
@@ -755,26 +714,35 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
             if (block_first >= row_offset + num_rows)
                 break;
 
+            const size_t block_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
+            const size_t block_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+            chassert(block_clip_begin < block_clip_end);
+
+            /// A block that straddles two consecutive windows is still decoded from the previous call.
+            const bool block_decoded = block_idx == current_block && decoded_count != 0;
+
             /// Level 2b: block-level skip (same resolved-region test as Level 2a, per block).
+            /// A decoded block has no decoding cost left to save, so the check is not worth it.
+            if (!block_decoded && canSkipRegion<op>(data + (block_clip_begin - row_offset), block_clip_end - block_clip_begin, num_applied))
             {
-                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
-                size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
-
-                if (blk_clip_begin < blk_clip_end)
-                {
-                    size_t blk_off = blk_clip_begin - row_offset;
-                    size_t blk_cnt = blk_clip_end - blk_clip_begin;
-
-                    if (canSkipRegion<op>(data + blk_off, blk_cnt))
-                    {
-                        ++counters.blocks_skipped_resolved;
-                        continue;
-                    }
-                }
+                ++counters.blocks_skipped_resolved;
+                continue;
             }
 
-            /// A block that straddles two consecutive windows is still decoded from the previous call
-            if (block_idx != current_block || decoded_count == 0)
+            /// Level 1b: dense block shortcut. A block whose row ids are consecutive covers its whole row range,
+            /// so the clipped range is padded at once instead of decoding the block.
+            const bool is_tail_block = block_idx + 1 == block_count && current_segment->tail_size > 0;
+            const size_t block_size = is_tail_block ? current_segment->tail_size : IPostingListBlockCodec::BLOCK_SIZE;
+
+            if (static_cast<size_t>(block_last) - block_first + 1 == block_size)
+            {
+                ++counters.blocks_skipped_dense;
+                padDenseRange<op>(data + (block_clip_begin - row_offset), block_clip_end - block_clip_begin);
+                window.extend(block_clip_begin, block_clip_end);
+                continue;
+            }
+
+            if (!block_decoded)
                 decodeBlock(block_idx);
 
             chassert(index <= decoded_count);
@@ -850,251 +818,80 @@ PostingsApplyWindow PostingListCursor::linearEmbedded(UInt8 * data, size_t row_o
 namespace
 {
 
-/// Two-cursor intersection. The lagging cursor advances to the leading cursor's doc_id.
-bool intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, size_t row_offset, size_t effective_end)
+/// Leapfrog intersection led by the sparsest cursor (`cursors` are sorted by ascending cardinality).
+/// The other cursors are advanced to the lead's doc_id in order, and the first one that overshoots moves the lead
+/// to its doc_id. So a denser cursor only advances to the doc_ids that all the sparser cursors contain.
+/// `num_cursors` is the number of cursors when it is fixed at compile time, which unrolls the loops over them, or 0.
+template <size_t num_cursors>
+bool intersectLeapfrogImpl(UInt8 * out, const std::vector<PostingListCursorPtr> & cursor_ptrs, size_t row_offset, size_t effective_end)
 {
-    bool found = false;
-    while (c0->valid() && c1->valid())
-    {
-        uint32_t v0 = c0->value();
-        uint32_t v1 = c1->value();
-        if (v0 >= effective_end || v1 >= effective_end)
-            return found;
+    const size_t n = num_cursors ? num_cursors : cursor_ptrs.size();
+    chassert(cursor_ptrs.size() == n);
 
-        if (v0 == v1)
-        {
-            out[v0 - row_offset] = 1;
-            found = true;
-            c0->next();
-            c1->next();
-        }
-        else if (v0 < v1)
-        {
-            c0->advance(v1);
-        }
-        else
-        {
-            c1->advance(v0);
-        }
-    }
-    return found;
-}
+    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
+    using CursorsType = std::conditional_t<num_cursors != 0,
+        std::array<PostingListCursor *, num_cursors>,
+        std::vector<PostingListCursor *>>;
 
-/// Three-cursor intersection. All cursors behind the maximum advance forward.
-bool intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, size_t row_offset, size_t effective_end)
-{
-    bool found = false;
-    while (c0->valid() && c1->valid() && c2->valid())
-    {
-        uint32_t v0 = c0->value();
-        uint32_t v1 = c1->value();
-        uint32_t v2 = c2->value();
-
-        uint32_t max_val = std::max({v0, v1, v2});
-        if (max_val >= effective_end)
-            return found;
-
-        if (v0 == v1 && v1 == v2)
-        {
-            out[v0 - row_offset] = 1;
-            found = true;
-            c0->next();
-            c1->next();
-            c2->next();
-        }
-        else
-        {
-            if (v0 < max_val) c0->advance(max_val);
-            if (v1 < max_val) c1->advance(max_val);
-            if (v2 < max_val) c2->advance(max_val);
-        }
-    }
-    return found;
-}
-
-/// Four-cursor intersection.
-bool intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, PostingListCursorPtr c3, size_t row_offset, size_t effective_end)
-{
-    bool found = false;
-    while (c0->valid() && c1->valid() && c2->valid() && c3->valid())
-    {
-        uint32_t v0 = c0->value();
-        uint32_t v1 = c1->value();
-        uint32_t v2 = c2->value();
-        uint32_t v3 = c3->value();
-
-        uint32_t max_val = std::max({v0, v1, v2, v3});
-        if (max_val >= effective_end)
-            return found;
-
-        if (v0 == v1 && v1 == v2 && v2 == v3)
-        {
-            out[v0 - row_offset] = 1;
-            found = true;
-            c0->next();
-            c1->next();
-            c2->next();
-            c3->next();
-        }
-        else
-        {
-            if (v0 < max_val) c0->advance(max_val);
-            if (v1 < max_val) c1->advance(max_val);
-            if (v2 < max_val) c2->advance(max_val);
-            if (v3 < max_val) c3->advance(max_val);
-        }
-    }
-    return found;
-}
-
-/// N-way leapfrog intersection (N <= 8): linear scan for min/max.
-bool intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
-{
-    const size_t n = cursors.size();
-    std::vector<uint32_t> vals(n);
-    for (size_t i = 0; i < n; ++i)
-        vals[i] = cursors[i]->value();
-
-    bool found = false;
-    while (true)
-    {
-        uint32_t min_val = vals[0];
-        uint32_t max_val = vals[0];
-
-        for (size_t i = 1; i < n; ++i)
-        {
-            if (vals[i] < min_val)
-                min_val = vals[i];
-            else if (vals[i] > max_val)
-                max_val = vals[i];
-        }
-
-        if (max_val >= effective_end)
-            return found;
-
-        if (min_val == max_val)
-        {
-            out[min_val - row_offset] = 1;
-            found = true;
-            for (size_t i = 0; i < n; ++i)
-            {
-                cursors[i]->next();
-                if (!cursors[i]->valid())
-                    return found;
-
-                vals[i] = cursors[i]->value();
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < n; ++i)
-            {
-                if (vals[i] < max_val)
-                {
-                    cursors[i]->advance(max_val);
-                    if (!cursors[i]->valid())
-                        return found;
-
-                    vals[i] = cursors[i]->value();
-                }
-            }
-        }
-    }
-}
-
-/// Element for the min-heap used in N-way intersection.
-struct HeapItem
-{
-    uint32_t val = 0;
-    uint32_t idx = 0;
-
-    HeapItem() = default;
-    HeapItem(uint32_t val_, uint32_t idx_) : val(val_), idx(idx_) {}
-    bool operator>(const HeapItem & other) const { return val > other.val; }
-};
-
-/// N-way leapfrog intersection (N > 8): min-heap.
-bool intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
-{
-    const size_t n = cursors.size();
-
-    std::vector<HeapItem> heap(n);
-    uint32_t max_val = 0;
+    CursorsType cursors{};
+    if constexpr (num_cursors == 0)
+        cursors.resize(n);
 
     for (size_t i = 0; i < n; ++i)
-    {
-        uint32_t val = cursors[i]->value();
-        heap[i] = {val, static_cast<uint32_t>(i)};
-        max_val = std::max(max_val, val);
-    }
-    std::make_heap(heap.begin(), heap.end(), std::greater<>{});
+        cursors[i] = cursor_ptrs[i].get();
 
+    PostingListCursor & lead = *cursors[0];
     bool found = false;
-    while (true)
+
+    while (lead.valid() && lead.value() < effective_end)
     {
-        if (max_val >= effective_end)
-            return found;
+        const uint32_t doc = lead.value();
+        size_t i = 1;
 
-        uint32_t min_val = heap.front().val;
-
-        if (min_val == max_val)
+        for (; i < n; ++i)
         {
-            out[min_val - row_offset] = 1;
+            PostingListCursor & cursor = *cursors[i];
+
+            if (cursor.valid() && cursor.value() < doc)
+                cursor.advance(doc);
+
+            if (!cursor.valid())
+                return found;
+
+            if (cursor.value() > doc)
+                break;
+        }
+
+        if (i == n)
+        {
+            out[doc - row_offset] = 1;
             found = true;
-            max_val = 0;
 
-            for (size_t i = 0; i < n; ++i)
-            {
-                uint32_t idx = heap[i].idx;
-                cursors[idx]->next();
-                if (!cursors[idx]->valid())
-                    return found;
-
-                uint32_t val = cursors[idx]->value();
-                if (val >= effective_end)
-                    return found;
-
-                heap[i].val = val;
-                max_val = std::max(max_val, val);
-            }
-            std::make_heap(heap.begin(), heap.end(), std::greater<>{});
+            for (size_t j = 0; j < n; ++j)
+                cursors[j]->next();
         }
         else
         {
-            uint32_t min_idx = heap.front().idx;
-            std::pop_heap(heap.begin(), heap.end(), std::greater<>{});
-
-            cursors[min_idx]->advance(max_val);
-            if (!cursors[min_idx]->valid())
-                return found;
-
-            uint32_t new_val = cursors[min_idx]->value();
-            if (new_val >= effective_end)
-                return found;
-
-            max_val = std::max(max_val, new_val);
-            heap.back() = {new_val, min_idx};
-            std::push_heap(heap.begin(), heap.end(), std::greater<>{});
+            lead.advance(cursors[i]->value());
         }
     }
+
+    return found;
 }
 
-/// Dispatch to the best leapfrog variant based on cursor count.
 bool intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
 {
-    if (cursors.size() == 2)
-        return intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
-
-    if (cursors.size() == 3)
-        return intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
-
-    if (cursors.size() == 4)
-        return intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
-
-    if (cursors.size() <= 8)
-        return intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
-
-    return intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
+    switch (cursors.size())
+    {
+        case 2: return intersectLeapfrogImpl<2>(out, cursors, row_offset, effective_end);
+        case 3: return intersectLeapfrogImpl<3>(out, cursors, row_offset, effective_end);
+        case 4: return intersectLeapfrogImpl<4>(out, cursors, row_offset, effective_end);
+        case 5: return intersectLeapfrogImpl<5>(out, cursors, row_offset, effective_end);
+        case 6: return intersectLeapfrogImpl<6>(out, cursors, row_offset, effective_end);
+        case 7: return intersectLeapfrogImpl<7>(out, cursors, row_offset, effective_end);
+        case 8: return intersectLeapfrogImpl<8>(out, cursors, row_offset, effective_end);
+        default: return intersectLeapfrogImpl<0>(out, cursors, row_offset, effective_end);
+    }
 }
 
 #if USE_MULTITARGET_CODE
@@ -1151,7 +948,7 @@ bool intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 
     for (size_t i = 1; i < cursors.size(); ++i)
     {
-        PostingsApplyWindow written = cursors[i]->linearAnd(out + (window.begin - row_offset), window.begin, window.end - window.begin);
+        PostingsApplyWindow written = cursors[i]->linearAnd(out + (window.begin - row_offset), window.begin, window.end - window.begin, static_cast<UInt8>(i));
 
         if (written.empty())
         {
@@ -1257,9 +1054,17 @@ bool lazyIntersectPostingLists(
         return intersectBruteForce(out, sorted_cursors, row_offset, num_rows);
     }
 
-    for (size_t i = 0; i < n; ++i)
+    /// The first candidate of the window is the first doc_id of the lead in it. The other cursors are positioned
+    /// at it (they may have never been positioned yet), and a cursor without doc_ids in the window ends the search.
+    PostingListCursor & lead = *sorted_cursors.front();
+    lead.advance(static_cast<uint32_t>(row_offset));
+
+    if (!lead.valid() || lead.value() >= end)
+        return false;
+
+    for (size_t i = 1; i < n; ++i)
     {
-        sorted_cursors[i]->advance(static_cast<uint32_t>(row_offset));
+        sorted_cursors[i]->advance(lead.value());
         if (!sorted_cursors[i]->valid() || sorted_cursors[i]->value() >= end)
             return false;
     }

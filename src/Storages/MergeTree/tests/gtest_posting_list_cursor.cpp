@@ -658,7 +658,7 @@ TEST(PostingListCursorTest, LinearAndFullRange)
     auto cursor = makeEmbeddedCursor(info);
 
     std::vector<UInt8> buf(60, 0);
-    cursor->linearAnd(buf.data(), 0, 60);
+    cursor->linearAnd(buf.data(), 0, 60, 0);
 
     for (auto d : docs)
         EXPECT_EQ(buf[d], 1u) << "Expected buf[" << d << "] == 1";
@@ -673,7 +673,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsExisting)
     auto cursor = makeEmbeddedCursor(info);
 
     std::vector<UInt8> buf(40, 1);
-    cursor->linearAnd(buf.data(), 0, 40);
+    cursor->linearAnd(buf.data(), 0, 40, 1);
 
     EXPECT_EQ(buf[10], 2u);
     EXPECT_EQ(buf[20], 2u);
@@ -684,7 +684,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsExisting)
 
 
 // ===========================================================================================
-// Section 6: Two-cursor intersection (intersectTwo)
+// Section 6: Two-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectTwoIdentical)
@@ -767,7 +767,7 @@ TEST(PostingListCursorTest, IntersectTwoSingleCommon)
 
 
 // ===========================================================================================
-// Section 7: Three-cursor intersection (intersectThree)
+// Section 7: Three-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectThreeAllMatch)
@@ -819,7 +819,7 @@ TEST(PostingListCursorTest, IntersectThreeNoCommon)
 
 
 // ===========================================================================================
-// Section 8: Four-cursor intersection (intersectFour)
+// Section 8: Four-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectFourAllOverlap)
@@ -873,7 +873,7 @@ TEST(PostingListCursorTest, IntersectFourMixedSelectivity)
 
 
 // ===========================================================================================
-// Section 9: Five+ cursor intersection (intersectLeapfrogLinear, n=5..8)
+// Section 9: Five to eight cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectFiveCursors)
@@ -925,10 +925,10 @@ TEST(PostingListCursorTest, IntersectEightCursors)
 
 
 // ===========================================================================================
-// Section 10: Nine+ cursor intersection (intersectLeapfrogHeap)
+// Section 10: Nine+ cursor intersection
 // ===========================================================================================
 
-TEST(PostingListCursorTest, IntersectNineCursorsHeap)
+TEST(PostingListCursorTest, IntersectNineCursors)
 {
     auto docs = generateRange(0, 3, 20); // 0,20,40
     std::vector<TokenPostingsInfo> infos(9);
@@ -1875,7 +1875,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndFullRange)
     /// linearAnd is designed to be called after linearOr (buffer already non-zero).
     /// Initialize to 1 to simulate prior linearOr pass.
     std::vector<UInt8> buf(700, 1);
-    cursor->linearAnd(buf.data(), 0, 700);
+    cursor->linearAnd(buf.data(), 0, 700, 1);
 
     for (auto d : data.all_docs)
         EXPECT_EQ(buf[d], 2u) << "Expected buf[" << d << "] == 2";
@@ -1893,7 +1893,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndIncrementsExisting)
     auto cursor = makeMultiBlockCursor(data);
 
     std::vector<UInt8> buf(700, 1);
-    cursor->linearAnd(buf.data(), 0, 700);
+    cursor->linearAnd(buf.data(), 0, 700, 1);
 
     for (auto d : data.all_docs)
         EXPECT_EQ(buf[d], 2u) << "Expected buf[" << d << "] == 2";
@@ -2361,7 +2361,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndRangeBeforeAllBlocks)
     auto cursor = makeMultiBlockCursor(data);
 
     std::vector<UInt8> buf(100, 1);
-    cursor->linearAnd(buf.data(), 0, 100);
+    cursor->linearAnd(buf.data(), 0, 100, 1);
 
     /// All values should remain 1 (no increments)
     for (size_t i = 0; i < 100; ++i)
@@ -2473,9 +2473,8 @@ TEST(PostingListCursorTest, MultiBlockIntersectFourMultiBlockCursors)
     EXPECT_EQ(result, expected);
 }
 
-TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlockLeapfrogLinear)
+TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlock)
 {
-    /// 5 cursors → dispatches to intersectLeapfrogLinear.
     /// All share [100..149].
     auto data_a = makeMultiBlockData({generateRange(0, 200)});
     auto data_b = makeMultiBlockData({generateRange(50, 200)});
@@ -2774,7 +2773,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndPackedBlockSkipAndEarlyReturn)
 
     /// linearAnd expects non-zero buffer (simulating prior linearOr pass).
     std::vector<UInt8> buf(100, 1);
-    cursor->linearAnd(buf.data(), 200, 100); // [200, 300)
+    cursor->linearAnd(buf.data(), 200, 100, 1); // [200, 300)
 
     for (size_t i = 0; i < 100; ++i)
         EXPECT_EQ(buf[i], 2u) << "Expected buf[" << i << "] == 2 (doc " << (200 + i) << ")";
@@ -2986,7 +2985,7 @@ TEST(PostingListCursorTest, ArithmeticZeroDeltaLinearAnd)
 
     /// linearAnd expects non-zero buffer (simulating prior linearOr pass).
     std::vector<UInt8> buf(260, 1);
-    cursor->linearAnd(buf.data(), 0, 260);
+    cursor->linearAnd(buf.data(), 0, 260, 1);
     /// linearAnd increments counters; check that the arithmetic block docs are counted.
     for (uint32_t d = 0; d <= 256; ++d)
         EXPECT_EQ(buf[d], 2u) << "at doc_id " << d;
@@ -3766,7 +3765,7 @@ TEST(PostingListCursorTest, LinearAndRowOffsetAboveUInt32MaxThrows)
 
     std::vector<UInt8> buf(64, 7);
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
-    EXPECT_THROW(cursor->linearAnd(buf.data(), huge_offset, buf.size()), Exception);
+    EXPECT_THROW(cursor->linearAnd(buf.data(), huge_offset, buf.size(), 7), Exception);
 }
 
 TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
@@ -3836,7 +3835,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsRowAtUInt32Max)
 
     /// linearAnd increments; start from 1 to simulate a prior linearOr pass.
     std::vector<UInt8> buf(5, 1);
-    cursor->linearAnd(buf.data(), static_cast<size_t>(m) - 4, 5);
+    cursor->linearAnd(buf.data(), static_cast<size_t>(m) - 4, 5, 1);
 
     EXPECT_EQ(buf[0], 2u);  // m - 4
     EXPECT_EQ(buf[1], 1u);
