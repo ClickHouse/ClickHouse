@@ -48,7 +48,7 @@ build_set within_chunks 65536 65536 "= 1" \
 # This case has 1,000 chunks that each hold the same 128 distinct keys, after 20 chunks with 2,560
 # other keys. Nothing is removed within a chunk, so the sorter writes runs. Each run holds every key
 # once, so all temporary data (the runs and the finished set) stays far below the 1,024,000 raw key
-# bytes, and writing the set removes the repeats across runs.
+# bytes, and the merge of the runs removes the repeats across them.
 build_set across_chunks 65536 65536 "> 1" \
     "SELECT if(number < 2560, 1000000 + number, number % 128) FROM numbers(130560) SETTINGS max_block_size = 128" \
     "SELECT sum(value) < 1024000 / 4 FROM system.events WHERE event = 'ExternalSetUncompressedBytes';"
