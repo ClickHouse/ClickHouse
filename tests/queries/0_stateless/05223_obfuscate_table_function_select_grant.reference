@@ -1,0 +1,12 @@
+-- without SELECT on the source table, both entrypoints are denied
+ACCESS_DENIED
+ACCESS_DENIED
+-- a column-level grant admits exactly the granted column on both entrypoints
+3
+n	UInt64
+ACCESS_DENIED
+ACCESS_DENIED
+-- with SELECT on the source table, both entrypoints succeed
+3
+n	UInt64
+s	String

@@ -5263,6 +5263,37 @@ Connection pool size for each connection settings string in ODBC bridge.
 Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
 )", 0) \
     \
+    DECLARE(String, obfuscate_seed, "", R"(
+Seed for the `obfuscate` table function. Arbitrary string — the seed for each column is derived from it and the column name, so the same seed always produces the same obfuscation. Empty string means a random seed is generated for each query.
+
+The seed is an ordinary setting, not a secret: its value is stored and shown in plain text like any other setting, for example in `system.query_log` and `system.settings`. Do not use a password or another secret as the seed. If the obfuscated outputs of different queries must not be correlatable with each other, keep the default empty value (a fresh random seed per query) instead of setting a fixed seed.
+)", 0, \
+        {"26.10", "", "", "New setting: seed string for the obfuscate table function."}) \
+    DECLARE(UInt64, obfuscate_markov_order, 5, R"(
+Maximum context-buffer size used by the legacy Markov model for the `obfuscate` table function. The model records contexts shorter than this value, preserving the semantics of the standalone `clickhouse obfuscator` tool. Must be in the range `[1, 1000]`.
+)", 0, \
+        {"26.10", 5, 5, "New setting: maximum context-buffer size for the obfuscate table function's legacy Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_frequency_cutoff, 5, R"(
+Frequency cutoff for the Markov model used by the `obfuscate` table function: buckets with count less than this value are discarded.
+)", 0, \
+        {"26.10", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_num_buckets_cutoff, 0, R"(
+Cutoff for the number of different possible continuations for a context in the `obfuscate` table function's Markov model: histograms with fewer buckets than this are discarded.
+)", 0, \
+        {"26.10", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_frequency_add, 0, R"(
+Constant added to every count in the `obfuscate` table function's Markov model to lower probability distribution skew.
+)", 0, \
+        {"26.10", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."}) \
+    DECLARE(Float, obfuscate_markov_frequency_desaturate, 0.0, R"(
+Value in `[0, 1]` that moves every frequency in the `obfuscate` table function's Markov model towards the average to lower probability distribution skew.
+)", 0, \
+        {"26.10", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."}) \
+    DECLARE(UInt64, obfuscate_markov_determinator_sliding_window_size, 8, R"(
+Size of the sliding window in the source string that is hashed to seed the RNG in the `obfuscate` table function's Markov model.
+)", 0, \
+        {"26.10", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."}) \
+    \
     DECLARE(Seconds, distributed_replica_error_half_life, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD, R"(
 - Type: seconds
 - Default value: 60 seconds

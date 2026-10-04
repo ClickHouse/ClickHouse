@@ -63,10 +63,10 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     WHERE id = 3 SETTINGS enable_analyzer = 1;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 3;
 
--- A clause is read per arm of a union: the arm carrying it names a table there, resolved in the
--- updated database (2), while the arm without it keeps reading the alias (7 * 1000). The two arms
--- are weighted differently so that reading the clause for the wrong arm, for both arms or for
--- neither answers 2007, 2002 and 7007 rather than the expected value.
+-- A trailing clause of a union is query-level: the parser leaves it on the last arm, but it applies
+-- to every arm, so both arms name a table there, resolved in the updated database (2 * 1000 + 2).
+-- The two arms are weighted differently so that reading the clause for the last arm only answers
+-- 7002, and qualifying only the last arm answers 99002, rather than the expected value.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT sum(m) FROM (
                  SELECT max(id) * 1000 AS m FROM src

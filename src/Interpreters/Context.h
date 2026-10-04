@@ -1308,6 +1308,9 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// Clamping counterpart of `checkSettingsConstraintsForSettingsReset`: reduces `names` to the resets
+    /// allowed by the constraints and returns in `clamped_changes` the assignments replacing the clamped ones.
+    void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);

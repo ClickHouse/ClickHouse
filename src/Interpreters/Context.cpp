@@ -3905,6 +3905,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampResetToDefault(*settings, names, clamped_changes, source);
+}
+
 void Context::checkSettingsConstraintsForSettingsReset(
     const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
 {
