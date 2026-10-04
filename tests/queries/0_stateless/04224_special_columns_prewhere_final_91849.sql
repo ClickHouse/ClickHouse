@@ -5,7 +5,7 @@
 -- `OPTIMIZE FINAL` is used to merge all parts into one before the SELECT, so
 -- the result of `PREWHERE` on `FINAL` is deterministic regardless of whether
 -- `PREWHERE` is applied before or after the `FINAL` merge (settings like
--- `enable_vertical_final`, `query_plan_optimize_prewhere`, etc. would otherwise
+-- `enable_vertical_final`, `optimize_move_to_prewhere`, etc. would otherwise
 -- affect the output).
 
 DROP TABLE IF EXISTS test_replacing_mt_91849;

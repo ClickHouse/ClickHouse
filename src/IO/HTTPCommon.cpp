@@ -70,7 +70,8 @@ bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status)
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT};
 
     return std::all_of(
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
@@ -91,6 +92,7 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
+        || status == Poco::Net::HTTPResponse::HTTP_NO_CONTENT /// Success without a body, e.g. Iceberg REST DropTable.
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {

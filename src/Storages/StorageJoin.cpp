@@ -14,6 +14,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -150,7 +152,11 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -171,7 +177,10 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -217,7 +226,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)
@@ -548,9 +561,9 @@ void registerStorageJoin(StorageFactory & factory)
             .description = R"DOCS_MD(
 Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
 
-:::note
+<Note>
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-:::
+</Note>
 
 ## Creating a table {#creating-a-table}
 
@@ -640,6 +653,8 @@ Possible values:
 Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+
+A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 

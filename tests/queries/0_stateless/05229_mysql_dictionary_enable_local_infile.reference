@@ -1,0 +1,12 @@
+--- enabled at the source
+OK
+--- enabled at a replica
+OK
+--- enabled at a later replica, disabled at the first
+OK
+--- inherited by a replica from the source
+OK
+--- disabled at the source
+OK
+--- disabled at every replica, enabled at the source
+OK

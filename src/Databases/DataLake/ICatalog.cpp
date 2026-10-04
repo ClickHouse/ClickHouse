@@ -1,4 +1,5 @@
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -351,6 +352,24 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
+{
+    if (!table_metadata.isDefaultReadableTable())
+        return FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+
+    switch (getTableFormat(table_metadata))
+    {
+        case DataLakeTableFormat::UNKNOWN:
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table is readable, but its catalog reports no data lake format");
+        case DataLakeTableFormat::DELTA:
+            return "DeltaLake";
+        case DataLakeTableFormat::ICEBERG:
+            return "Iceberg";
+        case DataLakeTableFormat::PAIMON:
+            return "Paimon";
+    }
+}
+
 CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)
@@ -405,7 +424,7 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
