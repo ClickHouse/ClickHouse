@@ -5,37 +5,11 @@
 #include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/RowRefs.h>
 
-#include <limits>
+#include <optional>
+#include <span>
 
 namespace DB
 {
-
-/// A contiguous run of source rows in one block, or - when `block_no` is `default_rows` - a run of
-/// unmatched rows. A reranged build side and an `Array`'s nested column are both made of runs.
-struct GatherRange
-{
-    static constexpr UInt32 default_rows = std::numeric_limits<UInt32>::max();
-
-    UInt32 block_no = 0;
-    UInt64 begin = 0;
-    UInt64 length = 0;
-
-    constexpr bool isDefault() const { return block_no == default_rows; }
-};
-
-using GatherRanges = PaddedPODArray<GatherRange>;
-
-/// Buffers shared by all output columns of one emit call, since expanding a selection gives the same
-/// answer for every column. A column stored as `ColumnReplicated` is the exception: its row remap is
-/// per column, so it gets its own `remapped` pass over `flat`.
-struct EmitScratch
-{
-    PaddedPODArray<UInt64> flat;
-    PaddedPODArray<UInt64> remapped;
-    GatherRanges ranges;
-    bool flat_ready = false;
-    bool ranges_ready = false;
-};
 
 /// How many output rows `words` expands to in `shape`, a zero word counting as one default row.
 /// `insertRawUninitialized` needs the exact count, which the builders' reserve hint only bounds.
@@ -63,8 +37,29 @@ void resolveGatherNode(
     size_t num_blocks,
     bool default_from_type = true);
 
-/// Append one output column's `selection.rows` values, reading the ref words in whichever shape
-/// they arrive and the source through the planes `resolveGatherNode` resolved.
-void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch);
+/// Resolve block `block_no`'s planes of `node` from the row store field `access` of `row_store`.
+/// Only a fixed-width value is kept in the row store, so the node's shape stops at `Fixed`.
+void resolveRowStoreGatherNode(
+    GatherNode & node,
+    const DataTypePtr & type,
+    const RowDataStore & row_store,
+    const ColumnAccessIndex & access,
+    size_t block_no,
+    size_t num_blocks);
+
+/// Append one output row per row of `selection` to every column of `columns` that `gather` (parallel
+/// to it) has a resolved source for, reading the ref words in whichever shape they arrive and the
+/// sources through the planes the resolvers resolved. A column with no source is left alone.
+///
+/// A column-major column takes one pass of its own over the whole selection. The row store ones are
+/// swept together per L2-sized batch of output rows instead, because their fields share a row: one
+/// pass over a batch of row store rows then serves every field of them, where a pass per field would
+/// re-read the whole buffer. `row_store_row_length` is the row length of that store, which is the
+/// same for every block and every field, and empty when no column of `gather` comes from one.
+void gatherJoinOutputColumns(
+    MutableColumns & columns,
+    std::span<const GatherColumn> gather,
+    const RefWordSelection & selection,
+    std::optional<size_t> row_store_row_length);
 
 }

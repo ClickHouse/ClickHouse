@@ -391,10 +391,23 @@ void StoredColumnsIndex::resolveEmitColumns(
                 if (!block)
                     continue;
 
-                const IColumn * column = block->columns[pos].get();
+                if (request.access.type == ColumnAccessIndex::Type::RowStore)
+                {
+                    const RowDataStore * row_store = row_stores[b];
+                    if (!row_store)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Join emit column {} is a row store field, but stored block {} has no row store", pos, b);
+                    resolveRowStoreGatherNode(
+                        emit_column->gather_root, request.type, *row_store, request.access, b, num_blocks);
+                    emit_column->in_row_store = true;
+                    continue;
+                }
+
+                const IColumn * column = block->columns[request.access.index].get();
                 /// `row' = indexes[row]` addresses the nested column, so the planes come from there
                 /// and the remap entry carries the indexes plane.
-                if (const ColumnReplicated * replicated = block->replicated_columns[pos])
+                if (const ColumnReplicated * replicated = block->replicated_columns[request.access.index])
                 {
                     const IColumn & indexes = *replicated->getIndexes().getIndexes();
                     const size_t index_width = indexes.isFixedAndContiguous() ? indexes.sizeOfValueIfFixed() : 0;
@@ -438,7 +451,8 @@ void StoredColumnsIndex::resolveEmitColumns(
         const EmitColumn & emit_column = *emit_columns[pos];
         out_gather[pos]
             = {.node = &emit_column.gather_root,
-               .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data()};
+               .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data(),
+               .in_row_store = emit_column.in_row_store};
     }
 }
 

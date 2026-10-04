@@ -9926,9 +9926,10 @@ materialized during inserts and background merges instead of rewriting the histo
 Enable transforming the payload of a hash join into a row-major layout.
 )", 0, \
         {"26.9", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."}) \
-    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0, \
+        {"26.10", 5.0, 3.0, "Lowered the minimum estimated ratio of join output rows to build-side rows that enables the hash join row store."}, \
         {"26.9", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}) \
     \
     /* ####################################################### */ \
