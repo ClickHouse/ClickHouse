@@ -2944,11 +2944,13 @@ Use the statement below to add a projection description to a tables metadata:
 
 ```sql
 -- Normal projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY <expr>] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 
 -- Aggregate projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY <group_key_expr>] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+An aggregate projection uses its `GROUP BY` keys for ordering and cannot also specify `ORDER BY`.
 
 <Note>
 When a projection defines a `WHERE` clause, only rows matching the predicate are materialized. The optimizer can use such a projection when the query's `WHERE` logically implies the projection's `WHERE` and the projection is beneficial for the query plan. This applies to both normal and aggregate projections.
@@ -3002,7 +3004,11 @@ supported. The declaration also works on replicated tables and through `ON CLUST
 Use the statement below to change the [`WITH SETTINGS`](#with-settings) clause of an existing projection without rebuilding its data:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+-- Normal projection
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY <expr>] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+
+-- Aggregate projection
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY <group_key_expr>] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
 For a [projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index), restate the `INDEX` declaration instead of the `SELECT` query:
@@ -3139,9 +3145,11 @@ ENGINE = MergeTree ORDER BY id;
 - ["Materialized Views versus Projections"](/concepts/features/projections/materialized-views-versus-projections)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY <expr>]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY <group_key_expr>]) [WITH SETTINGS (setting_name = setting_value, ...)]
 ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name INDEX <index_expr> TYPE <index_type> [WITH SETTINGS (setting_name = setting_value, ...)]
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) WITH SETTINGS (setting_name = setting_value, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY <expr>]) WITH SETTINGS (setting_name = setting_value, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY <group_key_expr>]) WITH SETTINGS (setting_name = setting_value, ...)
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS (setting_name = setting_value, ...)
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
