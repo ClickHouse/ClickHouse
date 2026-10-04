@@ -28,6 +28,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -1259,8 +1260,14 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
     context->setSetting("distributed_ddl_task_timeout", Field{0});
     context->setSetting("distributed_ddl_output_mode", Field{"never_throw"});
 
+    auto query = backup_or_restore_query.clone();
+    /// The queued continuation has no profile-trace receiver. These execution settings were already
+    /// validated at the initiator, but older workers cannot interpret the delivery-only setting.
+    static constexpr std::string_view initiator_only_settings[] = {"send_profile_traces"};
+    removeSettingsFromQuery(query, initiator_only_settings);
+
     // executeDDLQueryOnCluster() will return without waiting for completion
-    executeDDLQueryOnCluster(backup_or_restore_query.clone(), context, params);
+    executeDDLQueryOnCluster(query, context, params);
 
     maybeSleepForTesting();
 }

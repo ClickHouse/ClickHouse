@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -213,6 +214,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
+    /// The hosts executing the entry have no trace receiver.
+    stripProfileTraceSettingsFromDDLQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);

@@ -290,6 +290,32 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
                 if (isEmptySetQuery(*set_query))
                     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
+        return;
+    }
+
+    /// Any other statement (`CREATE`, `ALTER`, ...): the trailing query clause on the ASTQueryWithOutput base.
+    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->settings_ast)
+            if (auto * set_query = query_with_output->settings_ast->as<ASTSetQuery>())
+            {
+                stripNamesFromSetQuery(*set_query, setting_names);
+                if (isEmptySetQuery(*set_query))
+                    detachChild(*query_with_output, query_with_output->settings_ast);
+            }
+    }
+
+    /// The storage clause of `CREATE`, whose non-engine settings applySettingsFromQuery moves onto the
+    /// context. The `AS SELECT` of a `CREATE` is not a first-order carrier and stays untouched.
+    if (auto * create = ast->as<ASTCreateQuery>(); create && create->storage && create->storage->settings)
+    {
+        if (auto owning = findOwningChild(*create->storage, create->storage->settings))
+        {
+            auto & set_query = owning->as<ASTSetQuery &>();
+            stripNamesFromSetQuery(set_query, setting_names);
+            if (isEmptySetQuery(set_query))
+                detachChild(*create->storage, create->storage->settings);
+        }
     }
 }
 

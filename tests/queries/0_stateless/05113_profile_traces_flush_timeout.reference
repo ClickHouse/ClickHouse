@@ -1,0 +1,11 @@
+native: write timeout preserves the SQL result and discards undrained traces
+native: write timeout preserves the original SQL exception
+HTTP: write timeout preserves the SQL result and discards undrained traces
+HTTP: write timeout preserves the original SQL exception
+native: disabled profiling does not wait for the collector
+HTTP: disabled profiling does not wait for the collector
+native: SQL opt-out preserves results and analysis exceptions without waiting
+native: ack timeout preserves the SQL result and discards undrained traces
+native: ack timeout preserves the original SQL exception
+HTTP: ack timeout preserves the SQL result and discards undrained traces
+HTTP: ack timeout preserves the original SQL exception
