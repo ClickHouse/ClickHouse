@@ -131,7 +131,7 @@ private:
     /// this does not depend on `input_format_values_interpret_expressions`: the retry first goes
     /// through `ConstantExpressionTemplate`, which parses and converts a literal on its own and is
     /// used regardless of that setting (only a genuine expression needs the interpreter).
-    bool readsNumericValueIntoIPv4Column() const override { return true; }
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
     PeekableReadBuffer buf;
     ParserExpression parser;

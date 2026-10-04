@@ -119,7 +119,10 @@ public:
     /// column casts cleanly into the `UInt32`-backed `IPv4`. With the conversion disabled any type
     /// difference is rejected with `TYPE_MISMATCH` (not a parse error) before any value is parsed,
     /// so a numeric column really is a mismatch for an `IPv4` destination then.
-    bool readsNumericValueIntoIPv4Column() const override { return settings.native.allow_types_conversion; }
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override
+    {
+        return settings.native.allow_types_conversion ? NumericValueIntoIPv4Column::AnyNumeric : NumericValueIntoIPv4Column::None;
+    }
 
     bool castsStringSourceColumns() const override { return settings.native.allow_types_conversion; }
 

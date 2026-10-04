@@ -307,7 +307,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_maps_columns_by_name = false;
     bool format_honors_column_name_matching_mode = false;
     bool format_uses_case_insensitive_column_matching = false;
-    bool format_reads_numeric_into_ipv4 = false;
+    NumericValueIntoIPv4Column format_numeric_into_ipv4 = NumericValueIntoIPv4Column::None;
     bool format_casts_string_source_columns = false;
     bool format_reads_numeric_into_bool = true;
     BoolValueIntoNumericColumn format_bool_value_into_numeric = BoolValueIntoNumericColumn::AllNumeric;
@@ -345,7 +345,7 @@ String getInsertDataSchemaMismatchDescription(
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_uses_case_insensitive_column_matching = schema_reader->usesCaseInsensitiveColumnMatching();
-        format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
+        format_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_casts_string_source_columns = schema_reader->castsStringSourceColumns();
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
         format_bool_value_into_numeric = schema_reader->readsBoolValueIntoNumericColumn();
@@ -729,11 +729,12 @@ String getInsertDataSchemaMismatchDescription(
         /// and `IPv6` (e.g. `{"u": 1}` into `(u UUID)`). This is checked before the supertype rule below
         /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
         /// type, so the supertype rule would otherwise wrongly treat it as compatible. The binary formats
-        /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32`,
-        /// `MsgPack` and `Avro` read an integer straight into the `UInt32`-backed `IPv4` column, and the
-        /// formats that cast a decoded source column to the requested type — the columnar `Parquet` /
-        /// `Arrow` / `ORC` always, `Native` under `input_format_native_allow_types_conversion` — accept
-        /// a numeric column there too (`format_reads_numeric_into_ipv4`), so a numeric value
+        /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32` (and
+        /// only that: an inferred `Int64` or `Float64` stays a mismatch), `MsgPack` and `Avro` read an
+        /// integer straight into the `UInt32`-backed `IPv4` column, and the formats that cast a decoded
+        /// source column to the requested type — the columnar `Parquet` / `Arrow` / `ORC` always, `Native`
+        /// under `input_format_native_allow_types_conversion` — accept a numeric column there too
+        /// (`format_numeric_into_ipv4`), so such a numeric value
         /// is valid there and flagging it would be a false positive (`UUID` and `IPv6` still require
         /// binary data of the exact size in those formats, so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
         /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
@@ -752,7 +753,9 @@ String getInsertDataSchemaMismatchDescription(
         /// read the number itself, so those stay compatible).
         if (inferred_is_numeric
             && (which_expected.isUUID() || which_expected.isIPv6()
-                || (which_expected.isIPv4() && !format_reads_numeric_into_ipv4)
+                || (which_expected.isIPv4()
+                    && !(format_numeric_into_ipv4 == NumericValueIntoIPv4Column::AnyNumeric
+                         || (format_numeric_into_ipv4 == NumericValueIntoIPv4Column::Int32Only && which_inferred.isInt32())))
                 || ((format_reads_typed_json_value_tokens || format_stores_typed_numeric_values) && which_expected.isFixedString())
                 || (format_reads_quoted_text_values
                     && (which_expected.isString() || which_expected.isFixedString() || which_expected.isDateOrDate32()

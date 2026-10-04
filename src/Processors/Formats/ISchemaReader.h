@@ -9,6 +9,16 @@
 namespace DB
 {
 
+enum class NumericValueIntoIPv4Column
+{
+    /// The format does not accept a numeric value for an `IPv4` destination column.
+    None,
+    /// The format accepts only a value whose inferred type is `Int32` for an `IPv4` destination column.
+    Int32Only,
+    /// The format accepts a numeric value of any type for an `IPv4` destination column.
+    AnyNumeric,
+};
+
 enum class BoolValueIntoNumericColumn
 {
     /// The format accepts a boolean value for every numeric destination type.
@@ -160,21 +170,23 @@ public:
     /// format-specific setting rather than `input_format_column_name_matching_mode`.
     virtual bool usesCaseInsensitiveColumnMatching() const { return false; }
 
-    /// True when the parser accepts a bare numeric value into an `IPv4` destination column. Most formats
-    /// require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number — but the
-    /// binary formats that store typed values read an integer straight into the `UInt32`-backed `IPv4`
-    /// column (`BSONEachRow` via a BSON `Int32`, `MsgPack` via its `TypeIndex::IPv4` integer arm,
-    /// `Avro` via the `TypeIndex::IPv4` arm of `insertNumber`), and the formats that cast a decoded
+    /// Describes which bare numeric values the parser accepts into an `IPv4` destination column. Most
+    /// formats require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number —
+    /// so they return `None`. The binary formats that store typed values read an integer straight into
+    /// the `UInt32`-backed `IPv4` column: `MsgPack` via its `TypeIndex::IPv4` integer arm and `Avro` via
+    /// the `TypeIndex::IPv4` arm of `insertNumber` (`AnyNumeric`), while `BSONEachRow` accepts only a
+    /// BSON `Int32` there (`readAndInsertIPv4` rejects `Int64` and `Double`), which schema inference
+    /// reports as `Int32` (`Int32Only`). The formats that cast a decoded
     /// source column to the requested destination type — the columnar `Parquet` / `Arrow` / `ORC`
     /// always, `Native` when `input_format_native_allow_types_conversion` is enabled — accept a
     /// numeric column there too, since it casts cleanly into the `UInt32`-backed `IPv4`. `Values` accepts
     /// it as well: a value the strict quoted-text path rejects is retried as an expression, and the
     /// literal is then converted to the destination type like `CAST` does. A caller
     /// comparing an inferred schema against an expected one uses this to avoid flagging an inferred
-    /// numeric type going into an `IPv4` column as a structure mismatch for these formats. (`UUID`
-    /// and `IPv6` still require binary data of the exact size in every format, so they stay a
+    /// numeric type going into an `IPv4` column as a structure mismatch for these formats (`AnyNumeric`).
+    /// (`UUID` and `IPv6` still require binary data of the exact size in every format, so they stay a
     /// mismatch regardless of this capability.)
-    virtual bool readsNumericValueIntoIPv4Column() const { return false; }
+    virtual NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const { return NumericValueIntoIPv4Column::None; }
 
     /// True when the parser casts a decoded source `String` column to the requested destination
     /// type. For the columnar formats this means the schema reader cannot tell whether a source

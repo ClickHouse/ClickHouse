@@ -109,8 +109,9 @@ public:
     /// every field verbatim into a `String` column.
     bool readsAnyValueIntoStringColumn() const override { return false; }
 
-    /// A BSON `Int32` element is read straight into an `IPv4` column (see `readAndInsertIPv4`).
-    bool readsNumericValueIntoIPv4Column() const override { return true; }
+    /// Only a BSON `Int32` element is read straight into an `IPv4` column; `readAndInsertIPv4`
+    /// rejects `Int64` and `Double` elements, which schema inference reports as `Int64` / `Float64`.
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::Int32Only; }
 
     /// A BSON `Bool` is accepted by `readAndInsertInteger`, but not by the dedicated decimal,
     /// floating-point, `DateTime64`, or `IPv4` readers.

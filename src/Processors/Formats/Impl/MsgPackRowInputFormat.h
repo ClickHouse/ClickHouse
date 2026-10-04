@@ -99,7 +99,7 @@ public:
 
     /// A MessagePack integer is read straight into an `IPv4` column (see `insertInteger`'s
     /// `TypeIndex::IPv4` arm).
-    bool readsNumericValueIntoIPv4Column() const override { return true; }
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
     /// A MessagePack float is accepted only into the matching `Float*` column (`insertFloat32` /
     /// `insertFloat64`), and an integer is rejected for the `Float*` columns in turn

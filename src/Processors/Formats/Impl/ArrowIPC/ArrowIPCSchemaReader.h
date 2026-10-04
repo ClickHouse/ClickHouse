@@ -29,7 +29,7 @@ public:
     /// The parser `castColumn`s a decoded numeric column to the requested destination type, and a
     /// cast from an integer to the `UInt32`-backed `IPv4` is valid, so a numeric source value is
     /// accepted into an `IPv4` column.
-    bool readsNumericValueIntoIPv4Column() const override { return true; }
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
     bool castsStringSourceColumns() const override { return true; }
 
