@@ -16,11 +16,13 @@ CREATE VIEW v AS SELECT 1;
 DROP VIEW v SYNC;
 CREATE DATABASE d;
 CREATE TABLE d.t (x UInt8) ENGINE = Memory;
-DROP DATABASE d SYNC;"
+DROP DATABASE d SYNC;
+SELECT value FROM system.metrics WHERE metric = 'TablesToDropQueueSize';"
 
 ${CLICKHOUSE_LOCAL} --path="$dir/fresh" --only-system-tables --max_execution_time 60 --query "$queries SELECT 'fresh path, only-system-tables'" < /dev/null
-${CLICKHOUSE_LOCAL} --path="$dir/existing" --query "CREATE TABLE keep (x UInt8) ENGINE = MergeTree ORDER BY x" < /dev/null
+${CLICKHOUSE_LOCAL} --path="$dir/existing" --query "CREATE TABLE keep (x UInt8) ENGINE = MergeTree ORDER BY x; INSERT INTO keep VALUES (7)" < /dev/null
 ${CLICKHOUSE_LOCAL} --path="$dir/existing" --only-system-tables --max_execution_time 60 --query "$queries SELECT 'existing path, only-system-tables'" < /dev/null
+${CLICKHOUSE_LOCAL} --path="$dir/existing" --query "SELECT 'keep', sum(x) FROM keep" < /dev/null
 ${CLICKHOUSE_LOCAL} --path="$dir/plain" --max_execution_time 60 --query "$queries SELECT 'fresh path'" < /dev/null
 
 rm -rf "$dir"
