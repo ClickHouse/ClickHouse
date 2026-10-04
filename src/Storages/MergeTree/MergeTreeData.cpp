@@ -485,6 +485,10 @@ namespace FailPoints
     /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
     /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
     extern const char restore_part_inject_no_space_error[];
+    /// Pauses inside `setPropertiesAndResetSerializationHints`, after the new metadata is
+    /// published and before the hints swap, while `parts_lock` is held. Lets a test observe that
+    /// a concurrent part commit cannot see new column types paired with old-typed hints.
+    extern const char mt_alter_pause_after_metadata_publish[];
 }
 
 namespace ErrorCodes
@@ -14476,7 +14480,7 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
     }
 }
 
-void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
+SerializationInfoByName MergeTreeData::buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & /*lock*/) const
 {
     /// `serialization_hints` is a per-table aggregation of the active parts' `SerializationInfoByName`
     /// — same lifetime profile as the per-part metadata. Route into the parts arena.
@@ -14494,14 +14498,51 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
+    SerializationInfoByName hints(storage_columns.getAllPhysical(), settings);
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        updateSerializationHintsForPart(part, storage_columns, hints, false);
+
+    return hints;
+}
+
+void MergeTreeData::resetSerializationHints(const DataPartsLock & lock)
+{
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    serialization_hints = buildSerializationHints(metadata_snapshot->getColumns(), lock);
+}
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
-    auto range = getDataPartsStateRange(DataPartState::Active);
+void MergeTreeData::setPropertiesAndResetSerializationHints(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    ContextPtr local_context)
+{
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+    checkProperties(new_metadata, old_metadata, /*attach=*/false, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
+
+    /// Cloned outside `parts_lock`: the copy deep-clones projections, keys and settings changes.
+    auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
+    /// Materialised up front: nothing between the publish and the hints swap may allocate.
+    const String pause_after_publish = FailPoints::mt_alter_pause_after_metadata_publish;
+
+    {
+        auto parts_lock = lockParts();
+        /// Build before publishing so a throw here leaves metadata and hints both unchanged.
+        auto new_hints = buildSerializationHints(new_metadata.getColumns(), parts_lock);
+        {
+            /// The cache of effective sorting keys is derived from the published metadata, so it
+            /// is cleared under the same lock as the publish.
+            std::lock_guard sorting_keys_lock(patch_parts_sorting_keys_mutex);
+            setInMemoryMetadata(std::move(owned_metadata));
+            patch_parts_sorting_keys_cache.clear();
+        }
+        FailPointInjection::pauseFailPoint(pause_after_publish);
+        serialization_hints = std::move(new_hints);
+    }
+
+    std::lock_guard lock(patch_parts_metadata_mutex);
+    patch_parts_metadata_cache.clear();
 }
 
 template <typename AddedParts, typename RemovedParts>
