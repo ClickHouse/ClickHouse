@@ -10157,11 +10157,23 @@ Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 4, 4, "New setting"}) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum number of posting lists the text index may read for a LIKE/ILIKE pattern when LIKE evaluation by the dictionary scan is enabled.
+
+Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. With `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`, every matched token counts. If the limit is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
         {"26.4", 50, 50, "New setting"}) \
+    DECLARE(Double, text_index_like_rows_max_selectivity, 1.0, R"(
+Maximum fraction of a part's rows that the posting lists read for a LIKE/ILIKE pattern may cover when LIKE evaluation by the dictionary scan is enabled.
+
+While scanning the dictionary of a part, ClickHouse adds up the row counts of the matched tokens whose posting lists are stored outside the dictionary. If the sum exceeds this fraction of the part's rows, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. A token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted, and a token it has partly ruled out counts the rows that its still-read posting blocks span, at most its row count, except with `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`.
+
+A row can contain several matched tokens, so the sum can exceed the number of rows. The value `1` disables the check.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0, \
+        {"26.10", 1.0, 1.0, "New setting"}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
@@ -10176,6 +10188,7 @@ The negative tokens cache uses the text index tokens cache and avoids repeated d
     DECLARE(Bool, use_text_index_pattern_bypass_cache, true, R"(
 Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
 The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+It is not used for a part that the primary key or an earlier skip index has narrowed, or when `text_index_like_rows_max_selectivity` is below 1.
 )", 0, \
         {"26.10", false, true, "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
