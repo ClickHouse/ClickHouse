@@ -13,6 +13,8 @@
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
 
+#include <limits>
+
 
 namespace ProfileEvents
 {
@@ -82,7 +84,22 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
+    if (read_until_position == static_cast<off_t>(position))
+        return;
+
     read_until_position = position;
+
+    /// The bytes that the previous bound allowed to buffer are already in `working_buffer`, and
+    /// some of them can be past the new bound. Give them up and let the next `nextImpl` download
+    /// the range again, so that the new bound takes effect immediately, as required by
+    /// `supportsRightBoundedReads`. `offset` is rewound to the position the caller has read up to,
+    /// because the buffered bytes after it are no longer handed out.
+    if (!working_buffer.empty())
+    {
+        offset = getPosition();
+        resetWorkingBuffer();
+    }
+
     initialized = false;
 }
 
@@ -288,9 +305,29 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     if (data_stream == nullptr)
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Null data stream obtained while downloading file {} from Blob Storage", path);
 
-    total_size = data_stream->Length() + offset;
+    total_size = getTotalSizeOfCurrentDownload(data_stream->Length(), offset, read_until_position);
 
     initialized = true;
+}
+
+size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_)
+{
+    /// `reported_length` is the `Content-Length` of the response, which is chosen by the remote
+    /// endpoint: an endpoint that answers a ranged request with more data than was requested must
+    /// not be able to push bytes past the right bound into the caller. A negative value means that
+    /// the length of the response is unknown.
+    ///
+    /// The size of the blob from the same response is not used to bound it, because it comes from
+    /// the same untrusted place; only `read_until_position`, which is set locally by the caller,
+    /// is a trustworthy bound. Zero means that there is no bound.
+    size_t total = reported_length >= 0
+        ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
+        : std::numeric_limits<size_t>::max();
+
+    if (read_until_position_)
+        total = std::min(total, static_cast<size_t>(read_until_position_));
+
+    return total;
 }
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
