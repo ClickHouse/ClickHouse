@@ -23,8 +23,14 @@ struct SignImpl
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;
         else if constexpr (is_signed_v<A>)
         {
+            /// Written as two `Int8` pieces rather than `(a >> shift) | !!a` cast to `Int8`: clang 23 folds the latter
+            /// into a three-way compare with an `Int8` result (llvm/llvm-project#196828, llvm/llvm-project#196847),
+            /// which the x86 backend scalarizes for 32- and 64-bit operands, one `cmp`/`sets`/`setg` per row instead
+            /// of a vector compare. The two pieces vectorize on every target level.
             constexpr int shift = sizeof(A) * 8 - 1;
-            return static_cast<ResultType>((a >> shift) | (!!a));
+            ResultType result = static_cast<ResultType>(a >> shift);
+            result |= static_cast<ResultType>(a > A(0));
+            return result;
         }
         else if constexpr (is_unsigned_v<A>)
             return a == 0 ? 0 : 1;

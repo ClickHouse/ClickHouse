@@ -14,7 +14,6 @@ set(LLVMCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/BranchRelaxation.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/BreakFalseDeps.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/CalcSpillWeights.cpp
-    ${LLVM_SOURCE_DIR}/lib/CodeGen/CallBrPrepare.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/CallingConvLower.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/CFGuardLongjmp.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/CFIFixup.cpp
@@ -36,7 +35,6 @@ set(LLVMCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/EHContGuardTargets.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ExecutionDomainFix.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ExpandIRInsts.cpp
-    ${LLVM_SOURCE_DIR}/lib/CodeGen/ExpandMemCmp.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ExpandPostRAPseudos.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ExpandReductions.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ExpandVectorPredication.cpp
@@ -56,6 +54,7 @@ set(LLVMCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/ImplicitNullChecks.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/IndirectBrExpandPass.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/InitUndef.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/InlineAsmPrepare.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/InsertCodePrefetch.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/InlineSpiller.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/InterferenceCache.cpp
@@ -110,6 +109,7 @@ set(LLVMCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineFunctionPass.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineFunctionPrinterPass.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineFunctionSplitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineIDFSSAUpdater.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineInstrBundle.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineInstr.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/MachineLateInstrsCleanup.cpp
@@ -186,6 +186,7 @@ set(LLVMCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RegisterUsageInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RegUsageInfoCollector.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RegUsageInfoPropagate.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/Rematerializer.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RemoveLoadsIntoFakeUses.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RemoveRedundantDebugValues.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/RenameIndependentSubregs.cpp

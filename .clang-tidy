@@ -167,6 +167,7 @@ Checks: [
   '-modernize-use-designated-initializers',
   '-modernize-use-scoped-lock',
   '-modernize-use-integer-sign-comparison',
+  '-modernize-use-std-bit', # new in clang-tidy 23
   '-modernize-use-string-view', # too noisy
   '-modernize-use-structured-binding', # controversial, e.g. suggests structured bindings instead of `std::tie` into existing variables
 

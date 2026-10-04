@@ -17,7 +17,6 @@ set(LLVMGLOBALISEL_SOURCES
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/InstructionSelect.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/InstructionSelector.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/IRTranslator.cpp
-    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegacyLegalizerInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalityPredicates.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalizeMutations.cpp
     ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/Legalizer.cpp

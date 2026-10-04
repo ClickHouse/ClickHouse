@@ -2,6 +2,8 @@
 
 # RISCV Info sources
 set(LLVMRISCVINFO_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/RISCV/GISel/RISCVInlineAsmLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCVQCRelaxMarking.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/RISCV/TargetInfo/RISCVTargetInfo.cpp
 )
 
