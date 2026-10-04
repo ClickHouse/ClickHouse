@@ -96,19 +96,19 @@ struct MockCacheState
     /// to the real store size; a test sets it to `UnknownSize` to model an unknown-size file, where
     /// the final block stays full-width and its whole-block `covers` check can never be satisfied.
     size_t declared_size;
-    IntervalSet resident;
-    IntervalSet concurrent_download;
+    ByteRangeSet resident;
+    ByteRangeSet concurrent_download;
     /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
     /// (they are not in `resident`). `committed()` reports them - models a block a concurrent query
     /// populated in the window between our read-only probe and the role.
-    IntervalSet late_committed;
+    ByteRangeSet late_committed;
     /// Blocks a POPULATING tier resolves as a writer-less miss because the segment is detached (cannot
     /// take a downloader) - like `DiskCacheProvider`'s `emit_uncacheable_miss`. Served from source,
     /// never populated, even though the tier populates in general.
-    IntervalSet detached;
+    ByteRangeSet detached;
     /// Blocks whose `write` the cache rejects (returns 0, `committed()` does not advance) - models no
     /// disk space / a reservation failure. The executor must retain the rejected bytes in memory.
-    IntervalSet reject;
+    ByteRangeSet reject;
     VectorWithMemoryTracking<ByteRange> writes;
     /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
     /// must fall back to a source read.

@@ -44,6 +44,7 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
         /// MergeTreeReaderTextIndex. Only the single-token count shortcut in
         /// ReadFromTextIndexCount sets this.
         .skip_postings_deserialization = false,
+        .reader_settings = settings,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));

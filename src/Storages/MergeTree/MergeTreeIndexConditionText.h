@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -99,6 +100,7 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         NameSet columns_shadowing_map_subcolumns_,
+        JSONIndexArgumentTypes json_argument_types_,
         bool enable_phrase_query_support_ = false,
         bool is_projection_index_ = false);
 
@@ -111,6 +113,7 @@ public:
     std::string getDescription() const override;
 
     bool hasSearchPatterns() const;
+    UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
@@ -172,7 +175,7 @@ private:
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & index_column_node,
+        const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
@@ -226,6 +229,10 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Argument types of the JSON index functions of this index, by position in `header`.
+    JSONIndexArgumentTypes json_argument_types;
+    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
+    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
@@ -241,6 +248,8 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    /// Stable hash of the set of search queries containing patterns.
+    UInt128 search_patterns_hash{};
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.

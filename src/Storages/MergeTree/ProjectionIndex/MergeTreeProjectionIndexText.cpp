@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
@@ -666,6 +667,7 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         /// so `getColumnsShadowingMapSubcolumns` cannot be evaluated here; the projection's own
         /// columns are the only ones this condition can read, so nothing shadows them.
         /*columns_shadowing_map_subcolumns_=*/ NameSet{},
+        collectJSONIndexArgumentTypes(*text_index->index.expression),
         text_index->params.enable_phrase_query_support,
         /*is_projection_index_=*/ true);
 }

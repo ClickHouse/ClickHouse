@@ -8,6 +8,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -79,16 +81,11 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-void checkStorageSettingNames(const StorageFactory::Arguments & args)
+/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
+/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
+static bool isReplayedTableDefinition(
+    LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    if (!args.storage_def || !args.storage_def->settings)
-        return;
-
-    const auto local_context = args.getLocalContext();
-
-    /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
-    /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
-    /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
     const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
     const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
 #if CLICKHOUSE_CLOUD
@@ -97,8 +94,19 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
 #else
     const bool is_shared_catalog_replay = false;
 #endif
-    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+    return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
+        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
+}
+
+
+void checkStorageSettingNames(const StorageFactory::Arguments & args)
+{
+    if (!args.storage_def || !args.storage_def->settings)
+        return;
+
+    const auto local_context = args.getLocalContext();
+
+    if (isReplayedTableDefinition(args.mode, args.query, local_context))
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
@@ -268,7 +276,14 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
-            if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+            if (storage_def->ttl_table)
+                check_feature(
+                    "TTL clause",
+                    [](StorageFeatures features) { return features.supports_ttl; });
+
+            /// Older servers could store a column `TTL` inherited from the source table (see #121335).
+            /// Accept it in a replayed definition, so such tables can still load; the `TTL` is ignored.
+            if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
                 check_feature(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
@@ -311,7 +326,13 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    auto res = storages.at(name).creator_fn(arguments);
+    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
+    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
+    StoragePtr res;
+    {
+        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        res = storages.at(name).creator_fn(arguments);
+    }
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
