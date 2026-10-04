@@ -488,6 +488,7 @@ namespace
             const TemporaryDataOnDiskScopePtr & tmp_data_,
             const ReadSettings & read_settings_)
             : context(context_)
+            , process_list_element(context_->getProcessListElement())
             , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
             , tmp_data(tmp_data_)
@@ -528,7 +529,13 @@ namespace
                 auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
                 NativeWriter block_out{data_out->getCompressedWriteBuffer(), 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
+                {
+                    if (process_list_element)
+                        process_list_element->checkTimeLimit();
                     block_out.write(block);
+                }
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
                 data_out->finishWriting();
                 backup_entries[data_bin_pos]
                     = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))};
@@ -580,6 +587,7 @@ namespace
         }
 
         ContextPtr context;
+        QueryStatusPtr process_list_element;
         StorageMetadataPtr metadata_snapshot;
         std::shared_ptr<const Blocks> blocks;
         TemporaryDataOnDiskScopePtr tmp_data;
