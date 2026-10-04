@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
@@ -24,10 +25,12 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -78,6 +81,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperListRecursive;
+    extern const Event ZooKeeperListWithOptions;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -372,6 +376,25 @@ void triggerWatchCallback(
     }
 }
 
+#if USE_SSL
+/// The host part of "<host>:<port>", split lexically at the same character Poco::Net::SocketAddress
+/// splits it at, so that a port spelled as a service name still resolves. The result is matched
+/// against a certificate, so an IPv6 literal loses its brackets; a shape naming no host is empty.
+std::string peerHostName(const std::string & host_and_port)
+{
+    if (host_and_port.starts_with('/'))
+        return {};
+
+    if (host_and_port.starts_with('['))
+    {
+        size_t closing_bracket = host_and_port.find(']');
+        return closing_bracket == std::string::npos ? std::string{} : host_and_port.substr(1, closing_bracket - 1);
+    }
+
+    return host_and_port.substr(0, host_and_port.find(':'));
+}
+#endif
+
 }
 
 template <typename T>
@@ -569,43 +592,52 @@ void ZooKeeper::connect(
     size_t num_tries = args.num_connection_retries + 1;
 
     bool connected = false;
-    bool dns_error = false;
 
-    size_t resolved_count = 0;
-    for (const auto & node : nodes)
+    /// The nodes are resolved before every try, not once: a failed connection attempt below drops the
+    /// host from the DNS cache, so the next try resolves it again and picks up an address it has moved
+    /// to (a restarted container or pod), while the hosts that did not fail are taken from the cache.
+    /// A node that cannot be resolved on a later try keeps the address of the previous one.
+    auto resolve_nodes = [&]
     {
-        try
+        bool dns_error = false;
+        for (const auto & node : nodes)
         {
-            const Poco::Net::SocketAddress host_socket_addr{node.host};
-            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
-            node.address = host_socket_addr;
-            ++resolved_count;
+            try
+            {
+                /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
+                /// with the rest of the server through the DNS cache.
+                const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
+                LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
+                node.address = host_socket_addr;
+            }
+            catch (const DB::NetException & e)
+            {
+                /// Either DNS is not available now, or there is no such host name
+                dns_error = true;
+                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Most likely it's misconfiguration and a malformed host and port was specified
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+            }
         }
-        catch (const Poco::Net::HostNotFoundException & e)
-        {
-            /// Most likely it's misconfiguration and wrong hostname was specified
-            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
-        }
-        catch (const Poco::Net::DNSException & e)
-        {
-            /// Most likely DNS is not available now
-            dns_error = true;
-            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
-        }
-    }
 
-    if (resolved_count == 0)
-    {
-        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-        if (dns_error)
-            throw zkutil::KeeperException::fromMessage(
-                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-    }
+        if (std::none_of(nodes.begin(), nodes.end(), [](const zkutil::ShuffleHost & node) { return node.address.has_value(); }))
+        {
+            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+            if (dns_error)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+        }
+    };
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
+        resolve_nodes();
+
         for (const auto & node : nodes)
         {
             try
@@ -617,7 +649,13 @@ void ZooKeeper::connect(
                 if (node.secure)
                 {
 #if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
+                    auto secure_socket = Poco::Net::SecureStreamSocket();
+                    /// The certificate names the configured host while the socket connects to the
+                    /// address it resolved to, so the name has to be carried explicitly. This is
+                    /// also what puts the host into the SNI extension.
+                    if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
+                        secure_socket.setPeerHostName(peer_host_name);
+                    socket = secure_socket;
 #else
                     throw Poco::Exception(
                         "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
@@ -675,6 +713,11 @@ void ZooKeeper::connect(
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
                 cancelWriteBuffer();
+
+                /// Remove this possibly stale entry from the DNS cache, so that the next try (and the next
+                /// connection) resolves this host again instead of retrying a dead address.
+                /// `node.host` is well formed here - otherwise `node.address` would not have been set.
+                DB::DNSResolver::instance().removeHostFromCache(DB::DNSResolver::splitHostAndPort(node.host).first);
             }
         }
 
@@ -1298,6 +1341,7 @@ void ZooKeeper::receiveEvent()
                 case OpNum::List:
                 case OpNum::FilteredList:
                 case OpNum::FilteredListWithStatsAndData:
+                case OpNum::ListWithOptions:
                     is_list_request = true;
                     break;
                 default:
@@ -1760,14 +1804,17 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, info.request->tracing_context.get());
 
-        if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
+        /// A failed push kills the session (the `catch` below calls `finalize`), so be patient here.
+        const UInt64 push_timeout_ms = 3 * static_cast<UInt64>(args.session_timeout_ms);
+
+        if (!requests_queue.tryPush(std::move(info), push_timeout_ms))
         {
             if (requests_queue.isFinished())
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
             throw Exception(Error::ZOPERATIONTIMEOUT,
-                "Cannot push request to queue within operation timeout of {} ms",
-                args.operation_timeout_ms);
+                "Cannot push request to queue within {} ms",
+                push_timeout_ms);
         }
     }
     catch (...)
@@ -1993,6 +2040,33 @@ void ZooKeeper::listRecursive(
     ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
+void ZooKeeper::listWithOptions(
+    const String & path,
+    const ListOptions & options,
+    ListWithOptionsCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (options.recursive && watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+    if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions request type cannot be used because it is not supported by the server");
+
+    auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = requiredListOptionsVersion(options);
+    request->options = options;
+    request->has_watch = static_cast<bool>(watch);
+
+    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    RequestInfo request_info;
+    request_info.request = std::move(request);
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListWithOptionsResponse &>(response)); };
+    request_info.watch = std::move(watch);
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperListWithOptions);
+}
+
 void ZooKeeper::exists(
     const String & path,
     ExistsCallback callback,
@@ -2209,8 +2283,17 @@ void ZooKeeper::multi(
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
         for (const auto & subrequest : request.requests)
+        {
+            if (const auto * list_with_options = dynamic_cast<const ListWithOptionsRequest *>(subrequest.get()))
+            {
+                if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions in MultiRead is not supported by the server");
+                if (list_with_options->options.recursive && subrequest->watch_callback)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+            }
             if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+        }
     }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);

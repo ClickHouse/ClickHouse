@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -14,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
@@ -26,6 +28,7 @@
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
@@ -195,6 +198,12 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
+    /// The local address to bind to is resolved once, before the loop over the peer addresses: it
+    /// does not change between the attempts.
+    std::optional<Poco::Net::SocketAddress> bind_address;
+    if (!bind_host.empty())
+        bind_address = makeBindAddress(bind_host, 0);
+
     /// An address that is already known to accept connections goes first: the addresses are tried
     /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
     if (preferred_address)
@@ -227,24 +236,16 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->bind(*bind_address, true);
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
         }
         else
         {
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(*bind_address, true);
         }
 
         try
@@ -305,6 +306,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     disconnect();
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
+
+    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
+    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
+    /// this host would otherwise fail every bind until the process is restarted.
+    auto remove_stale_entries_from_dns_cache = [this]
+    {
+        DNSResolver::instance().removeHostFromCache(host);
+        if (!bind_host.empty())
+            DNSResolver::instance().removeHostFromCache(bind_host);
+    };
+
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -420,8 +432,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Exception will preserve stack trace.
         e.addMessage("({})", getDescription(/*with_extra*/ true));
@@ -431,8 +442,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
@@ -441,8 +451,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
@@ -1685,7 +1694,9 @@ void Connection::initBlockInput()
     if (!block_in)
     {
         initMaybeCompressedInput();
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+        /// The server may send marshalled result blocks; their consumers convert them back.
+        block_in = std::make_unique<NativeReader>(
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 

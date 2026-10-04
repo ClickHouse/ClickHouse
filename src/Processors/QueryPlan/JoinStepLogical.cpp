@@ -646,7 +646,7 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
-QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
+QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
     return {&child_plan};
 }
@@ -2523,9 +2523,9 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, version, join_operator);
     sorting_settings.updatePlanSettings(settings);
 }
 
@@ -2621,7 +2621,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
     auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
