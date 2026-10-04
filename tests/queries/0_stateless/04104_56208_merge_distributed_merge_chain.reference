@@ -1,3 +1,3 @@
 -- enable_analyzer=1 --
 10
-local_data
+distributed_data
