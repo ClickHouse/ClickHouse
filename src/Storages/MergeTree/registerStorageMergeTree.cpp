@@ -54,7 +54,7 @@ namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
     extern const SettingsBool enable_unique_key;
-    extern const SettingsBool enable_geo_replication_control;
+    extern const SettingsBool allow_experimental_geo_replication_control;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
@@ -989,7 +989,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `CREATE` only: `ATTACH` must load the existing tables regardless of the session setting.
         if (args.mode <= LoadingStrictnessLevel::CREATE
             && !(*storage_settings)[MergeTreeSetting::geo_replication_control_region].value.empty()
-            && !local_settings[Setting::enable_geo_replication_control])
+            && !local_settings[Setting::allow_experimental_geo_replication_control])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Geo-location-aware fetching (a non-empty `geo_replication_control_region` setting) is an experimental feature. "

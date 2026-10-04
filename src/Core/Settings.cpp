@@ -9981,10 +9981,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
-    DECLARE_WITH_ALIAS(Bool, enable_geo_replication_control, false, R"(
+    DECLARE(Bool, allow_experimental_geo_replication_control, false, R"(
 Allows creation of `ReplicatedMergeTree` tables with a non-empty `geo_replication_control_region` setting, which enables the geo-location-aware fetching: region leader election and fetching parts within the region only.
-)", EXPERIMENTAL, allow_experimental_geo_replication_control, \
-        {"26.10", false, false, "Added an alias for setting `allow_experimental_geo_replication_control`."}) \
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental geo-location-aware fetching of `ReplicatedMergeTree` parts."}) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA, \
