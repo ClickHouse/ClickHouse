@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Uses a global one-shot failpoint in `ReplicatedMergeTreeSink::commitPart`.
 
 SYSTEM DISABLE FAILPOINT replicated_merge_tree_restore_attach_retry;

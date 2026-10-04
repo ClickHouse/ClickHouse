@@ -1,25 +1,21 @@
 #pragma once
 
 #include <Processors/Port.h>
-#include <Common/MemorySpillScheduler.h>
+#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
+#include <Processors/ProcessorsProfileLogInfo.h>
+#include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
 class EventCounter;
 
-
 namespace DB
 {
-
-class InputPort;
-class OutputPort;
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
 
 class IQueryPlanStep;
 
@@ -32,6 +28,17 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
+
+class StepWallClock;
+
+namespace Runtime::V1
+{
+class ExecutionThreadContext;
+class ExecutingGraph;
+}
+
+
+using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -125,6 +132,7 @@ protected:
     OutputPorts outputs;
 
 public:
+
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -146,9 +154,6 @@ public:
         /// All work is done (all data is processed or all output are closed), nothing more to do.
         Finished,
 
-        /// No one needs data on output ports.
-        /// Unneeded,
-
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
@@ -167,7 +172,7 @@ public:
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absence of work by returning Finished or Unneeded,
+      *  or indicate that processing has finished by returning `Finished`,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
@@ -211,12 +216,15 @@ public:
       */
     virtual int schedule();
 
-    /** This method is similar to schedule() but also returns epoll events mask
+    /** This method is similar to schedule() but also returns epoll events mask and an optional timeout.
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      *
+      * The third element is a timeout in milliseconds. If non-negative, the processor will be re-dispatched after
+      * the timeout even when the fd has not become readable. A value of -1 means "no timeout" (block until fd fires).
       */
-#ifdef OS_LINUX
-    virtual std::pair<int, uint32_t> scheduleForEvent();
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    virtual std::tuple<int, uint32_t, Int64> scheduleForEvent();
 #endif
 
     /* The method is called right after asynchronous job is done
@@ -273,6 +281,14 @@ public:
     /// May be used to stop execution in rare cases.
     virtual void onUpdatePorts() {}
 
+    /// Called by the executor once the whole pipeline has finished successfully, and the read progress of every
+    /// source has been reported. The progress of a source may arrive after all its consumers have finished
+    /// (e.g. `RemoteSource` drains the remaining packets of a connection after `LIMIT`), so anything that depends
+    /// on the final statistics, such as the epilogue of an output format, belongs here.
+    /// A query broken off by `timeout_overflow_mode = 'break'` also returns its partial result as a success,
+    /// so the hook is called for it as well, even though not every processor is finished in that case.
+    virtual void onPipelineFinished() {}
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
@@ -298,18 +314,37 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    /// Step of QueryPlan from which processor was created
+    void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
 
-    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    void setQueryPlanStepGroup(size_t group);
+
+    /// Copy the query step fields from parent processor to child processor
+    /// The group can be adjusted manually, since even though the processors can be
+    /// coming from the same step, they can belong to different groups (stages)
+    void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
+
+    const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
+    uint64_t getNumExecutedJobs() const { return num_executed_jobs; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
+
+    struct PortDataCounters
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
+    /// The getter can be used only after running the query, for counting
+    /// the exact number of rows/bytes per port
+    /// Should be used only on the pors belonging to the processor
+    PortDataCounters getPortDataCounters(const Port & port) const;
 
     struct ProcessorDataStats
     {
@@ -321,26 +356,6 @@ public:
 
     ProcessorDataStats getProcessorDataStats() const;
 
-    /// Information for system.processors_profile_log
-    struct ProcessorsProfileLogInfo
-    {
-        UInt64 id = 0;
-        std::vector<UInt64> parent_ids;
-        UInt64 plan_step = 0;
-        String plan_step_name;
-        String plan_step_description;
-        UInt64 plan_group = 0;
-        String processor_uniq_id;
-        String step_uniq_id;
-        String processor_name;
-        UInt64 elapsed_us = 0;
-        UInt64 input_wait_elapsed_us = 0;
-        UInt64 output_wait_elapsed_us = 0;
-        UInt64 input_rows = 0;
-        UInt64 input_bytes = 0;
-        UInt64 output_rows = 0;
-        UInt64 output_bytes = 0;
-    };
     ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
     struct ReadProgressCounters
@@ -388,6 +403,10 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
+    /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
+    /// accepted a share of the current one, so it cannot progress while an output is undemanded.
+    virtual bool requiresAllOutputsPushable() const { return false; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
@@ -398,16 +417,19 @@ protected:
 private:
     /// For:
     /// - elapsed_ns
-    friend class ExecutionThreadContext;
+    /// - num_executed_jobs
+    /// - query_plan_step_wall_clock_ptr
+    friend class Runtime::V1::ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
+    friend class Runtime::V1::ExecutingGraph;
 
     std::string processor_description;
 
     /// For processors_profile_log
     uint64_t elapsed_ns = 0;
+    uint64_t num_executed_jobs = 0;
     Stopwatch input_wait_watch;
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
@@ -415,9 +437,10 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    IQueryPlanStep * query_plan_step = nullptr;
+    const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
+    StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 
     size_t processor_index = 0;
     String plan_step_name;

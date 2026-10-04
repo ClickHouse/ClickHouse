@@ -1,0 +1,6 @@
+-- A valueless integer setting is rejected
+ok
+-- A valueless boolean setting is rejected the same way, as in `EXPLAIN` itself
+ok
+-- With an explicit value the settings still work
+1

@@ -1,0 +1,36 @@
+different marker types before horizontal merge
+1	0	1
+2		0
+different marker types after horizontal merge
+1	0	1
+2		0
+b
+k
+payload
+different marker types before vertical merge
+1	0	1
+2		0
+different marker types after vertical merge
+1	0	1
+2		0
+Vertical
+b
+k
+payload
+same marker types stay omitted
+1	0
+2	0
+k
+marker and physical column are materialized
+1	0
+2	7
+b
+k
+marker and absent before merge
+1		0
+2	0	1
+marker and absent after merge
+1		0
+2	0	1
+b
+k

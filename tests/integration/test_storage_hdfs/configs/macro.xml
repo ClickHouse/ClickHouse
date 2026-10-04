@@ -1,0 +1,5 @@
+<clickhouse>
+    <macros>
+        <default_cluster_macro>test_cluster_two_shards</default_cluster_macro>
+    </macros>
+</clickhouse>

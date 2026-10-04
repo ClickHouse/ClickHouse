@@ -1,0 +1,11 @@
+---
+title: JSON 지원
+---
+
+<div id="schema-choice-map-vs-json">
+  ## 스키마 선택: 맵 vs JSON
+</div>
+
+ClickStack는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. [버킷형 맵 직렬화](/ko/reference/data-types/map#bucketed-map-serialization)와 맵 키 및 값에 대한 텍스트 인덱스를 함께 사용하면, 동적 JSON 서브컬럼에서 키별로 발생하는 수집 오버헤드 없이 선택적 조회를 수행할 수 있습니다.
+
+`JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다. 기본 스키마로는 **권장되지 않습니다**. 전체 비교 내용과 JSON 지원을 활성화하는 데 필요한 환경 변수는 [맵 vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.

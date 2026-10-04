@@ -1,0 +1,4 @@
+the cancellation was delivered while the source was paused between the metadata probes
+the query succeeded
+the metadata of the file was not probed again after the cancellation
+the data was not requested after the cancellation

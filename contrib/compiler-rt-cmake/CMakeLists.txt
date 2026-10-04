@@ -11,6 +11,7 @@
 #   * clang_rt_tsan / tsan_cxx               — if SANITIZE = thread
 #   * clang_rt_ubsan_standalone / ubsan_standalone_cxx — if SANITIZE = undefined
 #   * clang_rt_xray                          — if ENABLE_XRAY
+#   * clang_rt_profile                       — if WITH_COVERAGE
 
 set(COMPILER_RT_DIR     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt")
 set(BUILTINS_SOURCE_DIR "${COMPILER_RT_DIR}/lib/builtins")
@@ -51,6 +52,10 @@ endif()
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
 # strip those flags explicitly. We keep:
 #   * --gcc-toolchain= / --no-default-config (toolchain bits from cmake/linux/toolchain-*.cmake)
+#   * -isystem +<path> / -nostdlibinc (musl header paths and the glibc-header
+#     opt-out added by the USE_MUSL toolchain — the runtime objects are linked
+#     into every musl executable and must honor the same "musl headers only"
+#     contract as the rest of the build)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
@@ -66,7 +71,7 @@ endif()
 # state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
 # drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
 # or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
@@ -232,6 +237,11 @@ target_compile_options(clang_rt_builtins PRIVATE
     -fvisibility=hidden
     -fomit-frame-pointer
     -nostdinc++
+    # Never instrument the builtins: they are called from arbitrary contexts,
+    # including libc startup and sanitizer-runtime internals. Also marks the
+    # target for the top-level FUZZER loop, which skips targets carrying
+    # -fno-sanitize=all instead of appending -fsanitize=fuzzer-no-link.
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
@@ -261,7 +271,9 @@ target_link_libraries(global-libs INTERFACE clang_rt_builtins)
 # common-helper sources, matching the upstream layout (libclang_rt.asan.a,
 # libclang_rt.msan.a, ...).
 
-if (NOT (SANITIZE OR ENABLE_XRAY))
+# $CACHE{}: contrib/CMakeLists.txt shadows WITH_COVERAGE to OFF in this scope,
+# so read the cache-level option instead.
+if (NOT (SANITIZE OR ENABLE_XRAY OR $CACHE{WITH_COVERAGE}))
     return()
 endif()
 
@@ -304,8 +316,18 @@ set(SANITIZER_COMMON_FLAGS
     # pointers too. Override compiler-rt's default -fomit-frame-pointer.
     -fno-omit-frame-pointer
     -funwind-tables
+    # From upstream SANITIZER_COMMON_CFLAGS (compiler-rt/CMakeLists.txt): the runtimes run before thread
+    # local storage is set up and inside interceptors and signal handlers, where reading the canary from
+    # %fs is not safe and __stack_chk_fail is itself interposable.
     -fno-stack-protector
     -fvisibility=hidden
+    # A sanitizer runtime must never itself be instrumented: it would recurse
+    # into itself, and its early-init code runs before instrumentation runtimes
+    # exist. This also marks the target for the top-level FUZZER loop, which
+    # skips targets carrying -fno-sanitize=all instead of appending
+    # -fsanitize=fuzzer-no-link (that would override this flag and re-enable
+    # SanitizerCoverage).
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
@@ -624,17 +646,19 @@ endif()
 # ============================================================
 #
 if (ENABLE_XRAY)
-    # XRay archive: common runtime + all three modes (FDR, basic, profiling) +
-    # per-arch trampolines + sanitizer_common (XRay reuses sanitizer_common's
-    # allocator and printing helpers).
+    # XRay archive: common runtime + per-arch trampolines + sanitizer_common
+    # (XRay reuses sanitizer_common's allocator and printing helpers).
     #
-    # Bundle list mirrors the OBJECT_LIBS for clang_rt.xray (STATIC) in
-    # contrib/llvm-project/compiler-rt/lib/xray/CMakeLists.txt:
-    #   RTXray (= XRAY_SOURCES + ${arch}_SOURCES) + RTXrayFDR + RTXrayBASIC +
-    #   RTXrayPROFILING + RTSanitizerCommon[+Libc].
-    # Upstream additionally builds clang_rt.xray-fdr/-basic/-profiling as
-    # separate archives so an application can link only the modes it uses;
-    # ClickHouse always wants all of them, so we collapse into one archive.
+    # The logging modes (FDR, basic, profiling) are deliberately NOT bundled:
+    # ClickHouse compiles with -fxray-modes=none (see
+    # cmake/xray_instrumentation.cmake) and drives instrumentation through
+    # custom handlers only. This archive is linked --whole-archive (the
+    # runtime's init lives in a preinit_array entry nothing references), so
+    # bundling a mode would run its static initializers in every executable;
+    # xray_fdr_logging's initializer crashes at startup on musl.
+    #
+    # xray_reject_modes.cpp (ours) makes a request for one of the dropped modes
+    # through XRAY_OPTIONS fail at startup instead of silently doing nothing.
     set(_xray_arch_cpp "")
     set(_xray_arch_asm "")
     if     (ARCH_AMD64)
@@ -658,13 +682,13 @@ if (ENABLE_XRAY)
     endif()
 
     set(_xray_combined_full "")
-    foreach (s ${XRAY_COMMON_SOURCES} ${XRAY_FDR_SOURCES} ${XRAY_BASIC_SOURCES}
-                ${XRAY_PROFILING_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
+    foreach (s ${XRAY_COMMON_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
         list(APPEND _xray_combined_full "${XRAY_DIR}/${s}")
     endforeach()
     foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES})
         list(APPEND _xray_combined_full "${SANCOMMON_DIR}/${s}")
     endforeach()
+    list(APPEND _xray_combined_full "${CMAKE_CURRENT_SOURCE_DIR}/xray_reject_modes.cpp")
 
     add_library(clang_rt_xray STATIC ${_xray_combined_full})
     target_include_directories(clang_rt_xray PRIVATE ${SANITIZER_INCLUDE_DIRS})
@@ -684,4 +708,44 @@ if (ENABLE_XRAY)
     set_target_properties(clang_rt_xray PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_xray)
+endif()
+
+#
+# ============================================================
+# 8. Profile (coverage instrumentation runtime)
+# ============================================================
+#
+# Source list mirrors PROFILE_SOURCES in
+# contrib/llvm-project/compiler-rt/lib/profile/CMakeLists.txt (the
+# non-baremetal, non-Windows branch). The COMPILER_RT_HAS_* defines replace
+# upstream's configure-time probes - all four hold on Linux.
+if ($CACHE{WITH_COVERAGE})
+    add_compiler_rt_runtime(profile
+        SOURCE_DIR "${COMPILER_RT_DIR}/lib/profile"
+        SOURCES
+            GCDAProfiling.c
+            InstrProfiling.c
+            InstrProfilingInternal.c
+            InstrProfilingBuffer.c
+            InstrProfilingFile.c
+            InstrProfilingMerge.c
+            InstrProfilingMergeFile.c
+            InstrProfilingNameVar.c
+            InstrProfilingVersionVar.c
+            InstrProfilingWriter.c
+            InstrProfilingPlatformAIX.c
+            InstrProfilingPlatformDarwin.c
+            InstrProfilingPlatformFuchsia.c
+            InstrProfilingPlatformLinux.c
+            InstrProfilingPlatformOther.c
+            InstrProfilingPlatformWindows.c
+            InstrProfilingRuntime.cpp
+            InstrProfilingUtil.c
+            InstrProfilingValue.c
+        DEFS
+            COMPILER_RT_HAS_ATOMICS=1
+            COMPILER_RT_HAS_FCNTL_LCK=1
+            COMPILER_RT_HAS_FLOCK=1
+            COMPILER_RT_HAS_UNAME=1
+    )
 endif()

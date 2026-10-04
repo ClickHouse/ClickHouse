@@ -1,0 +1,34 @@
+for key 'where' has no 'arguments' list
+for key 'group_by' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'tables' has no 'arguments' list
+for key 'interpolate' has no 'arguments' list
+for key 'lambda' has no 'arguments' list
+for key 'parameters' has no 'arguments' list
+for key 'function_core' has no 'arguments' list
+UNKNOWN_FUNCTION
+Function in (children 1)
+Literal UInt64_9
+for key 'select' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'group_by' has no 'arguments' list
+for key 'with' has no 'arguments' list
+for key 'order_by' has no 'arguments' list
+for key 'index' has no 'arguments' list
+for key 'index' has no 'arguments' list
+0
+WITH rand(14) AS n SELECT count(), n WHERE rand(12) > 0 GROUP BY a
+SELECT a, length(toString(a)) ORDER BY a
+PROJECTION p INDEX a, b + 1 TYPE basic
+SELECT count()
+FROM numbers(3)
+GROUP BY number
+ORDER BY number ASC WITH FILL
+INTERPOLATE (`number` AS plus(number, 1))
+SELECT * APPLY lambda(tuple(x), plus(x, 1)) APPLY quantile(0.5)
+FROM
+(
+    SELECT 1 AS a
+    FROM system.one
+)
+1

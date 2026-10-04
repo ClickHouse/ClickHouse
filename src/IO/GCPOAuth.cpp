@@ -18,30 +18,19 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
 }
 
-GCPOAuthToken fetchGCPOAuthToken(
-    const std::string & client_id,
-    const std::string & client_secret,
-    const std::string & refresh_token,
+namespace
+{
+
+GCPOAuthToken postTokenRequest(
+    const std::string & token_endpoint,
+    const std::string & body,
     const ConnectionTimeouts & timeouts,
     HTTPConnectionGroupType group)
 {
-    static constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-
-    Poco::URI url(GOOGLE_OAUTH2_TOKEN_ENDPOINT);
-
-    std::string encoded_client_id;
-    std::string encoded_client_secret;
-    std::string encoded_refresh_token;
-    Poco::URI::encode(client_id, "", encoded_client_id);
-    Poco::URI::encode(client_secret, "", encoded_client_secret);
-    Poco::URI::encode(refresh_token, "", encoded_refresh_token);
-
-    String body = fmt::format(
-        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
-        encoded_client_id, encoded_client_secret, encoded_refresh_token);
+    Poco::URI url(token_endpoint);
 
     auto log = getLogger("GCPOAuth");
-    LOG_DEBUG(log, "Requesting GCP bearer token via OAuth2 refresh token flow");
+    LOG_DEBUG(log, "Requesting GCP bearer token from {}", url.getHost());
 
     HTTPSessionPtr session;
     std::exception_ptr last_exception;
@@ -106,6 +95,46 @@ GCPOAuthToken fetchGCPOAuthToken(
         result.expires_in = object->getValue<Int64>("expires_in");
 
     return result;
+}
+
+}
+
+GCPOAuthToken fetchGCPOAuthToken(
+    const std::string & client_id,
+    const std::string & client_secret,
+    const std::string & refresh_token,
+    const ConnectionTimeouts & timeouts,
+    HTTPConnectionGroupType group,
+    const std::string & token_endpoint)
+{
+    std::string encoded_client_id;
+    std::string encoded_client_secret;
+    std::string encoded_refresh_token;
+    Poco::URI::encode(client_id, "", encoded_client_id);
+    Poco::URI::encode(client_secret, "", encoded_client_secret);
+    Poco::URI::encode(refresh_token, "", encoded_refresh_token);
+
+    String body = fmt::format(
+        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
+        encoded_client_id, encoded_client_secret, encoded_refresh_token);
+
+    return postTokenRequest(token_endpoint, body, timeouts, group);
+}
+
+GCPOAuthToken fetchGCPOAuthTokenWithJWTAssertion(
+    const std::string & assertion,
+    const std::string & token_endpoint,
+    const ConnectionTimeouts & timeouts,
+    HTTPConnectionGroupType group)
+{
+    std::string encoded_assertion;
+    Poco::URI::encode(assertion, "", encoded_assertion);
+
+    String body = fmt::format(
+        "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={}",
+        encoded_assertion);
+
+    return postTokenRequest(token_endpoint, body, timeouts, group);
 }
 
 }

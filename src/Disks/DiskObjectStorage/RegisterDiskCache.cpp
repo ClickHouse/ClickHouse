@@ -54,7 +54,7 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot create cached custom disk without either "
-                    "`filesystem_caches_path` (common for all filesystem caches) or"
+                    "`filesystem_caches_path` (common for all filesystem caches) or "
                     "`custom_cached_disks_base_directory` (common only for custom cached disks) "
                     "in server configuration file");
             }

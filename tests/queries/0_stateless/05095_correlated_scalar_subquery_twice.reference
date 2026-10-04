@@ -1,0 +1,39 @@
+one occurrence
+0	1
+1	1
+2	1
+3	1
+4	1
+both branches of a constant condition
+0	1
+1	1
+2	1
+3	1
+4	1
+0	1
+1	1
+2	1
+3	1
+4	1
+0	1
+1	1
+2	1
+3	1
+4	1
+a non-constant condition, which always worked
+0	1
+1	1
+2	1
+3	1
+4	1
+the same subquery twice in other shapes
+0	2
+1	2
+2	2
+3	2
+4	2
+0	1
+1	1
+2	1
+3	1
+4	1

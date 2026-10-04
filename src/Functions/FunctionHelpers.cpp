@@ -100,17 +100,28 @@ namespace
 
 String withOrdinalEnding(size_t i)
 {
-    switch (i)
+    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
+    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
+    const size_t n = i + 1;
+    const char * suffix = "th";
+    if (n % 100 < 11 || n % 100 > 13)
     {
-        case 0:
-            return "1st";
-        case 1:
-            return "2nd";
-        case 2:
-            return "3rd";
-        default:
-            return std::to_string(i) + "th";
+        switch (n % 10)
+        {
+            case 1:
+                suffix = "st";
+                break;
+            case 2:
+                suffix = "nd";
+                break;
+            case 3:
+                suffix = "rd";
+                break;
+            default:
+                break;
+        }
     }
+    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -152,7 +163,7 @@ void validateVariadicArgumentsImpl(
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
@@ -464,6 +475,66 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
 bool isLowCardinalityType(const IDataType & type)
 {
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
+}
+
+bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        /// recursiveRemoveLowCardinality returns the very same type object when nothing was removed.
+        if (column.type && recursiveRemoveLowCardinality(column.type).get() != column.type.get())
+            return true;
+    }
+    return false;
+}
+
+bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        if (!column.column || !isColumnConst(*column.column))
+            return false;
+    }
+    return true;
+}
+
+bool plusMinusWithConstantsIsInjective(
+    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
+{
+    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
+    /// fixed there is no varying argument to be injective in.
+    const bool left_is_const = left.column && isColumnConst(*left.column);
+    const bool right_is_const = right.column && isColumnConst(*right.column);
+    if (left_is_const == right_is_const)
+        return false;
+
+    auto is_integer_type = [](const DataTypePtr & type)
+    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
+
+    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
+        return false;
+
+    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
+    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
+    /// constant itself was materialized with size 0, as query-plan constants are.
+    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
+    return !constant.column->onlyNull();
+}
+
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    bool converted = false;
+    for (auto & column : args)
+    {
+        auto column_without_low_cardinality = recursiveRemoveLowCardinality(column.column);
+        auto type_without_low_cardinality = recursiveRemoveLowCardinality(column.type);
+
+        converted |= type_without_low_cardinality.get() != column.type.get();
+
+        column.column = std::move(column_without_low_cardinality);
+        column.type = std::move(type_without_low_cardinality);
+    }
+    return converted;
 }
 
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the

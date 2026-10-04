@@ -46,7 +46,12 @@ def test_log_queries_probability_one(start_cluster):
 
 
 def test_log_queries_probability_two(start_cluster):
-    for i in range(100):
+    # Each iteration checks an invariant (both nodes log the same number of
+    # entries for the same distributed query), not a probability fraction, so
+    # the count only governs how many independent chances we get to catch a
+    # discrepancy. 20 iterations is plenty; 100 just multiplies CPU cost under
+    # instrumentation.
+    for i in range(20):
         node1.query(
             "SELECT 12345 FROM remote('node2', system, one)",
             settings={"log_queries_probability": 0.5},

@@ -56,6 +56,6 @@ SELECT (
 FROM t_issue_105649 AS t
 ORDER BY t.a
 LIMIT 5
-SETTINGS allow_experimental_correlated_subqueries = 1;
+SETTINGS allow_correlated_subqueries = 1;
 
 DROP TABLE t_issue_105649;

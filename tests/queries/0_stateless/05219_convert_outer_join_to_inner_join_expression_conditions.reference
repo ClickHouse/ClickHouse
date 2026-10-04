@@ -1,0 +1,53 @@
+-- An arithmetic expression allows converting.
+15	705
+Type: INNER
+Type: INNER
+-- A chain of NULL-propagating functions allows converting.
+15	705
+Type: INNER
+Type: INNER
+-- An expression over two Nullable columns allows converting.
+10	460
+Type: INNER
+Type: INNER
+-- An inequality over an expression allows converting.
+30	1310
+Type: INNER
+-- `coalesce` does not allow converting.
+Type: INNER
+Type: LEFT
+-- `if` does not allow converting.
+Type: INNER
+Type: LEFT
+-- A Nullable column under an expression allows converting under join_use_nulls = 0.
+15	705
+Type: INNER
+Type: INNER
+-- CAST to a Nullable type allows converting.
+10	420
+Type: INNER
+Type: INNER
+-- `toNullable` allows converting.
+10	420
+Type: INNER
+Type: INNER
+-- `toLowCardinality` allows converting.
+10	420
+Type: INNER
+Type: INNER
+-- CAST to a non-Nullable type does not allow converting.
+Type: INNER
+Type: LEFT
+---- Expressions whose result type can not hold a NULL. ----
+-- `bitmaskToArray` does not allow converting.
+Type: INNER
+Type: LEFT
+-- `splitByChar` does not allow converting.
+Type: INNER
+Type: LEFT
+-- `extractKeyValuePairs` does not allow converting.
+Type: INNER
+Type: LEFT
+-- A wrapper above such a function does not allow converting.
+Type: INNER
+Type: LEFT

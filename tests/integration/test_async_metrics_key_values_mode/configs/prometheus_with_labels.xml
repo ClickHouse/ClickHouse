@@ -1,0 +1,18 @@
+<clickhouse>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+
+        <metrics>false</metrics>
+        <events>false</events>
+        <errors>false</errors>
+        <asynchronous_metrics>true</asynchronous_metrics>
+
+        <!-- `disk` is the label the key-value form of `DiskTotal` writes the disk name into, so it is
+             reserved while that form is published. In `legacy_names` mode it is not written at all, and a
+             configuration like this one - valid before version 26.8 - is accepted again. -->
+        <labels>
+            <disk>the_whole_node</disk>
+        </labels>
+    </prometheus>
+</clickhouse>

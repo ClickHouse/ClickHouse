@@ -1,0 +1,46 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'groupArrayDistinct 组合器使用示例'
+keywords: ['groupArray', 'Distinct', '组合器', '示例', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 描述
+</div>
+
+[`groupArrayDistinct`](/zh/reference/functions/aggregate-functions/combinators#-foreach) 组合器
+可应用于 [`groupArray`](/zh/reference/functions/aggregate-functions/sum) 聚合函数，以创建由不重复参数值组成的数组。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在此示例中，我们将使用 [SQL playground](https://sql.clickhouse.com/) 中提供的 `hits` 数据集。
+
+假设你想了解，对于网站上每个不同的落地页域名 (`URLDomain`) ，访问该域名的访客记录到了哪些唯一的 User-Agent 操作系统代码 (`OS`) 。
+这可以帮助你了解与你网站不同部分交互的操作系统多样性。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- 仅考虑记录了域名的 hits
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`groupArray`](/zh/reference/functions/aggregate-functions/groupArray)
+* [`Distinct 组合器`](/zh/reference/functions/aggregate-functions/combinators#-distinct)

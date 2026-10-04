@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -16,6 +17,7 @@ namespace DB
 {
 
 class TextIndexAnalyzer;
+class MergeTreeIndexConditionText;
 
 class PostingListCursor;
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
@@ -39,14 +41,15 @@ public:
 
     size_t readRows(
         size_t from_mark,
-        size_t current_task_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
-    bool canReadIncompleteGranules() const override { return false; }
+    /// The virtual columns are resolved from per-mark posting lists addressed
+    /// by absolute row number, so a read may start or stop inside a mark.
+    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
+    void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
     /// Looks up its own index name in the map.
@@ -55,8 +58,11 @@ public:
 private:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
-    void createEmptyColumns(Columns & columns) const;
-    std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
+    void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
+    /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
+    std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
+    /// The postings stream of a token, opened on first use and kept in `postings_streams`.
+    MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
@@ -68,6 +74,8 @@ private:
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
+    /// Drops all cached cursors, keeping the per-column sizing.
+    void resetCursors();
 
     std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
     MergeTreeDataPartPtr getDataPart() const;
@@ -75,9 +83,10 @@ private:
     void readGranule();
     /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
     void classifyVirtualColumns();
-    void initializePostingStreams();
+    /// Collects the tokens whose postings the analysis left to read into `tokens_to_read`.
+    void initializeTokensToRead();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows, PostingList & range_posting);
+    void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
@@ -96,9 +105,17 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
+    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
+    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
+    /// One token's full posting list — the rank space the blocked position stream is addressed in.
+    PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
+
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
+    bool can_read_incomplete_granules = false;
+    std::shared_ptr<MergeTreeIndexConditionText> condition_text;
+    std::vector<TextSearchQueryPtr> search_queries;
     TextIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
 
@@ -113,12 +130,10 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// Small postings stream — kept as a class member because cached lazy cursors
-    /// hold a reference to it for on-demand segment reads.
-    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
-    /// A separate stream is created for each token to read
-    /// postings blocks continuously without additional seeks.
-    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
+    /// A separate stream is created for each token to read postings blocks continuously without additional seeks.
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
+    /// Tokens the analysis left to read: needed by some query and without postings read during the analysis.
+    absl::flat_hash_set<std::string_view> tokens_to_read;
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
@@ -129,6 +144,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.
@@ -140,16 +156,16 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_density_threshold = 0.2f;
+    TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Auto;
 
-    /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
-    /// hold mutable segment/block position, so they must not be shared across columns.
-    /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
-    absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
+    /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
+    /// Cursors are forward-only and hold mutable segment/block position, so they must not be
+    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_row < current_row`).
+    std::vector<absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 
     /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,
-    /// combined with large-posting stream cursors. Cleared on the same triggers as `lazy_cursors`.
-    absl::flat_hash_map<String, PostingListCursorPtr> prebuilt_cursors;
+    /// combined with large-posting stream cursors. Dropped on the same triggers as `lazy_cursors`.
+    std::vector<PostingListCursorPtr> prebuilt_cursors;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

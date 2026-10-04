@@ -1,0 +1,41 @@
+<test>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>UInt8</value>
+                <value>UInt16</value>
+                <value>UInt32</value>
+                <value>UInt64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>pattern</name>
+            <values>
+                <value>seq</value> <!-- consecutive, wraps through the full range of narrow types -->
+                <value>gap</value> <!-- monotonic with random gaps, wraps through the full range of narrow types -->
+                <value>rnd</value> <!-- random over the full range of the type -->
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE IF NOT EXISTS delta_decode_{pattern}_{type}
+        (n {type} CODEC(Delta))
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <fill_query>INSERT INTO delta_decode_seq_{type} (n) SELECT to{type}(number) FROM system.numbers LIMIT 50000000 SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO delta_decode_gap_{type} (n) SELECT to{type}(number * intExp2(4 * byteSize(to{type}(0))) + intHash64(number) % intExp2(4 * byteSize(to{type}(0)))) FROM system.numbers LIMIT 50000000 SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO delta_decode_rnd_{type} (n) SELECT to{type}(intHash64(number)) FROM system.numbers LIMIT 50000000 SETTINGS max_threads=1</fill_query>
+    <fill_query>OPTIMIZE TABLE delta_decode_{pattern}_{type} FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count() FROM delta_decode_{pattern}_{type} WHERE NOT ignore(n) SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS delta_decode_{pattern}_{type}</drop_query>
+</test>

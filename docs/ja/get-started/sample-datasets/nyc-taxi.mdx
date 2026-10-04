@@ -1,0 +1,670 @@
+---
+description: '2009年以降にニューヨーク市を出発地とした、タクシーおよび配車サービス車両（Uber、Lyft など）の数十億件の乗車記録からなるデータセットを使って ClickHouse を試してみましょう'
+sidebarTitle: 'ニューヨークのタクシーデータ'
+slug: /getting-started/example-datasets/nyc-taxi
+title: 'ニューヨークのタクシーデータセットを用いた地理空間分析'
+doc_type: 'guide'
+keywords: ['サンプルデータセット', 'nyc taxi', 'チュートリアル', 'サンプルデータ', 'はじめに']
+---
+
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+<View title="Cloud">
+  このチュートリアルでは、ClickHouse を使って大量のデータに対して分析クエリを実行する方法を学びます。
+  あわせて、Dictionary を使ってデータを拡充する方法や、結合クエリの書き方も紹介します。
+
+  ## 前提条件
+
+  このチュートリアルを進めるには、以下が必要です。
+
+  * [ClickHouse Cloud アカウント](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-nyc-taxi) (サインアップ時に 300 ドル分の無料クレジットが付与されます)
+  * [ClickHouse Cloud サービス](/ja/get-started/setup/cloud#1-create-a-clickhouse-service)
+
+  <Steps titleSize="h2">
+    <Step title="テーブルを作成する" id="create-a-new-table">
+      このチュートリアルでは、ニューヨーク市のタクシーデータセットを使用します。このデータセットには数百万件のタクシー乗車に関する詳細情報が含まれており、チップ額、通行料、支払い方法などのカラムがあります。
+
+      1. 左側のメニューから **SQL console** を選択します
+      2. ホームアイコンの横にある **+** タブをクリックして、新しいクエリを作成します
+      3. SQL エディタに次のクエリを入力し、**Run** をクリックします：
+
+      ```sql Expandable
+      CREATE TABLE trips
+      (
+          `trip_id` UInt32,
+          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+          `pickup_date` Date,
+          `pickup_datetime` DateTime,
+          `dropoff_date` Date,
+          `dropoff_datetime` DateTime,
+          `store_and_fwd_flag` UInt8,
+          `rate_code_id` UInt8,
+          `pickup_longitude` Float64,
+          `pickup_latitude` Float64,
+          `dropoff_longitude` Float64,
+          `dropoff_latitude` Float64,
+          `passenger_count` UInt8,
+          `trip_distance` Float64,
+          `fare_amount` Float32,
+          `extra` Float32,
+          `mta_tax` Float32,
+          `tip_amount` Float32,
+          `tolls_amount` Float32,
+          `ehail_fee` Float32,
+          `improvement_surcharge` Float32,
+          `total_amount` Float32,
+          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+          `trip_type` UInt8,
+          `pickup` FixedString(25),
+          `dropoff` FixedString(25),
+          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+          `pickup_nyct2010_gid` Int8,
+          `pickup_ctlabel` Float32,
+          `pickup_borocode` Int8,
+          `pickup_ct2010` String,
+          `pickup_boroct2010` String,
+          `pickup_cdeligibil` String,
+          `pickup_ntacode` FixedString(4),
+          `pickup_ntaname` String,
+          `pickup_puma` UInt16,
+          `dropoff_nyct2010_gid` UInt8,
+          `dropoff_ctlabel` Float32,
+          `dropoff_borocode` UInt8,
+          `dropoff_ct2010` String,
+          `dropoff_boroct2010` String,
+          `dropoff_cdeligibil` String,
+          `dropoff_ntacode` FixedString(4),
+          `dropoff_ntaname` String,
+          `dropoff_puma` UInt16
+      )
+      ENGINE = MergeTree
+      PARTITION BY toYYYYMM(pickup_date)
+      ORDER BY pickup_datetime;
+      ```
+    </Step>
+
+    <Step title="データを挿入する" id="add-the-dataset">
+      テーブルを作成したら、次に S3 上の CSV ファイルからニューヨーク市のタクシーデータを追加します。
+
+      次のコマンドは、S3 上の 2 つのファイル `trips_1.tsv.gz` と `trips_2.tsv.gz` から、約 2,000,000 行を `trips` テーブルに挿入します。
+
+      ```sql Expandable
+      INSERT INTO trips
+      SELECT * FROM s3(
+          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+          'TabSeparatedWithNames', "
+          `trip_id` UInt32,
+          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+          `pickup_date` Date,
+          `pickup_datetime` DateTime,
+          `dropoff_date` Date,
+          `dropoff_datetime` DateTime,
+          `store_and_fwd_flag` UInt8,
+          `rate_code_id` UInt8,
+          `pickup_longitude` Float64,
+          `pickup_latitude` Float64,
+          `dropoff_longitude` Float64,
+          `dropoff_latitude` Float64,
+          `passenger_count` UInt8,
+          `trip_distance` Float64,
+          `fare_amount` Float32,
+          `extra` Float32,
+          `mta_tax` Float32,
+          `tip_amount` Float32,
+          `tolls_amount` Float32,
+          `ehail_fee` Float32,
+          `improvement_surcharge` Float32,
+          `total_amount` Float32,
+          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+          `trip_type` UInt8,
+          `pickup` FixedString(25),
+          `dropoff` FixedString(25),
+          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+          `pickup_nyct2010_gid` Int8,
+          `pickup_ctlabel` Float32,
+          `pickup_borocode` Int8,
+          `pickup_ct2010` String,
+          `pickup_boroct2010` String,
+          `pickup_cdeligibil` String,
+          `pickup_ntacode` FixedString(4),
+          `pickup_ntaname` String,
+          `pickup_puma` UInt16,
+          `dropoff_nyct2010_gid` UInt8,
+          `dropoff_ctlabel` Float32,
+          `dropoff_borocode` UInt8,
+          `dropoff_ct2010` String,
+          `dropoff_boroct2010` String,
+          `dropoff_cdeligibil` String,
+          `dropoff_ntacode` FixedString(4),
+          `dropoff_ntaname` String,
+          `dropoff_puma` UInt16
+      ") SETTINGS input_format_try_infer_datetimes = 0
+      ```
+
+      データの挿入が完了するまで待ちます。約 150MB のデータがダウンロードされます。
+      挿入が完了したら、`trips` テーブルの行数を確認します。
+
+      ```sql
+      SELECT count() FROM trips
+      ```
+
+      結果は 1,999,657 行になるはずです
+    </Step>
+
+    <Step title="データを分析する" id="analyze-the-data">
+      データの読み込みが完了したら、クエリを実行してデータを分析できます。
+
+      * チップの平均額を計算します:
+        ```sql
+        SELECT round(avg(tip_amount), 2) FROM trips
+        ```
+
+      * 乗客数ごとの平均料金を計算します:
+        ```sql
+        SELECT
+            passenger_count,
+            ceil(avg(total_amount),2) AS average_total_amount
+        FROM trips
+        GROUP BY passenger_count
+        ```
+
+      * 地区ごとの1日あたりの乗車数を計算します:
+        ```sql
+        SELECT
+          pickup_date,
+          pickup_ntaname,
+          SUM(1) AS number_of_trips
+        FROM trips
+        GROUP BY pickup_date, pickup_ntaname
+        ORDER BY pickup_date ASC
+        ```
+
+      * 各乗車記録の所要時間を分単位で計算し、所要時間ごとに結果をグループ化します:
+        ```sql
+        SELECT
+          avg(tip_amount) AS avg_tip,
+          avg(fare_amount) AS avg_fare,
+          avg(passenger_count) AS avg_passenger,
+          count() AS count,
+          truncate(date_diff('second', pickup_datetime, dropoff_datetime)/60) as trip_minutes
+        FROM trips
+        WHERE trip_minutes > 0
+        GROUP BY trip_minutes
+        ORDER BY trip_minutes DESC
+        ```
+
+      * 各地区の乗車数を時間帯別に表示します:
+        ```sql
+        SELECT
+            pickup_ntaname,
+            toHour(pickup_datetime) as pickup_hour,
+            SUM(1) AS pickups
+        FROM trips
+        WHERE pickup_ntaname != ''
+        GROUP BY pickup_ntaname, pickup_hour
+        ORDER BY pickup_ntaname, pickup_hour
+        ```
+    </Step>
+
+    <Step title="辞書を作成する" id="create-a-dictionary">
+      次に、ニューヨーク市のすべての地区を収録した CSV ファイルをソースとして、ロケーション ID と NYC の区名を対応付ける `taxi_zone_dictionary` という名前の Dictionary (メモリ上に保持されるキー・バリューのペアのマッピング) を作成します。
+      これらのロケーション ID は、trips テーブルの `pickup_nyct2010_gid` カラムおよび `dropoff_nyct2010_gid` カラムに対応しています。
+
+      以下は、使用する CSV ファイルの一部をテーブル形式で示したものです。ファイル内の `LocationID` カラムは、`trips` テーブルの `pickup_nyct2010_gid` カラムおよび `dropoff_nyct2010_gid` カラムに対応しています。
+
+      | LocationID | Borough       | Zone                    | service&#95;zone |
+      | ---------- | ------------- | ----------------------- | ---------------- |
+      | 1          | EWR           | Newark Airport          | EWR              |
+      | 2          | Queens        | Jamaica Bay             | Boro Zone        |
+      | 3          | Bronx         | Allerton/Pelham Gardens | Boro Zone        |
+      | 4          | Manhattan     | Alphabet City           | Yellow Zone      |
+      | 5          | Staten Island | Arden Heights           | Boro Zone        |
+
+      次の SQL コマンドを実行して `taxi_zone_dictionary` という名前の Dictionary を作成し、S3 上の CSV ファイルからデータを投入します。ファイルの URL は `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv` です。
+
+      ```sql
+      CREATE DICTIONARY taxi_zone_dictionary
+      (
+        `LocationID` UInt16 DEFAULT 0,
+        `Borough` String,
+        `Zone` String,
+        `service_zone` String
+      )
+      PRIMARY KEY LocationID
+      SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
+      LIFETIME(MIN 0 MAX 0)
+      LAYOUT(HASHED_ARRAY())
+      ```
+
+      <Note>
+        ここでは、S3 バケットへの不要なトラフィックを避けるため、`LIFETIME` を 0 に設定して自動更新を無効にしています。用途によっては、別の値を設定してもかまいません。詳細については、[LIFETIME を使用した Dictionary データの更新](/ja/reference/statements/create/dictionary/lifetime)を参照してください。
+      </Note>
+
+      正しく動作したことを確認します。次のクエリは 265 行 (地区ごとに 1 行) を返すはずです。
+
+      ```sql
+      SELECT * FROM taxi_zone_dictionary
+      ```
+    </Step>
+
+    <Step title="Dictionaryを使ってクエリを実行する">
+      Dictionary から値を取得するには、`dictGet` 関数 ([またはそのバリエーション](/ja/reference/functions/regular-functions/ext-dict-functions)) を使用します。
+      Dictionary の名前、取得したい値、キー (この例では `taxi_zone_dictionary` の `LocationID` カラム) を渡すと、対応する値が返されます。
+      例えば、次のクエリは `LocationID` が 132 (JFK 空港に相当) の `Borough` を返します。
+
+      ```sql
+      SELECT dictGet('taxi_zone_dictionary', 'Borough', 132)
+      ```
+
+      JFK はクイーンズにあります。値の取得にかかる時間が実質的に 0 であることに注目してください。
+
+      ```response
+      ┌─dictGet('taxi_zone_dictionary', 'Borough', 132)─┐
+      │ Queens                                          │
+      └─────────────────────────────────────────────────┘
+
+      1 rows in set. Elapsed: 0.004 sec.
+      ```
+
+      キーが Dictionary に存在するかどうかを確認するには、`dictHas` 関数を使用します。たとえば、次のクエリは `1` (ClickHouse では &quot;true&quot; を意味します) を返します。
+
+      ```sql
+      SELECT dictHas('taxi_zone_dictionary', 132)
+      ```
+
+      次のクエリでは、4567 は Dictionary 内の `LocationID` の値として存在しないため、0 が返されます。
+
+      ```sql
+      SELECT dictHas('taxi_zone_dictionary', 4567)
+      ```
+
+      クエリ内で区 (borough) の名前を取得するには、`dictGet` 関数を使用します。例：
+
+      ```sql
+      SELECT
+        count(1) AS total,
+        dictGetOrDefault('taxi_zone_dictionary','Borough', toUInt64(pickup_nyct2010_gid), 'Unknown') AS borough_name
+      FROM trips
+      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+      GROUP BY borough_name
+      ORDER BY total DESC
+      ```
+
+      このクエリは、LaGuardia 空港または JFK 空港で降車したタクシーの乗車数を行政区 (borough) ごとに集計します。結果は次のとおりです。乗車地点の地区 (neighborhood) が不明な乗車記録がかなり多いことがわかります。
+
+      ```response
+      ┌─total─┬─borough_name──┐
+      │ 23683 │ Unknown       │
+      │  7053 │ Manhattan     │
+      │  6828 │ Brooklyn      │
+      │  4458 │ Queens        │
+      │  2670 │ Bronx         │
+      │   554 │ Staten Island │
+      │    53 │ EWR           │
+      └───────┴───────────────┘
+
+      7 rows in set. Elapsed: 0.019 sec. Processed 2.00 million rows, 4.00 MB (105.70 million rows/s., 211.40 MB/s.)
+      ```
+    </Step>
+
+    <Step title="結合を実行する" id="perform-a-join">
+      最後に、`taxi_zone_dictionary` と `trips` テーブルを結合するクエリをいくつか作成してみましょう。
+
+      まずは、先ほどの空港に関するクエリと同様の処理を行う、シンプルな `JOIN` から始めます。
+
+      ```sql
+      SELECT
+          count(1) AS total,
+          Borough
+      FROM trips
+      JOIN taxi_zone_dictionary ON toUInt64(trips.pickup_nyct2010_gid) = taxi_zone_dictionary.LocationID
+      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+      GROUP BY Borough
+      ORDER BY total DESC
+      ```
+
+      レスポンスは `dictGet` クエリの結果と同じです。
+
+      ```response
+      ┌─total─┬─Borough───────┐
+      │  7053 │ Manhattan     │
+      │  6828 │ Brooklyn      │
+      │  4458 │ Queens        │
+      │  2670 │ Bronx         │
+      │   554 │ Staten Island │
+      │    53 │ EWR           │
+      └───────┴───────────────┘
+
+      6 rows in set. Elapsed: 0.034 sec. Processed 2.00 million rows, 4.00 MB (59.14 million rows/s., 118.29 MB/s.)
+      ```
+
+      <Note>
+        上記の `JOIN` クエリの出力は、`dictGetOrDefault` を使用した直前のクエリと同じであることがわかります (ただし、`Unknown` の値は含まれていません) 。
+        内部的には、ClickHouse は `taxi_zone_dictionary` Dictionary に対して `dictGet` 関数を呼び出していますが、SQL 開発者にとっては `JOIN` 構文のほうがなじみがあるでしょう。
+      </Note>
+
+      このクエリは、チップ額が最も高い 1000 件の乗車記録の行を返し、各行を Dictionary と内部結合します。
+
+      ```sql
+      SELECT *
+      FROM trips
+      JOIN taxi_zone_dictionary
+      ON trips.dropoff_nyct2010_gid = taxi_zone_dictionary.LocationID
+      WHERE tip_amount > 0
+      ORDER BY tip_amount DESC
+      LIMIT 1000
+      ```
+
+      <Tip>
+        SELECT * を使うのではなく、クエリに必要なカラムだけを列挙することを推奨します。ClickHouse はデータをカラム単位で格納するため、選択するカラムを減らせば、読み取り・解凍・処理の対象となるデータ量をそのまま削減できます。
+      </Tip>
+    </Step>
+  </Steps>
+
+  ## 次のステップ
+
+  ClickHouse の詳細については、以下のドキュメントを参照してください。
+
+  * [ClickHouse におけるプライマリインデックスの概要](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes): ClickHouse がスパースプライマリインデックスを使用して、クエリ実行時に関連データを効率的に特定する仕組みを解説します。
+  * [外部データソースとの統合](/ja/integrations/home): ファイル、Kafka、PostgreSQL、データパイプラインなど、多様なデータソースとのインテグレーション方法を紹介します。
+  * [ClickHouse のデータを可視化する](/ja/integrations/connectors/data-visualization/index): お好みの UI/BI ツールを ClickHouse に接続します。
+  * [SQL リファレンス](/ja/reference/home): データの変換、処理、分析に利用できる ClickHouse の SQL 関数を一覧で確認できます。
+</View>
+
+<View title="オープンソース">
+  ニューヨークのタクシーデータサンプルは、2009 年以降にニューヨーク市内を起点とする、タクシーおよびハイヤー・配車サービス車両 (Uber、Lyft など) による 30 億件以上の乗車記録で構成されています。この Getting Started ガイドでは、300 万行のサンプルを使用します。
+
+  完全なデータセットは、次のいずれかの方法で取得できます:
+
+  * S3 または GCS から ClickHouse Cloud にデータを直接挿入する
+  * 事前に用意されたパーティションをダウンロードする
+  * また、デモ環境 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) で完全なデータセットに対してクエリを実行することもできます。
+
+  <Note>
+    以下のクエリ例は、ClickHouse Cloud の **Production** インスタンスで実行したものです。詳細については、
+    [「Playground の仕様」](/ja/get-started/sample-datasets/playground#specifications)を参照してください。
+  </Note>
+
+  ## trips テーブルを作成する
+
+  まず、タクシーの乗車データを格納するテーブルを作成します。
+
+  ```sql
+
+  CREATE DATABASE nyc_taxi;
+
+  CREATE TABLE nyc_taxi.trips_small (
+      trip_id             UInt32,
+      pickup_datetime     DateTime,
+      dropoff_datetime    DateTime,
+      pickup_longitude    Nullable(Float64),
+      pickup_latitude     Nullable(Float64),
+      dropoff_longitude   Nullable(Float64),
+      dropoff_latitude    Nullable(Float64),
+      passenger_count     UInt8,
+      trip_distance       Float32,
+      fare_amount         Float32,
+      extra               Float32,
+      tip_amount          Float32,
+      tolls_amount        Float32,
+      total_amount        Float32,
+      payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+      pickup_ntaname      LowCardinality(String),
+      dropoff_ntaname     LowCardinality(String)
+  )
+  ENGINE = MergeTree
+  PRIMARY KEY (pickup_datetime, dropoff_datetime);
+  ```
+
+  ## オブジェクトストレージから直接データを読み込む
+
+  まずはデータに慣れるため、データの一部 (300 万行) を取得して試すことができます。データはオブジェクトストレージ上の TSV ファイルとして格納されており、`s3` テーブル関数を使えば
+  ClickHouse Cloud に簡単にストリーミングできます。
+
+  S3 と GCS には同じデータが格納されているため、どちらのタブを選択しても構いません。
+
+  <Tabs>
+    <Tab title="S3">
+      次のコマンドは、S3 バケットから 3 つのファイルを `trips_small` テーブルにストリーミングします (`{0..2}` 構文は、値 0、1、2 にマッチするワイルドカードです) 。
+
+      ```sql
+      INSERT INTO nyc_taxi.trips_small
+      SELECT
+          trip_id,
+          pickup_datetime,
+          dropoff_datetime,
+          pickup_longitude,
+          pickup_latitude,
+          dropoff_longitude,
+          dropoff_latitude,
+          passenger_count,
+          trip_distance,
+          fare_amount,
+          extra,
+          tip_amount,
+          tolls_amount,
+          total_amount,
+          payment_type,
+          pickup_ntaname,
+          dropoff_ntaname
+      FROM s3(
+          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+          'TabSeparatedWithNames'
+      );
+      ```
+    </Tab>
+
+    <Tab title="GCS">
+      次のコマンドは、GCS バケットから 3 つのファイルを `trips` テーブルにストリーミングします (`{0..2}` 構文は、値 0、1、2 にマッチするワイルドカードです) 。
+
+      ```sql
+      INSERT INTO nyc_taxi.trips_small
+      SELECT
+          trip_id,
+          pickup_datetime,
+          dropoff_datetime,
+          pickup_longitude,
+          pickup_latitude,
+          dropoff_longitude,
+          dropoff_latitude,
+          passenger_count,
+          trip_distance,
+          fare_amount,
+          extra,
+          tip_amount,
+          tolls_amount,
+          total_amount,
+          payment_type,
+          pickup_ntaname,
+          dropoff_ntaname
+      FROM gcs(
+          'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
+          'TabSeparatedWithNames'
+      );
+      ```
+    </Tab>
+  </Tabs>
+
+  ## サンプルクエリ
+
+  以下のクエリは、前述のサンプルを対象に実行します。以下のクエリで使用しているテーブルを `nyc_taxi.trips` に変更すれば、[sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) で完全なデータセットに対してサンプルクエリを実行できます。
+
+  何行が挿入されたかを見てみましょう。
+
+  <RunnableCode>
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small;
+    ```
+  </RunnableCode>
+
+  各 TSV ファイルには約 100 万行が含まれており、3 つのファイルを合わせると 3,000,317 行になります。まずは数行見てみましょう。
+
+  <RunnableCode>
+    ```sql
+    SELECT *
+    FROM nyc_taxi.trips_small
+    LIMIT 10;
+    ```
+  </RunnableCode>
+
+  乗車日・降車日の日時、Geo 座標、運賃の詳細、ニューヨークの地区名などのカラムが含まれていることがわかります。
+
+  いくつかクエリを実行してみましょう。このクエリでは、乗車地点として最も頻繁に使われている地区の上位 10 件を確認できます。
+
+  <RunnableCode>
+    ```sql
+    SELECT
+       pickup_ntaname,
+       count(*) AS count
+    FROM nyc_taxi.trips_small WHERE pickup_ntaname != ''
+    GROUP BY pickup_ntaname
+    ORDER BY count DESC
+    LIMIT 10;
+    ```
+  </RunnableCode>
+
+  このクエリは、乗客数ごとの平均運賃を表示します。
+
+  ```sql runnable view='chart' chart_config='eyJ0eXBlIjoiYmFyIiwiY29uZmlnIjp7InhheGlzIjoicGFzc2VuZ2VyX2NvdW50IiwieWF4aXMiOiJhdmcodG90YWxfYW1vdW50KSIsInRpdGxlIjoiQXZlcmFnZSBmYXJlIGJ5IHBhc3NlbmdlciBjb3VudCJ9fQ'
+  SELECT
+     passenger_count,
+     avg(total_amount)
+  FROM nyc_taxi.trips_small
+  WHERE passenger_count < 10
+  GROUP BY passenger_count;
+  ```
+
+  乗客数と移動距離には、次のような相関が見られます:
+
+  ```sql runnable chart_config='eyJ0eXBlIjoiaG9yaXpvbnRhbCBiYXIiLCJjb25maWciOnsieGF4aXMiOiJwYXNzZW5nZXJfY291bnQiLCJ5YXhpcyI6ImRpc3RhbmNlIiwic2VyaWVzIjoiY291bnRyeSIsInRpdGxlIjoiQXZnIGZhcmUgYnkgcGFzc2VuZ2VyIGNvdW50In19'
+  SELECT
+      passenger_count,
+      avg(trip_distance) AS distance,
+      count() AS c
+  FROM nyc_taxi.trips_small
+  GROUP BY passenger_count
+  ORDER BY passenger_count ASC
+  ```
+
+  ## 事前準備済みパーティションのダウンロード
+
+  <Note>
+    以下の手順では、元のデータセットに関する情報と、あらかじめ用意されたパーティションをセルフマネージドのClickHouseサーバー環境に読み込む方法を説明します。
+  </Note>
+
+  データセットの説明とダウンロード手順については、https://github.com/toddwschneider/nyc-taxi-data および http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html を参照してください。
+
+  ダウンロードされるデータは、非圧縮の CSV ファイルで約 227 GB になります。ダウンロードには 1 Gbit の接続で約 1 時間かかります (s3.amazonaws.com から並列ダウンロードすれば、1 Gbit 回線の帯域の少なくとも半分を使い切れます) 。
+  一部のファイルは完全にダウンロードされない場合があります。ファイルサイズを確認し、不完全と思われるものは再ダウンロードしてください。
+
+  ```bash
+  $ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+  # Validate the checksum
+  $ md5sum trips_mergetree.tar
+  # Checksum should be equal to: f3b8d469b41d9a82da064ded7245d12c
+  $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+  $ # check permissions of unpacked data, fix if required
+  $ sudo service clickhouse-server restart
+  $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
+  ```
+
+  <Info>
+    以下のクエリを実行する場合は、完全なテーブル名 `datasets.trips_mergetree` を指定してください。
+  </Info>
+
+  ## 単一サーバーでの結果
+
+  Q1:
+
+  ```sql
+  SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type;
+  ```
+
+  0.490 秒。
+
+  Q2:
+
+  ```sql
+  SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count;
+  ```
+
+  1.224 秒。
+
+  Q3:
+
+  ```sql
+  SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year;
+  ```
+
+  2.104 秒。
+
+  Q4：
+
+  ```sql
+  SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
+  FROM trips_mergetree
+  GROUP BY passenger_count, year, distance
+  ORDER BY year, count(*) DESC;
+  ```
+
+  3.593秒。
+
+  使用したサーバーは次のとおりです。
+
+  Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz × 2 基 (物理コア計 16 個) 、128 GiB RAM、6 TB HD × 8 台 (ハードウェア RAID-5 構成)
+
+  実行時間は 3 回実行したうちの最良値です。ただし、2 回目以降の実行では、クエリはファイルシステムキャッシュからデータを読み取ります。それ以外のキャッシュは行われず、毎回データを読み出して処理しています。
+
+  3 台のサーバー上にテーブルを作成します:
+
+  各サーバーで以下を実行します:
+
+  ```sql
+  CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192);
+  ```
+
+  移行元サーバーで次を実行します:
+
+  ```sql
+  CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand());
+  ```
+
+  次のクエリでデータを再分散します:
+
+  ```sql
+  INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree;
+  ```
+
+  これには 2454 秒かかります。
+
+  3 台のサーバーで以下を実行します:
+
+  Q1: 0.212 秒
+  Q2: 0.438 秒
+  Q3: 0.733 秒
+  Q4: 1.241 秒
+
+  クエリは線形にスケールしているため、これは想定どおりの結果です。
+
+  140 台のサーバーで構成されたクラスターでの結果もあります。
+
+  Q1: 0.028 秒
+  Q2: 0.043 秒
+  Q3: 0.051 秒
+  Q4: 0.072 秒
+
+  この場合、クエリの処理時間は主にネットワークレイテンシによって左右されます。
+  今回はクラスターとは別のデータセンターにあるクライアントからクエリを実行したため、約 20 ms のレイテンシが上乗せされています。
+
+  ## まとめ
+
+  | サーバー               | Q1    | Q2    | Q3    | Q4    |
+  | ------------------ | ----- | ----- | ----- | ----- |
+  | 1, E5-2650v2       | 0.490 | 1.224 | 2.104 | 3.593 |
+  | 3, E5-2650v2       | 0.212 | 0.438 | 0.733 | 1.241 |
+  | 1, AWS c5n.4xlarge | 0.249 | 1.279 | 1.738 | 3.527 |
+  | 1, AWS c5n.9xlarge | 0.130 | 0.584 | 0.777 | 1.811 |
+  | 3, AWS c5n.9xlarge | 0.057 | 0.231 | 0.285 | 0.641 |
+  | 140, E5-2650v2     | 0.028 | 0.043 | 0.051 | 0.072 |
+</View>

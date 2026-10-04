@@ -7,15 +7,12 @@
 namespace DB
 {
 
-class IColumn;
-
 /// Metrics for asynchronous reading feature.
 ///
-/// All fields are atomic and updated with relaxed memory ordering: the values
-/// are only used for monitoring (dumped into `system.query_log` via
-/// `dumpToMapColumn`), so we don't need any synchronization between updaters
-/// or between updaters and readers, only per-counter atomicity. This avoids a
-/// mutex which used to show up in profiles of read-heavy workloads.
+/// All fields are atomic and updated with relaxed memory ordering: the values are only used for monitoring
+/// (dumped into `system.query_log`), so we don't need any synchronization between updaters or between
+/// updaters and readers, only per-counter atomicity. This avoids a mutex which used to show up in profiles
+/// of read-heavy workloads.
 struct AsyncReadCounters
 {
     /// Count current and max number of tasks in a asynchronous read pool.
@@ -32,8 +29,6 @@ struct AsyncReadCounters
     std::atomic<size_t> total_prefetch_tasks = 0;
 
     AsyncReadCounters() = default;
-
-    void dumpToMapColumn(IColumn * column) const;
 
     /// Atomically increments `current` and updates `max` to be at least the new
     /// value of `current`, both with relaxed memory ordering.

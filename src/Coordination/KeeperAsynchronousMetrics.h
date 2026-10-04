@@ -3,11 +3,22 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/AsynchronousMetrics.h>
 
+#include <base/types.h>
+
+#include <optional>
+
 namespace DB
 {
 
 class KeeperDispatcher;
 void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values);
+
+/// Fills `KeeperOpenFileDescriptorCount` and `KeeperMaxFileDescriptorCount`.
+/// An undetermined count is reported as `-1`: it is signed on purpose, so that the sentinel does not
+/// wrap around to 2^64 - 1, which is indistinguishable from an unlimited `RLIMIT_NOFILE`.
+/// Exposed separately from `updateKeeperInformation` to make that contract testable.
+void setKeeperFileDescriptorMetrics(
+    AsynchronousMetricValues & new_values, Int64 open_file_descriptor_count, std::optional<size_t> max_file_descriptor_count);
 
 class KeeperAsynchronousMetrics : public AsynchronousMetrics
 {

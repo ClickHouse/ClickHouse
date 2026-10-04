@@ -1,0 +1,26 @@
+predict_linear(up[3m], 0): the fitted value at the evaluation time
+[('instance','host1')]	30
+[('instance','host2')]	25
+[('instance','host3')]	100
+predict_linear(up[3m], 60): extrapolated 60 seconds past the evaluation time, 30 + 60/6 and 25 + 60/6
+[('instance','host1')]	40
+[('instance','host2')]	35
+[('instance','host3')]	100
+predict_linear, range query: the window slides with the steps
+[('instance','host1')]	[(1699999940,30),(1700000000,40)]
+the horizon may be a scalar expression that is only known when the query runs
+[('instance','host1')]	40
+[('instance','host2')]	35
+[('instance','host3')]	100
+the horizon may depend on the evaluation time
+[('instance','host1')]	283333363.3333333
+[('instance','host1')]	283333363.3333333
+predict_linear with a fixed @, range query: the frozen fit extrapolated to every step
+[('instance','host1')]	[56.667,73.333,90,106.667]
+predict_linear with a fixed @ at the evaluation time: no shift
+[('instance','host1')]	40
+predict_linear with a fixed @, instant query 100 seconds later
+[('instance','host1')]	56.666666666666664
+predict_linear with a fixed @ and a varying horizon: per-step predictions from the frozen fit
+[('instance','host1')]	[56.667,73.333,90,106.667]
+[('instance','host1')]	[283333396.667,283333430,283333463.333,283333496.667]

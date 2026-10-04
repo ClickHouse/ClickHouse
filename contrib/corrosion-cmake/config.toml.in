@@ -8,6 +8,7 @@ strip = true
 inherits = "release"
 lto = true
 
+@RUST_DEV_PROFILE@
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 
@@ -20,19 +21,7 @@ replace-with = 'vendored-sources'
 git = "https://github.com/azat-rust/clickhouse-rs"
 branch = "next"
 replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/cursive-flexi-logger-view?branch=next"]
-git = "https://github.com/azat-rust/cursive-flexi-logger-view"
-branch = "next"
-replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/cursive?branch=chdig-next"]
-git = "https://github.com/azat-rust/cursive"
-branch = "chdig-next"
-replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/cursive_table_view?branch=next"]
-git = "https://github.com/azat-rust/cursive_table_view"
-branch = "next"
-replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/flamelens?branch=diff-mode"]
+[source."git+https://github.com/azat-rust/flamelens?branch=chdig"]
 git = "https://github.com/azat-rust/flamelens"
-branch = "diff-mode"
+branch = "chdig"
 replace-with = "vendored-sources"

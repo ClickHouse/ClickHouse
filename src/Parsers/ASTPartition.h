@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <optional>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -18,6 +20,8 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void setPartitionID(const ASTPtr & ast);
     void setPartitionValue(const ASTPtr & ast);

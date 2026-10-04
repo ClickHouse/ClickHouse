@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <QueryPipeline/SizeLimits.h>
@@ -9,6 +10,13 @@ namespace DB
 {
 
 struct Settings;
+
+struct SharedRuntimeFilterDescriptor
+{
+    String filter_key;
+    String build_key_name;
+    DataTypePtr common_type;
+};
 
 struct JoinOperator
 {
@@ -29,9 +37,9 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
-    /// (filter_name, build-side key column name) pairs that HashJoin should publish as
-    /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
-    std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
+    /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
+    /// Set by the `joinRuntimeFilter` optimizer pass.
+    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
@@ -111,15 +119,37 @@ struct JoinSettings
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
+    bool legacy_join_size_limits_trigger_spilling;
     bool use_hash_table_stats_for_join_reordering;
+    bool enable_hash_join_row_store;
+    Float64 min_rows_ratio_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
+    bool enable_join_key_only_hash_tables;
     bool join_runtime_filter_from_fixed_hash_table;
 
-    explicit JoinSettings(const Settings & query_settings);
-    explicit JoinSettings(const QueryPlanSerializationSettings & settings);
+    /// Which statistics the join must collect for EXPLAIN ANALYZE
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
-    void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+    explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
+    JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
+
+    /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
+    /// handed to an older peer depends on which algorithm of the preference list that step reaches.
+    void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const;
+
+    /// Whether these settings make `join_operator` behave differently from a peer that still treats
+    /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger, and still runs `grace_hash`
+    /// without a spill threshold. Such a plan must not be serialized for a peer that predates
+    /// `legacy_join_size_limits_trigger_spilling`. Only a `grace_hash` that this step reaches counts:
+    /// `join_algorithm` is an ordered preference list, and an entry before it that produces a join for
+    /// this step - always for the hash family, for the kind and strictness of a plain equi-join for the
+    /// merge algorithms - is what both sides run instead. Where the step's `ON` clause could make an
+    /// earlier merge algorithm decline it, the answer stays on the safe side and the plan is refused.
+    /// The size limits count only where the older peer spills on them: a hash-family entry the step
+    /// reaches, with a spill threshold, for a step `grace_hash` can run. Elsewhere - no threshold, a step
+    /// `GraceHashJoin` declines, a merge algorithm, a CROSS join - they are hard caps on both sides.
+    bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`

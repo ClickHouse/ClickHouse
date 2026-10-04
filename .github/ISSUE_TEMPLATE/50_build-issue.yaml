@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > Make sure that `git diff` result is empty and you've just pulled fresh master. Try cleaning up cmake cache. Just in case, official build instructions are published here: https://clickhouse.com/docs/en/development/build/
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related build issues and fixes before filing.
   - type: textarea
     attributes:
       label: Company or project name

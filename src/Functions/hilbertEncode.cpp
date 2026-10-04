@@ -106,8 +106,8 @@ Accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
 **Expanded mode**
 
-Accepts a range mask ([Tuple](../../sql-reference/data-types/tuple.md)) as the
-first argument and up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md)
+Accepts a range mask ([Tuple](/reference/data-types/tuple)) as the
+first argument and up to 2 [unsigned integers](/reference/data-types/int-uint)
 as other arguments.
 
 Each number in the mask configures the number of bits by which the corresponding

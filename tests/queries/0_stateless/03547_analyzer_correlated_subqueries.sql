@@ -1,5 +1,5 @@
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 SELECT number
 FROM numbers(10) AS t

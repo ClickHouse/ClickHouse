@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings
+# Tags: no-fasttest, no-parallel, no-random-settings, no-async-insert
 # Tag no-fasttest: needs s3
 # Tag no-parallel: `SYSTEM RELOAD CONFIG` is global server state. Under the
 # flaky check, the same test runs many times concurrently; the parallel
@@ -12,6 +12,7 @@
 # (e.g. heavy filesystem cache injection, large reduce_blocking_parts_sleep_ms)
 # inflate per-step latency. The bug under test is about config reload settings
 # priority and is independent of these random settings.
+# Tag no-async-insert: the queue flush owns the S3 write, so its `ProfileEvents` land on another query.
 
 # Verify that storage_configuration disk settings properly override global <s3>
 # endpoint configuration for the DiskS3 path (S3ObjectStorage::applyNewSettings).

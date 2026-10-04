@@ -1,0 +1,9 @@
+round-trip (exact value, not clamped):
+2
+10
+18446744073709551615
+range filter u > 2 (must include 10 and the max value):
+10
+18446744073709551615
+equality on the value above INT64_MAX:
+18446744073709551615

@@ -12,7 +12,10 @@ CREATE TABLE test_00961 (d Date, a String, b UInt8, x String, y Int8, z UInt32)
     index_granularity_bytes = '10Mi',
     ratio_of_defaults_for_sparse_serialization = 1,
     serialization_info_version = 'basic',
-    replace_long_file_name_to_hash = 0,
+    -- Hash every column file name on both platforms so checksums match: macOS (case-insensitive FS)
+    -- always hashes file names, so force Linux to do the same instead of keeping short plain names.
+    replace_long_file_name_to_hash = 1,
+    max_file_name_length = 0,
     auto_statistics_types = '',
     add_minmax_index_for_numeric_columns=0;
 

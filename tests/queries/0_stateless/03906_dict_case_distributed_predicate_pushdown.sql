@@ -2,7 +2,6 @@
 -- Dictionary + CASE + distributed table: predicate pushdown should not filter out rows incorrectly.
 
 SET enable_analyzer = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_respect_aliases = 1;
 SET optimize_inverse_dictionary_lookup = 1;

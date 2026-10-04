@@ -1,0 +1,175 @@
+---
+description: '来自 Sensor.Community 的超过 200 亿条数据记录。Sensor.Community 是一个由贡献者推动的全球传感器网络，致力于创建开放环境数据。'
+sidebarTitle: '环境传感器数据'
+slug: /getting-started/example-datasets/environmental-sensors
+title: '环境传感器数据'
+doc_type: 'guide'
+keywords: ['环境传感器', 'Sensor.Community', '空气质量数据', '环境数据', '入门']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+[Sensor.Community](https://sensor.community/en/) 是一个由贡献者推动的全球传感器网络，致力于创建开放环境数据。这些数据由全球各地的传感器采集。任何人都可以购买传感器，并将其放置在任何位置。下载这些数据所需的 API 可在 [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) 上获取，数据依据 [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/) 免费开放。
+
+<Warning>
+  该数据集包含超过 200 亿条记录，因此，除非您的资源足以处理这种规模的数据量，否则请谨慎直接复制粘贴下面的命令。下面的命令是在 [ClickHouse Cloud](https://clickhouse.cloud) 的 **Production** 实例上执行的。
+</Warning>
+
+1. 数据位于 S3 中，因此我们可以使用 `s3` 表函数根据这些文件创建一张表。我们也可以直接查询这些数据。在尝试将其插入 ClickHouse 之前，先看几行数据：
+
+```sql
+SELECT *
+FROM s3(
+    'https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst',
+    'CSVWithNames'
+   )
+LIMIT 10
+SETTINGS format_csv_delimiter = ';';
+```
+
+数据存储在 CSV 文件中，但分隔符使用的是分号。各行内容如下所示：
+
+```response
+┌─sensor_id─┬─sensor_type─┬─location─┬────lat─┬────lon─┬─timestamp───────────┬──pressure─┬─altitude─┬─pressure_sealevel─┬─temperature─┐
+│      9119 │ BMP180      │     4594 │ 50.994 │  7.126 │ 2019-06-01T00:00:00 │    101471 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        19.9 │
+│     21210 │ BMP180      │    10762 │ 42.206 │ 25.326 │ 2019-06-01T00:00:00 │     99525 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        19.3 │
+│     19660 │ BMP180      │     9978 │ 52.434 │ 17.056 │ 2019-06-01T00:00:04 │    101570 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        15.3 │
+│     12126 │ BMP180      │     6126 │ 57.908 │  16.49 │ 2019-06-01T00:00:05 │ 101802.56 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        8.07 │
+│     15845 │ BMP180      │     8022 │ 52.498 │ 13.466 │ 2019-06-01T00:00:05 │    101878 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │          23 │
+│     16415 │ BMP180      │     8316 │ 49.312 │  6.744 │ 2019-06-01T00:00:06 │    100176 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        14.7 │
+│      7389 │ BMP180      │     3735 │ 50.136 │ 11.062 │ 2019-06-01T00:00:06 │     98905 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        12.1 │
+│     13199 │ BMP180      │     6664 │ 52.514 │  13.44 │ 2019-06-01T00:00:07 │ 101855.54 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │       19.74 │
+│     12753 │ BMP180      │     6440 │ 44.616 │  2.032 │ 2019-06-01T00:00:07 │     99475 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │          17 │
+│     16956 │ BMP180      │     8594 │ 52.052 │  8.354 │ 2019-06-01T00:00:08 │    101322 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        17.2 │
+└───────────┴─────────────┴──────────┴────────┴────────┴─────────────────────┴───────────┴──────────┴───────────────────┴─────────────┘
+```
+
+2. 我们将使用以下 `MergeTree` 表在 ClickHouse 中存储数据：
+
+```sql
+CREATE TABLE sensors
+(
+    sensor_id UInt16,
+    sensor_type Enum('BME280', 'BMP180', 'BMP280', 'DHT22', 'DS18B20', 'HPM', 'HTU21D', 'PMS1003', 'PMS3003', 'PMS5003', 'PMS6003', 'PMS7003', 'PPD42NS', 'SDS011'),
+    location UInt32,
+    lat Float32,
+    lon Float32,
+    timestamp DateTime,
+    P1 Float32,
+    P2 Float32,
+    P0 Float32,
+    durP1 Float32,
+    ratioP1 Float32,
+    durP2 Float32,
+    ratioP2 Float32,
+    pressure Float32,
+    altitude Float32,
+    pressure_sealevel Float32,
+    temperature Float32,
+    humidity Float32,
+    date Date MATERIALIZED toDate(timestamp)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp, sensor_id);
+```
+
+3. ClickHouse Cloud 服务中有一个名为 `default` 的集群。我们将使用 `s3Cluster` 表函数，它会由集群中的各个节点并行读取 S3 文件。 (如果你没有集群，只需使用 `s3` 函数并去掉集群名称。)
+
+此查询需要一些时间——未压缩数据量约为 1.67T：
+
+```sql
+INSERT INTO sensors
+    SELECT *
+    FROM s3Cluster(
+        'default',
+        'https://clickhouse-public-datasets.s3.amazonaws.com/sensors/monthly/*.csv.zst',
+        'CSVWithNames',
+        $$ sensor_id UInt16,
+        sensor_type String,
+        location UInt32,
+        lat Float32,
+        lon Float32,
+        timestamp DateTime,
+        P1 Float32,
+        P2 Float32,
+        P0 Float32,
+        durP1 Float32,
+        ratioP1 Float32,
+        durP2 Float32,
+        ratioP2 Float32,
+        pressure Float32,
+        altitude Float32,
+        pressure_sealevel Float32,
+        temperature Float32,
+        humidity Float32 $$
+    )
+SETTINGS
+    format_csv_delimiter = ';',
+    input_format_allow_errors_ratio = '0.5',
+    input_format_allow_errors_num = 10000,
+    input_format_parallel_parsing = 0,
+    date_time_input_format = 'best_effort',
+    max_insert_threads = 32,
+    parallel_distributed_insert_select = 1;
+```
+
+以下是响应结果——显示了行数和处理速度。写入速率超过每秒 600 万行！
+
+```response
+0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
+```
+
+4. 我们来看看 `sensors` 表需要多少磁盘存储空间：
+
+```sql
+SELECT
+    disk_name,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    round(usize / size, 2) AS compr_rate,
+    sum(rows) AS rows,
+    count() AS part_count
+FROM system.parts
+WHERE (active = 1) AND (table = 'sensors')
+GROUP BY
+    disk_name
+ORDER BY size DESC;
+```
+
+1.67T 的数据压缩至 310 GiB，共有 206.9 亿行：
+
+```response
+┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬────────rows─┬─part_count─┐
+│ s3disk    │ 310.21 GiB │ 1.30 TiB     │       4.29 │ 20693971809 │        472 │
+└───────────┴────────────┴──────────────┴────────────┴─────────────┴────────────┘
+```
+
+5. 现在数据已经进入 ClickHouse，让我们来分析一下。请注意，随着部署的传感器越来越多，数据量也会随时间不断增长：
+
+```sql
+SELECT
+    date,
+    count()
+FROM sensors
+GROUP BY date
+ORDER BY date ASC;
+```
+
+我们可以在 SQL 控制台中创建图表，以直观呈现结果：
+
+<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="每日事件数" />
+
+6. 此查询用于统计炎热且湿度过高的天数：
+
+```sql
+WITH
+    toYYYYMMDD(timestamp) AS day
+SELECT day, count() FROM sensors
+WHERE temperature >= 40 AND temperature <= 50 AND humidity >= 90
+GROUP BY day
+ORDER BY day ASC;
+```
+
+以下是结果的可视化展示：
+
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="闷热潮湿的日子" />

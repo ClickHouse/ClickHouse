@@ -1,0 +1,30 @@
+---- where_and_group_by ----
+local
+1	0	1
+1	2	1
+dist
+1	0	2
+1	2	2
+dist_plan
+1	0	2
+1	2	2
+---- join_on_alias_column ----
+local
+1	105	10
+2	107	20
+dist
+1	105	10
+2	107	20
+---- order_by_sum_alias_col_2_shards ----
+local
+2
+3
+1
+dist
+2
+3
+1
+dist_plan
+2
+3
+1

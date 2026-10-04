@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "group": "حول ClickHouse",
+      "pages": [
+        "ar/resources/about/index",
+        "ar/resources/about/adopters",
+        "ar/resources/about/support"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-about.svg",
+  "item": "حول"
+}

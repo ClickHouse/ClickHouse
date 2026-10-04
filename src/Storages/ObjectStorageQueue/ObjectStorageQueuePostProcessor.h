@@ -37,7 +37,9 @@ public:
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
-    void process(const StoredObjects & objects) const;
+    void process(
+        const StoredObjects & objects,
+        UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
     String getName() const { return engine_name; }
@@ -45,11 +47,11 @@ private:
     void doWithRetries(std::function<void()> action) const;
 
     /// Move processed objects to another prefix
-    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const;
+    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
     /// Move processed S3 objects, possibly to another S3 storage
-    void moveS3Objects(const StoredObjects & objects) const;
+    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
-    void moveAzureBlobs(const StoredObjects & objects) const;
+    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;

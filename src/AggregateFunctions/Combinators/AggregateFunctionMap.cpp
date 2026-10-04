@@ -12,8 +12,10 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Common/Exception.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -25,6 +27,8 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -60,7 +64,14 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+        key.clear();
+        readStringGrowing(key, size, buf);
     }
 };
 
@@ -144,6 +155,23 @@ public:
         return map_type->getKeyType();
     }
 
+    /// Reads one key out of a key column in the representation `merged_maps` is keyed by.
+    typename Data::SearchType keyAt(const IColumn & key_column, size_t row) const
+    {
+        if constexpr (std::is_same_v<KeyType, String>)
+        {
+            if (key_type->getTypeId() == TypeIndex::FixedString)
+                return assert_cast<const ColumnFixedString &>(key_column).getDataAt(row);
+            if (key_type->getTypeId() == TypeIndex::IPv6)
+                return assert_cast<const ColumnIPv6 &>(key_column).getDataAt(row);
+            return assert_cast<const ColumnString &>(key_column).getDataAt(row);
+        }
+        else
+        {
+            return assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[row];
+        }
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
@@ -160,67 +188,74 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            typename Data::SearchType key;
+            const typename Data::SearchType key = keyAt(key_column, offset + i);
 
-            if constexpr (std::is_same_v<KeyType, String>)
-            {
-                std::string_view key_ref;
-                if (key_type->getTypeId() == TypeIndex::FixedString)
-                    key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
-                else if (key_type->getTypeId() == TypeIndex::IPv6)
-                    key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(offset + i);
-                else
-                    key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
-
-                key = key_ref;
-            }
-            else
-            {
-                key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
-            }
-
-            AggregateDataPtr nested_place = nullptr;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
             {
-                // create a new place for each key
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(key, nested_place);
+                /// Take the slot before creating the state. `emplace` allocates a node, and a copy
+                /// of the key when it is a `String`, so it can throw and strand the fresh state:
+                /// nothing would reference it and `destroyImpl` walks only `merged_maps`.
+                it = merged_maps.emplace(key, nullptr).first;
+
+                try
+                {
+                    // create a new place for each key
+                    AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                    nested_func->create(new_place);
+                    it->second = new_place;
+                }
+                catch (...)
+                {
+                    /// The slot still holds a null state, which `destroyImpl` would dereference.
+                    merged_maps.erase(it);
+                    throw;
+                }
             }
-            else
-                nested_place = it->second;
 
             const IColumn * nested_columns[1] = {&val_column};
-            nested_func->add(nested_place, nested_columns, offset + i, arena);
+            nested_func->add(it->second, nested_columns, offset + i, arena);
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
 
+        /// Zero-sized nested state (aggregate over Nothing): every key's nested state is a
+        /// zero-byte arena allocation, and alignedAlloc(0) does not advance the arena, so a
+        /// shared key's nested_place aliases elem.second. There is nothing to merge, and
+        /// merge() with aliasing source/destination is undefined. We still union the key sets.
+        const bool zero_size_nested = nested_func->sizeOfData() == 0;
+
         for (const auto & elem : rhs_maps)
         {
-            const auto & it = merged_maps.find(elem.first);
+            auto it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
-                // elem.second cannot be copied since this it will be destroyed after merging,
-                // and lead to use-after-free.
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(elem.first, nested_place);
-            }
-            else
-            {
-                nested_place = it->second;
+                /// Take the slot before creating the state, for the same reason as in `add`.
+                it = merged_maps.emplace(elem.first, nullptr).first;
+
+                try
+                {
+                    // elem.second cannot be copied since this it will be destroyed after merging,
+                    // and lead to use-after-free.
+                    AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                    nested_func->create(new_place);
+                    it->second = new_place;
+                }
+                catch (...)
+                {
+                    merged_maps.erase(it);
+                    throw;
+                }
             }
 
-            nested_func->merge(nested_place, elem.second, arena);
+            if (!zero_size_nested)
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
@@ -276,23 +311,69 @@ public:
         for (UInt64 i = 0; i < size; ++i)
         {
             KeyType key{};
-            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            merged_maps.emplace(key, nested_place);
-            nested_func->deserialize(nested_place, buf, std::nullopt, arena);
+
+            /// Take the slot before creating the state. `emplace` on a key that is already present
+            /// does not insert, so creating first would abandon the fresh state: nothing would
+            /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
+            /// once, so a repeated key means the state is malformed.
+            auto [it, inserted] = merged_maps.try_emplace(key, nullptr);
+            if (!inserted)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Duplicate key in the serialized state of aggregate function {}", getName());
+
+            try
+            {
+                AggregateDataPtr nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(nested_place);
+                it->second = nested_place;
+            }
+            catch (...)
+            {
+                /// The slot still holds a null state, which `destroyImpl` would dereference.
+                merged_maps.erase(it);
+                throw;
+            }
+
+            nested_func->deserialize(it->second, buf, std::nullopt, arena);
         }
+    }
+
+    /// `transferred` counts the values whose transfer returned, so a caller that catches can undo those.
+    template <bool merge>
+    void transferValues(
+        AggregateDataPtr __restrict place,
+        ColumnMap & map_column,
+        const VectorWithMemoryTracking<KeyType> & keys,
+        size_t & transferred,
+        Arena * arena) const
+    {
+        auto & nested_data_column = map_column.getNestedData();
+        auto & key_column = nested_data_column.getColumn(0);
+        auto & val_column = nested_data_column.getColumn(1);
+
+        auto & merged_maps = this->data(place).merged_maps;
+
+        // insert using sorted keys to result column
+        for (; transferred < keys.size(); ++transferred)
+        {
+            key_column.insert(keys[transferred]);
+            if constexpr (merge)
+                nested_func->insertMergeResultInto(merged_maps[keys[transferred]], val_column, arena);
+            else
+                nested_func->insertResultInto(merged_maps[keys[transferred]], val_column, arena);
+        }
+
+        IColumn::Offsets & res_offsets = map_column.getNestedColumn().getOffsets();
+        res_offsets.push_back(val_column.size());
     }
 
     template <bool merge>
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
-        auto & nested_column = map_column.getNestedColumn();
         auto & nested_data_column = map_column.getNestedData();
-
         auto & key_column = nested_data_column.getColumn(0);
         auto & val_column = nested_data_column.getColumn(1);
 
@@ -307,18 +388,37 @@ public:
         }
         ::sort(keys.begin(), keys.end());
 
-        // insert using sorted keys to result column
-        for (auto & key : keys)
+        size_t transferred = 0;
+
+        if constexpr (!merge)
         {
-            key_column.insert(key);
-            if constexpr (merge)
-                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
-            else
-                nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            /// A nested function that is not a state aliases nothing and need not be atomic.
+            if (nested_func->isState())
+            {
+                /// `ColumnString::insert` grows `chars` before it appends the offset, so a row count
+                /// cannot undo an interrupted key insert but a checkpoint, which restores both, can.
+                const auto keys_checkpoint = key_column.getCheckpoint();
+                IColumn::Offsets & res_offsets = map_column.getNestedColumn().getOffsets();
+                const size_t offsets_before = res_offsets.size();
+
+                try
+                {
+                    transferValues<false>(place, map_column, keys, transferred, arena);
+                }
+                catch (...)
+                {
+                    res_offsets.resize_assume_reserved(offsets_before);
+                    for (size_t i = transferred; i-- > 0;)
+                        nested_func->rollbackInsertResult(merged_maps[keys[i]], val_column);
+                    key_column.rollback(*keys_checkpoint);
+                    throw;
+                }
+
+                return;
+            }
         }
 
-        IColumn::Offsets & res_offsets = nested_column.getOffsets();
-        res_offsets.push_back(val_column.size());
+        transferValues<merge>(place, map_column, keys, transferred, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -329,6 +429,33 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        auto & map_column = assert_cast<ColumnMap &>(to);
+        auto & nested_data_column = map_column.getNestedData();
+        auto & key_column = nested_data_column.getColumn(0);
+        auto & val_column = nested_data_column.getColumn(1);
+
+        auto & merged_maps = this->data(place).merged_maps;
+        const size_t appended = merged_maps.size();
+
+        IColumn::Offsets & res_offsets = map_column.getNestedColumn().getOffsets();
+        res_offsets.resize_assume_reserved(res_offsets.size() - 1);
+
+        /// The values were appended in sorted key order while `merged_maps` is unordered, and a row's
+        /// undo depends on which place produced it, so recover that order from the keys themselves.
+        const size_t appended_end = key_column.size();
+        for (size_t pos = appended_end; pos-- > appended_end - appended;)
+        {
+            auto it = merged_maps.find(keyAt(key_column, pos));
+            if (it == merged_maps.end())
+                abortOnFailedAssertion("AggregateFunctionMap::rollbackInsertResult: appended key is missing from merged_maps");
+            nested_func->rollbackInsertResult(it->second, val_column);
+        }
+
+        key_column.popBack(appended);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

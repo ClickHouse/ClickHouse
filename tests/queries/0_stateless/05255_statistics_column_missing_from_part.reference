@@ -1,0 +1,20 @@
+a mutation that carries the columns over
+['id','s']
+[99,99,99,99]
+99	99
+4
+0
+0
+1
+a mutation that rewrites every column
+['_block_number','id']
+4
+0
+0
+a column the part stores keeps its statistics
+['id','w']
+10	10
+0
+4
+1
+1

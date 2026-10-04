@@ -1,0 +1,15 @@
+-- heterogeneous children, empty child header (the witness)
+2
+0
+1
+1
+-- heterogeneous children, non-empty child header
+1
+2
+3
+-- only the virtual column used by the filter is read (mapKeys used, mapValues absent)
+1	0
+-- single table, no merge
+1
+-- all children indexed
+2

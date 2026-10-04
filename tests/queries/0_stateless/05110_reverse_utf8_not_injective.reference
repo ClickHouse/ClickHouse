@@ -1,0 +1,10 @@
+the two inputs that collide
+C261	C261	1
+GROUP BY the result
+1
+1
+uniqExact of the result
+1
+1
+valid UTF-8 still groups by the result
+2	abc

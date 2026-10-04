@@ -1,0 +1,35 @@
+-- rollup, group_by_use_nulls = 0
+	0	499500	1000
+k0	0	83166	167
+k0	0	166833	334
+k0	1	83667	167
+k1	0	82834	166
+k1	0	166167	333
+k1	1	83333	167
+k2	0	83500	167
+k2	0	166500	333
+k2	1	83000	166
+-- rollup, group_by_use_nulls = 1
+k0	0	83166	167
+k0	1	83667	167
+k0	\N	166833	334
+k1	0	82834	166
+k1	1	83333	167
+k1	\N	166167	333
+k2	0	83500	167
+k2	1	83000	166
+k2	\N	166500	333
+\N	\N	499500	1000
+-- distributed plan
+Expression (Project names)
+  GatherExchange (sorted by (__table1.k1 ASC, __table1.k2 ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          Rollup
+            MergingAggregated (merge)
+              GatherExchange
+                Aggregating (partial)
+                  ScatterExchange (any)
+                    Expression ((Before GROUP BY + Change column names to column identifiers))
+                      ReadFromMergeTree (default.t_rollup_dist)

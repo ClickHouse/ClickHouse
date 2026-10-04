@@ -70,6 +70,7 @@ public:
     Field getDefault() const override;
     Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
 
@@ -90,6 +91,9 @@ public:
     bool isRelativeAt(size_t index) const { return index < relative_flags.size() && relative_flags[index]; }
     size_t getRelativeFlagsSize() const { return relative_flags.size(); }
 };
+
+/// True when `type` is an `Enum` and `value` is a `String` that names none of its elements.
+bool isUnknownEnumElement(const IDataType & type, const Field & value);
 
 template <typename TypeBase>
 DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);

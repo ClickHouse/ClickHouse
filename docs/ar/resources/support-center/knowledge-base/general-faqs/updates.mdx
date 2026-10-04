@@ -1,0 +1,19 @@
+---
+title: 'هل يدعم ClickHouse التحديثات في الوقت الفعلي؟'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'يدعم ClickHouse التحديثات الخفيفة في الوقت الفعلي'
+doc_type: 'reference'
+keywords: ['التحديثات', 'في الوقت الفعلي']
+---
+
+يدعم ClickHouse عبارة UPDATE، ويمكنه تنفيذ التحديثات في الوقت الفعلي بالسرعة نفسها التي ينفذ بها عمليات INSERT.
+
+ويرجع ذلك إلى [بنية بيانات patch parts](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way)، التي تتيح تطبيق التغييرات بسرعة من دون تأثير كبير في أداء SELECT.
+
+علاوة على ذلك، وبفضل MVCC (التحكم متعدد الإصدارات بالتزامن) وsnapshot isolation، توفّر التحديثات خصائص ACID.
+
+<Info>
+  أُدخلت التحديثات الخفيفة لأول مرة في ClickHouse الإصدار 25.7.
+</Info>

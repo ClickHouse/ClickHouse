@@ -179,9 +179,8 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
-    size_t countRows(size_t max_block_size) override;
-
+    /// No count shortcut: the row count comes from the block header, so counting without decoding
+    /// the payload cannot tell a declared count from the rows actually present.
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     FormatSettings format_settings;
@@ -223,9 +222,13 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
+    /// Tuple instead of Nullable(Tuple). Schema inference passes
+    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
+    /// that CREATE TABLE rejects.
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

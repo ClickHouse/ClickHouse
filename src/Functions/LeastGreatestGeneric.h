@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
@@ -64,43 +67,103 @@ private:
         if (arguments.size() == 1)
             return arguments[0].column;
 
-        Columns converted_columns;
+        struct ConvertedColumn
+        {
+            ColumnPtr column = nullptr;
+            bool is_const = false;
+        };
+
+        VectorWithMemoryTracking<ConvertedColumn> converted_columns;
+        converted_columns.reserve(arguments.size());
+        bool has_const_column = false;
         for (const auto & argument : arguments)
         {
             if (!legacy_null_behavior && argument.type->onlyNull())
                 continue; /// ignore NULL arguments
-            auto converted_col = castColumn(argument, result_type)->convertToFullColumnIfConst();
-            converted_columns.push_back(converted_col);
+
+            auto converted_col = castColumn(argument, result_type);
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(converted_col.get()))
+            {
+                converted_columns.push_back({const_column->getDataColumnPtr(), true});
+                has_const_column = true;
+            }
+            else
+            {
+                converted_columns.push_back({converted_col->convertToFullColumnIfConst(), false});
+            }
         }
 
         if (!legacy_null_behavior && converted_columns.empty())
             return arguments[0].column;
         else if (!legacy_null_behavior && converted_columns.size() == 1)
-            return converted_columns[0];
+        {
+            if (converted_columns[0].is_const)
+                return ColumnConst::create(converted_columns[0].column, input_rows_count);
+            return converted_columns[0].column;
+        }
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
 
+        if (!has_const_column)
+        {
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            {
+                size_t best_arg = 0;
+                for (size_t arg = 1; arg < converted_columns.size(); ++arg)
+                {
+                    if constexpr (kind == LeastGreatest::Least)
+                    {
+                        auto cmp_result = converted_columns[arg].column->compareAt(
+                            row_num, row_num, *converted_columns[best_arg].column, 1);
+                        if (cmp_result < 0)
+                            best_arg = arg;
+                    }
+                    else
+                    {
+                        auto cmp_result = converted_columns[arg].column->compareAt(
+                            row_num, row_num, *converted_columns[best_arg].column, -1);
+                        if (cmp_result > 0)
+                            best_arg = arg;
+                    }
+                }
+
+                result_column->insertFrom(*converted_columns[best_arg].column, row_num);
+            }
+
+            return result_column;
+        }
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
+            size_t best_row = converted_columns[0].is_const ? 0 : row_num;
             for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
+                const auto & current = converted_columns[arg];
+                const size_t current_row = current.is_const ? 0 : row_num;
+
                 if constexpr (kind == LeastGreatest::Least)
                 {
-                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, 1);
                     if (cmp_result < 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
                 else
                 {
-                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, -1);
                     if (cmp_result > 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
             }
 
-            result_column->insertFrom(*converted_columns[best_arg], row_num);
+            result_column->insertFrom(*converted_columns[best_arg].column, best_row);
         }
 
         return result_column;
@@ -134,10 +197,20 @@ public:
             argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
+        /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
+        /// otherwise a `LowCardinality` argument sends the build down the generic implementation while
+        /// the declared result type is the specialized, sign-aware one. The generic implementation then
+        /// casts every argument to that type, and a sign-mixed cast wraps around
+        /// (`greatest(toUInt64(1), toInt64(-1))` returned `18446744073709551615`).
         if (arguments.size() == 2)
         {
-            auto arg_0_type = legacy_null_behavior ? removeNullable(arguments[0].type) : arguments[0].type;
-            auto arg_1_type = legacy_null_behavior ? removeNullable(arguments[1].type) : arguments[1].type;
+            auto arg_0_type = recursiveRemoveLowCardinality(arguments[0].type);
+            auto arg_1_type = recursiveRemoveLowCardinality(arguments[1].type);
+            if (legacy_null_behavior)
+            {
+                arg_0_type = removeNullable(arg_0_type);
+                arg_1_type = removeNullable(arg_1_type);
+            }
             if (isNumber(arg_0_type) && isNumber(arg_1_type))
                 return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
         }

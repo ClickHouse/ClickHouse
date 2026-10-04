@@ -9,6 +9,7 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5
+CA_CERT = f"{SCRIPT_DIR}/certs/ca-cert.pem"
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -29,6 +30,18 @@ node1 = cluster.add_instance(
         "configs/ssl_config_strict.xml",
         "certs/self-key.pem",
         "certs/self-cert.pem",
+        "certs/ca-cert.pem",
+    ],
+    with_zookeeper=False,
+)
+
+
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/ssl_config_ca_signed.xml",
+        "certs/client-key.pem",
+        "certs/client-cert.pem",
         "certs/ca-cert.pem",
     ],
     with_zookeeper=False,
@@ -59,6 +72,36 @@ config_connection_accept = """<clickhouse>
             <accept-invalid-certificate>1</accept-invalid-certificate>
         </connection>
     </connections_credentials>
+</clickhouse>"""
+
+# node2 presents a certificate this CA signs, so the chain is valid and only the name can fail.
+config_ca_signed = """<clickhouse>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+config_ca_signed_sni_override = """<clickhouse>
+    <tls-sni-override>client</tls-sni-override>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+config_ca_signed_no_extended_verification = """<clickhouse>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <extendedVerification>false</extendedVerification>
+        </client>
+    </openSSL>
 </clickhouse>"""
 
 
@@ -132,3 +175,29 @@ def test_strict_connection_reject():
             config_connection_accept.format(ip_address=f"{instance.ip_address}"),
         )
     assert "certificate verify failed" in str(err.value)
+
+
+def test_hostname_mismatch_rejected_by_default():
+    with pytest.raises(Exception) as err:
+        execute_query_native(node2, "SELECT 1", config_ca_signed.format(caConfig=CA_CERT))
+    assert "Unacceptable certificate" in str(err.value)
+
+
+def test_hostname_match_accepted():
+    assert (
+        execute_query_native(
+            node2, "SELECT 1", config_ca_signed_sni_override.format(caConfig=CA_CERT)
+        )
+        == "1\n"
+    )
+
+
+def test_extended_verification_disabled():
+    assert (
+        execute_query_native(
+            node2,
+            "SELECT 1",
+            config_ca_signed_no_extended_verification.format(caConfig=CA_CERT),
+        )
+        == "1\n"
+    )

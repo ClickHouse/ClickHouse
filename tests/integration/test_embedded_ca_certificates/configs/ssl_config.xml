@@ -1,0 +1,18 @@
+<clickhouse>
+    <https_port>8443</https_port>
+
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+        </server>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

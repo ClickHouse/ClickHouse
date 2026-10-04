@@ -1,0 +1,91 @@
+-- Comparison of every (Decimal-like, numeric) type pair, in both directions, with every
+-- comparison operator and every combination of constant and non-constant arguments.
+-- Each row pins down one type pair, so a failure points to the exact pair and shape.
+-- The values are chosen small enough that no pair overflows during scale conversion;
+-- the overflowing cases are covered by 04523_type_pair_matrix_errors and
+-- 04520_type_pair_matrix_division_overflow_errors.
+--
+-- This is part 2 of 2: it covers an integer-typed left operand against every Decimal right
+-- operand, the date/time pairs, and the same-type controls. Part 1
+-- (04513_type_pair_matrix_comparison) covers a Decimal-typed left operand against every
+-- numeric and decimal right operand. The suite was split so that each file's single run stays
+-- within the flaky-check runtime budget while the union keeps the whole matrix and the same
+-- per-file shape coverage.
+
+{% set int_types = ['UInt8','UInt16','UInt32','UInt64','UInt128','UInt256','Int8','Int16','Int32','Int64','Int128','Int256'] %}
+{% set decimal_types = ['Decimal32','Decimal64','Decimal128','Decimal256'] %}
+{% set ops = ['=','!=','<','>','<=','>='] %}
+
+{% set one = {
+    'UInt8':   "toUInt8(1)",
+    'UInt16':  "toUInt16(1)",
+    'UInt32':  "toUInt32(1)",
+    'UInt64':  "toUInt64(1)",
+    'UInt128': "toUInt128(1)",
+    'UInt256': "toUInt256(1)",
+    'Int8':    "toInt8(1)",
+    'Int16':   "toInt16(1)",
+    'Int32':   "toInt32(1)",
+    'Int64':   "toInt64(1)",
+    'Int128':  "toInt128(1)",
+    'Int256':  "toInt256(1)",
+    'Decimal32':  "toDecimal32('1.00', 2)",
+    'Decimal64':  "toDecimal64('1.0000', 4)",
+    'Decimal128': "toDecimal128('1', 10)",
+    'Decimal256': "toDecimal256('1', 20)"
+} %}
+
+{% set other = {
+    'UInt8':   "toUInt8(77)",
+    'UInt16':  "toUInt16(77)",
+    'UInt32':  "toUInt32(77)",
+    'UInt64':  "toUInt64(77)",
+    'UInt128': "toUInt128(77)",
+    'UInt256': "toUInt256(77)",
+    'Int8':    "toInt8(-77)",
+    'Int16':   "toInt16(-77)",
+    'Int32':   "toInt32(-77)",
+    'Int64':   "toInt64(-77)",
+    'Int128':  "toInt128(-77)",
+    'Int256':  "toInt256(-77)",
+    'Decimal32':  "toDecimal32('-7.25', 2)",
+    'Decimal64':  "toDecimal64('-7.25', 4)",
+    'Decimal128': "toDecimal128('-7.25', 10)",
+    'Decimal256': "toDecimal256('-7.25', 20)"
+} %}
+
+{% macro cmprow(label, l1, r1, l2, r2) -%}
+SELECT '{{ label }}'
+{%- for op in ops -%}
+, materialize({{ l1 }}) {{ op }} materialize({{ r1 }}), {{ l1 }} {{ op }} materialize({{ r1 }}), materialize({{ l1 }}) {{ op }} {{ r1 }}, identity({{ l1 }}) {{ op }} identity({{ r1 }})
+{%- endfor -%}
+{%- for op in ops -%}
+, materialize({{ l2 }}) {{ op }} materialize({{ r2 }}), materialize({{ l1 }}) {{ op }} materialize({{ r2 }}), materialize({{ l2 }}) {{ op }} materialize({{ r1 }}), {{ l2 }} {{ op }} materialize({{ r2 }}), materialize({{ l2 }}) {{ op }} {{ r2 }}, identity({{ l2 }}) {{ op }} identity({{ r2 }})
+{%- endfor -%};
+{%- endmacro %}
+
+{% for L in int_types %}
+{% for R in decimal_types %}
+{{ cmprow(L ~ ' vs ' ~ R, one[L], one[R], other[L], other[R]) }}
+{% endfor %}
+{% endfor %}
+
+-- Date and time types compared with each other and with decimals
+-- (these pairs go through the same decimal comparison machinery).
+{{ cmprow('DateTime64(3) vs DateTime', "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDateTime('2024-01-02 03:04:05', 'UTC')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDateTime('2024-01-15 00:00:00', 'UTC')") }}
+{{ cmprow('DateTime64(3) vs Date', "toDateTime64('2024-01-02 00:00:00.000', 3, 'UTC')", "toDate('2024-01-02')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDate('2024-01-15')") }}
+{{ cmprow('DateTime64(3) vs Date32', "toDateTime64('2024-01-02 00:00:00.000', 3, 'UTC')", "toDate32('2024-01-02')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDate32('2024-01-15')") }}
+{{ cmprow('DateTime64(3) vs DateTime64(6)', "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678000', 6, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678001', 6, 'UTC')") }}
+{{ cmprow('DateTime vs DateTime64(3)', "toDateTime('2024-01-02 03:04:05', 'UTC')", "toDateTime64('2024-01-02 03:04:05.000', 3, 'UTC')", "toDateTime('2024-01-15 00:00:00', 'UTC')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')") }}
+-- The reverse operand order for the non-DateTime pairs: a non-Decimal (Date / Date32) or a
+-- coarser-scaled Decimal (DateTime64(6)) on the left of DateTime64(3) instantiates the
+-- scale_left path of DecimalComparison, which the forward rows above never reach.
+{{ cmprow('Date vs DateTime64(3)', "toDate('2024-01-02')", "toDateTime64('2024-01-02 00:00:00.000', 3, 'UTC')", "toDate('2024-01-15')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')") }}
+{{ cmprow('Date32 vs DateTime64(3)', "toDate32('2024-01-02')", "toDateTime64('2024-01-02 00:00:00.000', 3, 'UTC')", "toDate32('2024-01-15')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')") }}
+{{ cmprow('DateTime64(6) vs DateTime64(3)', "toDateTime64('2024-01-02 03:04:05.678000', 6, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678001', 6, 'UTC')", "toDateTime64('2024-01-02 03:04:05.678', 3, 'UTC')") }}
+
+-- Same-type pairs with different scales as a control for the fused kernels.
+{{ cmprow('Decimal32 vs Decimal32', "toDecimal32('1.50', 2)", "toDecimal32('1.5', 1)", "toDecimal32('-7.25', 2)", "toDecimal32('7.2', 1)") }}
+{{ cmprow('Decimal64 vs Decimal64', "toDecimal64('1.50', 2)", "toDecimal64('1.5000', 4)", "toDecimal64('-7.25', 2)", "toDecimal64('7.2500', 4)") }}
+{{ cmprow('Decimal128 vs Decimal128', "toDecimal128('1.50', 2)", "toDecimal128('1.5', 10)", "toDecimal128('-7.25', 2)", "toDecimal128('7.25', 10)") }}
+{{ cmprow('Decimal256 vs Decimal256', "toDecimal256('1.50', 2)", "toDecimal256('1.5', 20)", "toDecimal256('-7.25', 2)", "toDecimal256('7.25', 20)") }}

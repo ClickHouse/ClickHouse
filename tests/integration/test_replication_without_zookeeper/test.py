@@ -49,7 +49,7 @@ def test_startup_without_zookeeper(start_cluster):
         == "0\n"
     )
 
-    cluster.run_kazoo_commands_with_retries(drop_zk)
+    cluster.run_kazoo_commands_with_retries(drop_zk, repeats=5)
 
     time.sleep(5)
     assert node1.query("SELECT COUNT(*) from test_table") == "3\n"

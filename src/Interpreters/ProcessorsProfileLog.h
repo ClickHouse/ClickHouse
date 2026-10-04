@@ -3,7 +3,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndAliases.h>
-#include <Processors/IProcessor.h>
+#include <Processors/ProcessorsProfileLogInfo.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -52,9 +53,9 @@ public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
-VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
 
 void logProcessorProfile(ContextPtr context, const Processors & processors);
-void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

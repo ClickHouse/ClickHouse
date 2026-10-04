@@ -1,0 +1,11 @@
+String index, wrapped FixedString constant	3
+String index, Variant constant	3
+String index, Dynamic constant	3
+LowCardinality(FixedString) index, wider String constant	1
+FixedString index, wider String constant	1
+FixedString index, wider FixedString constant	1
+String index used, String constant	1
+FixedString index used, narrower FixedString constant	1
+FixedString index used, equal width FixedString constant	1
+FixedString index used, plain String constant	1
+FixedString index prunes, equal width FixedString constant	1

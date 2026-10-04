@@ -1,0 +1,34 @@
+--- list_null_hidden_slot ---
+[]
+--- list_null_visible_slot ---
+MEMORY_LIMIT_EXCEEDED
+--- list_null_hidden_head ---
+[NULL,NULL]
+--- large_list_null_hidden_slot ---
+[]
+--- list_null_mixed ---
+[NULL,NULL,NULL]
+[]
+--- fsl_null_hidden: rows, empty rows, longest row ---
+2047	2046	1048576
+--- list_struct_null_hidden ---
+[]
+--- list_struct_nulls as plain tuples ---
+[(NULL)]
+[]
+[(NULL)]
+--- list_null_tail ---
+[NULL,NULL]
+--- list_struct_null_tail ---
+[(NULL),(NULL)]
+--- list_struct_nulls_tail ---
+[(NULL),(NULL)]
+--- list_null_short ---
+INCORRECT_DATA
+--- list_struct_null_small as Nullable tuples, then as plain tuples ---
+[(NULL,NULL),(NULL,NULL),(NULL,NULL)]
+[(NULL,NULL),(NULL,NULL),(NULL,NULL),(NULL,NULL)]
+[(NULL,NULL),(NULL,NULL),(NULL,NULL)]
+[(NULL,NULL),(NULL,NULL),(NULL,NULL),(NULL,NULL)]
+forged variants that drove an allocation: 0
+nested length check active

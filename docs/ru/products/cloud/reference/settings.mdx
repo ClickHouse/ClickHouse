@@ -1,0 +1,18 @@
+---
+sidebarTitle: 'Настройка параметров'
+slug: /manage/settings
+title: 'Настройка параметров'
+description: 'Как настроить параметры сервиса ClickHouse Cloud для конкретного пользователя или роли'
+keywords: ['ClickHouse Cloud', 'настройка параметров', 'параметры Cloud', 'параметры пользователя', 'параметры роли']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Чтобы задать настройки для конкретного [пользователя](/ru/concepts/features/security/access-rights#user-account-management) или [роли](/ru/concepts/features/security/access-rights#role-management) в вашем сервисе ClickHouse Cloud, необходимо использовать [профили настроек на основе SQL](/ru/concepts/features/security/access-rights#settings-profiles-management). Использование профилей настроек гарантирует, что заданные вами настройки сохранятся, даже если сервисы будут остановлены, перейдут в состояние бездействия или обновятся. Подробнее о профилях настроек см. [на этой странице](/ru/concepts/features/configuration/settings/settings-profiles).
+
+Обратите внимание: профили настроек на основе XML и [файлы конфигурации](/ru/concepts/features/configuration/server-config/configuration-files) в ClickHouse Cloud в настоящее время не поддерживаются.
+
+Чтобы узнать больше о настройках, которые можно задать для вашего сервиса ClickHouse Cloud, см. [всю документацию по настройкам, сгруппированную по категориям](/ru/reference/settings/index).
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Боковая панель настроек Cloud" border />

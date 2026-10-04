@@ -1,0 +1,191 @@
+---
+keywords: ['clickhouse', 'python', 'client', 'connect', 'integrate']
+slug: /integrations/python
+description: 'Пакет проектов ClickHouse Connect для подключения Python к ClickHouse'
+title: Введение
+sidebarTitle: 'Введение'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+ClickHouse Connect — это основной драйвер для подключения к базе данных, обеспечивающий совместимость с широким спектром Python-приложений.
+
+* Основные интерфейсы — синхронный `Client` и нативный `AsyncClient` на базе aiohttp в `clickhouse_connect.driver`. Пакет драйвера также предоставляет контексты запросов и вставки, вспомогательные средства для стриминга, поддержку DB-API и низкоуровневые HTTP-методы.
+* Пакет `clickhouse_connect.datatypes` сериализует и десериализует типы ClickHouse, используя бинарный столбцовый формат ClickHouse Native.
+* Необязательные расширения Cython в `clickhouse_connect.driverc` ускоряют типовые пути сериализации, преобразования и буферизации. На платформах, где эти расширения нельзя собрать, по-прежнему доступен вариант на чистом Python. Экспериментальный подключаемый [кодек на Rust](/ru/integrations/language-clients/python/rust-codec) может полностью заменить обработку формата Native.
+* Пакет поставляется с информацией о типах PEP 561, поэтому последующие инструменты проверки типов учитывают аннотации для публичного интерфейса драйвера, DB-API и поверхностей SQLAlchemy.
+* Диалекты [SQLAlchemy](https://www.sqlalchemy.org/) в `clickhouse_connect.cc_sqlalchemy` включают синхронные соединения `clickhousedb://` и асинхронные соединения `clickhousedb+async://`. Они поддерживают SQLAlchemy Core, отражение схемы, специфичные для ClickHouse секции запросов и движки таблиц, а также миграции Alembic. Базовые операции чтения и вставки ORM работают, но диалект рассчитан на аналитические рабочие нагрузки, а не на полноценную ORM-модель unit-of-work.
+* Основной драйвер и реализация [ClickHouse Connect SQLAlchemy](/ru/integrations/language-clients/python/sqlalchemy) — предпочтительный способ подключения ClickHouse к Apache Superset. Используйте подключение к базе данных `ClickHouse Connect` или строку подключения диалекта SQLAlchemy `clickhousedb`.
+
+Если вы обновляетесь с версии 0.15.x или более ранней, см. [руководство по миграции на 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+
+<Note>
+  Стандартные клиенты ClickHouse Connect используют HTTP-интерфейс. Это позволяет работать с HTTP-балансировщиками нагрузки, прокси и распространёнными корпоративными средствами управления сетью. ClickHouse Connect также поддерживает экспериментальный backend chDB, работающий in-process [chDB](#embedded-chdb-backend).
+</Note>
+
+## Требования и совместимость {#requirements-and-compatibility}
+
+| Компонент  | Поддерживаемые версии                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Python     | От 3.10 до 3.14. Сборки без GIL, такие как 3.14t, поддерживаются в экспериментальном режиме.                               |
+| ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на последних LTS- и стабильных релизах сервера. |
+| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.       |
+| Pandas     | 2.x и 3.x                                                                                                                  |
+| Polars     | 1.0 или новее                                                                                                              |
+| aiohttp    | 3.9 или новее                                                                                                              |
+| Платформы  | Linux, macOS и Windows на архитектурах wheel-пакетов, опубликованных для каждой версии Python                              |
+
+Пакет включает скомпилированные wheel-пакеты там, где они доступны, и использует реализацию на чистом Python, если расширения Cython не удаётся собрать. PyArrow поддерживается для Python 3.10–3.14. Для Python 3.14 требуется PyArrow 22 или новее.
+
+## Установка {#installation}
+
+Установите ClickHouse Connect из [PyPI](https://pypi.org/project/clickhouse-connect/) с помощью команды pip:
+
+```bash
+pip install clickhouse-connect
+```
+
+Дополнительные интеграции устанавливаются через дополнительные модули:
+
+```bash
+pip install "clickhouse-connect[async]"      # Native asyncio client
+pip install "clickhouse-connect[pandas]"     # Pandas
+pip install "clickhouse-connect[arrow]"      # PyArrow
+pip install "clickhouse-connect[polars]"     # Polars
+pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
+pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
+pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
+```
+
+ClickHouse Connect также можно установить из исходников:
+
+* Выполните `git clone` [репозитория GitHub](https://github.com/ClickHouse/clickhouse-connect).
+* Перейдите в корневой каталог проекта и выполните `pip install .`. Система сборки автоматически устанавливает Cython для компиляции необязательных C-расширений.
+
+### Режимы сборки из исходного кода {#source-build-modes}
+
+Сборка из исходного кода поддерживает три режима. Режим по умолчанию и обязательный режим завершаются с ошибкой, если Cython недоступен или `cythonize()` не отрабатывает. Режим пропуска не импортирует Cython.
+
+| Режим         | Команда                                          | Поведение                                                                                                                                         |
+| ------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| По умолчанию  | `pip install .`                                  | Пытается скомпилировать расширения на C. Если компилятор или компоновщик завершается с ошибкой, сборка откатывается к установке на чистом Python. |
+| Чистый Python | `CLICKHOUSE_CONNECT_SKIP_CYTHON=1 pip install .` | Собирает пакет на чистом Python, не пытаясь собрать расширения.                                                                                   |
+| Обязательный  | `CLICKHOUSE_CONNECT_REQUIRE_C=1 pip install .`   | Сборка завершается с ошибкой, если расширения не удаётся скомпилировать. Рекомендуется для CI и для сборки распространяемых wheel-пакетов.        |
+
+Одновременная установка `CLICKHOUSE_CONNECT_SKIP_CYTHON=1` и `CLICKHOUSE_CONNECT_REQUIRE_C=1` является ошибкой.
+
+Резервные wheel-пакеты, создаваемые по умолчанию, не содержат скомпилированных расширений, но сохраняют теги платформы и интерпретатора. Только режим пропуска создаёт `py3-none-any`. `pip` может закэшировать резервный wheel-пакет, собранный из sdist из индекса, и повторно использовать его для совместимой версии Python и платформы уже после того, как проблема с компилятором будет устранена. Очистите кэш с помощью:
+
+```bash
+pip cache remove clickhouse_connect
+```
+
+Проверьте, присутствуют ли все три extension-модуля. Если да, будет выведено `True`:
+
+```bash
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+```
+
+Прямой импорт `clickhouse_connect.driverc.npconv` также требует установленного NumPy.
+
+Установленная версия доступна в `clickhouse_connect.__version__`.
+
+## Политика поддержки {#support-policy}
+
+Прежде чем сообщать о проблеме, обновите ClickHouse Connect до последнего релиза. Сообщать о проблемах следует в [проекте GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). ClickHouse Connect ориентирован на [активно поддерживаемые релизы ClickHouse](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) на момент выхода каждого релиза драйвера. Он часто работает и с более старыми версиями сервера, но для более новых типов данных и возможностей протокола может потребоваться более новая версия сервера.
+
+## Базовое использование {#basic-usage}
+
+### Подготовьте сведения о подключении {#gather-your-connection-details}
+
+<ConnectionDetails />
+
+### Установление соединения {#establish-a-connection}
+
+Ниже показаны два примера подключения к ClickHouse:
+
+* Подключение к серверу ClickHouse на localhost.
+* Подключение к сервису ClickHouse Cloud.
+
+#### Используйте экземпляр клиента ClickHouse Connect для подключения к серверу ClickHouse на localhost: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="localhost",
+    username="default",
+    password="password",
+)
+```
+
+#### Используйте экземпляр клиента ClickHouse Connect для подключения к сервису ClickHouse Cloud: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
+
+<Tip>
+  Используйте сведения о подключении, полученные ранее. Для сервисов ClickHouse Cloud требуется TLS, поэтому используйте порт 8443.
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="HOSTNAME.clickhouse.cloud",
+    port=8443,
+    username="default",
+    password="your password",
+)
+```
+
+### Взаимодействие с базой данных {#interact-with-your-database}
+
+Чтобы выполнить команду ClickHouse SQL, используйте метод `command` клиента:
+
+```python
+client.command(
+    "CREATE TABLE new_table "
+    "(key UInt32, value String, metric Float64) "
+    "ENGINE MergeTree ORDER BY key"
+)
+```
+
+Чтобы вставить данные батчем, используйте метод клиента `insert` с двумерным массивом строк и значений:
+
+```python
+row1 = [1000, "String Value 1000", 5.233]
+row2 = [2000, "String Value 2000", -107.04]
+data = [row1, row2]
+client.insert("new_table", data, column_names=["key", "value", "metric"])
+```
+
+Чтобы получить данные с помощью ClickHouse SQL, используйте метод `query` клиента:
+
+```python
+result = client.query("SELECT max(key), avg(metric) FROM new_table")
+print(result.result_rows)
+# Output: [(2000, -50.9035)]
+
+client.close()
+```
+
+## Встроенный backend chDB {#embedded-chdb-backend}
+
+Экспериментальный backend chDB выполняет запросы ClickHouse внутри процесса Python без HTTP-сервера. Установите дополнительный модуль `chdb`, затем выберите backend через `interface="chdb"` или DSN `chdb://`:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(interface="chdb") as client:
+    result = client.query("SELECT number FROM numbers(3)")
+    print(result.result_rows)
+    # Output: [(0,), (1,), (2,)]
+```
+
+База данных по умолчанию находится в памяти. Передайте `path="/data/my_chdb"` или используйте `dsn="chdb:///data/my_chdb"` для постоянного хранения. chDB поддерживает только один путь движка для каждого процесса. Async-клиент и внешние данные не поддерживаются.

@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'Exemple d’optimisation détaillé'
+title: 'Exemple détaillé d’optimisation de requête'
+description: 'Découvrez un exemple détaillé d’amélioration des performances des requêtes ClickHouse en modifiant le schéma et la clé de tri'
+doc_type: 'guide'
+keywords: ['optimisation des requêtes', 'performances', 'NYC Taxi', 'types de données', 'clé de tri']
+---
+
+import NYCTaxiExampleDataset from '/snippets/fr/_nyc_taxi_example_dataset.mdx';
+
+Ce guide présente deux approches d’optimisation appliquées au jeu de données des taxis de NYC. Il réduit d’abord la quantité de données stockées et traitées en choisissant des types de colonnes plus précis. Il introduit ensuite une clé de tri permettant à ClickHouse d’ignorer des données lors de requêtes sélectives. Chaque modification est mesurée par rapport à la même référence. Consultez la [vue d’ensemble de l’optimisation des requêtes](/fr/guides/clickhouse/performance-and-monitoring/query-optimization) pour découvrir le processus global suivi dans cet exemple.
+
+<div id="before-you-begin">
+  ## Avant de commencer
+</div>
+
+Les exemples utilisent la table `nyc_taxi.trips_small_inferred`. Créez-la et chargez-la si ce n’est pas déjà fait :
+
+<Accordion title="Configurer l’ensemble de données d’exemple">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+Le fichier Parquet source contient environ 329 millions de lignes. Les mesures de durée indiquées dans ce guide ont été effectuées sur un déploiement et varient selon les ressources de calcul disponibles. Comparez les variations relatives entre les étapes plutôt que de vous attendre à des durées identiques.
+
+Lorsque vous appliquez cette méthode à votre propre charge de travail, utilisez [Diagnostiquer les requêtes lentes](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) pour identifier un schéma de requête récurrent et choisir une exécution représentative avant de modifier la requête ou le schéma.
+
+<div id="process-overview">
+  ## Vue d’ensemble du processus
+</div>
+
+L’exemple se déroule en trois étapes :
+
+1. Exécutez trois requêtes de charge indépendantes sur le schéma inféré afin d’établir une référence.
+2. Créez une table avec des types de colonnes plus précis, chargez les mêmes données, puis réexécutez les requêtes.
+3. Créez une autre table avec le même schéma optimisé et une clé de tri, puis réexécutez les requêtes.
+
+Modifier le schéma et la clé de tri à des étapes distinctes permet de mieux distinguer leurs effets. [Approches d’optimisation](/fr/guides/clickhouse/performance-and-monitoring/optimization-approaches) explique quand envisager ces modifications et comment les valider. Pour plus d’informations sur la collecte de mesures comparables, consultez [Isoler les goulots d’étranglement des requêtes](/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+<div id="define-the-baseline-workload">
+  ## Définir la charge de travail de référence
+</div>
+
+Dans la même session cliente que celle utilisée pour exécuter la charge de travail, désactivez le cache du système de fichiers pour les données distantes, le cache de requêtes et le cache des conditions de requête :
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  Ces paramètres permettent de garantir la comparabilité des exécutions répétées lors des tests. Restaurez leurs valeurs précédentes une fois les mesures terminées.
+</Note>
+
+Les trois requêtes indépendantes suivantes constituent la charge de travail de référence. Exécutez-les toutes les trois sur chaque table créée aux étapes suivantes. Exécutez chaque requête plusieurs fois dans des conditions comparables et consignez une durée représentative, telle que la médiane, ainsi que le nombre de lignes lues et le pic d&#39;utilisation de la mémoire. Consultez [Établir une référence reproductible](/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline) pour connaître le processus de mesure complet, notamment comment récupérer ces valeurs depuis `system.query_log`.
+
+<div id="calculated-speed-filter">
+  ### Filtrer selon la vitesse calculée du trajet
+</div>
+
+Cette requête calcule la durée et la vitesse du trajet, puis détermine la répartition des distances pour les courses dont la vitesse dépasse 30 miles par heure :
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### Agréger les trajets sur une plage de dates
+</div>
+
+Cette requête calcule le nombre de trajets, la distance et le montant moyen des paiements pour le premier trimestre 2009 :
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### Filtrer par nombre de passagers
+</div>
+
+Cette requête calcule la durée moyenne des trajets avec un ou deux passagers :
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+Les mesures initiales étaient :
+
+| Charge de travail                 |     Durée |     Lignes lues | Pic mémoire |
+| --------------------------------- | --------: | --------------: | ----------: |
+| Filtre sur la vitesse calculée    | 1.699 sec | 329.04 millions |  440.24 MiB |
+| Agrégation sur une plage de dates | 1.419 sec | 329.04 millions |  546.75 MiB |
+| Filtre sur le nombre de passagers | 1.414 sec | 329.04 millions |  451.53 MiB |
+
+Les trois requêtes ont lu environ 329 millions de lignes, soit un nombre proche du nombre de lignes de la table. Cela permet d’améliorer deux aspects de la charge de travail : réduire le coût de traitement des colonnes sélectionnées, puis, lorsque les filtres le permettent, réduire le nombre de lignes sélectionnées.
+
+<div id="optimize-the-schema">
+  ## Optimiser le schéma
+</div>
+
+L’inférence de schéma est un moyen pratique pour commencer à explorer un jeu de données, mais les types inférés peuvent être plus généraux ou plus permissifs que ne l’exige la charge de travail. Examinez les données avant de modifier le schéma, plutôt que de supposer qu’un type inféré est inutile.
+
+<div id="nullable">
+  ### Évitez les colonnes `Nullable` inutiles
+</div>
+
+Une colonne [`Nullable`](/fr/reference/data-types/nullable) stocke un masque de nullité en plus de ses valeurs. Conservez `Nullable` lorsque la distinction entre une valeur nulle et la valeur par défaut du type est pertinente, mais évitez-le pour les colonnes dont la présence d&#39;une valeur est garantie.
+
+Comptez les valeurs nulles dans les colonnes utilisées par le schéma d&#39;exemple :
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+Seules les colonnes `ratecode_id`, `mta_tax` et `payment_type` contiennent des valeurs nulles dans cet ensemble de données. Le schéma optimisé conserve `Nullable` pour ces colonnes et le supprime pour les autres.
+
+<div id="low-cardinality">
+  ### Utiliser LowCardinality pour les valeurs répétées
+</div>
+
+[`LowCardinality`](/fr/reference/data-types/lowcardinality) utilise l’encodage par dictionnaire et peut réduire le stockage et le traitement des colonnes contenant de nombreuses valeurs répétées. Vérifiez le nombre de valeurs distinctes avant de l’appliquer :
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+Ces quatre colonnes contiennent nettement moins de valeurs distinctes que de lignes. Elles sont de bonnes candidates pour `LowCardinality`, mais il convient tout de même d’en mesurer l’effet sur la charge de travail. Environ 10 000 valeurs distinctes constituent un bon point de départ pour identifier les candidates, et non une limite fixe.
+
+<div id="optimize-data-type">
+  ### Choisissez des types de données plus précis
+</div>
+
+Utilisez le type le plus restrictif permettant de préserver la plage et la précision requises. Par exemple, examinez les valeurs minimales et maximales des colonnes numériques avant de remplacer un `Int64` ou un `Float64` inféré :
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+Les deux colonnes d’entiers peuvent être stockées dans [`UInt8`](/fr/reference/data-types/int-uint), même si `passenger_count` atteint sa valeur maximale de 255. L’exemple utilise également [`Float32`](/fr/reference/data-types/float) pour `trip_distance` et [`Decimal32`](/fr/reference/data-types/decimal) pour les valeurs monétaires. Toutes les valeurs de cet ensemble de données se situent dans les plages cibles, et l’exemple accepte la précision réduite des nombres à virgule flottante ainsi qu’une précision monétaire au centime, car sa charge de travail compare des résultats agrégés. Conservez les types source plus larges lorsque les valeurs source exactes sont nécessaires. L’exemple remplace les colonnes [`DateTime64`](/fr/reference/data-types/datetime64) déduites par [`DateTime`](/fr/reference/data-types/datetime) dans le même fuseau horaire `UTC`, car les requêtes de l’exemple ne nécessitent pas de précision à la fraction de seconde.
+
+Ces choix sont spécifiques à cet ensemble de données. Vérifiez les exigences de plage, de précision et de nullabilité des données de production avant d’appliquer les mêmes modifications.
+
+<div id="apply-the-optimizations">
+  ### Appliquer les modifications du schéma
+</div>
+
+Créez une table sans clé de tri afin que cette étape mesure indépendamment les modifications du schéma :
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+Dans chaque requête de charge, remplacez `nyc_taxi.trips_small_inferred` par `nyc_taxi.trips_small_no_pk`, puis réexécutez les trois requêtes. L’exemple d’origine a donné les résultats représentatifs suivants :
+
+| Charge de travail                 | Schéma inféré | Schéma optimisé |     Lignes lues | Pic de mémoire optimisé |
+| --------------------------------- | ------------: | --------------: | --------------: | ----------------------: |
+| Filtre sur la vitesse calculée    |     1.699 sec |       1.353 sec | 329.04 millions |              337.12 MiB |
+| Agrégation sur une plage de dates |     1.419 sec |       1.171 sec | 329.04 millions |              531.09 MiB |
+| Filtre sur le nombre de passagers |     1.414 sec |       1.188 sec | 329.04 millions |              265.05 MiB |
+
+Les requêtes lisent toujours le même nombre de lignes, mais le schéma optimisé réduit la quantité de données représentée par ces lignes. La durée des requêtes et le pic de mémoire s’améliorent donc sans modifier la sélection des données.
+
+Comparez la taille sur disque des deux tables :
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+Pour ce jeu de données, le schéma optimisé réduit le stockage compressé d’environ 34 %, le faisant passer de 7,38 Gio à 4,89 Gio.
+
+<div id="optimize-the-ordering-key">
+  ## Optimiser la clé de tri
+</div>
+
+Dans la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), la clé de tri détermine la façon dont les lignes sont organisées sur le disque. ClickHouse crée un index primaire creux sur cet ordre afin d’ignorer les granules qui ne peuvent pas répondre aux filtres d’une requête. Contrairement à une clé primaire dans de nombreuses bases de données transactionnelles, elle ne garantit pas l’unicité.
+
+La clé de tri doit refléter les filtres utilisés dans les requêtes importantes et récurrentes. L’ordre des colonnes est important : une clé est plus efficace lorsque la requête filtre sur un préfixe utile. Les colonnes à faible cardinalité constituent parfois de bonnes premières colonnes lorsqu’elles sont fréquemment utilisées comme filtres, et une composante temporelle est souvent utile pour les charges de travail basées sur le temps. Pour des conseils détaillés sur le choix de la clé, consultez [Choisir une clé primaire](/fr/best-practices/choosing-a-primary-key).
+
+Pour cet exemple, utilisez `(passenger_count, pickup_datetime, dropoff_datetime)`. `passenger_count` possède peu de valeurs distinctes et apparaît dans le filtre sur le nombre de passagers, tandis que `pickup_datetime` apparaît dans l’agrégation sur une plage de dates. Bien que `pickup_datetime` ne soit pas la première colonne, ClickHouse peut toujours utiliser les valeurs des colonnes suivantes de la clé pour exclure des données lorsque la première colonne n’est soumise à aucune contrainte. Le filtrage sur un préfixe utile de la clé de tri permet généralement un élagage plus efficace.
+
+<div id="apply-the-ordering-key-change">
+  ### Appliquer la modification de la clé de tri
+</div>
+
+Créez une table en utilisant le même schéma optimisé que lors de l’étape précédente. Modifiez uniquement la clé de tri :
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+Dans chaque requête de charge, remplacez le nom de la table par `nyc_taxi.trips_small_pk`, puis réexécutez les trois requêtes.
+
+<div id="compare-the-results">
+  ## Comparez les résultats
+</div>
+
+Le guide original a relevé les mesures suivantes pour les trois étapes :
+
+| Charge de travail                 | Mesure         |   Schéma inféré | Schéma optimisé | Schéma optimisé et clé de tri |
+| --------------------------------- | -------------- | --------------: | --------------: | ----------------------------: |
+| Filtre sur la vitesse calculée    | Durée          |       1.699 sec |       1.353 sec |                     0.765 sec |
+|                                   | Lignes lues    | 329.04 millions | 329.04 millions |               329.04 millions |
+|                                   | Pic de mémoire |      440.24 MiB |      337.12 MiB |                    444.19 MiB |
+| Agrégation sur une plage de dates | Durée          |       1.419 sec |       1.171 sec |                     0.248 sec |
+|                                   | Lignes lues    | 329.04 millions | 329.04 millions |                41.46 millions |
+|                                   | Pic de mémoire |      546.75 MiB |      531.09 MiB |                    173.50 MiB |
+| Filtre sur le nombre de passagers | Durée          |       1.414 sec |       1.188 sec |                     0.431 sec |
+|                                   | Lignes lues    | 329.04 millions | 329.04 millions |               276.99 millions |
+|                                   | Pic de mémoire |      451.53 MiB |      265.05 MiB |                    197.38 MiB |
+
+L&#39;optimisation du schéma réduit l&#39;espace de stockage et rend le traitement des valeurs sélectionnées moins coûteux. La clé de tri apporte l&#39;amélioration supplémentaire la plus importante pour l&#39;agrégation sur une plage de dates, car ClickHouse peut ignorer les granules en dehors de cette plage. Le filtre sur le nombre de passagers lit également moins de lignes, car il s&#39;applique à la première colonne de la clé. Le filtre sur la vitesse calculée lit toujours l&#39;intégralité de la table, car il est dérivé de `pickup_datetime`, `dropoff_datetime` et `trip_distance`, plutôt que d&#39;un préfixe utile de la clé de tri.
+
+Examinez l&#39;agrégation sur une plage de dates avec `EXPLAIN indexes = 1` :
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  Dans ClickHouse 25.9 et les versions ultérieures, ces paramètres garantissent que `EXPLAIN` indique les index utilisés ainsi que les parties et les granules qu’ils permettent d’éliminer.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+L’index primaire sélectionne 5 061 granules sur 40 167. Grâce à cette réduction, l’agrégation sur la plage de dates traite 41,46 millions de lignes au lieu des 329,04 millions initiales.
+
+<div id="apply-the-method-to-your-workload">
+  ## Appliquez la méthode à votre charge de travail
+</div>
+
+Suivez la même démarche pour votre propre charge de travail :
+
+1. Relevez la durée de référence, le nombre de lignes et d’octets lus, ainsi que le pic de mémoire.
+2. Vérifiez si les colonnes sélectionnées utilisent des types inutilement larges ou permissifs.
+3. Appliquez les modifications de schéma et mesurez leurs effets sans modifier la disposition des données.
+4. Testez une clé de tri fondée sur les filtres utilisés par les requêtes importantes et récurrentes.
+5. Comparez les données sélectionnées avec `EXPLAIN indexes = 1`, puis réexécutez les requêtes de référence dans des conditions comparables.
+
+Ne supposez pas que les types ou la clé de tri de cet exemple conviendront à un autre jeu de données. Appuyez-vous sur les valeurs observées et les filtres de requête pour prendre ces décisions.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Revenez aux [Approches d’optimisation](/fr/guides/clickhouse/performance-and-monitoring/optimization-approaches) pour évaluer les projections, les vues matérialisées, les index d’exclusion de données ou le précalcul, lorsque les modifications du schéma et de la clé de tri ne permettent pas de résoudre le goulot d’étranglement identifié.

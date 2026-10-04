@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- no-fasttest: requires object storage
 
 CREATE TABLE small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid;
@@ -7,6 +7,8 @@ CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
 insert into small select number, [number] from numbers(0, 1000);
 insert into big select number, [number] from numbers(0, 100000);
 
+SET enable_parallel_replicas = 0;
+SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
 SET max_rows_to_group_by = 0;
@@ -24,7 +26,8 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT count()
 FROM big, small
-WHERE (small.sid = (big.bid + 1) % 5000);
+WHERE (small.sid = (big.bid + 1) % 5000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '------------';
 
@@ -41,7 +44,8 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT count()
 FROM small, big
-WHERE (small.sid = (big.bid + 1) % 5000);
+WHERE (small.sid = (big.bid + 1) % 5000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '------------';
 
@@ -54,4 +58,4 @@ SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_
 SELECT count()
 FROM big, small
 WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2;
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2, distributed_plan_fallback_to_local_execution = 0;

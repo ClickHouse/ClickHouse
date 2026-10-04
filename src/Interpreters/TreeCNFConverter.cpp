@@ -238,7 +238,7 @@ CNFQuery TreeCNFConverter::toCNF(
     auto cnf = tryConvertToCNF(query, max_growth_multiplier);
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses. "
             "Size of boolean formula in CNF can be exponential of size of source formula.",
             query->formatForErrorMessage());
 
@@ -310,6 +310,7 @@ static void pullNotOut(CNFQueryAtomicFormula & atom)
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
+        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 
@@ -327,12 +328,14 @@ void pushNotIn(CNFQueryAtomicFormula & atom)
         {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
+        {"similarTo", "notSimilarTo"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
         {"greaterOrEquals", "less"},
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
+        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 

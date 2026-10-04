@@ -67,3 +67,33 @@ SELECT divideOrNull(materialize(1), materialize(0));
 SELECT divideOrNull(materialize(1), materialize(NULL));
 SELECT divideOrNull(materialize(NULL), materialize(0));
 SELECT divideOrNull(materialize(NULL), materialize(NULL));
+
+SELECT 'Test INT_MIN / -1 returns NULL (not FPE)';
+SELECT intDivOrNull(toInt8(-128), toInt8(-1));
+SELECT intDivOrNull(toInt16(-32768), toInt16(-1));
+SELECT intDivOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT intDivOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT moduloOrNull(toInt8(-128), toInt8(-1));
+SELECT moduloOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1));
+SELECT positiveModuloOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT intDivOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(-1)));
+SELECT moduloOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(-1)));
+SELECT intDivOrNull(toInt32(-2147483647), toInt32(-1));
+SELECT moduloOrNull(toInt32(-2147483647), toInt32(-1));
+
+SELECT 'Test divideOrNull with INT_MIN / -1 is a valid float (only division by zero returns NULL)';
+SELECT divideOrNull(toInt8(-128), toInt8(-1));
+SELECT divideOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT divideOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT divideOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(-1)));
+SELECT divideOrNull(toInt32(-2147483648), toInt32(0));
+SELECT divideOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(0)));
+
+SELECT 'Test intDivOrNull with mixed signed/unsigned operands (divisor casts to -1)';
+SELECT intDivOrNull(toInt8(-128), toUInt8(255));
+SELECT intDivOrNull(materialize(toInt8(-128)), materialize(toUInt8(255)));
+SELECT intDivOrNull(toInt8(-100), toUInt8(255));
+SELECT intDivOrNull(materialize(toInt8(-100)), materialize(toUInt8(255)));
+SELECT intDivOrNull(toInt8(-128), toInt16(255));
+SELECT intDivOrNull(toInt16(-128), toUInt8(255));

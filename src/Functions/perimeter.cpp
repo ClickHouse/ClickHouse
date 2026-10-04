@@ -15,6 +15,11 @@ struct PerimeterCalculator
         return static_cast<Float64>(boost::geometry::perimeter(object));
     }
 
+    Float64 operator()(const MultiPoint<Point> & object)
+    {
+        return static_cast<Float64>(boost::geometry::perimeter(object));
+    }
+
     Float64 operator()(const LineString<Point> & object)
     {
         return static_cast<Float64>(boost::geometry::perimeter(object));

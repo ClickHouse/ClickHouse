@@ -1,0 +1,231 @@
+---
+title: 'Ускорение аналитики с MergeTree'
+sidebarTitle: 'Ускорение запросов'
+slug: /use-cases/data-lake/getting-started/accelerating-analytics
+toc_max_heading_level: 3
+description: 'Загружайте данные из открытых табличных форматов в таблицы ClickHouse MergeTree, чтобы значительно ускорить аналитические запросы.'
+keywords: ['озеро данных', 'lakehouse', 'MergeTree', 'ускорение', 'аналитика', 'inverted index', 'full-text index', 'INSERT INTO SELECT']
+doc_type: 'guide'
+---
+
+В [предыдущем разделе](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) вы подключили ClickHouse к каталогу данных и выполняли запросы к открытым табличным форматам напрямую. Хотя такой подход удобен, открытые табличные форматы не оптимизированы для рабочих нагрузок с низкой задержкой и высоким параллелизмом, характерных для панелей мониторинга и операционной отчётности. В таких сценариях загрузка данных в движок [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) ClickHouse даёт значительно более высокую производительность.
+
+У MergeTree есть несколько преимуществ по сравнению с прямым чтением открытых табличных форматов:
+
+* **[разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes)** - Упорядочивает данные на диске по выбранному ключу, благодаря чему ClickHouse может пропускать большие диапазоны нерелевантных строк при выполнении запросов.
+* **Расширенные типы данных** - Встроенная поддержка таких типов, как [JSON](/ru/concepts/best-practices/json-type), [LowCardinality](/ru/reference/data-types/lowcardinality) и [Enum](/ru/reference/data-types/enum), обеспечивает более компактное хранение и более быструю обработку.
+* **[Индексы пропуска](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)** и **[полнотекстовые индексы](/ru/reference/engines/table-engines/mergetree-family/textindexes)** - Вторичные индексные структуры, которые позволяют ClickHouse пропускать гранулы, не соответствующие предикатам фильтра в запросе; это особенно эффективно для рабочих нагрузок текстового поиска.
+* **Быстрые вставки с автоматической компакцией** - ClickHouse рассчитан на вставки с высокой пропускной способностью и автоматически выполняет слияние частей данных в фоновом режиме, аналогично compaction в открытых табличных форматах.
+* **Оптимизировано для параллельного чтения** - Столбцовая структура хранения MergeTree в сочетании с [несколькими уровнями кэширования](/ru/concepts/features/performance/caches/caches) поддерживает аналитические рабочие нагрузки в реальном времени с высоким параллелизмом — то, для чего открытые табличные форматы не предназначены.
+
+В этом руководстве показано, как загружать данные из каталога в таблицу MergeTree с помощью `INSERT INTO SELECT`, чтобы ускорить аналитику.
+
+<div id="connect-catalog">
+  ## Подключение к каталогу
+</div>
+
+Мы будем использовать то же подключение к Unity Catalog из [предыдущего руководства](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) и подключаться через конечную точку Iceberg REST:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+```
+
+<div id="list-tables">
+  ### Список таблиц
+</div>
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="explore-schema">
+  ### Изучите схему
+</div>
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+Эта таблица содержит ~283 миллиона строк логов из тестовых запусков ClickHouse CI — реалистичный набор данных для оценки производительности аналитических запросов.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 282,63 миллиона
+└───────────┘
+
+1 строка в наборе. Elapsed: 1.265 sec.
+```
+
+<div id="query-lakehouse">
+  ## Запрос к таблице озера данных
+</div>
+
+Выполним запрос, который фильтрует журналы по имени потока и типу инстанса, ищет в тексте сообщения ошибки и группирует результаты по логгеру:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM icebench.`icebench.single_day_log`
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 8.921 sec. Processed 282.63 million rows, 5.42 GB (31.68 million rows/s., 607.26 MB/s.)
+Пиковое потребление памяти: 4.35 GiB.
+```
+
+Запрос выполняется почти **9 секунд**, потому что ClickHouse приходится полностью сканировать таблицу по всем файлам Parquet в объектном хранилище. Производительность можно было бы повысить с помощью партиционирования, но у столбцов вроде `logger_name` может быть слишком высокая мощность, чтобы партиционирование было эффективным. У нас также нет индексов, таких как [Текстовые индексы](/ru/reference/engines/table-engines/mergetree-family/mergetree#text), чтобы ещё сильнее отсекать данные. Именно здесь MergeTree показывает себя лучше всего.
+
+<div id="load-data">
+  ## Загрузите данные в MergeTree
+</div>
+
+<div id="create-table">
+  ### Создание оптимизированной таблицы
+</div>
+
+Создадим таблицу MergeTree, немного оптимизировав схему. Обратите внимание на несколько ключевых отличий от схемы Iceberg:
+
+* **Без обёрток `Nullable`** — отказ от `Nullable` повышает эффективность хранения и производительность запросов.
+* **`LowCardinality(String)`** для столбцов `level`, `instance_type`, `thread_name` и `check_name` — использует словарное кодирование для столбцов с небольшим числом различных значений, что улучшает сжатие и ускоряет фильтрацию.
+* **[полнотекстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes)** для столбца `message` — ускоряет полнотекстовый поиск по токенам, например `hasToken(message, 'error')`.
+* **Ключ `ORDER BY`** `(instance_type, thread_name, toStartOfMinute(event_time))` — организует данные на диске в соответствии с типичными условиями фильтрации, чтобы [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) мог пропускать нерелевантные гранулы.
+
+```sql
+SET enable_full_text_index = 1;
+
+CREATE TABLE single_day_log
+(
+    `pull_request_number` Int64,
+    `commit_sha` String,
+    `check_start_time` DateTime64(6, 'UTC'),
+    `check_name` LowCardinality(String),
+    `instance_type` LowCardinality(String),
+    `instance_id` String,
+    `event_date` Date32,
+    `event_time` DateTime64(6, 'UTC'),
+    `event_time_microseconds` DateTime64(6, 'UTC'),
+    `thread_name` LowCardinality(String),
+    `thread_id` Decimal(20, 0),
+    `level` LowCardinality(String),
+    `query_id` String,
+    `logger_name` String,
+    `message` String,
+    `revision` Int64,
+    `source_file` String,
+    `source_line` Decimal(20, 0),
+    `message_format_string` String,
+    INDEX text_idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (instance_type, thread_name, toStartOfMinute(event_time))
+```
+
+<div id="insert-data">
+  ### Вставка данных из каталога
+</div>
+
+Используйте `INSERT INTO SELECT`, чтобы загрузить ~300 млн строк из таблицы озера данных в нашу таблицу ClickHouse:
+
+```sql
+INSERT INTO single_day_log SELECT * FROM icebench.`icebench.single_day_log`
+```
+
+```response
+282634391 rows in set. Elapsed: 237.680 sec. Processed 282.63 million rows, 5.42 GB (1.19 million rows/s., 22.79 MB/s.)
+Peak memory usage: 18.62 GiB.
+```
+
+<div id="reexecute-query">
+  ## Выполните запрос повторно
+</div>
+
+Если теперь снова выполнить тот же запрос к таблице MergeTree, мы увидим, что производительность значительно возрастет:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM single_day_log
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 0.220 sec. Processed 13.84 million rows, 2.85 GB (62.97 million rows/s., 12.94 GB/s.)
+Peak memory usage: 1.12 GiB.
+```
+
+Теперь тот же запрос выполняется за **0,22 секунды** — **примерно в 40 раз быстрее**. Это улучшение обеспечивают две ключевые оптимизации:
+
+* **Разреженный первичный индекс** - ключ `ORDER BY (instance_type, thread_name, ...)` означает, что ClickHouse может сразу перейти к гранулам, соответствующим `instance_type = 'm6i.4xlarge'` и `thread_name = 'TCPHandler'`, сократив число обрабатываемых строк с 283 миллионов до всего 14 миллионов.
+* **Полнотекстовый индекс** - индекс `text_idx` для столбца `message` позволяет обрабатывать `hasToken(message, 'error')` по индексу, а не сканировать каждое сообщение целиком, что ещё больше уменьшает объём данных, которые ClickHouse нужно прочитать.
+
+В результате получается запрос, который без проблем может обеспечивать работу панели мониторинга в реальном времени — в масштабе и с задержкой, недостижимыми для запросов к файлам Parquet в Объектном хранилище.

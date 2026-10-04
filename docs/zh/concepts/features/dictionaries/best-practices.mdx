@@ -1,0 +1,66 @@
+---
+slug: /dictionary/best-practices
+title: '字典最佳实践'
+sidebarTitle: '最佳实践'
+description: '关于如何选择字典布局、何时使用字典而非 JOINs，以及如何监控字典使用情况的指南。'
+doc_type: 'guide'
+keywords: ['字典', '字典', '布局', 'dictGet', 'JOIN', 'hashed', 'flat', '性能']
+---
+
+本页提供实用指导，帮助你选择合适的字典布局，了解字典何时比 JOINs 性能更优 (以及何时并非如此) ，并监控字典的使用情况。
+
+如需通过完整示例了解字典，请参阅[字典主指南](/zh/concepts/features/dictionaries/index)。
+
+<div id="when-to-use-dictionaries-vs-joins">
+  ## 何时使用字典而不是 JOINs
+</div>
+
+当 JOIN 的一侧是可装入内存的查找表时，字典通常最合适。使用标准 JOIN 时，ClickHouse 会先根据右侧构建哈希表，再用左侧数据去探测——即使其中大多数行随后会被 `WHERE` 过滤器筛掉。虽然较新版本 (24.12+) 在很多情况下会先下推过滤器再执行 JOIN，但这并不总能消除这部分开销。使用字典时，你可以内联调用 `dictGet`，因此只会对已经通过过滤的行执行查找。
+
+不过，`dictGet` 并不总是最佳选择。如果你需要对表中很大比例的行调用 `dictGet`——例如，在 `WHERE` 条件中使用 `dictGet('dict', 'elevation', id) > 1800`——那么使用带原生索引的普通列可能更合适。对于普通列，ClickHouse 可以使用 `PREWHERE` 跳过部分粒度；而 `dictGet` 只能逐行求值，不支持索引。
+
+经验法则如下：
+
+* 当查找键已经可用时，使用字典来替代针对小型维度表的 JOIN。
+* 当需要基于查找到的值对大量行进行过滤时，使用普通列和索引。
+
+<div id="choosing-a-layout">
+  ## 选择布局
+</div>
+
+`LAYOUT` 子句控制字典的内部数据结构。所有可用布局均记录在[布局参考](/zh/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory)中。
+
+选择布局时，请遵循以下准则：
+
+* **`flat`** — 速度最快的布局 (简单的数组偏移查找) ，但键必须为 `UInt64`，并且默认上限为 500,000 (`max_array_size`) 。最适合小型到中型表中单调递增的整数键。稀疏的键分布 (例如键值分别为 1 和 500,000) 会浪费内存，因为数组大小按最大键分配。如果你触及 500k 上限，这通常意味着应切换到 `hashed_array`。
+* **`hashed_array`** — 适用于大多数场景的推荐默认布局。将属性存储在数组中，并使用哈希表将键映射到数组索引。速度几乎与 `hashed` 一样快，但内存效率更高，尤其是在属性较多时。
+* **`hashed`** — 将整个字典存储在哈希表中。当属性很少时，它可能比 `hashed_array` 更快，但随着属性数量增加，内存占用也会更高。
+* **`complex_key_hashed` / `complex_key_hashed_array`** — 当键无法 CAST 为 `UInt64` 时使用 (例如 `String` 键) 。它们与对应的非复杂键版本具有相同的性能权衡。
+* **`sparse_hashed`** — 与 `hashed` 相比，以增加 CPU 开销为代价换取更低的内存占用。它很少是最佳选择——只有在仅有一个属性时才比较高效。在大多数情况下，`hashed_array` 更合适。
+* **`cache` / `ssd_cache`** — 仅缓存频繁访问的键。当完整数据集无法装入内存时，它们会很有用，但缓存未命中时，查找可能会访问数据源。对于延迟敏感型工作负载，不推荐使用。
+* **`direct`** — 每次查找都直接查询数据源，不进行内存存储。适用于数据变化过于频繁而无法缓存，或字典太大而无法放入内存的情况。
+
+<div id="monitoring-dictionary-usage">
+  ## 监控字典使用情况
+</div>
+
+通过 [`system.dictionaries`](/zh/reference/system-tables/dictionaries) 表跟踪内存占用和健康状态：
+
+```sql
+SELECT
+    name,
+    status,
+    element_count,
+    formatReadableSize(bytes_allocated) AS size,
+    query_count,
+    hit_rate,
+    found_rate,
+    last_exception
+FROM system.dictionaries
+```
+
+关键列：
+
+* `bytes_allocated` — 字典占用的内存。字典以未压缩形式存储数据，因此该值可能会显著大于压缩后的表大小。
+* `hit_rate` 和 `found_rate` — 可用于评估 `cache` 布局的效果。
+* `last_exception` — 当字典加载或刷新失败时，请检查此项。

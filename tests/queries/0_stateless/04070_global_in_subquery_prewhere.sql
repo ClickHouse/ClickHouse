@@ -6,7 +6,6 @@
 
 -- Pin the optimizer settings that drive PREWHERE assignment so that randomized
 -- runs which disable them do not bypass the `cannotBeMoved` guard under test.
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET transform_null_in = 1;
 

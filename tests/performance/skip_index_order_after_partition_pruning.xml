@@ -1,0 +1,17 @@
+<test>
+    <settings>
+        <max_partitions_per_insert_block>1024</max_partitions_per_insert_block>
+        <use_statistics>0</use_statistics>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+    <create_query>
+        CREATE TABLE skip_order_pruned (p UInt64, x UInt64, y UInt64,
+            INDEX ix x TYPE minmax GRANULARITY 1,
+            INDEX iy y TYPE bloom_filter GRANULARITY 1)
+        ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+    </create_query>
+    <fill_query>INSERT INTO skip_order_pruned SELECT number % 1000, number % 97, number % 37 FROM numbers(100000)</fill_query>
+    <query>SELECT count() FROM skip_order_pruned WHERE p = 999 AND x = 11</query>
+    <query>SELECT count() FROM skip_order_pruned WHERE p = 999 AND x = 11 AND y = 7</query>
+    <drop_query>DROP TABLE skip_order_pruned</drop_query>
+</test>

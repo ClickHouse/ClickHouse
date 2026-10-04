@@ -1,0 +1,122 @@
+---
+title: Cómo resolver la excepción "Too many parts" en ClickHouse
+description: Aprende a diagnosticar y resolver la excepción "Too many parts" agrupando las inserciones en lotes, usando inserciones asíncronas y eligiendo una clave de particionamiento adecuada.
+date: 2023-03-20
+tags: ['Errores y excepciones']
+keywords: ['Too many parts']
+---
+
+<div id="what-the-exception-means">
+  ## Qué significa la excepción
+</div>
+
+ClickHouse lanza la excepción `Too many parts` cuando un `INSERT` superaría un límite configurado sobre la cantidad de partes de datos activas en una tabla `MergeTree`. La excepción suele incluir el mensaje `Merges are processing significantly slower than inserts`.
+
+Cada `INSERT` síncrono crea al menos una parte de datos. Si una inserción contiene filas para varios valores de partición, ClickHouse puede crear una parte para cada partición afectada. Las fusiones en segundo plano combinan las partes más pequeñas en partes más grandes, pero si se crean partes nuevas más rápido de lo que ClickHouse puede fusionarlas, la cantidad de partes activas sigue aumentando.
+
+La excepción puede activarse por cualquiera de estos ajustes:
+
+* [`parts_to_throw_insert`](/es/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert), que limita la cantidad de partes activas en una sola partición.
+* [`max_parts_in_total`](/es/reference/settings/merge-tree-settings/max-parts#max_parts_in_total), que limita la cantidad total de partes activas en una tabla.
+
+<div id="diagnose-the-cause">
+  ## Diagnosticar la causa
+</div>
+
+Use la siguiente consulta para encontrar las particiones con más partes activas:
+
+```sql
+SELECT
+    database,
+    table,
+    partition_id,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table,
+    partition_id
+ORDER BY active_parts DESC;
+```
+
+Para comprobar el límite para toda la tabla que aplica `max_parts_in_total`, cuente todas las partes activas de la tabla:
+
+```sql
+SELECT
+    database,
+    table,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table;
+```
+
+Las causas más comunes incluyen:
+
+* Inserciones síncronas frecuentes y pequeñas.
+* Una clave de particionamiento de alta cardinalidad.
+* Inserciones que contienen filas para muchos valores de partición.
+* Fusiones en segundo plano que no pueden seguir el ritmo debido a un throughput de almacenamiento limitado, espacio libre en disco insuficiente u otra contención de recursos.
+
+Puede inspeccionar las fusiones que se están ejecutando actualmente en [`system.merges`](/es/reference/system-tables/merges) y revisar los registros del servidor para detectar errores de fusión.
+
+<div id="resolve-the-exception">
+  ## Resolver la excepción
+</div>
+
+<div id="batch-synchronous-inserts">
+  ### Inserciones síncronas por lotes
+</div>
+
+Agrupe las filas en el client antes de insertarlas. Cada lote debe contener al menos 1.000 filas y, de forma ideal, entre 10.000 y 100.000 filas. Procure realizar aproximadamente un `INSERT` síncrono por segundo. Un menor número de inserciones, pero de mayor tamaño, crea menos partes y reduce el trabajo que requieren las fusiones en segundo plano.
+
+<div id="use-asynchronous-inserts">
+  ### Usar inserciones asíncronas
+</div>
+
+Si la agrupación por lotes en el cliente no resulta práctica, use [inserciones asíncronas](/es/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) para que ClickHouse pueda agrupar los datos entrantes en el servidor:
+
+```sql
+INSERT INTO <table_name>
+SETTINGS
+    async_insert = 1,
+    wait_for_async_insert = 1
+VALUES (...);
+```
+
+Mantén `wait_for_async_insert = 1` para que ClickHouse confirme una inserción solo una vez que los datos se hayan escrito correctamente.
+
+<div id="review-the-partitioning-key">
+  ### Revise la clave de particionamiento
+</div>
+
+Use una clave de particionamiento de baja cardinalidad y evite particionar por valores como identificadores de usuario o de petición. ClickHouse fusiona partes solo dentro de la misma partición, por lo que un gran número de particiones impide que las fusiones sean eficaces. Para obtener más información, consulte [Elegir una clave de particionamiento](/es/concepts/best-practices/partitioning-keys).
+
+<div id="investigate-merge-bottlenecks">
+  ### Investigar cuellos de botella de merge
+</div>
+
+Si las inserciones ya están correctamente agrupadas en lotes, compruebe el rendimiento del almacenamiento, el espacio en disco disponible y las tareas en segundo plano concurrentes. La tasa de merge depende del sistema de almacenamiento, del motor de la tabla, de la clave de ordenación, de la compresión y de la capacidad disponible de CPU y E/S.
+
+<div id="avoid-increasing-part-limits-as-the-primary-fix">
+  ### Evite aumentar los límites de partes como solución principal
+</div>
+
+Aumentar `parts_to_throw_insert` o `max_parts_in_total` no soluciona la causa de la creación excesiva de partes. Los límites más altos pueden retrasar la excepción, pero también pueden aumentar la sobrecarga del sistema de archivos y los metadatos, y reducir el rendimiento de las consultas. Cambie estos ajustes solo después de identificar la causa y confirmar que el sistema tiene capacidad suficiente.
+
+<div id="verify-the-recovery">
+  ## Verifique la recuperación
+</div>
+
+Ejecute de nuevo la consulta de diagnóstico después de cambiar la estrategia de inserción o el esquema de particionado. El número de partes activas debería estabilizarse y luego disminuir a medida que las fusiones en segundo plano se ponen al día. Continúe supervisando los fallos de inserción, el espacio libre en disco y [`system.merges`](/es/reference/system-tables/merges) hasta que se haya resuelto la acumulación pendiente.

@@ -3,7 +3,7 @@
 -- when reconstructing the type after removing LowCardinality, causing a mismatch
 -- between how CollectSets registered the set and how makeSetForInFunction looked it up.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_nullable_named_tuple;

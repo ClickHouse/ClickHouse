@@ -43,6 +43,8 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
+    /// Only the totals, without listing every part and range (the full list can be megabytes in size).
+    String describeShort() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
@@ -93,6 +95,11 @@ struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// If false, `vector_search_results` may still be used for mark pruning or
+    /// to fill `_distance`, but the reader must not filter individual rows by
+    /// these offsets. If true, the reader also keeps only the candidate rows
+    /// from these offsets inside the selected mark ranges.
+    bool use_vector_search_result_filter = false;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.
     IndexGranulesMap index_granules;

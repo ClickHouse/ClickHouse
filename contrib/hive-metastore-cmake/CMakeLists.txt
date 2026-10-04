@@ -1,7 +1,15 @@
-if (TARGET ch_contrib::hdfs)
+if (NOT TARGET ch_contrib::hdfs)
+    if (ENABLE_HIVE)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS")
+    endif()
+# `Storages/Hive/HiveFile.h` includes `orc/OrcFile.hh` and `parquet/arrow/reader.h` outright,
+# so Hive needs both readers, not just the metastore client.
+elseif (NOT TARGET _orc)
+    if (ENABLE_HIVE)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without ORC")
+    endif()
+else()
     option(ENABLE_HIVE "Enable Hive" ${ENABLE_LIBRARIES})
-elseif(ENABLE_HIVE)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS")
 endif()
 
 if (NOT ENABLE_HIVE)

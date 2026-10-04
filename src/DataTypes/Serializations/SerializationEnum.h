@@ -59,6 +59,9 @@ public:
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    /// Hive has no Enum type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
     FieldType readValue(ReadBuffer & istr) const
     {
         FieldType x;

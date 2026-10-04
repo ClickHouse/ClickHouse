@@ -3,9 +3,12 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <string_view>
+
 namespace DB
 {
 class FileNamesGenerator;
+class StorageObjectStorageConfiguration;
 }
 
 namespace DB::Iceberg
@@ -53,17 +56,59 @@ private:
     String raw_path;
 };
 
+/// The URI scheme to write for a ClickHouse object storage backend. A local disk is spelled
+/// `file`: `local` is ClickHouse's storage type token, not a filesystem URI scheme, and no
+/// Iceberg implementation resolves it. Every other backend keeps its token, which an external
+/// reader resolves only for `s3`.
+String toIcebergURIScheme(const String & storage_type_name);
+
+/// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
+/// A non-empty authority is always followed by a separator, so a leading `/` stays part of the
+/// object name. An empty authority contributes none: such a path is already absolute.
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path);
+
+struct BlobStorageDescription
+{
+    String type_name;
+    String namespace_name;
+    bool allow_foreign_namespaces;
+
+    static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
+};
+
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
+///
+/// `table_root` is the storage directory the metadata `location` field denotes. That is usually the
+/// queried path, but not when the queried path is an ancestor of it; `deriveTableRoot` tells which.
 class IcebergPathResolver
 {
 public:
-    IcebergPathResolver(String table_location_, String table_root_, String blob_storage_type_name_ = {}, String blob_storage_namespace_name_ = {})
+    /// What `deriveTableRoot` established about the queried path.
+    enum class RootRelation
+    {
+        Same,              /// The queried path is the table root.
+        AdoptedDescendant, /// The table root is a proper descendant of the queried path.
+        Unknown,           /// Not established; the queried path is used unchanged.
+    };
+
+    struct TableRootDerivation
+    {
+        String table_root;
+        RootRelation relation;
+    };
+
+    /// Locate the table root from where its metadata document actually sits, accepted only if the
+    /// location that document declares names the same directory. Returns `queried_path` unchanged
+    /// whenever the two cannot be shown to agree.
+    static TableRootDerivation
+    deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
+
+    IcebergPathResolver(String table_location_, String table_root_, BlobStorageDescription blob_storage_)
         : table_location(std::move(table_location_))
         , table_root(std::move(table_root_))
-        , blob_storage_type_name(std::move(blob_storage_type_name_))
-        , blob_storage_namespace_name(std::move(blob_storage_namespace_name_))
+        , blob_storage(std::move(blob_storage_))
     {
         auto trim_backward_slashes = [](String & str)
         {
@@ -74,12 +119,16 @@ public:
         trim_backward_slashes(table_location);
 
         /// Normalize: non-URI table_location should start with '/'
-        if (!table_location.empty() && table_location.find("://") == String::npos && table_location[0] != '/')
+        if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
+
+        table_location_namespace = parseNamespace(table_location);
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    static String parseNamespace(std::string_view path);
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
@@ -94,8 +143,8 @@ public:
     String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage_type_name))
-            catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + catalog_filename;
+        if (!catalog_filename.contains("://"))
+            catalog_filename = makeIcebergLocationURI(blob_storage.type_name, blob_storage.namespace_name, catalog_filename);
         return catalog_filename;
     }
 
@@ -103,10 +152,12 @@ public:
     const String & getTableRoot() const { return table_root; }
 
 private:
+    bool isInForeignNamespace(const String & raw_path) const;
+
     String table_location;
     String table_root;
-    String blob_storage_type_name;
-    String blob_storage_namespace_name;
+    BlobStorageDescription blob_storage;
+    String table_location_namespace;
 };
 
 }

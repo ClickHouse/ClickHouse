@@ -9,7 +9,7 @@ numbers_values=(5 10 20 50 60)
 # Define values for join_output_by_rowlist_perkey_rows_threshold
 threshold_value=50
 
-# Define meaningful variables for allow_experimental_join_right_table_sorting
+# Define meaningful variables for allow_join_right_table_sorting
 ALLOW_SORTING_DISABLED=0
 ALLOW_SORTING_ENABLED=1
 
@@ -21,7 +21,7 @@ client_opts=(
 )
 
 # ------------------------------
-# Test behavior when allow_experimental_join_right_table_sorting is true:
+# Test behavior when allow_join_right_table_sorting is true:
 # (1) number of rows does not exceed min_rows_value
 # (2) number of rows exceeds min_rows_value but does not exceed threshold_value
 # (3) number of rows exceeds both min_rows_value and threshold_value
@@ -36,13 +36,13 @@ for n in "${numbers_values[@]}"; do
     SETTINGS
         join_algorithm = 'hash',
         join_output_by_rowlist_perkey_rows_threshold = ${threshold_value},
-        allow_experimental_join_right_table_sorting = ${ALLOW_SORTING_ENABLED},
+        allow_join_right_table_sorting = ${ALLOW_SORTING_ENABLED},
         join_to_sort_minimum_perkey_rows = ${min_rows_value};
     "
 done
 
 # ------------------------------
-# Test behavior when allow_experimental_join_right_table_sorting is false:
+# Test behavior when allow_join_right_table_sorting is false:
 # (1) number of rows does not exceed min_rows_value
 # (2) number of rows exceeds min_rows_value but does not exceed threshold_value
 # (3) number of rows exceeds both min_rows_value and threshold_value
@@ -57,7 +57,7 @@ for n in "${numbers_values[@]}"; do
     SETTINGS
         join_algorithm = 'hash',
         join_output_by_rowlist_perkey_rows_threshold = ${threshold_value},
-        allow_experimental_join_right_table_sorting = ${ALLOW_SORTING_DISABLED},
+        allow_join_right_table_sorting = ${ALLOW_SORTING_DISABLED},
         join_to_sort_minimum_perkey_rows = ${min_rows_value};
     "
 done

@@ -1,0 +1,113 @@
+---
+description: 'macOS システムで ClickHouse をソースからビルドするためのガイド'
+sidebarTitle: 'macOS で macOS 向けにビルド'
+slug: /development/build-osx
+title: 'macOS で macOS 向けにビルド'
+keywords: ['MacOS', 'Mac', 'build']
+doc_type: 'guide'
+---
+
+<Info>
+  **このビルドガイドは、ClickHouse 本体を変更するコントリビューター向けです。**
+
+  ClickHouse のソースコードを変更しない場合は、[クイックスタート](/ja/get-started/setup/install) にある手順に従って、ビルド済みの ClickHouse をインストールできます。
+</Info>
+
+ClickHouse は、macOS 10.15 (Catalina) 以降の macOS x86&#95;64 (Intel) および arm64 (Apple Silicon) でコンパイルできます。
+
+コンパイラとしてサポートされているのは、homebrew の Clang のみです。
+
+<div id="install-prerequisites">
+  ## 前提条件を準備する
+</div>
+
+まず、一般的な[前提条件に関するドキュメント](/ja/resources/develop-contribute/introduction/developer-instruction)を参照してください。
+
+次に、[Homebrew](https://brew.sh/)をインストールし、次を実行します
+
+続いて、以下を実行します:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  Apple ではデフォルトで、大文字と小文字を区別しないファイルシステムが使われます。通常、これはコンパイルには影響しません (特に `scratch` ビルドは動作します) が、`git mv` のようなファイル操作では問題を引き起こすことがあります。
+  macOS で本格的に開発する場合は、ソースコードを大文字と小文字を区別するディスクボリュームに保存してください。たとえば、[こちらの手順](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830)を参照してください。
+</Note>
+
+<div id="build-clickhouse">
+  ## ClickHouse をビルドする
+</div>
+
+ビルドするには、Homebrew の Clang コンパイラを使用する必要があります。
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# 生成されたバイナリは build/programs/clickhouse に作成されます
+```
+
+<Note>
+  リンク時に `ld: archive member '/' not a mach-o file in ...` エラーが発生する場合は、`-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar` フラグを指定して llvm-ar を使用する必要があることがあります。
+</Note>
+
+<div id="caveats">
+  ## 注意事項
+</div>
+
+`clickhouse-server` を実行する場合は、システムの `maxfiles` 変数を増やしてください。
+
+<Note>
+  `sudo` を使用する必要があります。
+</Note>
+
+そのためには、以下の内容で `/Library/LaunchDaemons/limit.maxfiles.plist` ファイルを作成します。
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+ファイルに適切な権限を設定します：
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+ファイルが正しいことを確認してください:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+ファイルの読み込み (または再起動) ：
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+動作しているかを確認するには、`ulimit -n` または `launchctl limit maxfiles` コマンドを使用します。

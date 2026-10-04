@@ -1,0 +1,195 @@
+---
+title: 'Kusto Query Language (KQL) in ClickHouse'
+description: 'What the experimental KQL dialect supports, and what it deliberately does not'
+keywords: ['KQL', 'Kusto', 'dialect']
+sidebarTitle: 'Kusto Query Language (KQL)'
+slug: /guides/kusto-query-language
+doc_type: 'guide'
+---
+
+ClickHouse can parse a subset of the [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
+instead of SQL. The dialect is **experimental** and off by default:
+
+```sql
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+StormEvents
+| where State == 'FLORIDA' and DamageProperty > 0
+| summarize Total = sum(DamageProperty) by EventType
+| top 5 by Total
+```
+
+`SET dialect = 'clickhouse'` switches back. `SET` is the one SQL statement recognized while
+the KQL dialect is active, so a session can always get out of it.
+
+## What is supported
+
+This is a deliberately small subset. A KQL construct is either translated with the semantics
+Kusto documents, or rejected by name with a parse error — nothing is approximated silently.
+If a query parses, its result is meant to match Kusto's.
+
+**Sources**: a table name, `print`, `datatable`, `range`, a parenthesized pipeline, and `union`.
+A `range` goes from a number by a number, from a datetime by a timespan, or from a timespan by
+a timespan.
+
+**Operators**: `where` / `filter`, `extend`, `project`, `project-away`, `project-keep`,
+`project-rename`, `summarize`, `sort by` / `order by`, `take` / `limit`, `top`, `distinct`,
+`count`, `mv-expand`, `join`, `union`, `as`, `render`.
+
+**Scalar operators**: `==`, `!=`, `<`, `<=`, `>`, `>=`, `=~`, `!~`, `in`, `in~`, `between`,
+`contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, their `_cs`
+(case-sensitive) and `!` (negated) forms, `has_any`, `has_all`, and `matches regex`.
+`in` and `!in` also take a tabular expression whose first column supplies the values
+(`x in (T | project key)`); `in~` takes only a list. A lone name inside `in (...)` that no
+`let` binds reads as a column, since the parser has no schema to tell a column from a table;
+bind the table with `let`, qualify it (`db.table`), or add a pipe to get the tabular form.
+
+**Statements**: `let`, binding a scalar, a whole tabular expression, or a **function**:
+
+```sql
+let MultiplyByN = (val: long, n: long = 2) { val * n };
+let RecentErrors = (since: timespan) { Logs | where Level == 'Error' and Timestamp > ago(since) };
+
+RecentErrors(1h) | summarize Count = count() by Component
+```
+
+Functions take scalar parameters with optional literal defaults, and tabular parameters
+declared `T: (*)` or `T: (col: type, ...)` which must come first. A tabular parameter that
+names its columns shows the body only those columns of the argument, so a body reading an
+undeclared column is rejected even when the concrete argument happens to have it; `T: (*)`
+passes the argument through as it is. The declared types are enforced at the call boundary:
+an argument (or a declared column of a tabular argument) whose type does not belong to the
+declared KQL type is rejected, a lossless conversion such as `long` to `real` is applied, and
+a value that does not fit the declared type — an `int` overflow, say — is an error rather
+than a silent truncation. Arguments may be passed by
+name in any order (`f(c = 7, a = 12)`). A body is any number of `let` statements followed by
+one expression, and it can see the bindings that enclose it. A function whose body is a
+pipeline is a table rather than a value, so it is rejected where an expression is expected -
+in `extend`, `where` or `print`. A parameterless function may be
+called with or without parentheses. `view ()` is accepted and, since nothing here resolves
+`union *` wildcards, means the same as `()`. Recursion is rejected, as it is in Kusto.
+
+A `let` binds only for the statement that follows it, because one KQL statement is one
+ClickHouse query — that is also what keeps a binding from leaking into a concurrent query. A
+name two statements both need has to be bound twice.
+
+**Literals**: strings (including verbatim `@'...'`), numbers, `datetime(...)`, `guid(...)`,
+timespans such as `1d` / `2.5h` / `500ms`, and `dynamic([...])` arrays.
+
+Around 130 scalar and aggregate functions are translated. As in Kusto, the aggregate
+functions may only be called in the aggregation list of `summarize`; `print count()` is
+rejected rather than passed through to the ClickHouse aggregate of the same name.
+
+**ClickHouse functions** are reachable too. A name the KQL registry does not know is passed
+through to ClickHouse under the spelling you wrote, so a query can use anything the server
+offers:
+
+```sql
+SET dialect = 'kusto';
+
+StormEvents
+| extend Bucket = toStartOfHour(StartTime), Fingerprint = cityHash64(EventType)
+| summarize Events = count() by Bucket
+```
+
+The exception is names Kusto itself defines but this dialect does not implement: those are
+rejected rather than passed through, so a Kusto name can never quietly mean something else.
+`range` is the clearest case — `range(1, 3, 1)` is `[1, 2, 3]` in Kusto and `[1, 2]` in
+ClickHouse, so writing it in KQL is an error rather than a wrong answer.
+
+## Coverage against the Kusto reference
+
+Measured against Microsoft's own indexes
+([tabular operators](https://learn.microsoft.com/en-us/kusto/query/queries),
+[scalar functions](https://learn.microsoft.com/en-us/kusto/query/scalar-functions),
+[aggregation functions](https://learn.microsoft.com/en-us/kusto/query/aggregation-functions)):
+
+| | Kusto documents | supported here |
+|---|---|---|
+| Tabular operators | 52 | 20 |
+| Scalar and aggregate functions | 307 | 162 |
+| User-defined functions | yes | yes |
+
+The supported operators are the ones Microsoft's own *Learn common operators* tutorial teaches,
+plus `datatable`, `range`, `print`, `union` and `join` — enough for the shape of query that
+tutorial and the KQL Quick Reference build up to.
+
+## What is not supported
+
+Rejected with a parse error, rather than mistranslated:
+
+- Operators: `search`, `parse`, `mv-apply`, `lookup`, `evaluate`, `invoke`, `facet`,
+  `top-nested`, `make-series`, `sample`, `serialize`, `partition`, `range` as an operator.
+- Functions: the `series_*` family, `bag_*` / `pack_*`, `parse_url`, `parse_csv`,
+  `parse_json`, `todynamic`, `toscalar`, `format_timespan`, `format_datetime`, `extract_all`,
+  `range`, the `percentiles*` family and the `row_*` window functions.
+  (`format_datetime` and `extract_all` are rejected rather than approximated: Kusto's
+  `yyyy-MM-dd` format specifiers are not ClickHouse's, and Kusto's `extract_all` returns one
+  array per capture group.)
+- Kusto names that collide with a ClickHouse function of a different meaning: `range` (shown
+  above), `repeat`, `replace`, `translate` and `materialize`. Passing them through would
+  quietly compute something else — Kusto's `repeat(1, 3)` is the array `[1, 1, 1]`, while
+  ClickHouse's `repeat` repeats a string — so each is rejected by name.
+- The geospatial functions that take or return GeoJSON — every `geo_*_to_central_point`, and
+  everything operating on polygons and lines. The point, geohash and H3 functions that work in
+  plain longitude/latitude *are* supported. `geo_point_to_s2cell` is not: ClickHouse has no
+  S2 token form.
+- `dynamic` **objects** (`dynamic({"a": 1})`), member access (`x.y`) and lookup by key
+  (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`. `dynamic` as a
+  **declared type** — in a `datatable` schema, a `typeof(...)` or a function parameter — is
+  also rejected: the annotation carries no element type, so there is nothing faithful to map
+  it to.
+- Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
+- Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
+- Operator options: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, `summarize`
+  hints, `union kind=` / `withsource=` / `isfuzzy=`, `join hint.*`.
+- Wildcard column patterns in `project-away` and `project-keep` (`project-away Tmp*`):
+  expanding one needs the schema, which is not visible while parsing. Spell the columns out.
+- The `evaluate` plugin mechanism entirely, and with it `bag_unpack`, `pivot`, `narrow`,
+  `python`, `R` and the rest.
+- Application statements: `alias database`, `declare pattern`,
+  `declare query_parameters`, `restrict access to`.
+- Obfuscated string literals (`h"..."`) and multi-line literals (triple backtick).
+
+## Behaviour worth knowing
+
+- **Timespans are `Interval` values.** `1d` becomes `toIntervalNanosecond(86400000000000)`.
+  Set `interval_output_format = 'kusto'` to render them the Kusto way (`1.00:00:00`) rather
+  than as a number.
+- **Division follows Kusto**: `7 / 2` is `3`, because both operands are integers, and a
+  timespan divided by a timespan is their real-valued ratio (`15ms / 10ms` is `1.5`). This is
+  implemented by `kqlDivide`, which decides from the argument types.
+- **Subtracting two datetimes gives a number of seconds**, where Kusto gives a timespan.
+  Adding or subtracting a timespan works as expected.
+- **`sort` defaults to descending**, unlike SQL, and puts nulls at the small end.
+- **`project-rename` moves the renamed column to the end** of the row. Kusto keeps its
+  original position; reproducing that would require knowing the schema while parsing.
+- **`union` requires the operands to have compatible schemas.** Kusto widens to the union of
+  all columns and pads with nulls; ClickHouse's `UNION ALL` does not.
+- **String operators are matching functions, not `LIKE` patterns.** `contains '50%'` looks
+  for a literal per cent sign.
+- **`geo_*` takes longitude before latitude**, as Kusto does. `geo_distance_2points` uses
+  ClickHouse's `greatCircleDistance`, a fast approximation that differs from Kusto in the
+  fourth significant figure — about 600 m over 1500 km — and `use_spheroid = true` selects
+  `geoDistance`, the ellipsoid formula, as it does in Kusto. Exact agreement is not a goal:
+  these functions are usually filtering rather than reporting. Note that a coordinate outside
+  [-180, 180] or [-90, 90] yields a meaningless number rather than the null Kusto returns:
+  neither ClickHouse function range-checks its arguments, and checking would cost eight
+  comparisons per row.
+- **`dayofweek()` returns a timespan**, not a number: a Monday is `1.00:00:00`.
+- **`tohex()` renders a negative value at 64-bit width.** Kusto renders it at the width of the
+  argument's own type, which is not visible while parsing.
+- **Datetimes are real `DateTime64` values**, so they print the ClickHouse way
+  (`2017-01-01 00:00:00`) rather than Kusto's `2017-01-01T00:00:00.0000000`. The previous
+  implementation produced a formatted *string*, which looked like Kusto but did not compare
+  or sort as a datetime.
+- **ClickHouse's parametric aggregates** (`quantileExact(0.5)(x)`) have no KQL spelling.
+  Use a named alternative such as `medianExact(x)`.
+
+## Reporting a problem
+
+A query that parses but returns something Kusto would not is a bug — please report it with
+both results. A query that is rejected and that you need is a feature request; the lists
+above sketch the boundary rather than enumerating every rejected name — the parse error
+itself is the authoritative answer for any particular query — and none of it is permanent.

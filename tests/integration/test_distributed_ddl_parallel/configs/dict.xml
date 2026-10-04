@@ -1,10 +1,13 @@
 <clickhouse>
     <dictionary>
+        <database>default</database>
         <name>slow_dict_7</name>
         <source>
            <executable>
                <command>sleep 7</command>
                <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
            </executable>
         </source>
         <layout>
@@ -24,11 +27,14 @@
     </dictionary>
 
     <dictionary>
+        <database>default</database>
         <name>slow_dict_3</name>
         <source>
            <executable>
                <command>sleep 3</command>
                <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
            </executable>
         </source>
         <layout>

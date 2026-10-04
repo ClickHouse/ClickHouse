@@ -30,6 +30,11 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    /// The result is unconditionally UInt8, so a Nothing-typed argument must not force the
+    /// declared return type to Nothing (which would mismatch the UInt8 column executeImpl produces).
+    bool useDefaultImplementationForNothing() const override { return false; }
+
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

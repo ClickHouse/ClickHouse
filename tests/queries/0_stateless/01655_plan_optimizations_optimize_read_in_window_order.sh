@@ -4,6 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 name=test_01655_plan_optimizations_optimize_read_in_window_order
 
 $CLICKHOUSE_CLIENT -q "drop table if exists ${name}"
@@ -19,24 +20,16 @@ $CLICKHOUSE_CLIENT -q "optimize table ${name}_n_x final"
 
 echo 'Partial sorting plan'
 echo '  optimize_read_in_window_order=0'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=0" | grep -i "sort description"
-echo '  optimize_read_in_window_order=0, enable_analyzer=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=0" | grep -i "sort description"
+$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=1" | grep -i "sort description"
 
 echo '  optimize_read_in_window_order=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,enable_analyzer=0" | grep -i "sort description"
-echo '  optimize_read_in_window_order=1, enable_analyzer=1'
 $CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,enable_analyzer=1" | grep -i "sort description"
 
 echo 'No sorting plan'
 echo '  optimize_read_in_window_order=0'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=0" | grep -i "sort description"
-echo '  optimize_read_in_window_order=0, enable_analyzer=1'
 $CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=1" | grep -i "sort description"
 
 echo '  optimize_read_in_window_order=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,enable_analyzer=0" | grep -i "sort description"
-echo '  optimize_read_in_window_order=1, enable_analyzer=1'
 $CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,enable_analyzer=1" | grep -i "sort description"
 
 echo 'Complex ORDER BY'

@@ -1,0 +1,6 @@
+1000
+1000
+1000
+serializers: every run is measured, NONE does not shrink the packets and LZ4 and ZSTD do:	1	1	1	1
+sorted gather: every task with a sink has a serializer, NONE does not shrink the packets and LZ4 does:	1	1	1
+zstd level: the tasks run with the level of the initiator, both levels shrink the packets, and level 19 packs tighter than level 1:	1	1	1	1	1

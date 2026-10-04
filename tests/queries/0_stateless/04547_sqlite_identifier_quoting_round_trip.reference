@@ -1,0 +1,22 @@
+Read through the table function with schema inference:
+a"b	c\\d
+1	x\\y
+2	o\'quote
+Projection of the column with a double quote in its name:
+1
+2
+WHERE pushdown over quoted identifiers, with a backslash inside a string literal:
+1
+WHERE pushdown with a single quote inside a string literal:
+2
+Insert through the table engine and read the row back:
+3	back\\slash
+Read through a query-backed table function:
+1
+2
+3
+Read through a subquery formatted back into SQLite SQL:
+a"b	c\\d
+1	x\\y
+2	o\'quote
+3	back\\slash

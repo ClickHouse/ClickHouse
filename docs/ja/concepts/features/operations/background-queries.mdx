@@ -1,0 +1,207 @@
+---
+description: 'クライアント接続から独立してクエリを実行し、その実行状況を監視します。'
+sidebarTitle: 'バックグラウンドクエリ'
+slug: /operations/background-queries
+title: 'バックグラウンドクエリ'
+doc_type: 'guide'
+---
+
+## 概要 {#overview}
+
+バックグラウンドクエリを使用すると、クライアントは `run_query_in_background=1` を設定することで、クライアントセッションとは独立して実行されるクエリを送信できます。送信後、ClickHouse サーバーは即座にクライアントへ応答し、クエリはサーバー側で完了 (成功または失敗) するまで実行され続けます。
+
+クエリ実行をクライアントのネットワーク接続から切り離すことで、バックグラウンドタスクはクライアント側の切断や一時的なネットワーク障害の影響を一切受けません。
+
+バックグラウンドクエリは主に、クライアント接続が切断されても停止させてはならない `INSERT ... SELECT`、
+`CREATE TABLE ... AS SELECT`、`CREATE MATERIALIZED VIEW ... POPULATE`、`OPTIMIZE TABLE ... FINAL`
+といった長時間実行される操作を対象としています。
+
+すべてのクエリを接続から切り離せるわけではありません。拒否されるリクエストについては
+[サポートされていないクエリ形式](#unsupported-query-forms)を参照してください。
+
+<Warning>
+  バックグラウンドクエリの結果は破棄されます。後から取得したり、アタッチしたりすることはできません。
+  クエリの `query_id` を使用して、実行中は `system.processes` で、完了後は `system.query_log` で監視してください。
+</Warning>
+
+バックグラウンドクエリはサーバーの再起動をまたいで存続しません。サーバー停止時の動作は
+`shutdown_wait_unfinished_queries` と `shutdown_wait_unfinished` によって制御されます。
+
+## サポートされないクエリ形式 {#unsupported-query-forms}
+
+バックグラウンドクエリは、それを送信した接続よりも長く存続します。そのため、サーバーはクエリを受け付けた時点で、そのクエリの実行に必要なものをすべて保持している必要があります。この条件を満たさないリクエストは、送信元の接続上で同期的に拒否され、クエリは開始されません。
+
+### 接続経由でストリーミングされるデータ {#data-that-streams-over-the-connection}
+
+クエリのディスパッチ後もサーバーが送信元の接続からデータを読み取る必要がある場合、`INSERT` は拒否されます。
+
+これは `INSERT ... FORMAT ...` と、`input` を介してデータを読み取るクエリの両方に影響する可能性があります。このようなリクエストは `A query whose data streams over the connection cannot be run in the background` というエラーで拒否されます:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client` は `INSERT ... FORMAT ...` のデータを別々のパケットで送信するため、この形式がネイティブプロトコル上でバックグラウンド実行されることはありません。
+
+HTTP 経由の場合、クエリ全体とそのデータが初期パースバッファに収まるのであれば、どちらの形式も受け付けられます。このバッファのサイズは `max_query_size` によって制限されます。
+
+これには、`input` を通じてインラインのペイロードを読み取る HTTP クエリも含まれます。ボディがそれより大きい場合、バッファリングされたクエリテキストを超えてストリーミングが続くため、拒否されます。
+
+このサイズ境界に依存しないでください。バックグラウンドで読み込む必要のあるデータには、`INSERT ... SELECT` や、`url`、`s3` などのテーブル関数を使用してください。
+
+### その他の拒否されるリクエスト {#other-rejected-requests}
+
+| リクエスト                                                                                | エラー                                                                                          |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                    | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| 明示的なトランザクション内のクエリ                                                                    | `Background queries inside transactions are not supported`                                   |
+| `implicit_transaction = 1` を指定したクエリ                                                  | `Background queries with 'implicit_transaction' are not supported`                           |
+| たとえば `clickhouse-client --query_kind secondary_query` で指定される secondary クエリ           | `run_query_in_background cannot be used for a secondary query`                               |
+| たとえば `clickhouse-client --stage with_mergeable_state` で指定される、`Complete` 以外のクエリ処理ステージ | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| ストレージ定義を含む `CREATE` または `ATTACH` の `SETTINGS` 句 (クライアントがこの句を解決せずにサーバーへ送信するため)        | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+この設定が分散クエリの secondary クエリに伝播されることはありません。バックグラウンドで実行される分散 `INSERT` は、
+バックグラウンドの初期クエリ内で、分片ごとのクエリをフォアグラウンドで実行します。
+
+## バックグラウンドクエリを送信する {#submit-a-background-query}
+
+### ネイティブTCPプロトコル {#native-tcp-protocol}
+
+`clickhouse-client` では、`run_query_in_background` をコマンドライン設定として渡します。
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+インラインの `SETTINGS` 句を使用することもできます:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+ネイティブプロトコルは、クエリ設定をSQLテキストとは別に送信します。
+`clickhouse-client` はインラインのクエリ設定の大半を解析し、この設定セクションに含めて送信します。
+
+ネイティブプロトコルのドライバーでは、代わりにクエリごとの設定マップで `run_query_in_background` を渡すことができ、SQLテキストを変更する必要はありません。
+
+ネイティブプロトコルは、サーバー生成の `query_id` を返しません。ネイティブクライアント側で一意のIDを生成し、クエリと共に送信してください。
+
+`clickhouse-client --echo-query-id` はこの処理を行い、クエリを送信する前にIDを出力します:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+HTTP リクエストの場合は、`run_query_in_background` を URL パラメータとして渡します。
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+レスポンスには、生成されたクエリ ID が `X-ClickHouse-Query-Id` ヘッダーに含まれます。
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+このヘッダーは、レスポンスを読み取るclientにしか届きません。レスポンスの到着に依存せずにクエリを制御する手段 (handle) が必要な場合は、代わりに独自の `query_id` をURL パラメータとして送信してください。
+
+こうすることで、clientはリクエストを送信する前からIDを把握できるため、レスポンスをまったく受け取れない場合でも、リクエストを受け付けたノード上でクエリを監視したり `KILL` したりできます:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+ネイティブプロトコルとは異なり、HTTP ではインラインの SQL `SETTINGS` 句でバックグラウンド実行を有効にすることはできません。
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+このリクエストは `BAD_ARGUMENTS` 例外を返します。HTTP ハンドラーは、リクエストボディがパースされる前に、デタッチされたクエリコンテキストを作成するかどうかを判断する必要があります。
+
+この設定は URL で渡すか、ユーザーまたはプロファイルのレベルで設定してください。
+
+## 実行状況の監視 {#monitor-execution}
+
+`query_id` を使用して、クエリが現在実行中かどうかを確認します。
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+クエリの完了後、`system.query_log` を参照して最終的なステータスを確認します。
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+送信リクエストは、その後のバックグラウンド実行が失敗した場合でも成功することがあります。その場合、例外は元の接続経由で返されるのではなく、`system.query_log` に記録されます。
+
+<Note title="クラスター構成およびロードバランサー配下のデプロイメント">
+  `system.processes`、`system.query_log`、`KILL QUERY` はノードローカルであり、それぞれ応答したサーバー上のクエリしか参照できません。
+
+  バックグラウンドクエリは、それを受け付けたサーバーに属します。しかし、そのサーバーは、次のリクエストがロードバランサー経由で到達するサーバーとは限りません。代わりに、クラスター全体を参照してください。
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  `system.query_log` についても同様で、キャンセルにはクラスター全体を対象とする形式を使用する必要があります:
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## クエリログのフラッシュ遅延 {#query-log-flush-delay}
+
+エントリは `system.query_log` に反映される前にバッファリングされます。
+セルフマネージドの ClickHouse では、サーバー設定例で `query_log.flush_interval_milliseconds` を `7500` に設定しています。
+
+ClickHouse Cloud では、エントリが反映されるまで最大 30 秒かかることがあります。短時間で終了するバックグラウンドクエリを監視する際は、この遅延を考慮してください。
+
+セルフマネージドのサーバーでは、十分な権限を持つユーザーがクエリログのフラッシュを強制的に実行できます。他のシステムログに影響を与えないよう、対象のログを明示的に指定してください:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+フラッシュは、ステートメントを受け取ったサーバー上で実行されます。
+
+バックグラウンドのクエリは、それを受け付けたサーバーが追跡しますが、そのサーバーが現在のセッションの接続先であるとは限りません。そのため、クラスターではクエリを検索する前に、すべてのサーバーでフラッシュを実行してください:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+クラスター全体でフラッシュを実行しても、各サーバーが自身のバッファリングされたエントリを書き出すだけです。他のサーバーの `system.query_log` をローカルから参照できるようになるわけではないため、引き続き [実行の監視](#monitor-execution) で説明しているとおり `clusterAllReplicas` を通じてログを読み取ってください。

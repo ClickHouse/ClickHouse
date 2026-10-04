@@ -1,0 +1,78 @@
+---
+sidebarTitle: '使用自定义角色迁移 RBAC'
+sidebar_label: '使用自定义角色迁移 RBAC'
+sidebar_position: 4
+slug: /cloud/guides/security/migrating-rbac-custom-roles
+title: '使用自定义角色迁移 RBAC'
+description: "管理员使用迁移向导迁移至 ClickHouse Cloud 新版基于角色的访问控制系统的指南"
+doc_type: 'guide'
+keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions', 'security']
+---
+
+本指南适用于在 ClickHouse Cloud 中拥有 Admin 角色的用户。
+
+2026 年 6 月，ClickHouse Cloud 迁移至新的基于角色的访问控制 (RBAC) 系统。如果你的组织中有成员或 API 密钥拥有无法自动迁移的服务范围权限，则需要使用迁移向导将这些权限映射到新角色。本指南将介绍新系统的运作方式以及如何完成迁移。
+
+<Warning>
+  **请尽快完成迁移**
+
+  未在向导和电子邮件通知中显示的截止日期前完成迁移的组织，将被自动迁移 (请参阅[如果不迁移会怎样](#automated-migration)) 。
+</Warning>
+
+<div id="whats-changing">
+  ## 有哪些变化
+</div>
+
+新的 RBAC 系统引入了自定义角色定义和更细粒度的访问控制。不再使用一组固定的服务范围权限，而是由您定义角色，并明确列出每个角色授予的所有权限，以便清楚了解每个角色提供的具体访问权限。
+
+角色可以组合组织、服务和数据库权限。您可以将这些权限应用于所有服务和数据库，也可以仅应用于其中一部分。有关完整的权限列表以及 ClickHouse Cloud 随附的标准角色，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。有关迁移后创建和编辑角色的说明，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)。
+
+大多数权限会自动映射到新模型。对于无法直接映射的服务范围权限，迁移向导会提示您进行处理。
+
+<div id="migration-wizard">
+  ## 完成迁移向导
+</div>
+
+向导会提示您创建新角色，以匹配成员和 API 密钥当前拥有的权限，然后将这些角色分配给相应的成员和密钥。系统会自动保存您的进度，因此无需在一次会话中完成所有操作。
+
+<Steps>
+  <Step title="打开迁移向导" id="open-wizard">
+    在 **Users and roles** 页面中，按照迁移提示打开向导。您也可以通过控制台中显示的迁移横幅进入向导。
+  </Step>
+
+  <Step title="为未映射的权限创建角色" id="create-roles">
+    向导会列出服务范围权限无法自动迁移的成员和 API 密钥。请创建符合这些成员和密钥所需访问权限的新角色。有关权限范围的详细信息，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)。
+  </Step>
+
+  <Step title="为每位成员和每个 API 密钥分配角色" id="assign-roles">
+    为每位成员、每个待处理邀请以及每个 API 密钥至少分配一个新角色。任何成员、邀请或密钥的 **New role** 列为空都会阻止提交。
+  </Step>
+
+  <Step title="至少保留一名管理员" id="keep-admin">
+    为至少一名现有成员分配 Admin 角色。否则，向导将不允许您提交，因为迁移后您的组织将失去管理权限。
+  </Step>
+
+  <Step title="提交迁移" id="submit">
+    为每位成员、每个邀请和每个 API 密钥分配角色后，提交迁移。提交成功后，您将被重定向到 **角色** 选项卡。
+  </Step>
+</Steps>
+
+如果您在满足这些条件前尝试提交，向导会显示一条消息，指出缺少的内容——未分配角色的成员、未分配角色的 API 密钥，或缺少管理员——以便您直接跳转到受影响的条目。
+
+<div id="automated-migration">
+  ## 如果未完成迁移会怎样
+</div>
+
+请尽可能自行完成迁移，确保角色设置符合您预期的访问模型。如果您的组织未能及时完成迁移，ClickHouse 将在随后几周内执行自动迁移。
+
+自动迁移会为每位用户和每个 API 密钥分别创建一个自定义角色，以镜像该用户或 API 密钥的现有权限。这样可保留所有用户当前的访问级别，确保不会有成员或 API 密钥失去访问权限。之后，您可以在**角色**选项卡中查看并整合这些角色。
+
+<div id="after-migration">
+  ## 迁移后
+</div>
+
+检查您的 OpenAPI 和 Terraform 配置，确保其与新角色系统兼容。引用旧角色的自动化流程可能需要更新。
+
+查询端点角色将更改为基础版服务 API 读取者角色。请更新所有依赖旧角色名称的集成。
+
+有关今后管理角色的指导，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)和[云访问管理](/zh/products/cloud/guides/security/cloud-access-management)。

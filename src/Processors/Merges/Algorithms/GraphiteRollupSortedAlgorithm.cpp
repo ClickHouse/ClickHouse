@@ -126,7 +126,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
     while (queue.isValid())
     {
-        SortCursor current = queue.current();
+        SortCursor current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -212,7 +212,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {

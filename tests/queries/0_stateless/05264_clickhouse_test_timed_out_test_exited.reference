@@ -1,0 +1,3 @@
+capture_client_stacktrace=False, last member exits before SIGTERM: FAIL Timeout! signals sent: SIGTERM
+capture_client_stacktrace=False, last member exits before SIGKILL: FAIL Timeout! signals sent: SIGTERM SIGKILL
+capture_client_stacktrace=True, last member exits before SIGTSTP: FAIL Timeout! signals sent: SIGTSTP

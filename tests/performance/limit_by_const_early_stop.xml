@@ -1,0 +1,26 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>8192</max_block_size>
+        <enable_analyzer>1</enable_analyzer>
+    </settings>
+
+    <!-- The generic LimitByTransform should stop after the first block once the constant group is full. -->
+    <query>
+        SELECT number, 'fixed-key' AS k
+        FROM numbers(65536)
+        WHERE sleepEachRow(0.0000125) = 0
+        LIMIT 2 BY k
+        FORMAT Null
+    </query>
+
+    <!-- The sorted-stream transform should stop after the first block for the same constant group. -->
+    <query>
+        SELECT number, identity(1) AS k
+        FROM numbers(65536)
+        WHERE sleepEachRow(0.0000125) = 0
+        ORDER BY k
+        LIMIT 2 BY k
+        FORMAT Null
+    </query>
+</test>

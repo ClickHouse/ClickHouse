@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB Atlas'
+description: 'دليل خطوة بخطوة يوضح كيفية إعداد MongoDB Atlas كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/atlas
+title: 'دليل إعداد MongoDB Atlas كمصدر'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'CDC', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="enable-oplog-retention">
+  ## تهيئة الاحتفاظ بـ oplog
+</div>
+
+يلزم حد أدنى للاحتفاظ بـ oplog يبلغ 24 ساعة من أجل النسخ المتماثل. نوصي بضبط مدة الاحتفاظ بـ oplog على 72 ساعة أو أكثر لضمان عدم اقتطاع oplog قبل اكتمال اللقطة الأولية. لضبط مدة الاحتفاظ بـ oplog عبر واجهة المستخدم:
+
+1. انتقل إلى علامة التبويب `Overview` الخاصة بالعنقود في وحدة تحكم MongoDB Atlas، ثم انقر على علامة التبويب `Configuration`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="الانتقال إلى تهيئة العنقود" size="lg" border />
+
+2. انقر على `Additional Settings` ثم مرّر إلى أسفل وصولًا إلى `More Configuration Options`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp" alt="توسيع الإعدادات الإضافية" size="lg" border />
+
+3. انقر على `More Configuration Options` واضبط الحد الأدنى لنافذة oplog على `72 hours` أو أكثر.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="ضبط ساعات الاحتفاظ بـ oplog" size="lg" border />
+
+4. انقر على `Review Changes` للمراجعة، ثم على `Apply Changes` لتطبيق التغييرات.
+
+<div id="configure-database-user">
+  ## إعداد مستخدم قاعدة بيانات
+</div>
+
+بعد تسجيل الدخول إلى وحدة تحكم MongoDB Atlas، انقر على `Database Access` ضمن علامة التبويب `Security` في شريط التنقل الأيسر. ثم انقر على &quot;Add New Database User&quot;.
+
+يتطلب ClickPipes المصادقة بكلمة مرور:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp" alt="إضافة مستخدم قاعدة بيانات" size="lg" border />
+
+يتطلب ClickPipes مستخدمًا لديه الأدوار التالية:
+
+* `readAnyDatabase`
+* `clusterMonitor`
+
+يمكنك العثور عليها في قسم `Specific Privileges`:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp" alt="إعداد أدوار المستخدم" size="lg" border />
+
+يمكنك أيضًا تحديد العناقيد/المثيلات التي تريد منح مستخدم ClickPipes حق الوصول إليها بشكل أكثر دقة:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp" alt="تقييد الوصول إلى العنقود/المثيل" size="lg" border />
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mongodb/index) والبدء في إدخال البيانات من مثيل MongoDB لديك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل MongoDB لديك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

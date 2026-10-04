@@ -99,6 +99,8 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_11
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_view_10 MODIFY SQL SECURITY INVOKER"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_10" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_view_10" | grep -c "SQL SECURITY INVOKER"
+# The equals sign matters: a bare DEFINER also matches SQL SECURITY DEFINER.
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_view_10" | grep -c "DEFINER = "
 
 
 echo "===== MaterializedView ====="

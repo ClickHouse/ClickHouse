@@ -1,0 +1,20 @@
+<test>
+    <!-- The `-ForEach` combinator accumulates one nested state per array element. A Memory source
+         keeps the wide Array column read from dominating, so the combinator itself is measured. -->
+    <create_query>CREATE TABLE for_each_bench (k UInt32, arr Array(Float64)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO for_each_bench
+                SELECT number % 1000, arrayMap(i -> toFloat64(i + number), range(32))
+                FROM numbers(2000000)
+    </fill_query>
+
+    <!-- single place: addBatchSinglePlace -->
+    <query>SELECT sumForEach(arr) FROM for_each_bench FORMAT Null</query>
+    <query>SELECT avgForEach(arr) FROM for_each_bench FORMAT Null</query>
+    <query>SELECT quantilesForEach(0.5, 0.9)(arr) FROM for_each_bench FORMAT Null</query>
+
+    <!-- many places: addBatch -->
+    <query>SELECT k, sumForEach(arr) FROM for_each_bench GROUP BY k FORMAT Null</query>
+    <query>SELECT k, quantilesForEach(0.5, 0.9)(arr) FROM for_each_bench GROUP BY k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS for_each_bench</drop_query>
+</test>

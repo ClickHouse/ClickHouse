@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -99,7 +99,7 @@ protected:
         {
             const IQueryPlanStep * current_step = node->step.get();
             LOG_DEBUG(
-                getLogger("QueryPlanVisitor"),
+                getLogger(demangle(typeid(Derived).name())),
                 "{}: {}: {}",
                 prefix,
                 getStepId(current_step),

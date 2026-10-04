@@ -42,3 +42,8 @@ SELECT h3GetUnidirectionalEdgesFromHexagon(toUInt64(0));
 SELECT h3IndexesAreNeighbors(toUInt64(0), toUInt64(0));
 SELECT h3CellAreaM2(toUInt64(0));
 SELECT h3CellAreaRads2(toUInt64(0));
+
+-- The setting only substitutes a default for an invalid cell. Both endpoints below are valid, so a
+-- line that cannot be drawn between them is still an error.
+SELECT h3Line(toUInt64(585609238802333695), toUInt64(585624631965122559))
+SETTINGS functions_h3_default_if_invalid = 1; -- { serverError INCORRECT_DATA }

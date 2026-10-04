@@ -11,7 +11,7 @@ CREATE TABLE read_in_order_with_parallel_replicas(id UInt64) ENGINE=MergeTree OR
 SET max_execution_time = 300;
 -- 1000 rows × index_granularity=1 = 1000 marks. Sufficient to verify the
 -- read-in-order optimization (broken behavior would read all marks per replica
--- ≫ 2). Using fewer rows keeps INSERT fast under heavy sanitizer/WasmEdge load
+-- ≫ 2). Using fewer rows keeps INSERT fast under heavy sanitizer load
 -- where 100K marks could time out at INSERT.
 INSERT INTO read_in_order_with_parallel_replicas SELECT number from system.numbers limit 1000;
 

@@ -1,0 +1,9 @@
+--- The estimated plan returns the same rows as the plain read
+10000
+10000
+--- A TopK read sized by the pre-plan estimate writes no QCC entry
+0
+--- A TopK read sized by the pre-plan estimate must not reuse a plain entry
+04661_topk_estimate_write	0
+04661_plain_reuse	1
+04661_topk_estimate_after_prime	0

@@ -1,0 +1,115 @@
+---
+sidebarTitle: '通用 MariaDB'
+description: '将任意 MariaDB 实例设置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/mysql/source/generic_maria
+title: '通用 MariaDB 数据源设置指南'
+doc_type: 'guide'
+keywords: ['通用 mariadb', 'ClickPipes', '二进制日志', 'SSL/TLS', '自托管']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  如果您使用的是侧边栏中列出的受支持提供商之一，请参阅该提供商对应的专门指南。
+</Info>
+
+<div id="enable-binlog-retention">
+  ## 启用二进制日志保留
+</div>
+
+二进制日志包含对 MariaDB 服务器实例所做的数据修改信息，并且是复制所必需的。
+
+要在您的 MariaDB 实例上启用二进制日志，请确保已配置以下设置：
+
+```sql
+server_id = 1               -- 或更大；不能为 0
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  -- 10.5.0 中引入
+expire_logs_days = 1        -- 或更大；0 表示日志将永久保留
+```
+
+要检查这些设置，请运行以下 SQL 命令：
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+如果这些值不一致，您可以在配置文件中进行设置 (通常位于 `/etc/my.cnf` 或 `/etc/my.cnf.d/mariadb-server.cnf`) ：
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  ; 仅适用于 10.5.0 及以上版本
+expire_logs_days = 1
+```
+
+如果源数据库是副本，请确保同时启用 `log_slave_updates`。
+
+你必须重启 MariaDB 实例，更改才能生效。
+
+<Note>
+  由于 MariaDB &lt;= 10.4 尚未引入 `binlog_row_metadata` 设置，因此不支持排除列。
+</Note>
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+以 root 用户身份连接到 MariaDB 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建专用用户：
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. 授予 schema 权限。以下示例显示了 `clickpipes` 数据库的权限。对于要复制的每个数据库和主机，都需要重复执行这些命令：
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  请务必将 `clickpipes_user` 和 `some_secure_password` 替换为所需的用户名和密码。
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 配置 (推荐)
+</div>
+
+SSL 证书可确保与 MariaDB 数据库建立安全连接。具体配置取决于您使用的证书类型：
+
+**受信任的证书颁发机构 (DigiCert、Let&#39;s Encrypt 等)&#x20;**&#x20;- 无需额外配置。
+
+**内部证书颁发机构** - 请向 IT 团队获取根 CA 证书文件。在 ClickPipes UI 中创建新的 MariaDB ClickPipe 时上传该文件。
+
+**自托管 MariaDB** - 从 MariaDB 服务器复制 CA 证书 (可通过 `my.cnf` 中的 `ssl_ca` 设置查找路径) 。在 ClickPipes UI 中创建新的 MariaDB ClickPipe 时上传该证书。主机请填写服务器的 IP 地址。
+
+**11.4 及以上版本的自托管 MariaDB** - 如果您的服务器已配置 `ssl_ca`，请按上述选项操作。否则，请咨询 IT 团队以配置合适的证书。万不得已时，可在 ClickPipes UI 中启用“跳过证书验证”开关 (出于安全考虑，不建议这样做) 。
+
+有关 SSL/TLS 选项的更多信息，请参阅我们的[常见问题](/zh/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)。
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+您现在可以[创建您的 ClickPipe](/zh/integrations/clickpipes/mysql/index)，并开始将 MariaDB 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下您在设置 MariaDB 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

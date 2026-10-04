@@ -1,0 +1,85 @@
+---
+slug: /clickhouse-operator/install/helm
+title: 'Установка ClickHouse Operator с помощью Helm-чартов'
+keywords: ['kubernetes']
+description: 'В этом руководстве описана установка ClickHouse Operator с помощью Helm-чартов.'
+doc_type: 'guide'
+sidebarTitle: 'Helm'
+---
+
+В этом руководстве описана установка ClickHouse Operator с помощью Helm-чартов.
+
+<div id="prerequisites">
+  ## Требования
+</div>
+
+* Кластер Kubernetes v1.28.0 или выше
+* helm v3.0 или выше
+* kubectl настроен для работы с вашим кластером
+
+<div id="install-helm">
+  ## Установите Helm
+</div>
+
+Если у вас не установлен Helm:
+
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+Проверьте установку:
+
+```bash
+helm version
+```
+
+<div id="install-the-operator">
+  ## Установите ClickHouse Operator
+</div>
+
+<Note>
+  По умолчанию Helm-чарт разворачивает ClickHouse Operator с включёнными вебхуками и требует установленного cert-manager.
+</Note>
+
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
+```
+
+<div id="from-oci-helm-repository">
+  ### Из OCI-репозитория Helm
+</div>
+
+Установите последнюю версию
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system
+```
+
+Установите конкретную версию оператора
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set manager.image.tag=<operator version>
+```
+
+<div id="from-local-chart">
+  ### Из локального чарта
+</div>
+
+Клонируйте репозиторий и установите из локального чарта:
+
+```bash
+git clone https://github.com/ClickHouse/clickhouse-operator.git
+cd clickhouse-operator
+helm install clickhouse-operator ./dist/chart
+```
+
+<div id="configuration-options">
+  ### Параметры конфигурации
+</div>
+
+Сведения о дополнительных параметрах конфигурации см. в файле [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) Helm-чарта

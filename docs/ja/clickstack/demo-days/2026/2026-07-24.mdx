@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: 'デモデイズ - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: '2026-07-24 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="metrics-experience-improvements">
+  ## メトリクス機能の改善
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今回の変更では、Datadog から移行中のお客様からのフィードバックに基づき、メトリクスおよびダッシュボードの作成機能を改善しました。このお客様には、よく考えられたメトリクスのワークフローがあります。まだすべてのフィードバックに対応したわけではありませんが、その大半は、画面上に数百もの時系列を表示するチャートの作成やダッシュボードの調査に関するものでした。
+
+メトリクスとは直接関係しない変更もありますが、これも同じ議論から生まれたものです。ダッシュボードタイルは、作成時に表示されるグリッドにスナップするようになりました。タイルをドラッグまたはサイズ変更すると、その背後にグリッドが表示され、現在位置の周囲のセルが強調表示されます。以前は、タイルがどこに配置されるのか、また移動すると別のタイルが押しのけられるのかが明確ではありませんでした。グリッドにより、どちらも視覚的に確認できます。レイアウトエンジンと同じジオメトリを使用しているため、右端や下端も含め、ガイドはタイルの最終位置と一致します。
+
+メトリクス関連の変更は、複数の次元でグループ化する際によく見られる、シリーズ数の多いチャートに焦点を当てています。以前は、チャートにカーソルを合わせると、そのタイムスタンプにおけるすべてのシリーズが表示されていました。300 シリーズのチャートでは、ツールチップがチャート自体よりも高くなることがあり、カーソル位置にあるシリーズが必要なものであることはほとんどありませんでした。
+
+11 以上のシリーズを含むチャートでは、カーソルに最も近いシリーズのみが表示されるようになりました。そのシリーズは前面に描画され、他のシリーズは淡く表示されます。10 以下のシリーズのチャートでは、完全なソート済みツールチップが維持されるため、動作は変わりません。凡例はよりコンパクトになり、完全に非表示にすることもできます。表示されている場合は、選択およびクイック検索のコントロールとしても機能するため、特定のシリーズに簡単に移動できます。
+
+最も大きな変更は、調査したい偏差を見つけた後によく利用されるフルスクリーン表示です。フルスクリーン表示は、ケバブメニュー内ではなく、ツールバーのアイコンからワンクリックで利用できるようになりました。開くと、凡例はサマリー情報と検索ボックスを備えた、より使いやすいレイアウトに切り替わります。シリーズ名の部分文字列でフィルタリングすれば、300 シリーズから関心のある数本だけに絞り込み、ホバーして比較できます。
+
+議論の後に変更された点が 1 つあります。単一シリーズと複数シリーズのツールチップの選択は、固定のしきい値に依存するのではなく、設定可能になります。シリーズ数が少ない場合は、同じ時点における複数シリーズの絶対値を比較することが有用なため、ユーザーはチャートに適した動作を選択できる必要があります。
+
+**関連 PR:** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard): タイルのドラッグまたはサイズ変更中にスナップグリッドを表示、[#2722](https://github.com/hyperdxio/hyperdx/pull/2722) 高密度チャート向けの時系列チャートのホバー機能を改善、[#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard): タイルのフルスクリーン表示をトップレベルのツールバーアイコンへ移動、[#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard): 線の描画上限を超えても単独の時系列チャートシリーズを描画、[#2776](https://github.com/hyperdxio/hyperdx/pull/2776) 設定可能な時系列チャートの表示設定 (凡例、ツールチップ、線のスタイル)
+
+<div id="trace-viewer-improvements">
+  ## Trace ビューアの改善
+</div>
+
+*[@karl-power](https://github.com/karl-power) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+再設計された Trace ビューアに、新しいレイアウトに関するフィードバックを直接反映した2つの小さな修正を加えました。
+
+span 詳細パネルは最近ウォーターフォールの右側に移動しましたが、この配置を好まないユーザーもいました。パネルの閉じるボタンの横に追加されたコントロールで、デフォルトの右側と下部を切り替えられます。パネルを下部に配置した場合は、好みの高さまでドラッグできます。
+
+同じフィードバックから、折り返しに関するバグも見つかりました。折り返しを有効にしていても、自然な改行位置のない長い attribute 値は切り詰められていました。空白、ハイフン、ダッシュを含まない `url.path` がその一例です。attribute 値は任意の文字位置で改行できるようになり、値全体を読めるようになりました。
+
+**関連 PR:** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): 単語途中での attribute 折り返し + レイアウト切り替え
+
+<div id="mcp-server-and-eval-improvements">
+  ## MCPサーバーと評価の改善
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="YouTube動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今回の小さな変更は、導入促進に最も大きな効果をもたらす可能性があります。ClickHouse CloudでMCPサーバーを有効にする場所は見つけにくく、ユーザーはアプリ内の手順に従ったうえで、適切なコントロールプレーン設定を探す必要がありました。ボタンから関連するモーダルを直接開けるようになり、そこでサーバーを有効にできます。
+
+Brandonは、[最近の取り組み](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals)を基に、MCPの評価フレームワークを引き続き改善しています。評価フレームワークでは、評価対象とは異なるプロバイダーとモデルを使用できるようになりました。これまでは評価全体でAnthropicモデルを使用する必要があったため、モデルが自身の出力を採点する可能性がありました。OpenAIキーとプロバイダープレフィックス付きの判定モデル仕様を指定することで、OpenAI経由で採点できるようになりました。
+
+判定モデルを比較したことで、有用な違いが明らかになりました。特定のキーを1つ使用していないだけで実行を失敗と判定するなど、ルーブリックをはるかに厳格に適用するものがある一方、十分に近い回答であれば受け入れるものもあります。また、この作業中に見つかった古い採点結果に関するバグも修正しました。異なる判定モデルでBatchを再採点すると、以前の結果を返すのではなく、新しい判定モデルが実行されるようになりました。
+
+Brandonは、サービスヘルスチェックのシナリオでより高いスコアを得るために何が必要かをMCPサーバーに尋ねた後、新しい`clickstack_emerging_signals` MCPツールも追加しました。これは、2つのウィンドウを使用するパターン新規性検出器です。このツールは、ベースラインウィンドウと現在のウィンドウからログおよびイベントパターンを抽出し、2つのセットを比較します。新規のパターン、大幅に頻度が増加したパターン、または消失したパターンを報告します。
+
+これは既存のツールとは異なります。イベントパターンは1つのウィンドウ内で一般的な内容を示す一方、イベントデルタはどの属性が変化したかを示します。新しいツールにより、サービスヘルスチェックのスコアが約10ポイント向上します。
+
+スキルからインジェストを設定したいというリクエストを受け、ログソースとwebhookのCRUDツールもMCPに追加されました。エージェントは、ログソースとwebhookを読み取るだけでなく、作成、更新、削除できるようになりました。
+
+すべてのプルリクエストに対してCIで評価を実行する作業も進行中であり、現在のPR説明にスコアを手動で貼り付けるプロセスに代わる予定です。S3シーディングは動作しています。残る障害は、GitHub Actionにバケットへのアクセス権を付与することです。これが解決されれば、評価結果は大幅に早く得られるようになるはずです。
+
+**関連PR:** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals): 独立した判定プロバイダー／モデル + 判定モデル切り替え時の古い採点スキップを修正、[#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp): clickstack&#95;emerging&#95;signalsツールを追加、[#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp): ログソースおよびwebhook CRUDツール、[#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CIスケルトン、GitHub ActionsでMCP評価をエンドツーエンドで実行、[#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals): M2 Parquetスナップショット高速シード

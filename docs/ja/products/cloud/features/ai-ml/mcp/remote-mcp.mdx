@@ -1,0 +1,219 @@
+---
+slug: /use-cases/AI/MCP/remote_mcp
+sidebarTitle: 'リモートMCPサーバーを有効にする'
+title: 'ClickHouse Cloud のリモートMCPサーバーを有効にして接続する'
+description: 'このガイドでは、ClickHouse Cloud リモートMCP を有効にして利用する方法を説明します'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このガイドでは、ClickHouse Cloud リモートMCPサーバーを有効にし、一般的な開発ツールで使用できるよう設定する方法を説明します。
+
+**前提条件**
+
+* 稼働中の[ClickHouse Cloud サービス](/ja/get-started/setup/cloud)
+* 使用する IDE またはエージェント型開発ツール
+
+<div id="enable-remote-mcp-server">
+  ## Cloud でリモートMCPサーバーを有効にする
+</div>
+
+リモートMCPサーバーを有効にする対象の ClickHouse Cloud サービスに接続します。
+左側のメニューで **Connect** をクリックします。接続の詳細が表示されたボックスが開きます。
+
+**Connect with MCP** を選択します。
+
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Connect モーダルで MCP を選択" size="md" />
+
+サービスで MCP を有効にするには、ボタンをオンにします。
+
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="MCPサーバーを有効にする" size="md" />
+
+表示された URL をコピーします。これは以下の URL と同じです。
+
+```bash
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="setup-clickhouse-cloud-remote-mcp-server">
+  ## 開発用にリモートMCPをセットアップする
+</div>
+
+以下からお使いのIDEまたはツールを選択し、対応するセットアップ手順に従ってください。
+
+<div id="claude-code">
+  ### Claude Code
+</div>
+
+作業ディレクトリで次のコマンドを実行し、ClickHouse Cloud MCPサーバーの設定をClaude Codeに追加します。
+
+```bash
+claude mcp add --transport http clickhouse-cloud https://mcp.clickhouse.cloud/mcp
+```
+
+続いて、Claude Code を起動します。
+
+```bash
+claude
+```
+
+MCPサーバーを一覧表示するには、次のコマンドを実行します。
+
+```bash
+/mcp
+```
+
+`clickhouse-cloud` を選択し、ClickHouse Cloud の認証情報を使って OAuth 認証を行います。
+
+<div id="claude-web">
+  ### Claude web UI
+</div>
+
+1. **Customize** &gt; **Connectors** に移動します
+2. 「+」アイコンをクリックし、**Add custom connector** を選択します
+3. カスタムコネクタに `clickhouse-cloud` などの名前を付けて追加します
+4. 新しく追加した `clickhouse-cloud` コネクタをクリックし、**Connect** をクリックします
+5. OAuth を使用して、ClickHouse Cloud の認証情報で認証します
+
+<div id="cursor">
+  ### Cursor
+</div>
+
+1. [Cursor Marketplace](https://cursor.com/marketplace) でMCPサーバーを探してインストールします。
+2. ClickHouse を検索し、任意のサーバーで「Add to Cursor」をクリックしてインストールします
+3. OAuth で認証します。
+
+<div id="visual-studio-code">
+  ### Visual Studio Code
+</div>
+
+以下の設定を `.vscode/mcp.json` に追加します。
+
+```json
+{
+  "servers": {
+    "clickhouse-cloud": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+詳細については、[Visual Studio Code ドキュメント](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)を参照してください。
+
+<div id="windsurf">
+  ### Windsurf
+</div>
+
+以下の設定で`mcp_config.json`ファイルを編集してください。
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-cloud": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.clickhouse.cloud/mcp"]
+    }
+  }
+}
+```
+
+詳しくは、[Windsurf docs](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)を参照してください。
+
+<div id="zed">
+  ### Zed
+</div>
+
+ClickHouse をカスタムサーバーとして追加します。
+Zed の設定の **context&#95;servers** に、以下を追加します。
+
+```json
+{
+  "context_servers": {
+    "clickhouse-cloud": {
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+その後、Zed が初めてサーバーに接続する際に、OAuth による認証を求められるはずです。
+詳しくは、[Zed のドキュメント](https://zed.dev/docs/ai/mcp#as-custom-servers)を参照してください。
+
+<div id="codex">
+  ### Codex
+</div>
+
+CLIでClickHouse Cloud MCPサーバーを追加するには、次のコマンドを実行します。
+
+```bash
+codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+接続したら、自然言語のプロンプトを使って ClickHouse Cloud を操作できます。
+以下では、一般的なワークフローと、その際に MCPクライアントがバックグラウンドで呼び出すツールを紹介します。
+利用可能なツールの一覧については、[ツールリファレンス](/ja/products/cloud/features/ai-ml/remote-mcp#available-tools)を参照してください。
+
+<div id="exploring-data">
+  ### データの探索
+</div>
+
+まず、何が利用できるかを確認しましょう。
+
+| プロンプト                                            | 呼び出されるツール                      |
+| ------------------------------------------------ | ------------------------------ |
+| &quot;アクセスできる組織はどれですか？&quot;                     | `get_organizations`            |
+| &quot;自分のサービスで利用できるデータベースは何ですか？&quot;            | `list_databases`               |
+| &quot;`default` データベース内のテーブルを表示してください&quot;      | `list_tables`                  |
+| &quot;名前が `events_` で始まるテーブルをすべて一覧表示してください&quot; | `list_tables` (`like` フィルタを使用) |
+
+<div id="running-queries">
+  ### 分析クエリの実行
+</div>
+
+自然言語で質問すると、エージェントがそれを SQL に変換します。
+
+| プロンプト                                          | 呼び出されるツール          |
+| ---------------------------------------------- | ------------------ |
+| &quot;`hits` テーブルの先頭 10 行を表示して&quot;           | `run_select_query` |
+| &quot;過去 7 日間の国別の平均セッション時間は?&quot;             | `run_select_query` |
+| &quot;`analytics` データベースの各テーブルには何行ありますか?&quot; | `run_select_query` |
+
+`run_select_query` ツールで許可されているのは `SELECT` ステートメントのみです。すべてのクエリは読み取り専用です。
+
+<div id="managing-services">
+  ### サービスとインフラストラクチャの管理
+</div>
+
+ClickHouse Cloud リソースの状況を把握できます。
+
+| プロンプト                                    | 呼び出されるツール                          |
+| ---------------------------------------- | ---------------------------------- |
+| &quot;すべてのサービスを一覧表示して&quot;              | `get_services_list`                |
+| &quot;本番サービスのステータスは？&quot;               | `get_service_details`              |
+| &quot;このサービスのバックアップスケジュールを表示して&quot;     | `get_service_backup_configuration` |
+| &quot;最近のバックアップを一覧表示して&quot;             | `list_service_backups`             |
+| &quot;このサービスで設定されている ClickPipes は？&quot; | `list_clickpipes`                  |
+
+<div id="monitoring-costs">
+  ### コストの監視
+</div>
+
+| プロンプト                      | 呼び出されるツール                                              |
+| -------------------------- | ------------------------------------------------------ |
+| 「先週の組織のコストはいくらでしたか？」       | `get_organization_cost`                                |
+| 「3月1日から3月15日までの日次コストを表示して」 | `get_organization_cost` (`from_date` と `to_date` を指定)  |
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills)

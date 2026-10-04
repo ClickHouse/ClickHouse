@@ -22,7 +22,7 @@ private:
     Int32 update_period_seconds;
     UInt32 max_consecutive_failures;
 
-    BackgroundSchedulePool & pool;
+    BackgroundSchedulePoolPtr pool;
     BackgroundSchedulePoolTaskHolder task_handle;
 };
 

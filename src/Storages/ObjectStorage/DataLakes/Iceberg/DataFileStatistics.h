@@ -7,6 +7,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Core/Block_fwd.h>
 #include <Core/Range.h>
 #include <Processors/Chunk.h>
 
@@ -25,6 +26,7 @@ public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
     void update(const Chunk & chunk);
+    void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
@@ -39,7 +41,7 @@ private:
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
-    std::vector<Range> ranges;
+    Ranges ranges;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

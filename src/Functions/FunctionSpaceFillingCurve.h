@@ -18,6 +18,53 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/// A read-only view of a native unsigned integer column.
+/// `width` is loop-invariant, so the switch in `operator[]` is an inlined predicted jump, not a call.
+/// `fallback` is the only correct accessor for a column whose values are not a contiguous
+/// fixed-width array (sparse, low-cardinality, nullable).
+struct UIntColumnSpan
+{
+    const void * data = nullptr;
+    const IColumn * fallback = nullptr;
+    size_t width = 0;
+
+    ALWAYS_INLINE UInt64 operator[](size_t row) const
+    {
+        switch (width)
+        {
+            case 8: return static_cast<const UInt64 *>(data)[row];
+            case 4: return static_cast<const UInt32 *>(data)[row];
+            case 2: return static_cast<const UInt16 *>(data)[row];
+            case 1: return static_cast<const UInt8 *>(data)[row];
+            default: return fallback->getUInt(row);
+        }
+    }
+};
+
+inline UIntColumnSpan makeUIntColumnSpan(const IColumn & column)
+{
+    UIntColumnSpan span;
+    span.fallback = &column;
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+            /// A `ColumnConst` forwards `getDataType`, `isFixedAndContiguous` and `getRawData` to its
+            /// single-row nested column, so a raw read would index one element `input_rows_count` times.
+            if (!isColumnConst(column) && column.isFixedAndContiguous())
+            {
+                span.data = column.getRawData().data();
+                span.width = column.sizeOfValueIfFixed();
+            }
+            break;
+        default:
+            break;
+    }
+    return span;
+}
+
 class FunctionSpaceFillingCurveEncode: public IFunction
 {
 public:

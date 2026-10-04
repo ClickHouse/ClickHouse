@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-shared-merge-tree, no-object-storage
+# min_bytes_for_full_part_storage=0: the test cat's columns_substreams.txt from the part dir; a packed
+# part keeps that file inside the single data.packed archive, so the file would not exist on disk
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "
     )
     ENGINE = MergeTree
     ORDER BY id
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, min_bytes_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0,
              replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1;
 "
@@ -48,7 +50,7 @@ ${CLICKHOUSE_CLIENT} --query "
     )
     ENGINE = MergeTree
     ORDER BY id
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, min_bytes_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0,
              replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1;
 "

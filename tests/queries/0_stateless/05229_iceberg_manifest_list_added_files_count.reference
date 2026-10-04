@@ -1,0 +1,9 @@
+v1	data_files	5	snapshots	1
+v1	added_files_count=5	manifest_entries=5	matches=yes
+v2	data_files	5	snapshots	1
+v2	added_files_count=5	manifest_entries=5	matches=yes
+partitioned	added_files_count=3	manifest_entries=3	matches=yes
+partitioned	added_files_count=3	manifest_entries=3	matches=yes
+after delete	added_files_count=1	manifest_entries=1	matches=yes
+after delete	added_files_count=5	manifest_entries=5	matches=yes
+rows	9

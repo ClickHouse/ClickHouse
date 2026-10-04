@@ -5,6 +5,9 @@
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 
+#include <algorithm>
+#include <vector>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -47,6 +50,38 @@ void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revisi
         writeBinary(table_name.database, out);
         writeBinary(table_name.table, out);
     }
+}
+
+std::string TablesStatusRequest::getAuthDigest() const
+{
+    /// Order-independent, collision-free digest of the requested tables, folded into the interserver
+    /// authentication hash so a relayed hash cannot be reused for a different table set. `tables` is
+    /// unordered, so sort the per-table encodings before concatenating. Each `database`/`table`
+    /// component is length-prefixed (names may contain arbitrary bytes, including NUL, so a plain
+    /// separator would not be injective).
+    auto append_sized = [](std::string & buf, const std::string & s)
+    {
+        buf += std::to_string(s.size());
+        buf += ':';
+        buf += s;
+    };
+
+    std::vector<std::string> entries;
+    entries.reserve(tables.size());
+    for (const auto & table_name : tables)
+    {
+        std::string entry;
+        append_sized(entry, table_name.database);
+        append_sized(entry, table_name.table);
+        entries.push_back(std::move(entry));
+    }
+    std::sort(entries.begin(), entries.end());
+
+    std::string data;
+    append_sized(data, std::to_string(entries.size()));
+    for (const auto & entry : entries)
+        append_sized(data, entry);
+    return data;
 }
 
 void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)

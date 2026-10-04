@@ -1,0 +1,14 @@
+tuple element
+2024-01-01	1	101
+2024-02-01	2	200
+null subcolumn
+2024-01-01	1	102
+2024-02-01	2	200
+json subcolumn
+2024-01-01	1	102
+2024-02-01	2	201
+subcolumn combined with the partition key
+2024-02-01	2	201
+subcolumn as the partition key
+2024-01-01	1	101
+2024-02-01	2	200

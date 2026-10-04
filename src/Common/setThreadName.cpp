@@ -4,7 +4,7 @@
 
 #include <pthread.h>
 
-#if defined(OS_DARWIN) || defined(OS_SUNOS)
+#if defined(OS_DARWIN) || defined(OS_SUNOS) || defined(OS_WASM)
 #elif defined(OS_FREEBSD)
 #include <pthread_np.h>
 #else
@@ -76,7 +76,7 @@ static ThreadName parseThreadName(const std::string_view & name)
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
 static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
 /// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels
 /// `prctl` returns EINVAL and the `MemoryThreadStacks*` async metrics will
 /// not populate. We only record the unsupported state silently here;
@@ -132,7 +132,7 @@ static void nameCurrentThreadStackVMA() noexcept
 
 void setThreadName(ThreadName name)
 {
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
     /// First-call hook per thread: tag the stack VMA so `AsynchronousMetrics`
     /// can recognize it in `/proc/self/smaps`. Subsequent calls are skipped
     /// via TLS flag to avoid repeating a no-op syscall.
@@ -168,6 +168,9 @@ void setThreadName(ThreadName name)
     // To avoid the performance penalty, skip os-level thread renaming, and fall back to the
     // cached thread-local name. Note: revert if illumos learns a fast path for thread renaming.
     if ((false))
+#elif defined(OS_WASM)
+    // Emscripten has no `pthread_setname_np`.
+    if ((false))
 #else
     if (0 != prctl(PR_SET_NAME, thread_name_str.data(), 0, 0, 0))
 #endif
@@ -193,6 +196,8 @@ ThreadName getThreadName()
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
 #elif defined(OS_SUNOS)
     // Skip os-level thread name lookup on illumos, since we skip thread renames in setThreadName.
+#elif defined(OS_WASM)
+    // Emscripten has no `pthread_getname_np`; the cached thread-local name is all there is.
 #elif defined(OS_FREEBSD)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
 //    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
@@ -208,7 +213,7 @@ ThreadName getThreadName()
 
 bool isThreadStackVMANamingUnsupported() noexcept
 {
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
     return g_stack_vma_naming_unsupported.load(std::memory_order_relaxed);
 #else
     /// This warning is specific to the Linux `PR_SET_VMA_ANON_NAME` path.

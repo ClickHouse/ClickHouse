@@ -35,4 +35,7 @@
     <query>SELECT 'rapidjson-11', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractFloat(materialize({long_json}), 'fparam'))</query>
     <query>SELECT 'rapidjson-12', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractFloat(materialize({long_json}), 'fparam', 'nested_2', -2))</query>
     <query>SELECT 'rapidjson-13', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractBool(materialize({long_json}), 'bparam'))</query>
+
+    <query>SELECT 'rapidjson-14', count() FROM zeros(200000) WHERE NOT ignore(JSONExtractInt(materialize(concat(repeat('{{"a":', 100), '1', repeat('}}', 100))), 'a'))</query>
+    <query>SELECT 'rapidjson-15', count() FROM zeros(200000) WHERE NOT ignore(JSONExtractString(materialize(concat('{{', arrayStringConcat(arrayMap(i -> concat('"key_', toString(i), '":"value_', toString(i), '"'), range(200)), ','), '}}')), 'key_7'))</query>
 </test>

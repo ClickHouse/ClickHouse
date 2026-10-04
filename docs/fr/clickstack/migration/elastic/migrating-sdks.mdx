@@ -1,0 +1,53 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-sdks
+title: 'Migration des SDKs depuis Elastic'
+sidebarTitle: 'Migration des SDKs'
+description: 'Migration des SDKs depuis Elastic'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Elastic Stack propose deux types de SDKs pour différents langages afin d’instrumenter les applications :
+
+1. **[Agents APM officiels d’Elastic](https://www.elastic.co/docs/reference/apm-agents/)** – Ils sont conçus spécifiquement pour une utilisation avec Elastic Stack. Il n’existe actuellement aucune procédure de migration directe pour ces SDKs. Les applications qui les utilisent devront être instrumentées à nouveau à l’aide des [ClickStack SDKs](/fr/clickstack/ingesting-data/sdks/index) correspondants.
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – Il s’agit des distributions Elastic des SDK OpenTelemetry standard, disponibles pour .NET, Java, Node.js, PHP et Python. Si votre application utilise déjà un EDOT SDK, vous n’avez pas besoin de réinstrumenter votre code. Vous pouvez simplement reconfigurer le SDK pour exporter les données de télémétrie vers l’OTLP Collector inclus dans ClickStack. Voir [&quot;Migrating EDOT SDKs&quot;](#migrating-edot-sdks) pour en savoir plus.
+
+<Info>
+  **Utilisez les ClickStack SDKs lorsque c’est possible**
+
+  Bien que les SDK OpenTelemetry standard soient pris en charge, nous recommandons vivement d’utiliser les [**SDKs distribués par ClickStack**](/fr/clickstack/ingesting-data/sdks/index) pour chaque langage. Ces distributions incluent une instrumentation supplémentaire, des valeurs par défaut optimisées et des extensions personnalisées conçues pour fonctionner de manière fluide avec le pipeline et l’UI de ClickStack. En utilisant les ClickStack SDKs, vous pouvez accéder à des fonctionnalités avancées, comme les stack traces d’exception, qui ne sont pas disponibles avec les SDK OpenTelemetry standard ni avec les EDOT SDKs.
+</Info>
+
+<div id="migrating-edot-sdks">
+  ## Migration des EDOT SDKs
+</div>
+
+À l’instar des SDKs ClickStack basés sur OpenTelemetry, les Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) sont des versions personnalisées des SDKs OpenTelemetry officiels. Par exemple, le [SDK Python EDOT](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) est une distribution du [SDK Python OpenTelemetry](https://opentelemetry.io/docs/languages/python/) personnalisée par le fournisseur, conçue pour s’intégrer de manière transparente à Elastic Observability.
+
+Comme ces SDKs s’appuient sur les bibliothèques OpenTelemetry standard, la migration vers ClickStack est simple : aucune réinstrumentation n’est nécessaire. Il vous suffit d’ajuster la configuration afin d’acheminer les données de télémétrie vers le ClickStack OpenTelemetry Collector.
+
+La configuration repose sur les mécanismes standard d’OpenTelemetry. En Python, cela se fait généralement au moyen de variables d’environnement, comme décrit dans la [documentation OpenTelemetry Zero-Code Instrumentation](https://opentelemetry.io/docs/zero-code/python/configuration/).
+
+Une configuration type d’un SDK EDOT peut ressembler à ceci :
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+Pour migrer vers ClickStack, mettez à jour l’endpoint pour qu’il pointe vers l’OTLP Collector local et modifiez l’en-tête d’autorisation :
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
+```
+
+Votre clé API d’ingestion est générée par l’application HyperDX et se trouve dans Team Settings → API Keys.
+
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Clés d’ingestion" size="lg" />

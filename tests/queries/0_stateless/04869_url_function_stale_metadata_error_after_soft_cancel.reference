@@ -1,0 +1,3 @@
+the cancellation was delivered while the source was paused inside the metadata fallback
+the query succeeded
+the data was not requested after the cancellation

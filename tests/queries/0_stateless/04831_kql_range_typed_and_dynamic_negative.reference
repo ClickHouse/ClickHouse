@@ -1,0 +1,30 @@
+-- a negative constant is a constant of a dynamic literal --
+[-1]
+[1,-2.5]
+[[1,-2],[-3]]
+3
+-- but an expression still is not --
+-- a numeric range works as before --
+5	15
+0
+5
+10
+5
+3
+1
+0
+3
+-- a range of datetimes steps by a timespan --
+2026-01-01 00:00:00.000000000
+2026-01-02 00:00:00.000000000
+2026-01-03 00:00:00.000000000
+5
+5
+0
+-- a range of timespans steps by a timespan --
+5	3600000000000	10800000000000
+10800000000000
+7200000000000
+3600000000000
+3
+-- the bounds and the step must agree, and the step must move --

@@ -10,6 +10,7 @@
 #include <functional>
 
 #include <list>
+#include <memory>
 
 namespace DB
 {
@@ -22,6 +23,8 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class QueryStatus;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 struct Progress;
@@ -94,7 +97,7 @@ public:
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
-    /// Use PipelineExecutor. Call execute() to build one.
+    /// Use CompletedPipelineExecutor.
     bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
@@ -116,6 +119,7 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
+    QueryStatusPtr getProcessListElement() const { return process_list_element; }
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
@@ -129,6 +133,10 @@ public:
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
+    /// Normalized query hash, propagated to the quota accounting callbacks so that
+    /// `NORMALIZED_QUERY_HASH` quotas bucket their resources per query pattern.
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
+
     void addStorageHolder(StoragePtr storage);
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
@@ -137,9 +145,15 @@ public:
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
+    /// Do not account rows read by this pipeline in the query progress and read limits.
+    void disableReadProgress() { report_read_progress = false; }
 
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
+
+    /// EXPLAIN ANALYZE: the executor of this pipeline records step timings into it.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
+    StepProfilerPtr getStepProfiler() const { return step_profiler; }
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline && other);
@@ -159,7 +173,10 @@ private:
 
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
+    UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
+    bool report_read_progress = true;
+    StepProfilerPtr step_profiler;
 
     std::shared_ptr<Processors> processors;
 
@@ -181,7 +198,6 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
-    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

@@ -1,0 +1,13 @@
+--- successful toggle
+outdated parts loaded before the toggle: 0
+outdated parts loaded inside the window: 0
+outdated parts loaded after the toggle: 0
+table is readonly: 1
+outdated parts loaded after toggling back: 2
+rows after toggling back: 20
+--- rolled back toggle
+outdated parts loaded before the toggle: 0
+outdated parts loaded inside the window: 0
+toggle failed at the commit: 1
+outdated parts loaded after the failed toggle: 2
+rows after insert into the writable table: 21

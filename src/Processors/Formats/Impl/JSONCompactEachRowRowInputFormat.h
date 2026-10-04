@@ -54,7 +54,7 @@ public:
         return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();

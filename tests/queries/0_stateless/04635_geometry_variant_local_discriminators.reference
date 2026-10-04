@@ -1,0 +1,85 @@
+-- { echoOn }
+SELECT
+    variantType(g2) AS t,
+    areaCartesian(g2) AS area,
+    perimeterCartesian(g2) AS perimeter
+FROM
+(
+    SELECT CAST(g, 'Geometry') AS g2
+    FROM
+    (
+        SELECT arrayJoin([
+            CAST((0., 0.)::Point, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(1., 2.), (3., 4.)]::MultiPoint, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]::Ring, 'Variant(Ring, Polygon, Point, MultiPoint)')
+        ]) AS g
+    )
+);
+Point	0	0
+MultiPoint	0	0
+Polygon	-16	16
+Ring	-16	16
+-- `flipCoordinates` over such a column must map local to global as well: it picks the alternative
+-- type per arm to decide how to flip it, so reading local discriminators as global picks the wrong
+-- type and misflips the rows (or throws).
+SELECT variantType(f) AS t, toTypeName(f) AS type_name, wkt(f) AS w
+FROM
+(
+    SELECT flipCoordinates(CAST(g, 'Geometry')) AS f
+    FROM
+    (
+        SELECT arrayJoin([
+            CAST((1., 2.)::Point, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(1., 2.), (3., 4.)]::MultiPoint, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([[(0., 0.), (4., 0.), (4., 3.), (0., 3.), (0., 0.)]]::Polygon, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(0., 0.), (4., 0.), (4., 3.), (0., 3.), (0., 0.)]::Ring, 'Variant(Ring, Polygon, Point, MultiPoint)')
+        ]) AS g
+    )
+)
+ORDER BY t, w;
+Point	Geometry	POINT(2 1)
+Polygon	Geometry	POLYGON((0 0,0 4,3 4,3 0,0 0))
+Ring	Geometry	POLYGON((0 0,0 4,3 4,3 0,0 0))
+MultiPoint	Geometry	MULTIPOINT((2 1),(4 3))
+SELECT
+    variantType(g2) AS t,
+    areaCartesian(g2) AS area,
+    perimeterCartesian(g2) AS perimeter
+FROM
+(
+    SELECT CAST(flipCoordinates(g), 'Geometry') AS g2
+    FROM
+    (
+        SELECT arrayJoin([
+            (0., 0.)::Point::Geometry,
+            [(1., 2.), (3., 4.)]::MultiPoint::Geometry,
+            [(0., 0.), (3., 4.)]::LineString::Geometry,
+            [[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon::Geometry,
+            [(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]::Ring::Geometry,
+            [[(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)], [(2., 2.), (3., 2.), (3., 3.), (2., 3.), (2., 2.)]]::MultiLineString::Geometry,
+            [[[(0., 0.), (2., 0.), (2., 2.), (0., 2.), (0., 0.)]]]::MultiPolygon::Geometry
+        ]) AS g
+    )
+);
+Point	0	0
+MultiPoint	0	0
+LineString	0	0
+Polygon	16	16
+Ring	16	16
+MultiLineString	0	0
+MultiPolygon	4	8
+-- The same through a table: the Memory engine keeps the casted column as is,
+-- so the stored Geometry column preserves the reordered local discriminators.
+DROP TABLE IF EXISTS geo_src;
+DROP TABLE IF EXISTS geo_dst;
+CREATE TABLE geo_src (id Int32, g Geometry) ENGINE = Memory;
+INSERT INTO geo_src VALUES (1, (10., 20.)::Point), (2, [(1., 2.), (3., 4.)]::MultiPoint), (3, [[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon);
+CREATE TABLE geo_dst (id Int32, g Geometry) ENGINE = Memory;
+INSERT INTO geo_dst SELECT id, flipCoordinates(g) FROM geo_src;
+SELECT id, variantType(g), areaCartesian(g), perimeterCartesian(g) FROM geo_dst ORDER BY id;
+1	Point	0	0
+2	MultiPoint	0	0
+3	Polygon	16	16
+DROP TABLE geo_src;
+DROP TABLE geo_dst;

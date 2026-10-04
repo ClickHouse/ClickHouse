@@ -6,6 +6,22 @@
 namespace DB
 {
 
+struct FilterDAGOutputPruningResult
+{
+    bool changed = false;
+    bool input_positions_changed = false;
+    std::vector<size_t> required_input_positions;
+};
+
+/// Prune filter DAG outputs by position and return the input positions needed to compute the remaining outputs and filter.
+FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions,
+    bool remove_inputs);
+
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
 {
@@ -37,6 +53,9 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    /// Forget a previously attached query condition cache key, e.g. when a later optimization pass
+    /// discovers that the filter's verdict is no longer reusable across executions.
+    void resetConditionForQueryConditionCache() { condition.reset(); }
 
     static bool canUseType(const DataTypePtr & type);
 

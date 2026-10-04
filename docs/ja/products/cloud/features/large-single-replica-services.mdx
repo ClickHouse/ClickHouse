@@ -1,0 +1,47 @@
+---
+sidebarTitle: '大規模な単一レプリカサービス'
+sidebar_label: '大規模な単一レプリカサービス'
+sidebar_position: 8
+slug: /cloud/features/large-single-replica-services
+title: '大規模な単一レプリカサービス'
+description: 'ClickHouse Cloud の大規模な単一レプリカサービスの可用性とスケーリングについて'
+keywords: ['単一レプリカ', '垂直スケーリング', 'オートスケーリング', 'Scale ティア', 'Enterprise ティア']
+doc_type: 'guide'
+---
+
+大規模な単一レプリカサービスでは、Scale ティアおよび Enterprise ティアで利用できる設定可能なコンピュートリソースを使用して、1 つのコンピュートレプリカで ClickHouse Cloud サービスを実行できます。固定サイズの Basic ティアサービスとは異なり、スケーリングの挙動はティアとハードウェアプロファイルによって異なります。
+
+<div id="availability">
+  ## 可用性
+</div>
+
+大規模な単一レプリカサービスは、Scale および Enterprise ティアで利用できます。Basic ティアのサービスも単一レプリカを使用しますが、合計メモリは `8 GiB` または `12 GiB` に固定されており、垂直・水平スケーリングはサポートされていません。
+
+Scale および Enterprise ティアでは、サポートに問い合わせることなく、1 レプリカのプライマリまたはセカンダリサービスを作成できます。[warehouse](/ja/products/cloud/features/infrastructure/warehouses) 内のサービスは、それぞれ独立してスケーリングされます。
+
+<div id="when-to-use-a-single-replica-service">
+  ## 単一レプリカサービスを使用するケース
+</div>
+
+大規模な単一レプリカサービスでは、Basic ティアサービスよりも多くのCPUやメモリを必要とするものの、コンピュートの冗長性は不要なワークロードのコンピュートコストを削減できます。また、開発、テスト、バッチ処理など、重要度の低いワークロードにも適しています。
+
+<Warning>
+  単一レプリカサービスは可用性が低いため、高可用性が必要な本番ワークロードには推奨されません。高可用性を確保するには、少なくとも2つのレプリカを使用してください。
+</Warning>
+
+<div id="scaling">
+  ## スケーリング
+</div>
+
+垂直スケーリングの動作は、ティアとハードウェアプロファイルによって異なります。
+
+* Scale ティアのサービスおよび標準の `1:4` プロファイルを使用する Enterprise ティアのサービスでは、[垂直オートスケーリング](/ja/products/cloud/features/autoscaling/vertical)がサポートされています。Cloud Console で CPU とメモリの最小リソース量および最大リソース量を設定できます。
+* カスタムプロファイルを使用する Enterprise ティアのサービスでは、Cloud Console での垂直オートスケーリングおよび手動による垂直スケーリングはサポートされていません。垂直方向のリサイズについては、サポートにお問い合わせください。
+
+Scale ティアおよび Enterprise ティアのサービスでは、[水平スケーリング](/ja/products/cloud/features/autoscaling/horizontal)がサポートされているため、複数のレプリカにスケールアウトしたり、1 つのレプリカにスケールインしたりできます。
+
+<div id="service-limits">
+  ## サービス制限
+</div>
+
+単一レプリカサービスは、Scale および Enterprise を含むすべてのティアで、`100` データベースおよび `500` テーブルに制限されます。その他のサービスガードレール (ビュー、辞書、カラム、パーティション、パーツなど) には、標準の制限が適用されます。詳細については、[使用量の制限](/ja/products/cloud/guides/best-practices/usagelimits)を参照してください。

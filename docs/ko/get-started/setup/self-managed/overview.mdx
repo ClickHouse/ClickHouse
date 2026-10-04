@@ -1,0 +1,57 @@
+---
+title: '자가 관리형 설치'
+sidebarTitle: '개요'
+description: '직접 운영하는 인프라에 ClickHouse를 설치합니다.'
+doc_type: 'landing-page'
+keywords: ['설치', '자가 관리형', 'linux', 'macos', 'windows', 'docker']
+---
+
+운영하는 플랫폼에 ClickHouse를 설치합니다.
+
+<div id="local-development">
+  ## 로컬 개발
+</div>
+
+로컬 머신에서 ClickHouse를 실행해 빌드, 테스트, 실험을 진행합니다.
+
+<CardGroup cols={2}>
+  <Card title="빠른 설치" href="/ko/get-started/setup/self-managed/quick-install" icon="bolt">
+    단일 ClickHouse 바이너리를 다운로드하는 한 줄짜리 `curl` 스크립트입니다.
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/ko/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    ClickHouse CLI로 로컬 ClickHouse 버전과 서버를 설치하고 관리합니다.
+  </Card>
+
+  <Card title="Docker" href="/ko/get-started/setup/self-managed/docker" icon="docker">
+    공식 Docker 이미지를 pull하여 컨테이너를 실행합니다.
+  </Card>
+
+  <Card title="소스 빌드" href="/ko/get-started/setup/self-managed/advanced" icon="code">
+    소스에서 빌드하는 방법과 기타 고급 설치 경로를 안내합니다.
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## 프로덕션 서버
+</div>
+
+장기간 운영되는 환경에 배포하려면 패키지 또는 바이너리로 ClickHouse 서버를 설치하십시오.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/ko/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    공식 APT 리포지토리를 통해 설치합니다.
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/ko/get-started/setup/self-managed/redhat" icon="redhat">
+    공식 YUM/DNF 리포지토리를 통해 설치합니다.
+  </Card>
+
+  <Card title="NixOS" href="/ko/get-started/setup/self-managed/nixos" icon="snowflake">
+    패키지 관리자를 통해 NixOS에 설치합니다.
+  </Card>
+
+  <Card title="기타 Linux" href="/ko/get-started/setup/self-managed/other-linux" icon="linux">
+    tarball을 사용해 일반적인 Linux 배포판에 설치합니다.
+  </Card>
+</CardGroup>

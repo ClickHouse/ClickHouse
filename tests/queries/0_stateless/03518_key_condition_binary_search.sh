@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
-# and the coordinator does not collect all ProfileEvents values.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,8 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-# Does additional index analysis round and affects profile events
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0 --use_statistics_for_part_pruning=0"
+# The query runs on the replicas, so keep the local plan: the ProfileEvents this test asserts on
+# are only collected for the part of the query the coordinator runs itself.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;

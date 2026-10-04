@@ -1,0 +1,21 @@
+timestamp of the last sample, the metric name is dropped
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3)	Float64
+[('job','a')]	1970-01-01 00:03:20.000	180
+offset and @ select an older sample, its own timestamp is returned
+[('job','a')]	120
+[('job','a')]	60.5
+any other expression returns the evaluation time
+[('job','a')]	200.25
+range query
+[('job','a')]	[(100000,60.5),(150000,120),(200000,180)]
+[('job','a')]	[(150000,60.5),(200000,120)]
+[('job','a')]	[(100000,60.5),(150000,60.5),(200000,60.5)]
+[('job','a')]	[(100000,100),(150000,150),(200000,200)]
+a stale marker hides the series as it does for the selector itself
+[('job','b')]	100
+[('job','b')]	[(100000,100)]
+Float32 values do not affect the precision of the timestamps
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	2025-11-30 10:30:10.000	1764498605.125

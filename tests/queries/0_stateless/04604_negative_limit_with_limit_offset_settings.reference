@@ -1,0 +1,20 @@
+-- no settings: last 3 rows
+7
+8
+9
+-- limit 5 does not truncate the 3-row result
+7
+8
+9
+-- limit 2 keeps the first 2 of the last 3 rows
+7
+8
+-- offset 1 skips the first of the last 3 rows
+8
+9
+-- offset 1, limit 1 returns the middle of the last 3 rows
+8
+-- offset 5 skips more rows than the negative limit returns
+-- explicit OFFSET clause applies before the negative limit, settings after it
+7
+8

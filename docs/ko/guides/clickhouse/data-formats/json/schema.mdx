@@ -1,0 +1,1019 @@
+---
+title: 스키마 설계
+slug: /integrations/data-formats/json/schema
+description: 'JSON 스키마를 최적으로 설계하는 방법'
+keywords: ['json', 'clickhouse', '삽입', '적재', '포맷', '스키마', '정형', '반정형']
+score: 20
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[스키마 추론](/ko/guides/clickhouse/data-formats/json/inference)을 사용하면 JSON 데이터의 초기 스키마를 정하고 S3와 같은 위치에 있는 JSON 데이터 파일을 제자리에서 쿼리할 수 있지만, 데이터에 대해서는 최적화된 버전 관리 스키마를 구축하는 것이 좋습니다. 아래에서는 JSON 구조를 모델링하기 위한 권장 접근 방식을 설명합니다.
+
+<div id="static-vs-dynamic-json">
+  ## 정적 JSON과 동적 JSON
+</div>
+
+JSON 스키마를 정의할 때 가장 중요한 작업은 각 키의 값에 맞는 적절한 타입을 결정하는 것입니다. 이를 위해 JSON 계층 구조의 각 키에 다음 규칙을 재귀적으로 적용할 것을 권장합니다.
+
+1. **기본 타입** - 키의 값이 기본 타입이라면, 하위 객체에 있든 루트에 있든 관계없이 일반적인 스키마 [설계 모범 사례](/ko/guides/clickhouse/data-modelling/schema-design)와 [타입 최적화 규칙](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)에 따라 타입을 선택해야 합니다. 아래 `phone_numbers`와 같은 기본 타입 배열은 `Array(<type>)`(예: `Array(String)`)로 모델링할 수 있습니다.
+2. **정적 vs 동적** - 키의 값이 복합 객체, 즉 객체 또는 객체 배열인 경우, 해당 값이 변경될 가능성이 있는지 판단하십시오. 새 키가 거의 추가되지 않고, 새 키가 추가되더라도 이를 예측하여 [`ALTER TABLE ADD COLUMN`](/ko/reference/statements/alter/column#add-column)을 통한 스키마 변경으로 처리할 수 있다면 **정적**이라고 볼 수 있습니다. 여기에는 일부 JSON 문서에서 일부 키만 제공되는 객체도 포함됩니다. 반대로 새 키가 자주 추가되거나 예측할 수 없는 객체는 **동적**이라고 봐야 합니다. **단, 수백 개 또는 수천 개의 하위 키를 가진 구조는 편의상 동적으로 간주할 수 있습니다**.
+
+값이 **정적**인지 **동적**인지 판단하려면 아래의 관련 섹션인 [**정적 객체 처리**](/ko/guides/clickhouse/data-formats/json/schema#handling-static-structures)와 [**동적 객체 처리**](/ko/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures)를 참조하십시오.
+
+<p />
+
+**중요:** 위 규칙은 재귀적으로 적용해야 합니다. 키의 값이 동적이라고 판단되면 더 이상 평가할 필요가 없으며, [**동적 객체 처리**](/ko/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures)의 지침을 따르면 됩니다. 객체가 정적이라면 키 값이 기본 타입이 되거나 동적 키를 만날 때까지 하위 키를 계속 평가하십시오.
+
+이 규칙을 설명하기 위해 사람을 나타내는 다음 JSON 예시를 사용합니다:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021"
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+다음 규칙을 적용합니다:
+
+* 루트 키 `name`, `username`, `email`, `website`는 `String` 유형으로 표현할 수 있습니다. `phone_numbers` 컬럼은 `Array(String)` 유형의 배열 원시 타입이며, `dob`와 `id`의 유형은 각각 `Date`와 `UInt32`입니다.
+* `address` 객체에는 새 키가 추가되지 않고(새 address 객체만 추가됨), 따라서 **정적**으로 간주할 수 있습니다. 재귀적으로 보면 모든 서브컬럼은 `geo`를 제외하고 원시 타입(유형은 `String`)으로 간주할 수 있습니다. `geo` 역시 `lat`와 `lon`이라는 두 개의 `Float32` 컬럼으로 이루어진 정적 구조입니다.
+* `tags` 컬럼은 **동적**입니다. 어떤 유형과 구조이든 새로운 임의의 태그가 이 객체에 추가될 수 있다고 가정합니다.
+* `company` 객체는 **정적**이며, 지정된 최대 3개의 키만 항상 포함합니다. 서브키 `name`과 `catchPhrase`의 유형은 `String`입니다. `labels` 키는 **동적**입니다. 새로운 임의의 태그가 이 객체에 추가될 수 있다고 가정합니다. 값은 항상 `String` 유형의 key-value 쌍입니다.
+
+<Note>
+  수백 개 또는 수천 개의 정적 키를 가진 구조는 동적으로 간주할 수 있습니다. 이런 구조에서는 컬럼을 정적으로 선언하는 것이 현실적으로 드물기 때문입니다. 다만 가능하다면 스토리지와 추론 오버헤드를 모두 줄이기 위해 필요하지 않은 [스킵 경로](#using-type-hints-and-skipping-paths)는 제외하십시오.
+</Note>
+
+<div id="handling-static-structures">
+  ## 정적 구조 처리
+</div>
+
+정적 구조는 이름이 지정된 Tuple, 즉 `Tuple`을 사용해 처리하는 것을 권장합니다. 객체 배열은 튜플 배열, 즉 `Array(Tuple)`로 저장할 수 있습니다. 튜플 내부의 컬럼과 각 컬럼의 타입도 동일한 규칙에 따라 정의해야 합니다. 이렇게 하면 아래와 같이 중첩된 객체를 표현하기 위해 중첩된 Tuple이 사용될 수 있습니다.
+
+이를 설명하기 위해 앞서 사용한 JSON person 예시에서 동적 객체를 제외한 형태를 사용합니다:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+이 table의 스키마는 아래와 같습니다:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+`company` 컬럼이 `Tuple(catchPhrase String, name String)`으로 정의되어 있다는 점에 유의하세요. `address` 키는 `Array(Tuple)`를 사용하고, `geo` 컬럼을 나타내기 위해 중첩된 `Tuple`을 포함합니다.
+
+현재 구조 그대로 JSON을 이 테이블에 삽입할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+위 예시에서는 데이터가 거의 없지만, 아래와 같이 마침표로 구분된 이름을 사용해 튜플 컬럼을 쿼리할 수 있습니다.
+
+```sql
+SELECT
+ address.street,
+ company.name
+FROM people
+```
+
+```response
+┌─address.street────┬─company.name─┐
+│ ['Victor Plains'] │ ClickHouse   │
+└───────────────────┴──────────────┘
+```
+
+`address.street` 컬럼이 `Array`로 반환된다는 점에 유의하십시오. 배열 안의 특정 객체를 위치로 지정해 쿼리하려면 컬럼 이름 뒤에 배열 오프셋을 지정해야 합니다. 예를 들어 첫 번째 주소의 street에 접근하려면 다음과 같습니다:
+
+```sql
+SELECT address.street[1] AS street
+FROM people
+```
+
+```response
+┌─street────────┐
+│ Victor Plains │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+서브컬럼은 [`24.12`](https://clickhouse.com/blog/clickhouse-release-24-12#json-subcolumns-as-table-primary-key)부터 정렬 키에서도 사용할 수 있습니다:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY company.name
+```
+
+<div id="handling-default-values">
+  ### 기본값 처리
+</div>
+
+JSON 객체는 구조화되어 있더라도 알려진 키 중 일부만 포함된 희소한 경우가 많습니다. 다행히 `Tuple` 타입은 JSON payload에 모든 컬럼이 포함되어 있을 필요가 없습니다. 제공되지 않은 경우에는 기본값이 사용됩니다.
+
+앞서 살펴본 `people` 테이블과 `suite`, `geo`, `phone_numbers`, `catchPhrase` 키가 빠진 다음 희소 JSON을 살펴보겠습니다.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+아래에서 이 행이 성공적으로 삽입되는 것을 확인할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","city":"Wisokyburgh","zipcode":"90566-7771"}],"website":"clickhouse.com","company":{"name":"ClickHouse"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+이 단일 행을 쿼리하면, 생략된 컬럼(하위 객체 포함)에는 기본값이 사용되는 것을 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "1",
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "city": "Wisokyburgh",
+      "geo": {
+        "lat": 0,
+        "lng": 0
+      },
+      "street": "Victor Plains",
+      "suite": "",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "phone_numbers": [],
+  "website": "clickhouse.com",
+  "company": {
+    "catchPhrase": "",
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<Info>
+  **빈 값과 NULL 구분하기**
+
+  값이 비어 있는 경우와 값이 제공되지 않은 경우를 구분해야 한다면 [Nullable](/ko/reference/data-types/nullable) 타입을 사용할 수 있습니다. 다만 이 타입은 해당 컬럼의 저장 공간과 쿼리 성능에 부정적인 영향을 주므로, 반드시 필요한 경우가 아니라면 [사용을 피해야 합니다](/ko/concepts/best-practices/select-data-type#avoid-nullable-columns).
+</Info>
+
+<div id="handling-new-columns">
+  ### 새 컬럼 처리
+</div>
+
+구조화된 접근 방식은 JSON 키가 고정되어 있을 때 가장 간단하지만, 스키마 변경을 미리 계획할 수 있다면 이 접근 방식은 계속 사용할 수 있습니다. 즉, 새 키를 사전에 알고 있고 그에 맞춰 스키마를 수정할 수 있는 경우입니다.
+
+기본적으로 ClickHouse는 페이로드에 포함되어 있지만 스키마에는 없는 JSON 키를 무시합니다. 다음은 `nickname` 키를 추가한 수정된 JSON 페이로드입니다:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "nickname": "Clicky",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+이 JSON은 `nickname` 키를 무시하고도 성공적으로 삽입할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 행 in set. Elapsed: 0.002 sec.
+```
+
+[`ALTER TABLE ADD COLUMN`](/ko/reference/statements/alter/column#add-column) 명령을 사용해 스키마에 컬럼을 추가할 수 있습니다. `DEFAULT` 절로 기본값을 지정할 수 있으며, 이후 삽입 시 값이 지정되지 않으면 이 값이 사용됩니다. 이 값이 없는 행(컬럼이 생성되기 전에 삽입된 행)에도 이 기본값이 반환됩니다. `DEFAULT` 값이 지정되지 않으면 해당 유형의 기본값이 사용됩니다.
+
+예시:
+
+```sql
+-- 초기 행 삽입 (nickname은 무시됨)
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- 컬럼 추가
+ALTER TABLE people
+ (ADD COLUMN `nickname` String DEFAULT 'no_nickname')
+
+-- 새 행 삽입 (동일한 데이터, 다른 id)
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- 2개 행 조회
+SELECT id, nickname FROM people
+```
+
+```response
+┌─id─┬─nickname────┐
+│  2 │ Clicky      │
+│  1 │ no_nickname │
+└────┴─────────────┘
+
+2 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="handling-semi-structured-dynamic-structures">
+  ## 반정형/동적 구조 처리
+</div>
+
+키가 동적으로 추가되거나 여러 타입을 가질 수 있는 반정형 JSON 데이터에는 [`JSON`](/ko/reference/data-types/newjson) 타입을 권장합니다.
+
+좀 더 구체적으로는, 다음과 같은 경우 JSON 타입을 사용하십시오:
+
+* 시간에 따라 달라질 수 있는 **예측 불가능한 키**가 있습니다.
+* **타입이 서로 다른 값**을 포함합니다(예: 경로에 어떤 경우에는 문자열이, 어떤 경우에는 숫자가 들어갈 수 있습니다).
+* 엄격한 타입 지정이 현실적이지 않아 스키마 유연성이 필요합니다.
+* 정적이기는 하지만 명시적으로 선언하기에는 현실적이지 않은 **수백 개 또는 수천 개**의 경로가 있습니다. 이런 경우는 대체로 드뭅니다.
+
+앞서 살펴본 [person JSON 예시](/ko/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)에서는 `company.labels` 객체가 동적이라고 판단했습니다.
+
+`company.labels`에 임의의 키가 포함된다고 가정해 보겠습니다. 또한 이 구조에서는 어떤 키든 타입이 행마다 일관되지 않을 수 있습니다. 예를 들면 다음과 같습니다:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021",
+      "employees": 250
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+```json
+{
+  "id": 2,
+  "name": "Analytica Rowe",
+  "username": "Analytica",
+  "address": [
+    {
+      "street": "Maple Avenue",
+      "suite": "Apt. 402",
+      "city": "Dataford",
+      "zipcode": "11223-4567",
+      "geo": {
+        "lat": 40.7128,
+        "lng": -74.006
+      }
+    }
+  ],
+  "phone_numbers": [
+    "123-456-7890",
+    "555-867-5309"
+  ],
+  "website": "fastdata.io",
+  "company": {
+    "name": "FastData Inc.",
+    "catchPhrase": "Streamlined analytics at scale",
+    "labels": {
+      "type": [
+        "real-time processing"
+      ],
+      "founded": 2019,
+      "dissolved": 2023,
+      "employees": 10
+    }
+  },
+  "dob": "1992-07-15",
+  "tags": {
+    "hobby": "Running simulations",
+    "holidays": [
+      {
+        "year": 2023,
+        "location": "Kyoto, Japan"
+      }
+    ],
+    "car": {
+      "model": "Audi e-tron",
+      "year": 2022
+    }
+  }
+}
+```
+
+객체마다 `company.labels` 컬럼의 키와 타입이 달라질 수 있으므로, 이 데이터를 모델링하는 방법에는 여러 가지가 있습니다:
+
+* **단일 JSON 컬럼** - 전체 스키마를 단일 `JSON` 컬럼으로 표현하여, 그 하위의 모든 구조를 동적으로 처리할 수 있습니다.
+* **대상 지정 JSON 컬럼** - `company.labels` 컬럼에만 `JSON` 타입을 사용하고, 다른 모든 컬럼에는 위에서 사용한 구조화된 스키마를 그대로 유지합니다.
+
+첫 번째 접근 방식은 [앞서 설명한 방식](#static-vs-dynamic-json)과 일치하지 않지만, 단일 JSON 컬럼 방식은 프로토타이핑과 데이터 엔지니어링 작업에 유용합니다.
+
+대규모 프로덕션 환경에서 ClickHouse를 배포할 때는 구조를 구체적으로 정의하고, 가능하면 필요한 동적 하위 구조에만 JSON 타입을 사용하는 것이 좋습니다.
+
+엄격한 스키마에는 다음과 같은 이점이 있습니다:
+
+* **데이터 검증** – 엄격한 스키마를 적용하면 특정 구조를 제외하고는 컬럼 폭증 위험을 피할 수 있습니다.
+* **컬럼 폭증 위험 방지** - JSON 타입은 서브컬럼이 전용 컬럼으로 저장되는 경우 잠재적으로 수천 개의 컬럼까지 확장될 수 있지만, 이로 인해 과도하게 많은 컬럼 파일이 생성되어 성능에 영향을 주는 컬럼 파일 폭증이 발생할 수 있습니다. 이를 완화하기 위해 JSON에 사용되는 기본 [Dynamic type](/ko/reference/data-types/dynamic)은 [`max_dynamic_paths`](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns) 매개변수를 제공하며, 이 매개변수는 별도 컬럼 파일로 저장되는 고유 경로 수를 제한합니다. 임계값에 도달하면 추가 경로는 컴팩트한 인코딩 포맷을 사용하는 공유 컬럼 파일에 저장되므로, 유연한 데이터 수집을 지원하면서도 성능과 스토리지 효율성을 유지할 수 있습니다. 다만 이 공유 컬럼 파일에 접근할 때는 성능이 다소 떨어집니다. 하지만 JSON 컬럼은 [타입 힌트](#using-type-hints-and-skipping-paths)와 함께 사용할 수 있습니다. &quot;힌트가 지정된&quot; 컬럼은 전용 컬럼과 동일한 성능을 제공합니다.
+* **경로와 타입을 더 쉽게 내부 검사** - JSON 타입은 추론된 타입과 경로를 확인하기 위한 [인트로스펙션 함수](/ko/reference/data-types/newjson#introspection-functions)를 지원하지만, 정적 구조는 예를 들어 `DESCRIBE`를 사용해 더 간단하게 확인할 수 있습니다.
+
+<div id="single-json-column">
+  ### 단일 JSON 컬럼
+</div>
+
+이 접근 방식은 프로토타이핑과 데이터 엔지니어링 작업에 유용합니다. 프로덕션 환경에서는 필요한 경우에만 동적인 하위 구조에 `JSON`을 사용해 보십시오.
+
+<Info>
+  **성능 고려 사항**
+
+  단일 JSON 컬럼은 필요하지 않은 JSON 경로를 스키핑(저장하지 않음)하고 [타입 힌트](#using-type-hints-and-skipping-paths)를 사용해 최적화할 수 있습니다. 타입 힌트를 사용하면 하위 컬럼의 유형을 사용자가 명시적으로 정의할 수 있으므로, 쿼리 시점에 수행되는 추론 및 간접 처리 과정을 건너뛸 수 있습니다. 이를 통해 명시적 스키마를 사용하는 경우와 동일한 성능을 얻을 수 있습니다. 자세한 내용은 [&quot;타입 힌트 사용 및 경로 스키핑&quot;](#using-type-hints-and-skipping-paths)을 참조하십시오.
+</Info>
+
+여기서 단일 JSON 컬럼의 스키마는 단순합니다:
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE people
+(
+    `json` JSON(username String)
+)
+ENGINE = MergeTree
+ORDER BY json.username;
+```
+
+<Note>
+  `username` 컬럼을 정렬/프라이머리 키에 사용하므로 JSON 정의에서 이 컬럼에 대한 [타입 힌트](#using-type-hints-and-skipping-paths)를 제공합니다. 이렇게 하면 ClickHouse가 이 컬럼이 null이 될 수 없음을 인지하고, 어떤 `username` 하위 컬럼을 사용해야 하는지도 올바르게 판단할 수 있습니다(유형별로 여러 개가 있을 수 있어, 그렇지 않으면 모호해질 수 있습니다).
+</Note>
+
+위 테이블에 행을 삽입하려면 `JSONAsObject` 포맷을 사용할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONAsObject 
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.028 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+json: {"address":[{"city":"Dataford","geo":{"lat":40.7128,"lng":-74.006},"street":"Maple Avenue","suite":"Apt. 402","zipcode":"11223-4567"}],"company":{"catchPhrase":"Streamlined analytics at scale","labels":{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]},"name":"FastData Inc."},"dob":"1992-07-15","id":"2","name":"Analytica Rowe","phone_numbers":["123-456-7890","555-867-5309"],"tags":{"car":{"model":"Audi e-tron","year":"2022"},"hobby":"Running simulations","holidays":[{"location":"Kyoto, Japan","year":"2023"}]},"username":"Analytica","website":"fastdata.io"}
+
+Row 2:
+──────
+json: {"address":[{"city":"Wisokyburgh","geo":{"lat":-43.9509,"lng":-34.4618},"street":"Victor Plains","suite":"Suite 879","zipcode":"90566-7771"}],"company":{"catchPhrase":"The real-time data warehouse for analytics","labels":{"employees":"250","founded":"2021","type":"database systems"},"name":"ClickHouse"},"dob":"2007-03-31","email":"clicky@clickhouse.com","id":"1","name":"Clicky McCliickHouse","phone_numbers":["010-692-6593","020-192-3333"],"tags":{"car":{"model":"Tesla","year":"2023"},"hobby":"Databases","holidays":[{"location":"Azores, Portugal","year":"2024"}]},"username":"Clicky","website":"clickhouse.com"}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+[인트로스펙션 함수](/ko/reference/data-types/newjson#introspection-functions)를 사용해 추론된 하위 컬럼과 그 타입을 확인할 수 있습니다. 예를 들어 다음과 같습니다:
+
+```sql
+SELECT JSONDynamicPathsWithTypes(json) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "String",
+        "company.labels.type": "String",
+        "company.name": "String",
+        "dob": "Date",
+        "email": "String",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.dissolved": "Int64",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "Int64",
+        "company.labels.type": "Array(Nullable(String))",
+        "company.name": "String",
+        "dob": "Date",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+인트로스펙션 함수의 전체 목록은 [&quot;인트로스펙션 함수&quot;](/ko/reference/data-types/newjson#introspection-functions)를 참조하십시오.
+
+[하위 경로는 접근할 수 있습니다](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns) `.` 표기법을 사용합니다. 예:
+
+```sql
+SELECT json.name, json.email FROM people
+```
+
+```response
+┌─json.name────────────┬─json.email────────────┐
+│ Analytica Rowe       │ ᴺᵁᴸᴸ                  │
+│ Clicky McCliickHouse │ clicky@clickhouse.com │
+└──────────────────────┴───────────────────────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+행에서 누락된 컬럼은 `NULL`로 반환된다는 점에 유의하십시오.
+
+또한 동일한 유형을 가진 경로마다 별도의 서브컬럼이 생성됩니다. 예를 들어, `company.labels.type`에는 `String`과 `Array(Nullable(String))`에 해당하는 서브컬럼이 각각 존재합니다. 가능한 경우 둘 다 반환되지만, `.:` 구문을 사용해 특정 서브컬럼을 지정할 수 있습니다:
+
+```sql
+SELECT json.company.labels.type
+FROM people
+```
+
+```response
+┌─json.company.labels.type─┐
+│ database systems         │
+│ ['real-time processing'] │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+```sql
+SELECT json.company.labels.type.:String
+FROM people
+```
+
+```response
+┌─json.company⋯e.:`String`─┐
+│ ᴺᵁᴸᴸ                     │
+│ database systems         │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+중첩된 하위 객체를 반환하려면 `^`가 필요합니다. 이는 명시적으로 요청하지 않는 한 많은 수의 컬럼을 읽는 일을 피하기 위한 설계 선택입니다. `^` 없이 접근한 객체는 아래와 같이 `NULL`을 반환합니다.
+
+```sql
+-- 기본적으로 하위 객체는 반환되지 않습니다
+SELECT json.company.labels
+FROM people
+```
+
+```response
+┌─json.company.labels─┐
+│ ᴺᵁᴸᴸ                │
+│ ᴺᵁᴸᴸ                │
+└─────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+-- ^ 표기법을 사용하여 하위 객체 반환
+SELECT json.^company.labels
+FROM people
+```
+
+```response
+┌─json.^`company`.labels─────────────────────────────────────────────────────────────────┐
+│ {"employees":"250","founded":"2021","type":"database systems"}                         │
+│ {"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]} │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="targeted-json-column">
+  ### 대상 JSON 컬럼
+</div>
+
+프로토타이핑 및 데이터 엔지니어링 작업에는 유용하지만, 프로덕션 환경에서는 가능한 한 명시적인 스키마(schema)를 사용하시기 바랍니다.
+
+앞선 예시는 `company.labels` 컬럼에 단일 `JSON` 컬럼을 사용하여 모델링할 수 있습니다.
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels JSON),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+`JSONEachRow` 포맷을 사용하여 이 테이블에 데이터를 삽입할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:            2
+name:          Analytica Rowe
+username:      Analytica
+email:
+address:       [('Dataford',(40.7128,-74.006),'Maple Avenue','Apt. 402','11223-4567')]
+phone_numbers: ['123-456-7890','555-867-5309']
+website:       fastdata.io
+company:       ('Streamlined analytics at scale','FastData Inc.','{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]}')
+dob:           1992-07-15
+tags:          {"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}
+
+Row 2:
+──────
+id:            1
+name:          Clicky McCliickHouse
+username:      Clicky
+email:         clicky@clickhouse.com
+address:       [('Wisokyburgh',(-43.9509,-34.4618),'Victor Plains','Suite 879','90566-7771')]
+phone_numbers: ['010-692-6593','020-192-3333']
+website:       clickhouse.com
+company:       ('The real-time data warehouse for analytics','ClickHouse','{"employees":"250","founded":"2021","type":"database systems"}')
+dob:           2007-03-31
+tags:          {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+[인트로스펙션 함수](/ko/reference/data-types/newjson#introspection-functions)를 사용하면 `company.labels` 컬럼에서 추론된 경로와 타입을 확인할 수 있습니다.
+
+```sql
+SELECT JSONDynamicPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "Int64",
+        "employees": "Int64",
+        "founded": "Int64",
+        "type": "Array(Nullable(String))"
+ }
+}
+{
+    "paths": {
+        "employees": "Int64",
+        "founded": "String",
+        "type": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+<div id="using-type-hints-and-skipping-paths">
+  ### 타입 힌트와 스키핑 경로 사용하기
+</div>
+
+타입 힌트를 사용하면 경로와 해당 하위 컬럼의 타입을 지정하여 불필요한 타입 추론을 방지할 수 있습니다. 다음 예시에서는 JSON 컬럼 `company.labels` 안의 JSON 키 `dissolved`, `employees`, `founded`에 대한 타입을 지정합니다.
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(
+        city String,
+        geo Tuple(
+            lat Float32,
+            lng Float32),
+        street String,
+        suite String,
+        zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(
+        catchPhrase String,
+        name String,
+        labels JSON(dissolved UInt16, employees UInt16, founded UInt16)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+이제 이 컬럼들에 명시적으로 지정한 타입이 적용된 것을 확인할 수 있습니다:
+
+```sql
+SELECT JSONAllPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "String"
+ }
+}
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "Array(Nullable(String))"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+또한 스토리지 사용량을 최소화하고 필요하지 않은 경로에 대한 불필요한 추론을 방지하기 위해 [`SKIP` and `SKIP REGEXP`](/ko/reference/data-types/newjson) 매개변수를 사용해 저장하지 않을 JSON 내부 경로를 건너뛸 수 있습니다. 예를 들어 위 데이터에 단일 JSON 컬럼을 사용한다고 가정해 보겠습니다. 이 경우 `address` 및 `company` 경로를 건너뛸 수 있습니다:
+
+```sql
+CREATE TABLE people
+(
+    `json` JSON(username String, SKIP address, SKIP company)
+)
+ENGINE = MergeTree
+ORDER BY json.username
+
+INSERT INTO people FORMAT JSONAsObject
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+다음과 같이 데이터에서 컬럼이 제외된 것을 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+    "json": {
+        "dob" : "1992-07-15",
+        "id" : "2",
+        "name" : "Analytica Rowe",
+        "phone_numbers" : [
+            "123-456-7890",
+            "555-867-5309"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Audi e-tron",
+                "year" : "2022"
+            },
+            "hobby" : "Running simulations",
+            "holidays" : [
+                {
+                    "location" : "Kyoto, Japan",
+                    "year" : "2023"
+                }
+            ]
+        },
+        "username" : "Analytica",
+        "website" : "fastdata.io"
+    }
+}
+{
+    "json": {
+        "dob" : "2007-03-31",
+        "email" : "clicky@clickhouse.com",
+        "id" : "1",
+        "name" : "Clicky McCliickHouse",
+        "phone_numbers" : [
+            "010-692-6593",
+            "020-192-3333"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Tesla",
+                "year" : "2023"
+            },
+            "hobby" : "Databases",
+            "holidays" : [
+                {
+                    "location" : "Azores, Portugal",
+                    "year" : "2024"
+                }
+            ]
+        },
+        "username" : "Clicky",
+        "website" : "clickhouse.com"
+    }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="optimizing-performance-with-type-hints">
+  #### 타입 힌트로 성능 최적화하기
+</div>
+
+타입 힌트는 불필요한 타입 추론을 피하는 수단에 그치지 않습니다. 저장 및 처리 과정의 간접 단계를 완전히 없애고, [최적의 기본 타입](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)도 지정할 수 있게 해줍니다. 타입 힌트가 지정된 JSON 경로는 항상 기존 컬럼처럼 저장되므로, [**discriminator 컬럼**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)이나 쿼리 시점의 동적 해석이 필요하지 않습니다.
+
+즉, 타입 힌트가 잘 정의되어 있으면 중첩된 JSON 키도 처음부터 최상위 컬럼으로 모델링한 것과 동일한 성능과 효율을 얻을 수 있습니다.
+
+따라서 대체로 일관적이면서도 JSON의 유연성이 필요한 데이터셋에서는, 타입 힌트를 통해 스키마나 수집 파이프라인을 재구성하지 않고도 성능을 유지할 수 있습니다.
+
+<div id="configuring-dynamic-paths">
+  ### 동적 경로 구성
+</div>
+
+ClickHouse는 각 JSON 경로를 진정한 열 지향 레이아웃의 서브컬럼으로 저장하므로, 압축, SIMD 가속 처리, 최소한의 디스크 I/O 등 기존 컬럼에서와 동일한 성능상 이점을 제공합니다. JSON 데이터에서 고유한 각 경로와 타입의 조합은 디스크의 개별 컬럼 파일이 될 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="JSON 경로별 컬럼" />
+
+예를 들어 두 JSON 경로가 서로 다른 타입으로 삽입되면, ClickHouse는 각 [구체적인 타입의 값을 별도의 서브컬럼에 저장합니다](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). 이러한 서브컬럼은 각각 독립적으로 액세스할 수 있어 불필요한 I/O를 최소화합니다. 여러 타입을 가진 컬럼을 쿼리하더라도 값은 여전히 하나의 열 지향 응답으로 반환됩니다.
+
+또한 ClickHouse는 오프셋을 활용해 이러한 서브컬럼이 조밀한 상태를 유지하도록 하며, 존재하지 않는 JSON 경로에 대해서는 기본값을 저장하지 않습니다. 이 방식은 압축 효율을 극대화하고 I/O를 더욱 줄여 줍니다.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON 오프셋" />
+
+하지만 카디널리티가 높거나 JSON 구조 변화가 매우 큰 경우(예: telemetry 파이프라인, 로그, 머신러닝 피처 스토어)에는 이러한 동작으로 인해 컬럼 파일 수가 급증할 수 있습니다. 새로운 고유 JSON 경로가 생길 때마다 새 컬럼 파일이 생성되고, 해당 경로 아래에서 타입 변형이 추가될 때마다 컬럼 파일도 하나씩 더 생성됩니다. 이는 읽기 성능 측면에서는 최적이지만, 작은 파일이 지나치게 많아져 파일 디스크립터 고갈, 메모리 사용량 증가, 머지 속도 저하 같은 운영상 문제를 초래합니다.
+
+이를 완화하기 위해 ClickHouse는 오버플로우 서브컬럼이라는 개념을 도입했습니다. 고유한 JSON 경로 수가 임계값을 초과하면, 추가 경로는 compact 인코딩 포맷을 사용하는 하나의 공유 파일에 저장됩니다. 이 파일도 쿼리할 수 있지만, 전용 서브컬럼과 같은 성능 특성의 이점은 누릴 수 없습니다.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="공유 JSON 컬럼" />
+
+이 임계값은 JSON 타입 선언의 [`max_dynamic_paths`](/ko/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) 매개변수로 제어됩니다.
+
+```sql
+CREATE TABLE logs
+(
+    payload JSON(max_dynamic_paths = 500)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+**이 매개변수를 너무 높게 설정하지 마십시오** - 값이 커질수록 리소스 사용량이 증가하고 효율이 떨어집니다. 일반적으로 10,000 미만으로 유지하세요. 구조 변화가 매우 잦은 워크로드에서는 저장할 대상을 제한하기 위해 타입 힌트와 `SKIP` 매개변수를 사용하세요.
+
+이 새로운 컬럼 타입의 구현이 궁금하다면 자세한 블로그 게시물 [&quot;A New Powerful JSON Data Type for ClickHouse&quot;](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)을 읽어보는 것을 권장합니다.

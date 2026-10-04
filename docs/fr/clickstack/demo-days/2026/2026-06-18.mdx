@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-18
+title: 'Demo days - 2026-06-18'
+sidebarTitle: '2026-06-18'
+sidebar_label: '2026-06-18'
+sidebar_position: 618
+description: 'ClickStack demo days du 18/06/2026'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="source-filters-now-everywhere">
+  ## Filtres de source, désormais partout
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zl5ymdzoM6U" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les filtres de source sont désormais disponibles dans tout le tableau de bord Services. Sélectionnez une source de traces ou de logs avec un filtre sur le nom du service, et le tableau de bord attend que vous choisissiez une valeur avant d’exécuter les requêtes. Ce filtre est ensuite appliqué de manière cohérente à chaque graphique, requête et panneau latéral. La cascade de traces adopte le même comportement et hérite des filtres de source de la page Search lorsque vous ouvrez un span, tout en vous permettant d’ajouter des filtres supplémentaires. La page Sessions a également été mise à jour afin que les filtres de source soient répercutés dans la barre latérale, le panneau de traces et les vues imbriquées.
+
+L’autocomplétion des filtres de source a également été étendue. Auparavant, elle n’était disponible que sur la page Search, mais elle fonctionne désormais partout où les filtres de source sont pris en charge, y compris dans les tableaux de bord. En interne, l’autocomplétion résout désormais les clés et les valeurs sur plusieurs sources, même lorsque chaque source possède son propre ensemble de filtres. Les mêmes améliorations sont disponibles dans l’éditeur SQL brut et dans chaque champ de filtre de source du générateur de requêtes.
+
+**PR associés :** [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) Ajout du périmètre de source aux filtres de tableau de bord, [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) Affichage d’une icône sur les tuiles avec des filtres limités à la source exclus
+
+<div id="better-ai-generated-dashboards-for-custom-schemas">
+  ## De meilleurs tableaux de bord générés par IA pour les schémas personnalisés
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/LUi5047F3fs" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un utilisateur créant des tableaux de bord avec l’IA à partir d’un schéma personnalisé a rencontré d’importants problèmes de performances. La cause était que les tuiles SQL brut générées codifiaient en dur un intervalle de temps au lieu d’utiliser les macros du filtre temporel du tableau de bord, de sorte que modifier cet intervalle n’avait aucun effet. Une tuile filtrait également une colonne d’horodatage entière d’une manière qui contournait la clé primaire, imposant un parcours complet de la table.
+
+Pour y remédier, le schéma MCP des tuiles SQL brut de tableau de bord indique désormais explicitement que les agents doivent utiliser les macros du filtre temporel du tableau de bord. L’interface utilisateur de ClickStack avertit également lorsqu’une tuile SQL générée ne contient pas ces macros, ce qui permet de repérer plus facilement le problème avant l’enregistrement d’un tableau de bord. Après le déploiement des modifications, la réexécution du prompt d’origine du client a produit du SQL utilisant les macros appropriées, ce qui a considérablement accéléré le tableau de bord.
+
+**PR associés :** [#2473](https://github.com/hyperdxio/hyperdx/pull/2473) Inciter les agents à utiliser des macros dans les tuiles SQL brut
+
+<div id="simpler-hashing-for-otel-metrics-and-a-primary-key-idea">
+  ## Hachage simplifié pour les métriques OTel et piste d&#39;optimisation de la clé primaire
+</div>
+
+*Démo par [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MjAUdJJbC8M" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Une contribution de la communauté a corrigé le hachage des attributs pour les métriques avec des colonnes d&#39;attributs JSON, mais elle a introduit deux chemins de code distincts. Les schémas JSON utilisaient la forme variadique de `cityHash64`, tandis que les schémas basés sur Map concaténaient d&#39;abord trois maps avant de les hacher. Ce travail supplémentaire s&#39;est avéré inutile. Les deux types de schémas utilisent désormais la même implémentation de `cityHash64`, ce qui simplifie le code et évite des allocations de maps inutiles lors du hachage.
+
+Ce travail a également mis en évidence une optimisation potentielle du schéma de métriques OpenTelemetry. Aujourd&#39;hui, la clé primaire stocke la map complète des attributs, ce qui augmente l&#39;utilisation de la mémoire, car ClickHouse conserve cette map en mémoire dans l&#39;index. Une solution envisagée consiste à matérialiser un hash des attributs au moment de l&#39;insertion et à l&#39;utiliser à la place dans la clé primaire. Rien n&#39;a encore changé, mais les mises à jour du schéma OpenTelemetry étant à nouveau à l&#39;ordre du jour, cette optimisation mérite d&#39;être réexaminée.
+
+**PR associés :** [#2475](https://github.com/hyperdxio/hyperdx/pull/2475) Unifier AttributesHash avec la forme variadique de cityHash64
+
+<div id="filter-pill-and-data-source-polish">
+  ## Améliorations des pastilles de filtre et des sources de données
+</div>
+
+*Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zi6HPj5_JQg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Deux petites améliorations pratiques ont été apportées cette semaine. Suite aux retours clients indiquant que le style précédent rendait le bouton de suppression difficile à voir, les pastilles de filtre d&#39;exclusion sont désormais beaucoup plus lisibles. Elles utilisent maintenant un rouge plus doux, qui améliore le contraste dans les modes clair et sombre.
+
+La gestion d&#39;un grand nombre de sources de données a également été simplifiée. Il est désormais possible d&#39;attribuer une section facultative aux sources afin de les regrouper dans le sélecteur de sources. Les sources sans section continuent d&#39;apparaître dans « Autre », de sorte que les configurations existantes ne sont pas affectées. La recherche a également été mise à jour pour inclure les noms de section, ce qui facilite la recherche de sources associées, même lorsque vous ne vous souvenez que du groupe auquel elles appartiennent. Cette fonctionnalité est actuellement utilisée en interne, le temps que l&#39;équipe évalue comment les utilisateurs organisent naturellement leurs sources avant de la déployer plus largement.
+
+**PR associés :** [#2478](https://github.com/hyperdxio/hyperdx/pull/2478) Rendre les pastilles de filtre d&#39;exclusion lisibles dans le thème clair, [#2432](https://github.com/hyperdxio/hyperdx/pull/2432) Ajouter un champ Section facultatif aux sources de données, [#2476](https://github.com/hyperdxio/hyperdx/pull/2476) Regrouper le sélecteur de sources de données par section avec une recherche par balises, [#2477](https://github.com/hyperdxio/hyperdx/pull/2477) Suggérer des noms de section existants dans le formulaire de source
+
+<div id="per-chart-series-limits-for-high-cardinality-charts">
+  ## Limites de séries par graphique pour les graphiques à forte cardinalité
+</div>
+
+*Démonstration par [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/xKpHvhbo-PI" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les graphiques peuvent désormais limiter le nombre de séries qu&#39;ils renvoient, ce qui permet d&#39;éviter les problèmes de performances lors du regroupement par des champs à forte cardinalité, tels qu&#39;une route HTTP ou un ID de span. Auparavant, ces requêtes pouvaient produire des centaines de milliers de séries, rendant les tableaux de bord lents ou non réactifs. Vous pouvez désormais limiter un graphique aux N séries principales, réduisant ainsi le temps de rendu et la quantité de données transférées.
+
+La sélection efficace des séries principales est plus complexe pour les requêtes exécutées par fragments. L&#39;implémentation actuelle détermine les N premières séries à partir du fragment le plus récent, puis applique ce même ensemble de séries à l&#39;ensemble de la requête, le traitement étant effectué dans ClickHouse plutôt que dans le navigateur. Cette approche est encore en cours d&#39;évaluation et pourra évoluer à mesure que de nouvelles optimisations de requêtes seront introduites.
+
+**PR associés :** [#2449](https://github.com/hyperdxio/hyperdx/pull/2449) Rendre la limite de séries optionnelle et cohérente entre les fragments, [#2429](https://github.com/hyperdxio/hyperdx/pull/2429) Limiter aux N séries principales les séries temporelles avec group-by afin d&#39;éviter les OOM

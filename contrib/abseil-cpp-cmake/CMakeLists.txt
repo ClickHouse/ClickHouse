@@ -108,6 +108,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::hardening
     absl::algorithm
     absl::core_headers
     absl::meta
@@ -132,11 +133,40 @@ absl_cc_library(
 # Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
+    base_cpu_detect
+  HDRS
+    "${DIR}/internal/cpu_detect.h"
+  SRCS
+    "${DIR}/internal/cpu_detect.cc"
+  DEPS
+    absl::base
+    absl::config
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+)
+
+# Internal-only target, do not depend on directly.
+absl_cc_library(
+  NAME
     errno_saver
   HDRS
     "${DIR}/internal/errno_saver.h"
   DEPS
     absl::config
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+)
+
+absl_cc_library(
+  NAME
+    hardening
+  HDRS
+    "${DIR}/internal/hardening.h"
+  SRCS
+    "${DIR}/internal/hardening.cc"
+  DEPS
+    absl::config
+    absl::core_headers
   COPTS
     ${ABSL_DEFAULT_COPTS}
 )
@@ -172,11 +202,8 @@ absl_cc_library(
     nullability
   HDRS
     "${DIR}/nullability.h"
-  SRCS
-    "${DIR}/internal/nullability_deprecated.h"
   DEPS
     absl::config
-    absl::core_headers
   COPTS
     ${ABSL_DEFAULT_COPTS}
 )
@@ -289,9 +316,6 @@ absl_cc_library(
     base_internal
   HDRS
     "${DIR}/internal/hide_ptr.h"
-    "${DIR}/internal/identity.h"
-    "${DIR}/internal/inline_variable.h"
-    "${DIR}/internal/invoke.h"
     "${DIR}/internal/scheduling_mode.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
@@ -343,14 +367,13 @@ absl_cc_library(
   PUBLIC
 )
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     throw_delegate
   HDRS
-    "${DIR}/internal/throw_delegate.h"
+    "${DIR}/throw_delegate.h"
   SRCS
-    "${DIR}/internal/throw_delegate.cc"
+    "${DIR}/throw_delegate.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -423,7 +446,7 @@ absl_cc_library(
   NAME
     fast_type_id
   HDRS
-    "${DIR}/internal/fast_type_id.h"
+    "${DIR}/fast_type_id.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
@@ -457,6 +480,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::hardening
     absl::base_internal
     absl::core_headers
     absl::utility
@@ -473,6 +497,7 @@ absl_cc_library(
   DEPS
     absl::cleanup_internal
     absl::config
+    absl::hardening
     absl::core_headers
   PUBLIC
 )
@@ -496,6 +521,7 @@ absl_cc_library(
     absl::compare
     absl::compressed_tuple
     absl::config
+    absl::hardening
     absl::container_common
     absl::container_memory
     absl::cord
@@ -532,6 +558,7 @@ absl_cc_library(
     absl::compressed_tuple
     absl::algorithm
     absl::config
+    absl::hardening
     absl::core_headers
     absl::dynamic_annotations
     absl::throw_delegate
@@ -551,6 +578,7 @@ absl_cc_library(
     absl::base_internal
     absl::compressed_tuple
     absl::config
+    absl::hardening
     absl::core_headers
     absl::memory
     absl::span
@@ -566,6 +594,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::hardening
     absl::algorithm
     absl::core_headers
     absl::inlined_vector_internal
@@ -663,7 +692,7 @@ absl_cc_library(
   NAME
     weakly_mixed_integer
   HDRS
-    "${DIR}/internal/weakly_mixed_integer.h"
+    "${ABSL_ROOT_DIR}/absl/hash/internal/weakly_mixed_integer.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -876,21 +905,6 @@ set(DIR ${ABSL_ROOT_DIR}/absl/crc)
 # Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
-    crc_cpu_detect
-  HDRS
-    "${DIR}/internal/cpu_detect.h"
-  SRCS
-    "${DIR}/internal/cpu_detect.cc"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::base
-    absl::config
-)
-
-# Internal-only target, do not depend on directly.
-absl_cc_library(
-  NAME
     crc_internal
   HDRS
     "${DIR}/internal/crc.h"
@@ -902,7 +916,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::crc_cpu_detect
+    absl::base_cpu_detect
     absl::config
     absl::core_headers
     absl::endian
@@ -928,7 +942,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::crc_cpu_detect
+    absl::base_cpu_detect
     absl::crc_internal
     absl::non_temporal_memcpy
     absl::config
@@ -985,25 +999,6 @@ set(DIR ${ABSL_ROOT_DIR}/absl/debugging)
 
 absl_cc_library(
   NAME
-    borrowed_fixup_buffer
-  SRCS
-    "${DIR}/internal/borrowed_fixup_buffer.cc"
-  HDRS
-    "${DIR}/internal/borrowed_fixup_buffer.h"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  LINKOPTS
-    ${ABSL_DEFAULT_LINKOPTS}
-  DEPS
-    absl::config
-    absl::core_headers
-    absl::hash
-    absl::malloc_internal
-  PUBLIC
-)
-
-absl_cc_library(
-  NAME
     stacktrace
   HDRS
     "${DIR}/stacktrace.h"
@@ -1024,11 +1019,11 @@ absl_cc_library(
   LINKOPTS
     $<$<BOOL:${EXECINFO_LIBRARY}>:${EXECINFO_LIBRARY}>
   DEPS
-    absl::borrowed_fixup_buffer
     absl::debugging_internal
     absl::config
     absl::core_headers
     absl::dynamic_annotations
+    absl::malloc_internal
     absl::raw_logging_internal
   PUBLIC
 )
@@ -2967,7 +2962,6 @@ absl_cc_library(
     "${DIR}/internal/memutil.h"
     "${DIR}/internal/stringify_sink.h"
     "${DIR}/internal/stringify_sink.cc"
-    "${DIR}/internal/stl_type_traits.h"
     "${DIR}/internal/str_join_internal.h"
     "${DIR}/internal/str_split_internal.h"
     "${DIR}/match.cc"
@@ -2985,6 +2979,7 @@ absl_cc_library(
     absl::bits
     absl::charset
     absl::config
+    absl::hardening
     absl::core_headers
     absl::endian
     absl::int128
@@ -3271,6 +3266,7 @@ absl_cc_library(
   DEPS
     absl::base
     absl::config
+    absl::hardening
     absl::cord_internal
     absl::cordz_functions
     absl::cordz_info
@@ -3482,6 +3478,7 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::hardening
     absl::algorithm
     absl::core_headers
     absl::nullability
@@ -3495,8 +3492,6 @@ absl_cc_library(
     optional
   HDRS
     "${DIR}/optional.h"
-  SRCS
-    "${DIR}/internal/optional.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -3515,8 +3510,6 @@ absl_cc_library(
     variant
   HDRS
     "${DIR}/variant.h"
-  SRCS
-    "${DIR}/internal/variant.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -3557,19 +3550,6 @@ absl_cc_library(
     absl::type_traits
   PUBLIC
 )
-
-absl_cc_library(
-  NAME
-    if_constexpr
-  HDRS
-    "${DIR}/internal/if_constexpr.h"
-  COPTS
-    ${ABSL_DEFAULT_COPTS}
-  DEPS
-    absl::config
-  PUBLIC
-)
-
 
 add_library(_abseil_swiss_tables INTERFACE)
 target_include_directories (_abseil_swiss_tables SYSTEM BEFORE INTERFACE ${ABSL_ROOT_DIR})

@@ -1,0 +1,46 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+    val UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: val, result_type: UInt64, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        number UInt64
+        val UInt64
+      PROJECTION
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+          FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+      JOIN TREE
+        TABLE_FUNCTION id: 7, alias: __table2, table_function_name: numbers
+          ARGUMENTS
+            LIST id: 11, nodes: 1
+              CONSTANT id: 12, constant_value: UInt64_5, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 13, nodes: 1
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 1
+        EXPRESSION number
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+        FILL FROM
+          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+        FILL TO
+          CONSTANT id: 16, constant_value: UInt64_8, constant_value_type: UInt8
+  INTERPOLATE
+    LIST id: 17, nodes: 1
+      INTERPOLATE id: 18
+        EXPRESSION val 
+          COLUMN id: 4, column_name: val, result_type: UInt64, source_id: 3
+        INTERPOLATE_EXPRESSION
+          FUNCTION id: 19, function_name: plus, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 20, nodes: 2
+                COLUMN id: 21, column_name: val, result_type: UInt64, source_id: 18
+                CONSTANT id: 22, constant_value: UInt64_1, constant_value_type: UInt8

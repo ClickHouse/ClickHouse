@@ -1,0 +1,568 @@
+---
+title: 'Como trabalhar com arrays no ClickHouse'
+description: 'Guia introdutório sobre como usar arrays no ClickHouse'
+keywords: ['Arrays']
+sidebarTitle: 'Como trabalhar com arrays no ClickHouse'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCode.jsx";
+
+> Neste guia, você aprenderá a usar arrays no ClickHouse e algumas das [funções de array](/pt-BR/reference/functions/regular-functions/array-functions) mais usadas.
+
+<div id="array-basics">
+  ## Introdução aos arrays
+</div>
+
+Um array é uma estrutura de dados em memória que agrupa valores.
+Chamamos esses valores de *elementos* do array, e cada elemento pode ser referenciado por um índice, que indica a posição do elemento nesse agrupamento.
+
+Arrays no ClickHouse podem ser criados usando a função [`array`](/pt-BR/reference/data-types/array):
+
+```sql
+array(T)
+```
+
+Ou então, usando `[]`:
+
+```sql
+[]
+```
+
+Por exemplo, você pode criar um array de números:
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+Ou um array de strings:
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+Ou um array de tipos aninhados, como [tuplas](/pt-BR/reference/data-types/tuple):
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+Talvez você fique tentado a criar um Array com tipos diferentes assim:
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+No entanto, os elementos do array sempre devem ter um supertipo comum, ou seja, o menor tipo de dado capaz de representar valores de dois ou mais tipos diferentes sem perda, permitindo que sejam usados em conjunto.
+Se não houver um supertipo comum, você receberá uma exceção ao tentar formar o array:
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+ao criar arrays dinamicamente, o ClickHouse escolhe o tipo mais estreito que comporta todos os elementos.
+Por exemplo, se você criar um array de inteiros e números de ponto flutuante, será escolhido um supertipo de float:
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="Criando arrays de tipos diferentes">
+  Você pode usar a configuração `use_variant_as_common_type` para alterar o comportamento padrão descrito acima.
+  Isso permite usar o tipo [Variant](/pt-BR/reference/data-types/variant) como tipo de resultado para as funções `if`/`multiIf`/`array`/`map` quando não há um tipo comum entre os tipos dos argumentos.
+
+  Por exemplo:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  Depois, você também pode ler os tipos do array pelo nome do tipo:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+Usar o índice com `[]` é uma forma conveniente de acessar elementos de um array.
+No ClickHouse, é importante saber que o índice do array sempre começa em **1**.
+Isso pode ser diferente de outras linguagens de programação com as quais você está acostumado, nas quais os arrays são indexados a partir de zero.
+
+Por exemplo, dado um array, você pode selecionar o primeiro elemento dele escrevendo:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+Também é possível usar índices negativos.
+Dessa forma, você pode selecionar elementos em relação ao último elemento:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+Apesar de os arrays serem indexados a partir de 1, ainda é possível acessar elementos na posição 0.
+O valor retornado será o *valor padrão* do tipo do array.
+No exemplo abaixo, uma string vazia é retornada, pois esse é o valor padrão do tipo de dado String:
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## Funções de array
+</div>
+
+O ClickHouse oferece uma série de funções úteis que operam sobre arrays.
+Nesta seção, veremos algumas das mais úteis, começando pelas mais simples e avançando em complexidade.
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### funções length, arrayEnumerate, indexOf e has*
+</div>
+
+A função `length` é usada para retornar o número de elementos no array:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+Você também pode usar a função [`arrayEnumerate`](/pt-BR/reference/functions/regular-functions/array-functions#arrayEnumerate) para retornar um array com os índices dos elementos:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+Se você quiser encontrar o índice de um determinado valor, pode usar a função `indexOf`:
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+Observe que essa função retornará o primeiro índice encontrado caso haja vários valores idênticos no array.
+Se os elementos do seu array estiverem em ordem crescente, você poderá usar a função [`indexOfAssumeSorted`](/pt-BR/reference/functions/regular-functions/array-functions#indexOfAssumeSorted).
+
+As funções `has`, `hasAll` e `hasAny` são úteis para determinar se um array contém um determinado valor.
+Considere o exemplo a seguir:
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## Explorando dados de voos com funções de array
+</div>
+
+Até agora, os exemplos foram bem simples.
+A utilidade dos arrays fica realmente evidente quando eles são usados em um dataset do mundo real.
+
+Usaremos o [dataset ontime](/pt-BR/get-started/sample-datasets/ontime), que contém dados de voos do Bureau of Transportation Statistics.
+Você pode encontrar esse dataset no [playground SQL](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K).
+
+Selecionamos esse dataset porque os arrays costumam ser muito adequados para trabalhar com dados de séries temporais e podem ajudar a simplificar
+consultas que, de outra forma, seriam complexas.
+
+<Tip>
+  Clique no botão &quot;play&quot; abaixo para executar as consultas diretamente na documentação e ver o resultado em tempo real.
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+Há muitas colunas neste conjunto de dados, mas vamos nos concentrar em um subconjunto delas.
+Execute a consulta abaixo para ver como são os nossos dados:
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+Vamos dar uma olhada nos 10 aeroportos mais movimentados dos EUA em um dia específico escolhido aleatoriamente, por exemplo, &#39;2024-01-01&#39;.
+Queremos entender quantos voos partem de cada aeroporto.
+Nossos dados contêm uma linha por voo, mas seria conveniente se pudéssemos agrupar os dados pelo aeroporto de origem e reunir os destinos em um array.
+
+Para isso, podemos usar a função de agregação [`groupArray`](/pt-BR/reference/functions/aggregate-functions/groupArray), que recebe os valores da coluna especificada de cada linha e os agrupa em um array.
+
+Execute a consulta abaixo para ver como ela funciona:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+O [`toStringCutToZero`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) na consulta acima é usado para remover caracteres nulos que aparecem após o código de 3 letras de alguns aeroportos.
+
+Com os dados nesse formato, podemos encontrar facilmente a ordem dos aeroportos mais movimentados calculando o comprimento dos arrays &quot;Destinations&quot; agrupados:
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap e arrayZip
+</div>
+
+Vimos na consulta anterior que o Denver International Airport foi o aeroporto com mais voos de saída no dia que escolhemos.
+Vamos ver quantos desses voos saíram no horário, tiveram atraso de 15 a 30 minutos ou atraso de mais de 30 minutos.
+
+Muitas das funções de array no ClickHouse são as chamadas [&quot;funções de ordem superior&quot;](/pt-BR/reference/functions/regular-functions/overview#higher-order-functions) e aceitam uma função lambda como primeiro parâmetro.
+A função [`arrayMap`](/pt-BR/reference/functions/regular-functions/array-functions#arrayMap) é um exemplo desse tipo de função de ordem superior e retorna um novo array a partir do array fornecido, aplicando uma função lambda a cada elemento do array original.
+
+Execute a consulta abaixo, que usa a função `arrayMap`, para ver quais voos tiveram atraso ou saíram no horário.
+Para pares de origem/destino, ela mostra o número de cauda e o status de cada voo:
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+Na consulta acima, a função `arrayMap` recebe um array de um único elemento `[DepDelayMinutes]` e aplica a função lambda `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'` para categorizá-lo.
+Em seguida, o primeiro elemento do array resultante é extraído com `[DepDelayMinutes][1]`.
+A função [`arrayZip`](/pt-BR/reference/functions/regular-functions/array-functions#arrayZip) combina o array `Tail_Number` e o array `statuses` em um único array.
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+Em seguida, veremos apenas o número de voos com atraso de 30 minutos ou mais nos aeroportos `DEN`, `ATL` e `DFW`:
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+Na consulta acima, passamos uma função lambda como primeiro argumento para a função [`arrayFilter`](/pt-BR/reference/functions/regular-functions/array-functions#arrayFilter).
+Essa função lambda recebe o atraso em minutos (`d`) e retorna `1` se a condição for atendida; caso contrário, `0`.
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort e arrayIntersect
+</div>
+
+Em seguida, vamos descobrir quais pares dos principais aeroportos dos EUA atendem aos mesmos destinos com mais frequência com a ajuda das funções [`arraySort`](/pt-BR/reference/functions/regular-functions/array-functions#arraySort) e [`arrayIntersect`](/pt-BR/reference/functions/regular-functions/array-functions#arrayIntersect).
+`arraySort` recebe um array e ordena os elementos em ordem crescente por padrão, embora você também possa passar uma função lambda para definir a ordem de ordenação.
+`arrayIntersect` recebe vários arrays e retorna um array com os elementos presentes em todos eles.
+
+Execute a consulta abaixo para ver essas duas funções de array em ação:
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+A consulta funciona em duas etapas principais.
+Primeiro, ela cria um conjunto de dados temporário chamado `airport_routes` usando uma Common Table Expression (CTE), analisando todos os voos de 1º de janeiro de 2024 e, para cada aeroporto de origem, montando uma lista ordenada de todos os destinos únicos atendidos por esse aeroporto.
+No conjunto de resultados `airport_routes`, por exemplo, DEN pode ter um array com todas as cidades para as quais há voos, como `['ATL', 'BOS', 'LAX', 'MIA', ...]`, e assim por diante.
+
+Na segunda etapa, a consulta pega cinco grandes hubs dos EUA (`DEN`, `ATL`, `DFW`, `ORD` e `LAS`) e compara todos os pares possíveis entre eles.
+Isso é feito com um cross join, que cria todas as combinações desses aeroportos.
+Em seguida, para cada par, ela usa a função `arrayIntersect` para encontrar quais destinos aparecem nas listas de ambos os aeroportos.
+A função `length` conta quantos destinos eles têm em comum.
+
+A condição `a1.Origin < a2.Origin` garante que cada par apareça apenas uma vez.
+Sem isso, você obteria tanto JFK-LAX quanto LAX-JFK como resultados separados, o que seria redundante, já que representam a mesma comparação.
+Por fim, a consulta ordena os resultados para mostrar quais pares de aeroportos têm o maior número de destinos em comum e retorna apenas os 10 primeiros.
+Isso revela quais grandes hubs têm as redes de rotas mais sobrepostas, o que pode indicar mercados competitivos em que várias companhias aéreas atendem aos mesmos pares de cidades, ou hubs que atendem regiões geográficas semelhantes e que poderiam ser usados como pontos alternativos de conexão para viajantes.
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+Enquanto analisamos os atrasos, vamos usar mais uma função de array de ordem superior, `arrayReduce`, para encontrar o atraso médio e o atraso máximo
+de cada rota que parte do Aeroporto Internacional de Denver:
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+No exemplo acima, usamos `arrayReduce` para encontrar os atrasos médio e máximo de vários voos que partem de `DEN`.
+`arrayReduce` aplica uma função agregada, especificada no primeiro parâmetro da função, aos elementos do array fornecido, especificado no segundo parâmetro da função.
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+As funções regulares no ClickHouse têm a propriedade de retornar o mesmo número de linhas que recebem.
+Há, no entanto, uma função interessante e única que quebra essa regra e que vale a pena conhecer: a função `arrayJoin`.
+
+`arrayJoin` &quot;explode&quot; um array, criando uma linha separada para cada elemento.
+Isso é semelhante às funções SQL `UNNEST` ou `EXPLODE` em outros bancos de dados.
+
+Ao contrário da maioria das funções de array, que retornam arrays ou valores escalares, `arrayJoin` altera fundamentalmente o conjunto de resultados ao multiplicar o número de linhas.
+
+Considere a consulta abaixo, que retorna um array de valores de 0 a 100 em passos de 10.
+Podemos considerar esse array como diferentes tempos de atraso: 0 minutos, 10 minutos, 20 minutos e assim por diante.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+Podemos escrever uma consulta usando `arrayJoin` para descobrir quantos atrasos houve até cada um desses tempos, entre dois aeroportos.
+A consulta abaixo cria um histograma mostrando a distribuição dos atrasos de voos de Denver (DEN) para Miami (MIA) em 1º de janeiro de 2024, usando buckets cumulativos de atraso:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+Na consulta acima, retornamos um array de atrasos usando uma cláusula CTE (cláusula `WITH`).
+`Destination` converte o código de destino em string.
+
+Usamos `arrayJoin` para explodir o array de atrasos em linhas separadas.
+Cada valor do array `delay` se torna sua própria linha com o alias `del`,
+e obtemos 10 linhas: uma para `del=0`, uma para `del=10`, uma para `del=20` etc.
+Para cada limite de atraso (`del`), a consulta conta quantos voos tiveram atrasos maiores ou iguais a esse limite
+usando `countIf(DepDelayMinutes >= del)`.
+
+`arrayJoin` também tem um equivalente como comando SQL: `ARRAY JOIN`.
+A consulta acima é reproduzida abaixo com o comando SQL equivalente para comparação:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Parabéns! Você aprendeu a trabalhar com arrays no ClickHouse, desde a criação básica de arrays e a indexação até funções poderosas como `groupArray`, `arrayFilter`, `arrayMap`, `arrayReduce` e `arrayJoin`.
+Para continuar sua jornada de aprendizado, explore a referência completa de funções de array para descobrir outras funções, como `arrayFlatten`, `arrayReverse` e `arrayDistinct`.
+Você também pode querer aprender sobre estruturas de dados relacionadas, como os tipos [`tupla`](/pt-BR/reference/data-types/tuple#creating-tuples), [JSON](/pt-BR/reference/data-types/newjson) e [Map](/pt-BR/reference/data-types/map), que funcionam bem em conjunto com arrays.
+Pratique a aplicação desses conceitos aos seus próprios conjuntos de dados e experimente diferentes consultas no playground SQL ou em outros conjuntos de dados de exemplo.
+
+Arrays são um recurso fundamental no ClickHouse, permitindo consultas analíticas eficientes — à medida que você se sentir mais à vontade com as funções de array, verá que elas podem simplificar drasticamente agregações complexas e análises de séries temporais.
+Para se aprofundar ainda mais em arrays, recomendamos o vídeo do YouTube abaixo com Mark, nosso especialista residente em dados:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

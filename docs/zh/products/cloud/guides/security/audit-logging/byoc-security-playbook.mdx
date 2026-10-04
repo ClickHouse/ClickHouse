@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'BYOC 安全手册'
+slug: /cloud/security/audit-logging/byoc-security-playbook
+title: 'BYOC 安全手册'
+description: '本页介绍客户可用于识别潜在安全事件的方法'
+doc_type: 'guide'
+keywords: ['byoc', '安全', '手册', '最佳实践', '合规']
+---
+
+ClickHouse 在自备 Cloud (BYOC) 模式下采用安全共享责任模型，该模型可从我们的 Trust Center 下载，地址为 https://trust.clickhouse.com。以下信息为 BYOC 客户提供了一些示例，说明如何识别潜在的安全事件。客户应结合自身的安全计划评估这些信息，以确定是否需要额外的检测和告警。
+
+<div id="compromised-clickhouse-credentials">
+  ## 可能已泄露的 ClickHouse 凭据
+</div>
+
+请参阅[数据库审计日志](/zh/products/cloud/guides/security/audit-logging/database-audit-log)文档，查看用于检测基于凭据的攻击以及调查恶意活动的查询。
+
+<div id="application-layer-dos-attack">
+  ## 应用层拒绝服务攻击
+</div>
+
+实施拒绝服务 (DoS) 攻击的方法多种多样。如果攻击是通过特定载荷使 ClickHouse 实例崩溃，应先将系统恢复到运行状态，或重启系统并限制访问以重新取得控制权。使用以下查询查看 [system.crash&#95;log](/zh/reference/system-tables/crash_log)，以获取有关此次攻击的更多信息。
+
+```sql
+SELECT * 
+FROM clusterAllReplicas('default',system.crash_log)
+```
+
+<div id="compromised-clickhouse-created-aws-roles">
+  ## 已泄露的由 ClickHouse 创建的 AWS 角色
+</div>
+
+ClickHouse 使用预先创建的角色来启用系统功能。本节假定客户使用 AWS 并启用了 CloudTrail，且可以访问 CloudTrail 日志。
+
+如果某起事件可能是由某个已泄露的角色导致的，请检查 CloudTrail 和 CloudWatch 中与 ClickHouse IAM 角色及相关操作有关的活动。有关 IAM 角色列表，请参阅设置过程中提供的 [CloudFormation](/zh/products/bring-your-own-cloud/reference/privilege#aws-iam-roles) 堆栈或 Terraform 模块。
+
+<div id="unauthorized-access-eks-cluster">
+  ## 未经授权访问 EKS 集群
+</div>
+
+ClickHouse BYOC 在 EKS 中运行。本节假设客户在 AWS 中使用 CloudTrail 和 CloudWatch，并且可以访问相关日志。
+
+如果某起事件可能是由已被入侵的 EKS 集群导致的，请在 EKS CloudWatch 日志中使用以下查询来识别具体威胁。
+
+按用户名列出 Kubernetes API 调用次数
+
+```sql
+fields user.username
+| stats count(*) as count by user.username
+```
+
+判断用户是否为 ClickHouse 工程师
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter user.username like /clickhouse.com/
+| limit 10000
+```
+
+审查访问 Kubernetes Secret 的用户，排除服务角色
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter requestURI like /secret/
+| filter verb="get"
+| filter ispresent(user.extra.sessionName.0)
+| filter user.username not like /ClickHouseManagementRole/
+| filter user.username not like /data-plane-mgmt/
+```

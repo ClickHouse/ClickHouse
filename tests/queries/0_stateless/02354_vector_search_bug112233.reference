@@ -1,0 +1,16 @@
+-- Unsigned integer reference vector: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- Signed integer reference vector: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- Mixed integer and float reference vector: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- BFloat16 reference vector: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- Reference vector above the Float32 mantissa: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- Extremal integer reference vectors: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+-- Integer and float spellings of the same reference vector return the same result
+5
+5

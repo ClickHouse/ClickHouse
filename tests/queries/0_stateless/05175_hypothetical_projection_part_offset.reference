@@ -1,0 +1,13 @@
+--- _part_offset drops the granule the key kept ---
+estimated marks: 1
+real granules:   1
+--- the same predicate through _part_starting_offset ---
+estimated marks: 1
+real granules:   1
+--- the key alone, for comparison ---
+estimated marks: 2
+real granules:   2
+--- a projection storing parent offsets is not pruned by its own offsets ---
+marks: 2
+verdict: not chosen
+the plan reads: the base table

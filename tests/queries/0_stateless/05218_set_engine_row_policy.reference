@@ -1,0 +1,11 @@
+-- without a policy the set is usable
+[1,2]
+-- a MergeTree table on the right of IN honours its policy
+[1]
+-- a Set table cannot honour its policy, so the query is refused
+-- a policy that keeps every row is not a restriction
+[1,2]
+-- a database-wide policy covers the Set table as well
+[1]
+-- the set is usable again once no policy applies
+[1,2]

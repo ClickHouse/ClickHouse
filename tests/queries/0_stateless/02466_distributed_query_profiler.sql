@@ -1,3 +1,7 @@
+-- Tags: no-msan
+-- Tag no-msan: the sampling query profiler is disabled under Memory Sanitizer (QUERY_PROFILER_SUPPORTED),
+-- so there are no profiler signals and the EINTR path under test is never taken.
+
 -- This is a regression test for EINTR handling in MultiplexedConnections::getReplicaForReading()
 
 select * from remote('127.{2,4}', view(

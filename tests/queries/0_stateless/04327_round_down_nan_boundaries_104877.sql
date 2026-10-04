@@ -23,7 +23,7 @@ SELECT roundDown(materialize(CAST(100 AS Float32)), CAST([10, nan, 20, 5] AS Arr
 -- Binary-search path (>= 32 boundaries after NaN is dropped): NaN mixed into a large
 -- boundary list must not break std::upper_bound's strict-weak-ordering. The list is a
 -- constant literal (NaN + 0..39) so roundDown accepts the constant 2nd argument under
--- both the old and new analyzer.
+-- both the old and current analyzers.
 SELECT roundDown(materialize(CAST(100 AS Float64)),
                  CAST([nan, 0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25., 26., 27., 28., 29., 30., 31., 32., 33., 34., 35., 36., 37., 38., 39.] AS Array(Float64))) AS r,
        r = (SELECT roundDown(b, CAST([nan, 0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25., 26., 27., 28., 29., 30., 31., 32., 33., 34., 35., 36., 37., 38., 39.] AS Array(Float64)))

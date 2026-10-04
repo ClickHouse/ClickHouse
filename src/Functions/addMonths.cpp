@@ -40,9 +40,9 @@ SELECT
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
         )",
         R"(
-┌─plus(CAST('1⋯lMonth(10))─┐
-│               1999-04-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                            1999-04-16 │
+└───────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

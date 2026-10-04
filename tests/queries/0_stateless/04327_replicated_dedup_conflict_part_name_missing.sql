@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree
+-- Tags: no-parallel, no-shared-merge-tree, no-fasttest
 -- no-parallel: uses a global failpoint in ReplicatedMergeTreeSink::commitPart.
 -- no-shared-merge-tree: the failpoint is specific to ReplicatedMergeTreeSink.
 

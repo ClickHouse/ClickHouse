@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -8,6 +9,11 @@
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** Aggregate function combinator allows to take one aggregate function
   *  and transform it to another aggregate function.
@@ -71,12 +77,47 @@ public:
       *  from nested function (ex: sum)
       *  and arguments for combined aggregate function (ex: UInt64, UInt8 for sumIf).
       * It's assumed that function transformArguments was called before this function and 'arguments' are validated.
+      * Every combinator overrides this method, except combinators with `transformsMultipleNestedFunctions`,
+      * which override `transformAggregateFunctionFromMultipleNestedFunctions` instead.
       */
     virtual AggregateFunctionPtr transformAggregateFunction(
-        const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties & properties,
-        const DataTypes & arguments,
-        const Array & params) const = 0;
+        const AggregateFunctionPtr & /*nested_function*/,
+        const AggregateFunctionProperties & /*properties*/,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Aggregate function combinator '{}' does not wrap a single nested function", getName());
+    }
+
+    /** A combinator that wraps one nested function per argument list returned by
+      * `transformArgumentsForMultipleNestedFunctions` (for example, -Tuple: one nested function per tuple element).
+      */
+    virtual bool transformsMultipleNestedFunctions() const { return false; }
+
+    /** From the arguments for the combined function, get one argument list per nested function.
+      * If the arguments are not suitable for the combined function, throw an exception.
+      */
+    virtual VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & /*arguments*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Aggregate function combinator '{}' does not transform multiple nested functions", getName());
+    }
+
+    /** Create the combined aggregate function from the resolved nested functions, one per argument
+      * list returned by `transformArgumentsForMultipleNestedFunctions`. `nested_name` is the canonical name of the nested
+      * function (aliases resolved).
+      */
+    virtual AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
+        const String & /*nested_name*/,
+        VectorWithMemoryTracking<AggregateFunctionPtr> /*nested_functions*/,
+        const AggregateFunctionProperties & /*properties*/,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Aggregate function combinator '{}' does not transform multiple nested functions", getName());
+    }
 
     virtual ~IAggregateFunctionCombinator() = default;
 };

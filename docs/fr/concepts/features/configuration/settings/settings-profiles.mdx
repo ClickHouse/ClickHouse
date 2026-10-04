@@ -1,0 +1,89 @@
+---
+description: 'Ensemble de paramètres regroupés sous le même nom.'
+sidebarTitle: 'Profils de paramètres'
+slug: /operations/settings/settings-profiles
+title: 'Profils de paramètres'
+doc_type: 'référence'
+---
+
+Un profil de paramètres est un ensemble de paramètres regroupés sous le même nom.
+
+<Note>
+  ClickHouse prend également en charge les [workflows pilotés par SQL](/fr/concepts/features/security/access-rights#access-control-usage) pour gérer les profils de paramètres. Nous vous recommandons de les utiliser.
+</Note>
+
+Le profil peut avoir n’importe quel nom. Vous pouvez spécifier le même profil pour différents utilisateurs. L’élément le plus important que vous puissiez définir dans un profil de paramètres est `readonly=1`, qui garantit un accès en lecture seule.
+
+Les profils de paramètres peuvent hériter les uns des autres. Pour utiliser l’héritage, indiquez un ou plusieurs paramètres `profile` avant les autres paramètres répertoriés dans le profil. Lorsqu’un paramètre est défini dans plusieurs profils, c’est la dernière définition qui est utilisée.
+
+Pour appliquer tous les paramètres d’un profil, définissez le paramètre `profile`.
+
+Exemple :
+
+Installez le profil `web`.
+
+```sql
+SET profile = 'web'
+```
+
+Les profils de paramètres sont déclarés dans le fichier de configuration des utilisateurs. Il s’agit généralement de `users.xml`.
+
+Exemple :
+
+```xml
+<!-- Settings profiles -->
+<profiles>
+    <!-- Default settings -->
+    <default>
+        <!-- The maximum number of threads when running a single query. -->
+        <max_threads>8</max_threads>
+    </default>
+
+    <!-- Background operations settings -->
+    <background>
+        <!-- Re-defining maximum number of threads for background operations -->
+        <max_threads>12</max_threads>
+    </background>
+
+    <!-- Settings for queries from the user interface -->
+    <web>
+        <max_rows_to_read>1000000000</max_rows_to_read>
+        <max_bytes_to_read>100000000000</max_bytes_to_read>
+
+        <max_rows_to_group_by>1000000</max_rows_to_group_by>
+        <group_by_overflow_mode>any</group_by_overflow_mode>
+
+        <max_rows_to_sort>1000000</max_rows_to_sort>
+        <max_bytes_to_sort>1000000000</max_bytes_to_sort>
+
+        <max_result_rows>100000</max_result_rows>
+        <max_result_bytes>100000000</max_result_bytes>
+        <result_overflow_mode>break</result_overflow_mode>
+
+        <max_execution_time>600</max_execution_time>
+        <min_execution_speed>1000000</min_execution_speed>
+        <timeout_before_checking_execution_speed>15</timeout_before_checking_execution_speed>
+
+        <max_columns_to_read>25</max_columns_to_read>
+        <max_temporary_columns>100</max_temporary_columns>
+        <max_temporary_non_const_columns>50</max_temporary_non_const_columns>
+
+        <max_subquery_depth>2</max_subquery_depth>
+        <max_pipeline_depth>25</max_pipeline_depth>
+        <max_ast_depth>50</max_ast_depth>
+        <max_ast_elements>100</max_ast_elements>
+
+        <max_sessions_for_user>4</max_sessions_for_user>
+
+        <readonly>1</readonly>
+    </web>
+</profiles>
+```
+
+L’exemple spécifie deux profils : `default` et `web`.
+
+Le profil `default` a un rôle particulier : il doit toujours être présent et il est appliqué au démarrage du serveur. Autrement dit, le profil `default` contient les paramètres par défaut. Le nom du profil par défaut peut être modifié via le paramètre du serveur `default_profile`.
+
+Le profil `background` a un rôle particulier : il peut être présent pour redéfinir les paramètres des opérations en arrière-plan. Ce paramètre est facultatif et son nom peut être modifié via le paramètre du serveur `background_profile`.
+
+Le profil `web` est un profil standard qui peut être défini à l’aide de la requête `SET` ou d’un paramètre d’URL dans une requête HTTP.

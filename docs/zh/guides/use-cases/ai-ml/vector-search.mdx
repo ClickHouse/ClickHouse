@@ -1,0 +1,673 @@
+---
+slug: /use-cases/AI/qbit-vector-search
+sidebarTitle: '使用 QBit 进行向量搜索'
+title: '向量搜索与 QBit 入门'
+description: '了解 QBit 如何让 ClickHouse 中的向量搜索查询支持在运行时调整精度。'
+keywords: ['QBit', '向量搜索', 'AI', '嵌入向量', 'ANN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Info>
+  **在本指南中，您将：**
+
+  * 简要了解向量搜索
+  * 了解近似最近邻 (ANN) 和 分层可导航小世界 (HNSW)
+  * 了解 Quantised Bit (QBit)
+  * 使用 QBit 基于 DBPedia 数据集执行向量搜索
+</Info>
+
+<div id="vector-search-primer">
+  ## 向量搜索入门
+</div>
+
+在数学和物理学中，向量被正式定义为同时具有大小和方向的对象。
+它通常表现为线段或空间中的箭头，可用于表示速度、力和加速度等量。
+在计算机科学中，向量是有限的数字序列。
+换句话说，它是一种用于存储数值的数据结构。
+
+在机器学习中，向量与我们在计算机科学中讨论的是同一种数据结构，但其中存储的数值具有特殊含义。
+当我们取一段文本或一张图像，并将其提炼为它所表达的关键概念时，这个过程称为编码。
+生成的输出是机器以数值形式对这些关键概念的表示。
+这就是 嵌入向量，存储在向量中。
+换个说法，当这种上下文含义被嵌入到向量中时，我们就可以将其称为 嵌入向量。
+
+如今，向量搜索已经无处不在。
+它支撑着音乐推荐、用于大语言模型的检索增强生成 (RAG)  (通过拉取外部知识来改进回答) ，甚至连使用 Google 搜索在某种程度上也依赖向量搜索。
+
+尽管专用向量数据库有其优势，用户通常仍更偏好具备即席向量能力的常规数据库，而不是完全专用的向量存储。
+ClickHouse 支持[暴力向量搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search)，以及[近似最近邻 (ANN) 搜索方法](/zh/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search)，其中包括 HNSW——这是当前快速向量检索的标准。
+
+<div id="understanding-embeddings">
+  ### 理解嵌入向量
+</div>
+
+我们通过一个简单示例来了解向量搜索的工作原理。
+先来看单词的嵌入向量 (向量表示) ：
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="水果和动物嵌入向量可视化" />
+
+创建下表，并填入一些示例嵌入向量：
+
+```sql
+CREATE TABLE fruit_animal
+ENGINE = MergeTree
+ORDER BY word
+AS SELECT *
+FROM VALUES(
+  'word String, vec Array(Float64)',
+  ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+  ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+  ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+  ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+  ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533])
+);
+```
+
+您可以搜索与给定嵌入向量最相近的词语：
+
+```sql
+SELECT word, L2Distance(
+  vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770]
+) AS distance
+FROM fruit_animal
+ORDER BY distance
+LIMIT 5;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.14639757188169716 │
+│ banana │  1.9989613690076786 │
+│ orange │   2.039041552613732 │
+│ horse  │  2.7555776805484813 │
+│ dog    │   3.382295083120104 │
+└────────┴─────────────────────┘
+```
+
+该查询嵌入向量与 &quot;apple&quot; 最接近 (距离最小) ；如果将这两个嵌入向量并排比较，这一点就很好理解：
+
+```response
+apple:           [-0.99105519,1.28887844,-0.43526649,-0.98520696,0.66154391]
+query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
+```
+
+<div id="approximate-nearest-neighbours">
+  ## 近似最近邻 (ANN)
+</div>
+
+对于大型数据集，暴力搜索的速度会变得过慢。
+这时就需要使用近似最近邻方法了。
+
+<div id="quantisation">
+  ### 量化
+</div>
+
+量化涉及将数据向下转换为更小的数值类型。
+数值类型越小，数据占用就越少；数据越少，距离计算就越快。
+ClickHouse 的向量化查询执行引擎可以在每次操作中将更多值装入处理器寄存器，从而直接提升吞吐量。
+
+你有两种选择：
+
+1. **将量化后的副本与原始列一并保留** - 这会使存储翻倍，但更安全，因为我们始终可以回退到完整精度
+2. **完全替换原始值** (通过在插入时向下转换)  - 这样可以节省空间和 I/O，但这是不可逆的
+
+<div id="hnsw">
+  ### 分层可导航小世界 (HNSW)
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW 分层结构" />
+
+HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层或多层中，而且出现在更高层的概率会呈指数下降。
+
+执行搜索时，我们从顶层的某个节点出发，以贪心方式朝最近邻移动。一旦找不到更近的节点，就会下探到下一层、更稠密的一层。
+
+由于这种分层设计，HNSW 的搜索复杂度相对于节点数量可达到对数级。
+
+<Warning>
+  **HNSW 局限性**
+
+  主要瓶颈在于内存。ClickHouse 使用 HNSW 的 [usearch](https://github.com/unum-cloud/usearch) 实现，它是一种驻留内存的数据结构，不支持拆分。
+  因此，数据集越大，所需的 RAM 也会相应增加。
+</Warning>
+
+<div id="comparison-approaches">
+  ### 方法对比
+</div>
+
+| 类别     | 暴力法                   | HNSW               | QBit            |
+| ------ | --------------------- | ------------------ | --------------- |
+| **精度** | 完全准确                  | 很高                 | 灵活              |
+| **速度** | 慢                     | 快                  | 灵活              |
+| **其他** | 量化：要么占用更多空间，要么精度损失不可逆 | 索引必须能装入内存，并且需要预先构建 | 仍然是 O(#records) |
+
+<div id="qbit-deepdive">
+  ## QBit 深入剖析
+</div>
+
+<div id="quantised-bit">
+  ### Quantised Bit (QBit)
+</div>
+
+QBit 是一种新的数据结构，它利用浮点数按位表示的特性来存储 `BFloat16`、`Float32` 和 `Float64` 值。
+QBit 并不是将每个数字作为一个整体存储，而是将这些值拆分为**位平面**：所有第 1 位、所有第 2 位、所有第 3 位，依此类推。
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit 位平面概念" />
+
+这种方法解决了传统量化的主要局限。既不需要存储重复数据，也无需承担数值失去意义的风险。由于 QBit 直接基于已存储的数据工作，而不是维护内存中的索引，因此它也避开了 HNSW 的 RAM 瓶颈。
+
+<Tip>
+  **优势**
+
+  **最重要的是，无需预先做出取舍。**
+  精度和性能可以在查询时动态调整，让用户能够以最小成本探索准确性与速度之间的平衡。
+</Tip>
+
+<Info>
+  **局限性**
+
+  尽管 QBit 能加速向量搜索，但其计算复杂度仍然是 O(n)。换句话说，如果你的数据集足够小，HNSW 索引可以轻松装入 RAM，那它仍然是最快的选择。
+</Info>
+
+<div id="the-data-type">
+  ### 数据类型
+</div>
+
+下面介绍如何创建 QBit 类型的列：
+
+```sql
+SET allow_experimental_qbit_type = 1;
+CREATE TABLE fruit_animal
+(
+  word String,
+  vec QBit(Float64, 5)
+)
+ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+('apple',  [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+('dog',    [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit 数据结构转置" />
+
+当数据插入 QBit 列时，会经过转置：所有第 1 位排在一起、所有第 2 位排在一起，依此类推。我们将这些称为**组**。
+
+每个组都存储在单独的 `FixedString(N)` 列中：也就是长度固定为 N 字节的字符串，在内存中连续存放，彼此之间没有分隔符。随后，所有这些组会被打包到一个 `Tuple` 中，构成 QBit 的底层结构。
+
+**示例：** 如果从一个包含 8×Float64 元素的向量开始，每个组将包含 8 位。由于一个 Float64 有 64 位，最终会得到 64 个组 (每一位对应一个组) 。因此，`QBit(Float64, 8)` 的内部布局看起来就像一个由 64×FixedString(1) 列组成的 Tuple。
+
+<Tip>
+  如果原始向量长度不能被 8 整除，则会用不可见元素对结构进行填充，使其按 8 对齐。这样可确保与 FixedString 兼容，因为它只能严格处理完整字节。
+</Tip>
+
+<div id="the-distance-calculation">
+  ### 距离计算
+</div>
+
+要使用 QBit 执行查询，请使用带有 precision 参数的 [`L2DistanceTransposed`](/zh/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) 函数：
+
+```sql
+SELECT
+  word,
+  L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 16) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.15196434766705247 │
+│ banana │   1.966091150410285 │
+│ orange │  1.9864477714218596 │
+│ horse  │  2.7306267946594005 │
+│ dog    │  3.2849989362383165 │
+└────────┴─────────────────────┘
+```
+
+第三个参数 (16) 指定精度级别，以位为单位。
+
+<div id="io-optimisation">
+  ### I/O 优化
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O 优化" />
+
+在计算距离之前，必须先从磁盘读取所需数据，然后进行逆转置 (即将分组的位表示还原为完整向量) 。由于 QBit 按精度级别以位转置形式存储数值，ClickHouse 只需读取重建到目标精度所需的高位位平面。
+
+在上面的查询中，我们使用的精度级别为 16。由于 Float64 有 64 位，我们只需读取前 16 个位平面，**跳过 75% 的数据**。
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit 重建" />
+
+读取后，我们只根据已加载的位平面重建每个数值的高位部分，未读取的位则保留为 0。
+
+<div id="calculation-optimisation">
+  ### 计算优化
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="降精度转换比较" />
+
+有人可能会问，将其转换为更小的类型 (如 Float32 或 BFloat16) 是否能消除这部分未使用的空间。确实可以，但如果对每一行都显式进行类型转换，开销会很高。
+
+相反，我们可以只对参考向量做降精度处理，并将 QBit 数据视为包含更窄类型的值 (即“忽略”某些列的存在) ，因为它的布局通常对应于这些类型的截断版本。
+
+<div id="bfloat16-optimization">
+  #### BFloat16 优化
+</div>
+
+BFloat16 是将 Float32 的精度截去一半后得到的格式。它保留了相同的符号位和 8 位指数，但在 23 位尾数中只保留最高 7 位。因此，读取 QBit 列的前 16 个位平面，实际上就能还原出 BFloat16 值的布局。所以在这种情况下，我们可以 (并且确实会) 安全地将参考向量转换为 BFloat16。
+
+<div id="float64-complexity">
+  #### Float64 的复杂性
+</div>
+
+不过，Float64 就完全不同了。它使用 11 位指数和 52 位尾数，这意味着它并不是简单地把 Float32 的位数翻倍。它的结构和指数偏置都完全不同。将 Float64 向下转换为更小的格式 (如 Float32) 时，需要进行真正的 IEEE-754 转换，也就是将每个值舍入到最接近的可表示 Float32 值。这个舍入步骤的计算开销很高。
+
+<Tip>
+  如果你想深入了解 QBit 的性能相关因素，请参阅 [“Let’s vectorize”](https://clickhouse.com/blog/qbit-vector-search#lets-vectorise)
+</Tip>
+
+<div id="example">
+  ## DBpedia 示例
+</div>
+
+让我们通过一个真实场景的示例看看 QBit 的实际表现。这里使用的是 DBpedia 数据集，其中包含 100 万篇以 Float32 嵌入向量表示的 Wikipedia 文章。
+
+<div id="setup">
+  ### 准备
+</div>
+
+首先，创建表
+
+```sql
+CREATE TABLE dbpedia
+(
+  id      String,
+  title   String,
+  text    String,
+  vector  Array(Float32) CODEC(NONE)
+) ENGINE = MergeTree ORDER BY (id);
+```
+
+通过命令行插入数据：
+
+```bash
+for i in $(seq 0 25); do
+  echo "正在处理文件 ${i}..."
+  clickhouse client -q "INSERT INTO dbpedia SELECT _id, title, text, \"text-embedding-3-large-1536-embedding\" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/${i}.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;"
+  echo "文件 ${i} 处理完成。"
+done
+```
+
+<Tip>
+  插入数据可能需要一些时间。
+  不妨去喝杯咖啡休息一下！
+</Tip>
+
+或者，也可以按如下所示分别运行 SQL 语句来加载这 25 个 Parquet 文件：
+
+```sql
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/0.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/1.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+...
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/25.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+```
+
+确认 dbpedia 表中有 100 万行数据：
+
+```sql
+SELECT count(*)
+FROM dbpedia
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+```
+
+接下来，添加一个 QBit 列：
+
+```sql
+SET allow_experimental_qbit_type = 1;
+
+-- 假设您有一个包含 Float32 嵌入向量的表
+ALTER TABLE dbpedia ADD COLUMN qbit QBit(Float32, 1536);
+ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
+```
+
+<div id="search-query">
+  ### 搜索查询
+</div>
+
+我们来查找与这些太空相关搜索词最密切相关的概念：Moon、Apollo 11、Space Shuttle、Astronaut、Rocket：
+
+```sql
+SELECT
+    title,
+    text,
+    COUNT(DISTINCT concept) AS num_concepts_matched,
+    MIN(distance) AS min_distance,
+    AVG(distance) AS avg_distance
+FROM (
+         (
+             SELECT title, text, 'Moon' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Moon'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Apollo 11' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Apollo 11'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Space Shuttle' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Space Shuttle'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Astronaut' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Astronaut'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Rocket' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Rocket'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+     )
+WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+GROUP BY title, text
+HAVING num_concepts_matched >= 3
+ORDER BY num_concepts_matched DESC, min_distance ASC
+    LIMIT 10;
+```
+
+该查询会针对这五个概念中的每一个，找出语义上最相近的前 1000 个条目。
+它会返回至少出现在其中三个结果中的条目，并按匹配概念的数量以及与其中任一概念的最小距离 (不包括原始概念) 进行排序。
+
+仅使用 5 位 (1 个符号位 + 4 个指数位，尾数为零) ：
+
+```response
+Row 1:
+──────
+title:                Aintree railway station
+text:                 For a guide to the various Aintree stations that have existed and their relationship to each other see Aintree Stations.Aintree railway station is a railway station in Aintree, Merseyside, England.  It is on the Ormskirk branch of the Merseyrail network's Northern Line.  Until 1968 it was known as Aintree Sefton Arms after a nearby public house. The station's design reflects the fact it is the closest station to Aintree Racecourse, where the annual Grand National horse race takes place.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 2:
+──────
+title:                AP German Language
+text:                 Advanced Placement German Language (also known as AP German Language or AP German) is a course and examination provided by the College Board through the Advanced Placement Program. This course  is designed to give high school students the opportunity to receive credit in a college-level German language course.Originally the College Board had offered two AP German exams, one with AP German Language and another with AP German Literature.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 3:
+──────
+title:                Adelospondyli
+text:                 Adelospondyli is an order of elongate, presumably aquatic, Carboniferous amphibians.  The skull is solidly roofed, and elongate, with the orbits located very far forward.  The limbs are well developed.  Most adelospondyls belong to the family Adelogyrinidae, although the adelospondyl Acherontiscus has been placed in its own family, Acherontiscidae. The group is restricted to the Mississippian (Serpukhovian Age) of Scotland.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 4:
+──────
+title:                Adrien-Henri de Jussieu
+text:                 Adrien-Henri de Jussieu (23 December 1797 – 29 June 1853) was a French botanist.Born in Paris as the son of botanist Antoine Laurent de Jussieu, he received the degree of Doctor of Medicine in 1824 with a treatise of the plant family Euphorbiaceae.  When his father retired in 1826, he succeeded him at the Jardin des Plantes; in 1845 he became professor of organography of plants.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 5:
+──────
+title:                Alan Taylor (footballer, born 1953)
+text:                 Alan Taylor (born 14 November 1953) is an English former professional footballer best known for his goalscoring exploits with West Ham United in their FA Cup success of 1975, culminating in two goals in that season's final.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 6:
+──────
+title:                Abstract algebraic logic
+text:                 In mathematical logic, abstract algebraic logic is the study of the algebraization of deductive systemsarising as an abstraction of the well-known Lindenbaum-Tarski algebra, and how the resulting algebras are related to logical systems.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 7:
+──────
+title:                Ahsan Saleem Hyat
+text:                 General Ahsan Saleem Hayat (Urdu: احسن سلیم حیات; born 10 January 1948), is a retired four-star general who served as the vice chief of army staff of the Pakistan Army from 2004 until his retirement in 2007. Prior to that, he served as the operational field commander of the V Corps in Sindh Province and was a full-tenured professor of war studies at the National Defence University. He was succeeded by General Ashfaq Parvez Kayani on 8 October 2007.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 8:
+──────
+title:                Al Wafa al Igatha al Islamia
+text:                 There is another organization named Al Wafa (Israel), a charity, in Israel, devoted to womenThere is another organization Jamaiat Al-Wafa LiRayat Al-Musenin which is proscribed by the Israeli government.Al Wafa is an Islamic charity listed in Executive Order 13224 as an entity that supports terrorism.United States intelligence officials state that it was founded in Afghanistan by Adil Zamil Abdull Mohssin Al Zamil,Abdul Aziz al-Matrafi and Samar Khand.According to Saad Madai Saad al-Azmi's Combatant Status Review Tribunal Al Wafa is located in the Wazir Akhbar Khan area ofAfghanistan.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 9:
+───────
+title:                Alex Baumann
+text:                 Alexander Baumann, OC OOnt (born April 21, 1964) is a Canadian former competitive swimmer who won two gold medals and set two world records at the 1984 Summer Olympics in Los Angeles.Born in Prague (former Czechoslovakia), Baumann was raised in Canada after his family moved there in 1969 following the Prague Spring.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 10:
+───────
+title:                Alberni-Clayoquot Regional District
+text:                 The Alberni-Clayoquot Regional District (2006 population 30,664) of British Columbia is located on west central Vancouver Island.  Adjacent regional districts it shares borders with are the Strathcona and Comox Valley Regional Districts to the north, and the Nanaimo and Cowichan Valley Regional Districts to the east. The regional district offices are located in Port Alberni.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+10 行。耗时：0.542 秒。已处理 501 万行，1.86 GB（924 万行/秒，3.43 GB/秒）
+峰值内存占用：327.04 MiB。
+```
+
+**性能：** 结果集中有 10 行。耗时：0.271 秒。已处理 846 万行，4.54 GB (3119 万行/秒，16.75 GB/秒) 。峰值内存占用：**739.82 MiB**。
+
+<Accordion title="与穷举搜索比较性能">
+  ```sql
+  SELECT 
+      title,
+      text,
+      COUNT(DISTINCT concept) AS num_concepts_matched,
+      MIN(distance) AS min_distance,
+      AVG(distance) AS avg_distance
+  FROM (
+      (
+          SELECT title, text, 'Moon' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Moon'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Apollo 11' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Apollo 11'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Space Shuttle' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Space Shuttle'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Astronaut' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Astronaut'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Rocket' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Rocket'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+  )
+  WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+  GROUP BY title, text
+  HAVING num_concepts_matched >= 3
+  ORDER BY num_concepts_matched DESC, min_distance ASC
+  LIMIT 10;
+  ```
+
+  ```response
+  Row 1:
+  ──────
+  title:                Apollo program
+  text:                 The Apollo program, also known as Project Apollo, was the third United States human spaceflight program carried out by the National Aeronautics and Space Administration (NASA), which accomplished landing the first humans on the Moon from 1969 to 1972. First conceived during Dwight D. Eisenhower's administration as a three-man spacecraft to follow the one-man Project Mercury which put the first Americans in space, Apollo was later dedicated to President John F.
+  num_concepts_matched: 4
+  min_distance:         0.82420665
+  avg_distance:         1.0207901149988174
+
+  Row 2:
+  ──────
+  title:                Apollo 8
+  text:                 Apollo 8, the second human spaceflight mission in the United States Apollo space program, was launched on December 21, 1968, and became the first manned spacecraft to leave Earth orbit, reach the Earth's Moon, orbit it and return safely to Earth.
+  num_concepts_matched: 4
+  min_distance:         0.8285278
+  avg_distance:         1.0357224345207214
+
+  Row 3:
+  ──────
+  title:                Lunar Orbiter 1
+  text:                 The Lunar Orbiter 1 robotic (unmanned) spacecraft, part of the Lunar Orbiter Program, was the first American spacecraft to orbit the Moon.  It was designed primarily to photograph smooth areas of the lunar surface for selection and verification of safe landing sites for the Surveyor and Apollo missions. It was also equipped to collect selenodetic, radiation intensity, and micrometeoroid impact data.The spacecraft was placed in an Earth parking orbit on August 10, 1966 at 19:31 (UTC).
+  num_concepts_matched: 4
+  min_distance:         0.94581836
+  avg_distance:         1.0584313124418259
+
+  Row 4:
+  ──────
+  title:                Apollo (spacecraft)
+  text:                 The Apollo spacecraft was composed of three parts designed to accomplish the American Apollo program's goal of landing astronauts on the Moon by the end of the 1960s and returning them safely to Earth.  The expendable (single-use) spacecraft consisted of a combined Command/Service Module (CSM) and a Lunar Module (LM).
+  num_concepts_matched: 4
+  min_distance:         0.9643517
+  avg_distance:         1.0367188602685928
+
+  Row 5:
+  ──────
+  title:                Surveyor 1
+  text:                 Surveyor 1 was the first lunar soft-lander in the unmanned  Surveyor program of the National Aeronautics and Space Administration (NASA, United States). This lunar soft-lander gathered data about the lunar surface that would be needed for the manned Apollo Moon landings that began in 1969.
+  num_concepts_matched: 4
+  min_distance:         0.9738264
+  avg_distance:         1.0988530814647675
+
+  Row 6:
+  ──────
+  title:                Spaceflight
+  text:                 Spaceflight (also written space flight) is ballistic flight into or through outer space. Spaceflight can occur with spacecraft with or without humans on board. Examples of human spaceflight include the Russian Soyuz program, the U.S. Space shuttle program, as well as the ongoing International Space Station. Examples of unmanned spaceflight include space probes that leave Earth orbit, as well as satellites in orbit around Earth, such as communications satellites.
+  num_concepts_matched: 4
+  min_distance:         0.9831049
+  avg_distance:         1.060678943991661
+
+  Row 7:
+  ──────
+  title:                Skylab
+  text:                 Skylab was a space station launched and operated by NASA and was the United States' first space station. Skylab orbited the Earth from 1973 to 1979, and included a workshop, a solar observatory, and other systems. It was launched unmanned by a modified Saturn V rocket, with a weight of 169,950 pounds (77 t).  Three manned missions to the station, conducted between 1973 and 1974 using the Apollo Command/Service Module (CSM) atop the smaller Saturn IB, each delivered a three-astronaut crew.
+  num_concepts_matched: 4
+  min_distance:         0.99155205
+  avg_distance:         1.0769911855459213
+
+  Row 8:
+  ──────
+  title:                Orbital spaceflight
+  text:                 An orbital spaceflight (or orbital flight) is a spaceflight in which a spacecraft is placed on a trajectory where it could remain in space for at least one orbit. To do this around the Earth, it must be on a free trajectory which has an altitude at perigee (altitude at closest approach) above 100 kilometers (62 mi) (this is, by at least one convention, the boundary of space).  To remain in orbit at this altitude requires an orbital speed of ~7.8 km/s.
+  num_concepts_matched: 4
+  min_distance:         1.0075209
+  avg_distance:         1.085978478193283
+
+  Row 9:
+  ───────
+  title:                Dragon (spacecraft)
+  text:                 Dragon is a partially reusable spacecraft developed by SpaceX, an American private space transportation company based in Hawthorne, California. Dragon is launched into space by the SpaceX Falcon 9 two-stage-to-orbit launch vehicle, and SpaceX is developing a crewed version called the Dragon V2.During its maiden flight in December 2010, Dragon became the first commercially built and operated spacecraft to be recovered successfully from orbit.
+  num_concepts_matched: 4
+  min_distance:         1.0222818
+  avg_distance:         1.0942841172218323
+
+  Row 10:
+  ───────
+  title:                Space capsule
+  text:                 A space capsule is an often manned spacecraft which has a simple shape for the main section, without any wings or other features to create lift during atmospheric reentry.Capsules have been used in most of the manned space programs to date, including the world's first manned spacecraft Vostok and Mercury, as well as in later Soviet Voskhod, Soyuz, Zond/L1, L3, TKS, US Gemini, Apollo Command Module, Chinese Shenzhou and US, Russian and Indian manned spacecraft currently being developed.
+  num_concepts_matched: 4
+  min_distance:         1.0262821
+  avg_distance:         1.0882147550582886
+  ```
+
+  **性能：** 结果集 10 行。耗时：1.157 秒。已处理 1000 万行，32.76 GB (864 万行/秒，28.32 GB/秒) 。峰值内存占用：**6.05 GiB**。
+</Accordion>
+
+<div id="key-insight">
+  ### 关键洞察
+</div>
+
+结果如何？不只是好，而是好得出乎意料。乍看之下，很难相信一个浮点数在去掉整个尾数和一半指数后，竟然还能保留有意义的信息。
+
+**QBit 的关键洞察在于：即使忽略不重要的位，向量搜索依然可行。**
+
+内存占用从 **6.05 GB 降至 740 MB**，同时仍保持了出色的语义搜索质量！
+
+<div id="result">
+  ## 结论
+</div>
+
+QBit 是一种将浮点数存储为位平面的列类型。
+它允许你在向量搜索时选择要读取的位数，从而在不更改数据的情况下调节召回率和性能。
+每种向量搜索方法都有各自的参数，用于决定召回率、准确性和性能之间的权衡。
+通常，这些参数都必须提前选定。
+如果选错了，就会浪费大量时间和资源，而后续再调整方向也会变得十分麻烦。
+有了 QBit，就不必过早做出决定。
+你可以直接在查询时调整精度与速度之间的权衡，并在使用过程中逐步找到合适的平衡点。
+
+***
+
+*改编自 Raufs Dunamalijevs 的[博客文章](https://clickhouse.com/blog/qbit-vector-search)，发表于 2025 年 10 月 28 日*

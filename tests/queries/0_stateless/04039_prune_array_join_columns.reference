@@ -180,16 +180,14 @@ QUERY id: 0
                 COLUMN id: 15, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 3
                 CONSTANT id: 16, constant_value: \'a\', constant_value_type: String
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
-Expression ((Project names + Projection))
+Expression ((Project names + (Projection + WHERE)))
 Header: 1 UInt8
-  Filter (WHERE)
-  Header: 
-    ArrayJoin (ARRAY JOIN)
-    Header: __array_join_exp_1 Tuple(a Int64)
-      Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
-      Header: __array_join_exp_1 Array(Tuple(a Int64))
-        ReadFromMergeTree (default.t_nested)
-        Header: n.a Array(Int64)
+  ArrayJoin (ARRAY JOIN)
+  Header: __array_join_exp_1 Tuple(a Int64)
+    Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+    Header: __array_join_exp_1 Array(Tuple(a Int64))
+      ReadFromMergeTree (default.t_nested)
+      Header: n.a Array(Int64)
 1
 2
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))

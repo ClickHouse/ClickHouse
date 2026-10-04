@@ -26,6 +26,8 @@ SETTINGS min_bytes_for_wide_part = 0,
          auto_statistics_types = '',
          index_granularity = 1024;
 
+SET explain_query_plan_default = 'legacy';
+
 INSERT INTO t_expand_mutate SELECT number, number * 2, number * 3 FROM numbers(2000);
 
 -- Source layout: m_v packed (small), bf_w per-file (larger than threshold). Assert both are

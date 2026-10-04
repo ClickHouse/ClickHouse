@@ -4,6 +4,8 @@
         <max_threads>1</max_threads>
         <max_block_size>1</max_block_size>
         <min_insert_block_size_rows>1</min_insert_block_size_rows>
+        <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
+        <async_insert>0</async_insert>
     </settings>
     <create_query>CREATE TABLE t (x UInt64) ENGINE = MergeTree() ORDER BY tuple()</create_query>
     <query>INSERT INTO t SELECT * FROM numbers(3000)</query>

@@ -1,0 +1,20 @@
+10
+10
+found: UNKNOWN_SETTING
+found: UNKNOWN_SETTING
+found: Setting `null_ratio` must be in [0, 1], got 1.5
+found: Setting `null_ratio` must be in [0, 1], got -0.1
+found: Setting `max_json_depth` must be in [1, 32], got 0
+found: Setting `max_json_depth` must be in [1, 32], got 33
+found: Setting `max_json_keys_per_object` must be at most 1000, got 1001
+found: Setting `max_json_depth` must be in [1, 32], got 33
+found: The 'GenerateRandom' is not implemented for type AggregateFunction(sum, UInt64)
+found: The 'GenerateRandom' is not implemented for type IntervalSecond
+found: The 'GenerateRandom' is not implemented for type QBit(BFloat16, 16)
+1
+x	Nullable(UInt8)					
+1
+10
+10
+found: max_array_length
+missing: max_string_length

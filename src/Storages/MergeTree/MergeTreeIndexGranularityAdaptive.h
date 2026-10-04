@@ -36,6 +36,7 @@ public:
 
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override;
     std::string describe() const override;
+    std::shared_ptr<MergeTreeIndexGranularity> clone() const override { return std::make_shared<MergeTreeIndexGranularityAdaptive>(*this); }
 
 private:
     std::vector<size_t> marks_rows_partial_sums;

@@ -1,0 +1,24 @@
+= both versions are stored =
+2
+= FINAL keeps the newer version =
+1	-0	2	winner
+= a condition over the float key column is not moved =
+0
+= the superseded version does not come back =
+= nothing moves when the optimization is off =
+0
+= only the float column of a mixed sorting key is held back =
+0
+1
+1	-0	7	2	winner
+= NaN payloads dedup as one key =
+0
+= nullable float sorting key =
+0
+= tuple with a float inside the sorting key =
+0
+= float nested two levels deep in the sorting key =
+0
+= an integer sorting key still moves =
+1
+1	5	2	winner

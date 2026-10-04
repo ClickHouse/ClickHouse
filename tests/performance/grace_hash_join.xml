@@ -11,7 +11,7 @@
                 <value>join_algorithm='hash'</value>
                 <value>join_algorithm='parallel_hash'</value>
                 <value>join_algorithm='partial_merge', max_bytes_in_join='1G'</value>
-                <value>join_algorithm='grace_hash', max_bytes_in_join='100M'</value>
+                <value>join_algorithm='grace_hash', max_bytes_before_external_join='200M'</value>
             </values>
         </substitution>
     </substitutions>

@@ -1,0 +1,10 @@
+parts	5
+quorum_status	1
+local_unpinned	15000
+local_pinned	12000
+pr_count	12000
+pr_sum	18017994000
+pr_sum_local_plan	18017994000
+pr_sum_plan_based	18017994000
+pr_count_unpinned	15000
+coordinated	1

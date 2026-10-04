@@ -1,0 +1,6 @@
+--- a string value of exactly the limit is accepted ---
+1073741824
+--- a string value one byte above the limit is rejected ---
+1
+--- an object read as a string above the limit is rejected ---
+1

@@ -89,7 +89,9 @@ public:
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
     virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const;
 
-    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
+    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat),
+    /// not thread safe (in particular can't be called in parallel with next()).
+    /// Must be called at least once before any readBigAt calls (could be renamed to prepareReadAt()).
     virtual bool supportsReadAt() { return false; }
 
     /// A contiguous region of cached data that the caller can reference directly (zero-copy).

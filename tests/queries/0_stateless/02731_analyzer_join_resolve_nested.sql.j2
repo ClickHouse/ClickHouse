@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;
 DROP TABLE IF EXISTS ttta;
@@ -136,9 +138,9 @@ SELECT tb.t.t FROM ta, tb;
 SELECT tb.t FROM ta, tb;
 SELECT * FROM ta, tb;
 
-SELECT t FROM ttta, tttb;
-SELECT t.t.t FROM ttta, tttb;
-SELECT t.t.t.t.t FROM ttta, tttb;
+SELECT t FROM ttta, tttb ORDER BY ALL;
+SELECT t.t.t FROM ttta, tttb ORDER BY ALL;
+SELECT t.t.t.t.t FROM ttta, tttb ORDER BY ALL;
 
 SELECT t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t);
 SELECT t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t);

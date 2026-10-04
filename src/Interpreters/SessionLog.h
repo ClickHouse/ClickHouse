@@ -36,13 +36,6 @@ struct SessionLogElement
 {
     using Type = SessionLogElementType;
 
-    SessionLogElement() = default;
-    SessionLogElement(const UUID & auth_id_, Type type_);
-    SessionLogElement(const SessionLogElement &) = default;
-    SessionLogElement & operator=(const SessionLogElement &) = default;
-    SessionLogElement(SessionLogElement &&) = default; /// NOLINT(performance-noexcept-move-constructor,hicpp-noexcept-move)
-    SessionLogElement & operator=(SessionLogElement &&) = default;
-
     UUID auth_id;
 
     Type type = SESSION_LOGIN_FAILURE;

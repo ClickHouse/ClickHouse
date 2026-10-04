@@ -4,7 +4,8 @@
 
 SET allow_experimental_analyzer = 1;
 
-SELECT 1 AS a, a AS b ORDER BY 1 WITH FILL STALENESS 1 INTERPOLATE (a AS b);
+-- The fill column itself cannot be an `INTERPOLATE` output, so the alias chain goes through another column.
+SELECT 1 AS a, 2 AS b, b AS c ORDER BY 1 WITH FILL STALENESS 1 INTERPOLATE (b AS c);
 
 SELECT * FROM (
     SELECT 1 AS a0, a0 AS a3, a3 AS a4

@@ -1,0 +1,56 @@
+---
+sidebarTitle: 'Erathos'
+keywords: ['clickhouse', 'Erathos', '연결', '통합', 'ELT', 'etl', '데이터 통합', '실시간', '동기화']
+description: '제어 및 관측성을 위한 ELT 플랫폼인 Erathos를 사용하여 데이터를 ClickHouse로 동기화합니다'
+title: 'Erathos를 ClickHouse에 연결'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://erathos.com'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx'; import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://erathos.com/" target="_blank">Erathos</a>는 불필요한 오버헤드 없이 완벽한 제어 기능을 제공하도록 설계된 ELT 플랫폼으로, 팀이 SaaS 도구와 데이터베이스에서 웨어하우스로의 모든 동기화 작업을 관리할 수 있습니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+Erathos는 SaaS 도구, ERP, CRM에서 ClickHouse로 데이터가 이동하는 과정에서 모든 동기화 작업을 확인하고 제어할 수 있도록 지원합니다. 파이프라인을 내부를 알 수 없는 예약 작업으로 관리하는 대신, Erathos를 사용하면 동기화를 실시간으로 모니터링하고 제어할 수 있으므로 문제를 조기에 발견하고 웨어하우스를 최신 상태로 유지하기가 더 쉬워집니다.
+
+<div id="connecting-erathos-to-clickhouse">
+  ## Erathos를 ClickHouse에 연결하기
+</div>
+
+<Steps>
+  <Step title="ClickHouse 자격 증명 확인" id="1-find-your-clickhouse-credentials">
+    ClickHouse Cloud에서 서비스를 생성한 후 다음 필수 설정을 확인하십시오.
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="Erathos에서 대상 구성" id="2-configure-the-destination-in-erathos">
+    Erathos에서 **Settings &gt; Destination**으로 이동해 **ClickHouse**를 선택한 후 다음 정보를 입력하십시오.
+
+    * **Host** — ClickHouse 서비스 URL(ClickHouse Cloud URL은 일반적으로 `.clickhouse.cloud`로 끝납니다)
+    * **Port** — HTTPS 연결에는 일반적으로 `8443`
+    * **Username** — 일반적으로 `default`
+    * **Password** — 위 계정의 비밀번호
+
+    구성을 저장하여 연결을 완료하십시오.
+
+    <Note>
+      자체 호스팅 ClickHouse 인스턴스에 연결하는 경우, 방화벽 허용 목록에 Erathos의 IP 주소(`35.212.87.86`)를 추가하십시오.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## 추가 리소스
+</div>
+
+자세한 내용은 <a href="https://docs.erathos.com/destinations/what-is-a-destination/clickhouse" target="_blank">Erathos의 ClickHouse 대상 커넥터 문서</a>를 참조하거나 <a href="mailto:support@erathos.com">support@erathos.com</a>로 문의하십시오.

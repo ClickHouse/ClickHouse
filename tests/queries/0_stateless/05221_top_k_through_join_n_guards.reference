@@ -1,0 +1,6 @@
+base_fires	2
+limit_zero_blocked	1
+limit_zero_result	0
+cap_exceeded_blocked	1
+cap_exact_fires	2
+cap_exceeded_result	10	199	190

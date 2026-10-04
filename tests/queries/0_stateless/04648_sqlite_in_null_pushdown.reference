@@ -1,0 +1,13 @@
+NOT IN over a set containing NULL:
+2
+IN with transform_null_in:
+1
+\N
+NOT IN with transform_null_in:
+\N
+IN without transform_null_in:
+1
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t` WHERE `x` IN (1, 2)
+Query: SELECT `x` FROM `t` WHERE `x` = 2

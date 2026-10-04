@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: 'ClickStack へのデータ取り込み'
+sidebarTitle: '概要'
+description: 'ClickStack へのデータ取り込みの概要'
+doc_type: 'guide'
+keywords: ['clickstack', 'オブザーバビリティ', 'ログ', '監視', 'プラットフォーム']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+すべてのデータは、**OpenTelemetry (OTel) collector** を介して ClickStack Open Source または Managed ClickStack にインジェストされます。これは、ログ、メトリクス、トレース、セッションデータの主要なエントリポイントとして機能します。
+
+これら 2 つのアーキテクチャの主な違いは、コンポーネントをどこでホストするかにあります。どちらの場合も、アプリケーションからテレメトリーを受信するために OpenTelemetry Collector を実行します。ClickStack Open Source では、ClickHouse と ClickStack UI (HyperDX) も自分でホストおよび管理します。Managed ClickStack では、ClickHouse と HyperDX UI は ClickHouse Cloud でホストおよび管理され、認証統合や運用管理もあわせて提供されます。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="フローを含むマネージドアーキテクチャ" size="md" />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="フローを含むシンプルなアーキテクチャ" size="md" />
+  </Tab>
+</Tabs>
+
+どちらのデプロイメントモデルでも、collector は 2 つの OTLP エンドポイントを公開します。
+
+* **HTTP** - ポート `4318`
+* **gRPC** - ポート `4317`
+
+これらのエンドポイントには、[言語別 SDK](/ja/clickstack/ingesting-data/sdks/index) から直接、または OTel 互換のデータ収集エージェント (例: インフラストラクチャのメトリクスやログを収集する他の OTel collector) からデータを送信できます。
+
+より具体的には、次のとおりです。
+
+* [**言語別 SDK**](/ja/clickstack/ingesting-data/sdks/index) は、アプリケーション内部からテレメトリー、特に **トレース** と **ログ** を収集し、このデータを OTLP エンドポイント経由で OpenTelemetry collector にエクスポートします。collector はその後、ClickHouse へのインジェストを処理します。ClickStack で利用できる言語別 SDK の詳細については、[SDKs](/ja/clickstack/ingesting-data/sdks/index) を参照してください。
+
+* **データ収集エージェント** は、サーバー、Kubernetes ノード、またはアプリケーションの近くなど、エッジにデプロイされるエージェントです。これらはインフラストラクチャのテレメトリー (例: ログ、メトリクス) を収集したり、SDK でインストルメントされたアプリケーションから直接イベントを受信したりします。この場合、エージェントはアプリケーションと同じホスト上で動作し、多くの場合、サイドカーまたはデーモンセットとして実行されます。これらのエージェントはデータを中央の ClickStack OTel collector に転送し、この collector は [ゲートウェイ](/ja/clickstack/ingesting-data/collector#collector-roles) として機能します。通常、クラスター、データセンター、またはリージョンごとに 1 つデプロイされます。[ゲートウェイ](/ja/clickstack/ingesting-data/collector#collector-roles) は、エージェントまたはアプリケーションから OTLP イベントを受信し、ClickHouse へのインジェストを処理します。詳細については、[OTel collector](/ja/clickstack/ingesting-data/collector) を参照してください。これらのエージェントには、OTel collector の別インスタンスや、[Fluentd](https://www.fluentd.org/)、[Vector](https://vector.dev/) などの代替技術を使用できます。
+
+<Info>
+  **OpenTelemetry 互換性**
+
+  ClickStack では、テレメトリーと機能を強化した独自の言語別 SDK とカスタマイズされた OpenTelemetry を提供していますが、既存の OpenTelemetry SDK やエージェントもそのままシームレスに使用できます。
+</Info>

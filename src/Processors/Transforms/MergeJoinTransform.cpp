@@ -11,6 +11,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -67,11 +68,11 @@ ConstNullMapPtr getNullMapData(const ColumnPtr & column)
 template <typename TCursor>
 int ALWAYS_INLINE compareCursors(const TCursor & lhs, size_t lpos,
                                  const TCursor & rhs, size_t rpos,
-                                 int null_direction_hint)
+                                 int null_direction_hint, size_t from_key = 0)
 {
     chassert(lhs.sort_columns.size() == rhs.sort_columns.size());
     size_t key_length = lhs.sort_columns.size();
-    for (size_t i = 0; i < key_length; ++i)
+    for (size_t i = from_key; i < key_length; ++i)
     {
         const auto & left_column = *lhs.sort_columns[i];
         const auto & right_column = *rhs.sort_columns[i];
@@ -93,6 +94,79 @@ int ALWAYS_INLINE compareCursors(const TCursor & lhs, const TCursor & rhs, int n
 {
     return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), null_direction_hint);
 }
+
+struct FirstKeyCompare
+{
+    /// Comparison of the first key columns of the current rows.
+    int cmp = 0;
+    /// Number of rows of the lesser side known to be less than the other side's current row
+    /// (0 when the run was not tracked: a NULL row, or the first key columns are equal).
+    size_t track = 0;
+};
+
+/// Compares only the first key column of the current rows. A nonzero result decides the whole
+/// tuple comparison regardless of the remaining key columns, and the run of lesser rows on the
+/// lesser side (a prefix of the sorted block) can be skipped at once (see skipTracked).
+FirstKeyCompare ALWAYS_INLINE trackCursorsFirstKey(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
+{
+    const size_t lpos = lhs.getRow();
+    const size_t rpos = rhs.getRow();
+    const IColumn & left_column = *lhs.sort_columns.front();
+    const IColumn & right_column = *rhs.sort_columns.front();
+    const auto * left_null_map = getNullMapData(lhs.null_maps.front());
+    const auto * right_null_map = getNullMapData(rhs.null_maps.front());
+
+    /// Rows with NULL in the first key column are ordered by the null map, not by the values
+    /// of the nested column; their runs are skipped by nextDistinct.
+    if (left_null_map && (*left_null_map)[lpos])
+        return {null_direction_hint, 0};
+    if (right_null_map && (*right_null_map)[rpos])
+        return {-null_direction_hint, 0};
+
+    /// A single virtual call fuses the comparison and the run search.
+    if (!left_null_map && !right_null_map)
+    {
+        Int64 track = left_column.compareTrackAt(lpos, rpos, right_column, null_direction_hint);
+        if (track < 0)
+            return {-1, static_cast<size_t>(-track)};
+        if (track > 0)
+            return {1, static_cast<size_t>(track)};
+        return {0, 0};
+    }
+
+    /// With a nullable first key column the values of the nested column at NULL positions are
+    /// unspecified and break the sortedness compareTrackAt relies on, so the run search checks
+    /// the null map in the predicate (NULL rows sort to the block edge and never satisfy it).
+    int cmp = left_column.compareAt(lpos, rpos, right_column, null_direction_hint);
+    if (cmp == 0)
+        return {0, 0};
+
+    const IColumn & column = cmp < 0 ? left_column : right_column;
+    const IColumn & other = cmp < 0 ? right_column : left_column;
+    const size_t pos = cmp < 0 ? lpos : rpos;
+    const size_t other_pos = cmp < 0 ? rpos : lpos;
+    const size_t rows = cmp < 0 ? lhs.rows : rhs.rows;
+    const auto * null_map = cmp < 0 ? left_null_map : right_null_map;
+
+    auto is_less = [&](size_t row)
+    {
+        return (!null_map || !(*null_map)[row])
+            && column.compareAt(row, other_pos, other, null_direction_hint) < 0;
+    };
+
+    /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
+    size_t run_end = 0;
+    if (pos + 1 >= rows || !is_less(pos + 1))
+        run_end = pos + 1;
+    else
+    {
+        /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+        static constexpr size_t linear_probe = 8;
+        run_end = findEqualRangeEndAssumeSorted(pos + 1, rows, linear_probe, is_less);
+    }
+    return {cmp, run_end - pos};
+}
+
 
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
 {
@@ -118,67 +192,90 @@ int ALWAYS_INLINE totallyCompare(FullMergeJoinCursor & lhs, FullMergeJoinCursor 
     return 0;
 }
 
-ColumnPtr indexColumn(const ColumnPtr & column, const PaddedPODArray<UInt64> & indices)
+ColumnPtr indexColumn(const ColumnPtr & column, const DataTypePtr & type, const PaddedPODArray<UInt64> & indices)
 {
     auto new_col = column->cloneEmpty();
     new_col->reserve(indices.size());
     for (size_t idx : indices)
     {
-        /// rows where default value should be inserted have index == size
+        /// Rows where a default should be inserted have index == size. Fill them through the
+        /// data type: types whose default is not all-zero (e.g. Enum, whose default is the
+        /// first member) must not get a raw zero. Every non-joined-row fill in this file goes
+        /// through the data type for the same reason.
         if (idx < column->size())
             new_col->insertFrom(*column, idx);
         else
-            new_col->insertDefault();
+            type->insertDefaultInto(*new_col);
     }
     return new_col;
 }
 
-Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & indices)
+Columns indexColumns(const Columns & columns, const DataTypes & types, const PaddedPODArray<UInt64> & indices)
 {
     Columns new_columns;
     new_columns.reserve(columns.size());
-    for (const auto & column : columns)
-    {
-        new_columns.emplace_back(indexColumn(column, indices));
-    }
+    for (size_t i = 0; i < columns.size(); ++i)
+        new_columns.emplace_back(indexColumn(columns[i], types[i], indices));
     return new_columns;
-}
-
-bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
-{
-    if (impl.isLast())
-        return false;
-
-    size_t pos = impl.getRow();
-    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
-    {
-        const auto * nm = getNullMapData(impl.null_maps[i]);
-        if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
-            return false;
-
-        if (nm && (*nm)[pos])
-            continue;
-
-        const auto & col = *impl.sort_columns[i];
-        if (auto cmp = col.compareAt(pos, pos + 1, col, 1); cmp != 0)
-            return false;
-    }
-    return true;
 }
 
 size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
-    size_t start_pos = impl.getRow();
-    while (sameNext(impl))
-    {
-        impl.next();
-    }
-    impl.next();
+    const size_t start_pos = impl.getRow();
+    size_t run_end = impl.rows;
 
-    if (impl.isValid())
-        return impl.getRow() - start_pos;
-    return impl.rows - start_pos;
+    /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
+    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+    {
+        const auto * nm = getNullMapData(impl.null_maps[i]);
+        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
+
+        if (nm)
+            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
+
+        if (!ref_is_null)
+            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+
+        if (run_end <= start_pos + 1)
+            break;
+    }
+    const size_t length = run_end - start_pos;
+    impl.pos = start_pos + length;
+    return length;
+}
+
+/// Lookup the equal range of the cursor, without moving the cursor
+/// Needed for EXPLAIN ANALYZE to compute the matches
+size_t ALWAYS_INLINE countMatchedRowsAheadIfNeeded(FullMergeJoinCursor & cursor, const JoinKeyRow & row_to_compare, bool collect_matches)
+{
+    if (!collect_matches || !row_to_compare.equals(cursor))
+        return 0;
+    size_t start = cursor.pos;
+    size_t len = nextDistinct(cursor);
+    cursor.pos = start;
+    return len;
+}
+
+/// Is used to compute the length of equal range between chunks
+/// Needed for EXPLAIN ANALYZE to ocmpute the matches
+size_t ALWAYS_INLINE consumeEqualRange(FullMergeJoinCursor & cursor, const JoinKeyRow & matched_range, size_t & matched_rows)
+{
+    const bool matched = matched_range.equals(cursor);
+    const size_t length = nextDistinct(cursor);
+    if (matched)
+        matched_rows += length;
+    return length;
+}
+
+/// Advances the cursor past the tracked run of lesser rows (see trackCursorsFirstKey); when the
+/// run was not tracked, skips the run of equal keys. Returns the number of rows skipped.
+size_t ALWAYS_INLINE skipTracked(FullMergeJoinCursor & cursor, size_t tracked_rows)
+{
+    if (tracked_rows == 0)
+        return nextDistinct(cursor);
+    cursor.pos += tracked_rows;
+    return tracked_rows;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
@@ -402,10 +499,12 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
     SharedHeaders & input_headers_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    JoinAnalyzeMode analyze_mode_)
     : input_headers(input_headers_)
     , kind(kind_)
     , strictness(strictness_)
+    , analyze_mode(analyze_mode_)
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
@@ -443,8 +542,14 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         join_ptr->getTableJoin().strictness(),
         join_ptr->getTableJoin().getOnlyClause(),
         input_headers_,
-        max_block_size_)
+        max_block_size_,
+        join_ptr->getTableJoin().analyzeMode())
 {
+    /// This algorithm matches rows on the equality keys (plus the `ASOF` inequality) only, so a
+    /// mixed `ON` condition reaching here would be dropped instead of applied.
+    if (join_ptr->getTableJoin().getMixedJoinExpression())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm cannot evaluate a mixed JOIN ON condition");
+
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
         size_t left_idx = input_headers[0]->getPositionByName(left_key);
@@ -474,7 +579,7 @@ void MergeJoinAlgorithm::setAsofInequality(ASOFJoinInequality asof_inequality_)
 void MergeJoinAlgorithm::logElapsed(double seconds)
 {
     LOG_TRACE(log,
-        "Finished pocessing in {} seconds"
+        "Finished pocessing in {:.3f} seconds"
         ", left: {} blocks, {} rows; right: {} blocks, {} rows"
         ", max blocks loaded to memory: {}",
         seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
@@ -533,7 +638,8 @@ struct AllJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      std::unique_ptr<AllJoinState> & state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     MatchedRows & matched_rows)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -544,17 +650,24 @@ struct AllJoinImpl
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
         chassert(left_cursor.isValid() && right_cursor.isValid());
+        size_t matched_left = 0;
+        size_t matched_right = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and carries the run of lesser rows that can be skipped at once.
+            FirstKeyCompare first_key = trackCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = first_key.cmp != 0 ? first_key.cmp : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
 
             if (cmp == 0)
             {
                 size_t lnum = nextDistinct(left_cursor);
                 size_t rnum = nextDistinct(right_cursor);
+                matched_left += lnum;
+                matched_right += rnum;
                 bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.isValid() && right_cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
@@ -572,12 +685,15 @@ struct AllJoinImpl
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
+                    matched_rows.left += matched_left;
+                    matched_rows.right += matched_right;
                     return;
                 }
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
                 {
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
@@ -587,7 +703,7 @@ struct AllJoinImpl
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                 {
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
@@ -596,6 +712,8 @@ struct AllJoinImpl
                 }
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
     }
 };
 
@@ -632,6 +750,20 @@ MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
     return result_cols;
 }
 
+DataTypes MergeJoinAlgorithm::getOutputTypes() const
+{
+    /// Types of the columns produced by getEmptyResultColumns(): left header columns
+    /// followed by right header columns. Used to fill non-joined rows with the proper
+    /// type default (e.g. the first Enum member) instead of a raw zero.
+    DataTypes types;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const auto & header_types = input_headers[i]->getDataTypes();
+        types.insert(types.end(), header_types.begin(), header_types.end());
+    }
+    return types;
+}
+
 Columns MergeJoinAlgorithm::getEmptyResultColumns(size_t pos) const
 {
     MutableColumns mutable_cols;
@@ -660,6 +792,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
             {
                 size_t pos = cursors[i].getRow();
                 size_t num = nextDistinct(cursors[i]);
+                stat.matched_rows.side(i) += num;
                 all_join_state->addRange(i, cursors[i].getCurrent().clone(), pos, num);
             }
         }
@@ -716,6 +849,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
     const auto & left_columns = left_cursor.getCurrent().getColumns();
 
     MutableColumns result_cols = getEmptyResultColumns();
+    const auto output_types = getOutputTypes();
 
     while (left_cursor.isValid() && asof_join_state.hasMatch(left_cursor, asof_inequality))
     {
@@ -725,6 +859,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : asof_join_state.value.getColumns())
             result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
         chassert(i == result_cols.size());
+        ++stat.matched_rows.left;
         left_cursor.next();
     }
 
@@ -735,7 +870,8 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : left_columns)
             result_cols[i++]->insertFrom(*col, left_cursor.getRow());
         for (; i < result_cols.size(); ++i)
-            result_cols[i]->insertDefault();
+            /// Type-aware default (Enum -> first member) rather than a raw zero.
+            output_types[i]->insertDefaultInto(*result_cols[i]);
         chassert(i == result_cols.size());
 
         left_cursor.next();
@@ -753,12 +889,15 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
+    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint, stat.matched_rows);
     chassert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
 
-    Columns rcols = indexColumns(cursors[1].getCurrent().getColumns(), idx_map[1]);
+    const auto & left_types = input_headers[0]->getDataTypes();
+    const auto & right_types = input_headers[1]->getDataTypes();
+
+    Columns rcols = indexColumns(cursors[1].getCurrent().getColumns(), right_types, idx_map[1]);
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
@@ -782,7 +921,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
                     if (auto it = left_to_right_key_remap.find(col_idx); it != left_to_right_key_remap.end())
                         new_col->insertFrom(*rcols[it->second], i);
                     else
-                        new_col->insertDefault();
+                        left_types[col_idx]->insertDefaultInto(*new_col);
                 }
             }
             lcols.push_back(std::move(new_col));
@@ -790,7 +929,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
     }
     else
     {
-        lcols = indexColumns(cursors[0].getCurrent().getColumns(), idx_map[0]);
+        lcols = indexColumns(cursors[0].getCurrent().getColumns(), left_types, idx_map[0]);
     }
 
     for (auto & col : lcols)
@@ -813,7 +952,8 @@ struct AnyJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      AnyJoinState & any_join_state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     MatchedRows & matched_rows)
     {
         chassert(enabled);
 
@@ -831,47 +971,72 @@ struct AnyJoinImpl
         size_t lpos = std::numeric_limits<size_t>::max();
         chassert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
+        bool count_matches = any_join_state.count_matches;
+        size_t matched_left = 0;
+        size_t matched_right = 0;
+
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and carries the run of lesser rows that can be skipped at once.
+            FirstKeyCompare first_key = trackCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = first_key.cmp != 0 ? first_key.cmp : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
+
             if (cmp == 0)
             {
+                if (count_matches)
+                {
+                    any_join_state.matched.left = JoinKeyRow(left_cursor, lpos);
+                    any_join_state.matched.right = JoinKeyRow(right_cursor, rpos);
+                }
+
                 if constexpr (isLeftOrFull(kind))
                 {
                     size_t lnum = nextDistinct(left_cursor);
+                    matched_left += lnum;
                     right_map.resize_fill(right_map.size() + lnum, rpos);
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
                     size_t rnum = nextDistinct(right_cursor);
+                    matched_right += rnum;
                     left_map.resize_fill(left_map.size() + rnum, lpos);
                 }
 
                 if constexpr (isInner(kind))
                 {
-                    nextDistinct(left_cursor);
-                    nextDistinct(right_cursor);
+                    size_t lnum = nextDistinct(left_cursor);
+                    size_t rnum = nextDistinct(right_cursor);
+
+                    matched_left += lnum;
+                    matched_right += rnum;
+
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
                 }
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                matched_left += countMatchedRowsAheadIfNeeded(left_cursor, any_join_state.matched.left, count_matches);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                matched_right += countMatchedRowsAheadIfNeeded(right_cursor, any_join_state.matched.right, count_matches);
+                size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
 
         /// Remember last joined row to propagate it to next block
 
@@ -905,7 +1070,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
         if (any_join_state.keys[source_num].equals(current))
         {
             size_t start_pos = current.getRow();
-            size_t length = nextDistinct(current);
+            size_t length = consumeEqualRange(current, any_join_state.matched.side(source_num), stat.matched_rows.side(source_num));
 
             if (length && isLeft(kind) && source_num == 0)
             {
@@ -954,7 +1119,8 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
+    any_join_state.count_matches = analyze_mode == JoinAnalyzeMode::Exact;
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_rows);
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -966,9 +1132,11 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
         /// empty map means identity mapping
         if (!idx_map[source_num].empty())
         {
-            for (const auto & col : cursors[source_num].getCurrent().getColumns())
+            const auto & source_types = input_headers[source_num]->getDataTypes();
+            const auto & source_columns = cursors[source_num].getCurrent().getColumns();
+            for (size_t i = 0; i < source_columns.size(); ++i)
             {
-                result.addColumn(indexColumn(col, idx_map[source_num]));
+                result.addColumn(indexColumn(source_columns[i], source_types[i], idx_map[source_num]));
             }
         }
         else
@@ -982,6 +1150,24 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     return Status(std::move(result));
 }
 
+JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
+{
+    JoinAnalysisCounters counters;
+    counters.left_rows = stat.num_rows[0];
+    counters.right_rows = stat.num_rows[1];
+
+    if (strictness == JoinStrictness::Any && analyze_mode != JoinAnalyzeMode::Exact)
+        return counters;
+
+    counters.matched_left = stat.matched_rows.left;
+
+    /// ASOF visits only the nearest right row of a key group, not every right row that satisfies
+    /// the `ON` condition, so the right side cannot be counted.
+    if (strictness != JoinStrictness::Asof)
+        counters.matched_right = stat.matched_rows.right;
+
+    return counters;
+}
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 {
@@ -997,6 +1183,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
     const auto & right_columns = right_cursor.getCurrent().getColumns();
 
     MutableColumns result_cols = getEmptyResultColumns();
+    const auto output_types = getOutputTypes();
 
     while (left_cursor.isValid() && right_cursor.isValid())
     {
@@ -1028,6 +1215,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : right_columns)
                     result_cols[i++]->insertFrom(*col, rpos);
                 chassert(i == result_cols.size());
+                ++stat.matched_rows.left;
 
                 left_cursor.next();
                 continue;
@@ -1060,6 +1248,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                     for (const auto & col : asof_join_state.value.getColumns())
                         result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                     chassert(i == result_cols.size());
+                    ++stat.matched_rows.left;
                 }
                 else
                 {
@@ -1071,7 +1260,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                         for (const auto & col : left_columns)
                             result_cols[i++]->insertFrom(*col, lpos);
                         for (; i < result_cols.size(); ++i)
-                            result_cols[i]->insertDefault();
+                            output_types[i]->insertDefaultInto(*result_cols[i]);
                         chassert(i == result_cols.size());
                     }
                 }
@@ -1091,6 +1280,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : asof_join_state.value.getColumns())
                     result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                 chassert(i == result_cols.size());
+                ++stat.matched_rows.left;
                 left_cursor.next();
                 continue;
             }
@@ -1108,7 +1298,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : left_columns)
                     result_cols[i++]->insertRangeFrom(*col, lpos, num);
                 for (; i < result_cols.size(); ++i)
-                    result_cols[i]->insertManyDefaults(num);
+                    output_types[i]->insertManyDefaultsInto(*result_cols[i], num);
                 chassert(i == result_cols.size());
             }
         }
@@ -1128,27 +1318,56 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const
 {
     ColumnRawPtrs cols;
+    /// Parallel to `cols`: used to fill non-joined rows through the data type (see indexColumn).
+    DataTypes types;
     const auto & columns_left = source_num == 0 ? cursors[0].getCurrent().getColumns() : getEmptyResultColumns(0);
     const auto & columns_right = source_num == 1 ? cursors[1].getCurrent().getColumns() : getEmptyResultColumns(1);
+    const auto & types_left = input_headers[0]->getDataTypes();
+    const auto & types_right = input_headers[1]->getDataTypes();
 
     for (size_t i = 0; i < columns_left.size(); ++i)
     {
         if (auto it = left_to_right_key_remap.find(i); source_num == 0 || it == left_to_right_key_remap.end())
         {
             cols.push_back(columns_left[i].get());
+            types.push_back(types_left[i]);
         }
         else
         {
             cols.push_back(columns_right[it->second].get());
+            types.push_back(types_right[it->second]);
         }
     }
 
-    for (const auto & col : columns_right)
+    for (size_t i = 0; i < columns_right.size(); ++i)
     {
-        cols.push_back(col.get());
+        cols.push_back(columns_right[i].get());
+        types.push_back(types_right[i]);
     }
+
     Chunk result_chunk;
-    copyColumnsResized(cols, start, num_rows, result_chunk);
+    for (size_t i = 0; i < cols.size(); ++i)
+    {
+        const auto & col = cols[i];
+        if (col->empty())
+        {
+            /// add defaults (through the data type, not cloneResized which would zero-fill)
+            auto default_col = col->cloneEmpty();
+            types[i]->insertManyDefaultsInto(*default_col, num_rows);
+            result_chunk.addColumn(std::move(default_col));
+        }
+        else if (col->size() == 1)
+        {
+            /// copy same row n times
+            result_chunk.addColumn(replicateRow(*col, num_rows));
+        }
+        else
+        {
+            /// cut column
+            chassert(start + num_rows <= col->size());
+            result_chunk.addColumn(col->cut(start, num_rows));
+        }
+    }
     return result_chunk;
 }
 
@@ -1174,6 +1393,13 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (auto result = handleAsofJoinState())
         return std::move(*result);
 
+    /// The paths below that drop rows instead of emitting them are the only chance to count a
+    /// dropped equal range that continues an already matched one. Only `ANY` needs it: it is the
+    /// only strictness that carries such a range in `any_join_state.matched`, while `ALL` and
+    /// `ASOF` close theirs in handleAllJoinState/handleAsofJoinState right above.
+    const bool analyze_exact_stats = analyze_mode == JoinAnalyzeMode::Exact;
+    const bool count_discarded_matches = analyze_exact_stats && strictness == JoinStrictness::Any;
+
     if (cursors[0].fullyCompleted() || cursors[1].fullyCompleted())
     {
         if (!cursors[0].fullyCompleted() && isLeftOrFull(kind))
@@ -1182,6 +1408,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         if (!cursors[1].fullyCompleted() && isRightOrFull(kind))
             return Status(createBlockWithDefaults(1));
 
+        if (count_discarded_matches && cursors[0].isValid())
+            consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
+        if (count_discarded_matches && cursors[1].isValid())
+            consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
         return Status({}, true);
     }
 
@@ -1192,6 +1422,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isLeftOrFull(kind))
                 return Status(createBlockWithDefaults(0));
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
             cursors[0].setChunk(Chunk());
             return Status(0);
         }
@@ -1200,6 +1432,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isRightOrFull(kind))
                 return Status(createBlockWithDefaults(1));
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
             cursors[1].setChunk(Chunk());
             return Status(1);
         }

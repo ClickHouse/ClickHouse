@@ -30,7 +30,7 @@ namespace ErrorCodes
     DECLARE(UInt64, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "Connect timeout (in seconds)", 0) \
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
     DECLARE(Bool, enable_compression, false, "Enable MySQL protocol compression (MYSQL_OPT_COMPRESS).", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', or 'date2String'.", 0) \
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32, geometry) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', 'date2String', or 'geometry'. Must match the default of the 'mysql_datatypes_support_level' server setting, so that creating a MySQL database or table engine with the default settings does not persist a redundant SETTINGS clause.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
@@ -83,6 +83,13 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
     if (!context->hasQueryContext())
         return;
 
+    /// Do not override a value that was already supplied explicitly for this engine instance - via a
+    /// named collection or the engine's own `SETTINGS` - with the query-context (session) value. The
+    /// query-context bridge only fills in the value when the engine did not set it, so that an explicit
+    /// per-engine opt-out keeps precedence over a conflicting session `SET mysql_datatypes_support_level`.
+    if (impl->isChanged("mysql_datatypes_support_level"))
+        return;
+
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
     if (settings[Setting::mysql_datatypes_support_level].value != (*impl)[MySQLSetting::mysql_datatypes_support_level].value)
@@ -107,9 +114,9 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
     }
 }
 
-std::vector<std::string_view> MySQLSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> all_settings;
+    VectorWithMemoryTracking<std::string_view> all_settings;
     for (const auto & setting_field : impl->all())
         all_settings.push_back(setting_field.getName());
     return all_settings;

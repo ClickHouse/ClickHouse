@@ -31,7 +31,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.s, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.s = l.s
     ORDER BY l.s DESC COLLATE 'en' LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,

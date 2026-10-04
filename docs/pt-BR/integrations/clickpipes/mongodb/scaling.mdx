@@ -1,0 +1,104 @@
+---
+title: 'Escalando ClickPipes do MongoDB via OpenAPI'
+description: 'Como escalar ClickPipes do MongoDB via OpenAPI'
+slug: /integrations/clickpipes/mongodb/scaling
+sidebarTitle: 'Escalonamento'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestão de dados', 'sincronização em tempo real', 'escalonamento']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **A maioria dos usuários não precisará desta API**
+
+  A configuração padrão do DB ClickPipes foi projetada para atender à maioria das cargas de trabalho sem necessidade de ajustes. Se você acredita que sua carga de trabalho precisa de escalonamento, abra um [chamado de suporte](https://clickhouse.com/support/program) e orientaremos você sobre as configurações ideais para o seu caso de uso.
+</Warning>
+
+A API de escalonamento pode ser útil para:
+
+* Grandes cargas iniciais (mais de 4 TB)
+* Migrar uma quantidade moderada de dados o mais rápido possível
+* Dar suporte a mais de 8 ClickPipes com CDC no mesmo serviço
+
+Antes de tentar escalar, considere:
+
+* Garantir que o banco de dados de origem tenha capacidade disponível suficiente
+* Revisar as [configurações de intervalo de sincronização e tamanho do lote de extração](/pt-BR/integrations/clickpipes/mongodb/controlling-sync) que podem estar causando atrasos no CDC
+
+**Aumentar a escala aumentará proporcionalmente seus custos de computação do ClickPipes.** Se você estiver escalando apenas para as cargas iniciais, é importante reduzir a escala depois que o snapshot for concluído para evitar cobranças inesperadas. Para mais detalhes sobre preços, consulte [os preços do ClickPipes](/pt-BR/products/cloud/reference/billing/clickpipes/index).
+
+<div id="prerequisites">
+  ## Pré-requisitos para este processo
+</div>
+
+Antes de começar, você precisará de:
+
+1. Uma [API key do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/openapi) com permissões de Admin no ClickHouse Cloud service de destino.
+2. Um DB ClickPipe (Postgres, MySQL ou MongoDB) provisionado no service em algum momento. A infraestrutura de CDC é criada junto com o primeiro ClickPipe, e os endpoints de escalonamento ficam disponíveis a partir daí.
+
+<div id="cdc-scaling-steps">
+  ## Passos para escalar o DB ClickPipes
+</div>
+
+Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+Obtenha a configuração atual de escalonamento (opcional):
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# resultado de exemplo:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+Defina o escalonamento desejado. As configurações compatíveis incluem de 1 a 24 núcleos de CPU, com a memória (GB) definida como 4× o número de núcleos:
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 24000,
+  "replicaMemoryGb": 96
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+Aguarde a propagação da configuração (normalmente, de 3 a 5 minutos). Depois que o escalonamento terminar, o endpoint GET refletirá os novos valores:
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# resultado de exemplo:
+{
+  "result": {
+    "replicaCpuMillicores": 24000,
+    "replicaMemoryGb": 96
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

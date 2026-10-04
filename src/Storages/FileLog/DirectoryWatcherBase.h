@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Common/PipeFDs.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <atomic>
@@ -44,7 +44,8 @@ public:
         /// An item has been renamed or moved. This event delivers the old name.
 
         DW_ITEM_MOVED_TO = 16
-        /// An item has been renamed or moved. This event delivers the new name.
+        /// An item has been renamed within the directory. This event delivers the new name.
+        /// An item moved in from elsewhere is reported as DW_ITEM_ADDED.
     };
 
     enum DirectoryEventMask
@@ -90,8 +91,9 @@ public:
 private:
     FileLogDirectoryWatcher & owner;
 
-    using TaskThread = BackgroundSchedulePoolTaskHolder;
-    TaskThread watch_task;
+    /// Dedicated thread, not a BackgroundSchedulePool slot: `watchFunc` blocks for the watcher's
+    /// whole lifetime, and that pool caps concurrent tasks of one type.
+    std::unique_ptr<ThreadFromGlobalPool> watch_thread;
 
     std::atomic<bool> stopped{false};
 
@@ -100,7 +102,9 @@ private:
     int event_mask;
     uint64_t milliseconds_to_wait;
 
+#if defined(OS_LINUX)
     int inotify_fd;
+#endif
     PipeFDs event_pipe;
 
     void start();

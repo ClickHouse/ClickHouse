@@ -6,6 +6,7 @@
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <style>
         :root {
+            color-scheme: light;
             --color: black;
             --background: #f5f5f5;
             --card-background: white;
@@ -51,6 +52,7 @@
             --db-border: #E0D060;
         }
         [data-theme="dark"] {
+            color-scheme: dark;
             --color: white;
             --background: #151C2C;
             --card-background: #1b2834;
@@ -94,6 +96,14 @@
             --db-border: #555533;
         }
         * { box-sizing: border-box; }
+        /* Theme-aware scrollbars: `color-scheme` recolours the native scrollbars of
+           the connection-param widgets, while the explicit rules below match the
+           custom scroll areas (viewport, node column lists, sidebar) to the theme. */
+        html { scrollbar-width: thin; scrollbar-color: var(--border-color) transparent; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
         html, body { height: 100%; }
         body {
             font-family: Liberation Sans, DejaVu Sans, sans-serif;
@@ -146,6 +156,9 @@
             outline: none;
             border-color: var(--btn-primary-bg);
         }
+        /* Live credential validation feedback (see `checkCredentials`). */
+        #user.ok, #password.ok { border-color: var(--success-color); }
+        #user.fail, #password.fail { border-color: var(--error-color); }
         #url { width: 320px; }
         #user, #password { width: 110px; }
         .btn {
@@ -345,6 +358,9 @@
             min-width: 13rem;
             max-width: 19rem;
             cursor: pointer;
+            /* Dragging a node must not leave a parasitic text selection behind. */
+            user-select: none;
+            -webkit-user-select: none;
             transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
         }
         .node:hover {
@@ -377,13 +393,20 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            flex: 1;
+            flex: 1 1 auto;
+            /* Allow the name to shrink (and thus ellipsize) below its content width
+               so a long engine label can't squeeze it out of the header. */
+            min-width: 0;
             font-family: Monaco, Consolas, monospace;
         }
         .node-kind {
             font-size: 0.7rem;
             opacity: 0.85;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 8rem;
+            flex: 0 1 auto;
             font-family: Monaco, Consolas, monospace;
         }
 
@@ -579,11 +602,11 @@
 <div class="header">
     <h1>ClickHouse Schema Visualizer</h1>
     <div class="controls">
-        <div class="connection-params">
-            <input id="url" type="text" placeholder="URL" spellcheck="false">
-            <input id="user" type="text" placeholder="user" spellcheck="false">
-            <input id="password" type="password" placeholder="password">
-        </div>
+        <form class="connection-params" id="connection-form">
+            <input id="url" name="url" type="text" placeholder="URL" spellcheck="false">
+            <input id="user" name="user" type="text" placeholder="user" spellcheck="false">
+            <input id="password" name="password" type="password" placeholder="password">
+        </form>
         <button id="load" class="btn btn-primary">Load</button>
         <button id="theme-toggle" class="theme-toggle" title="Toggle theme">🌘</button>
     </div>
@@ -657,11 +680,138 @@
 
 const $ = id => document.getElementById(id);
 
-if (!$('url').value)
-    $('url').value = location.protocol !== 'file:' ? location.origin : 'http://localhost:8123/';
-if (!$('user').value) {
-    const u = new URL(window.location).searchParams.get('user');
-    $('user').value = u || 'default';
+/// Connection defaults, mirroring `play.html`: the URL, user, and password can all be
+/// supplied in the query string; otherwise the URL falls back to this server's origin
+/// (or localhost when the page is opened from disk).
+const currentUrl = new URL(window.location);
+const openedLocally = location.protocol === 'file:';
+
+if (!$('url').value) {
+    const serverAddress = currentUrl.searchParams.get('url');
+    if (serverAddress) $('url').value = serverAddress;
+    else if (!openedLocally) $('url').value = location.origin;
+    else $('url').value = 'http://localhost:8123/';
+}
+
+const userFromUrl = currentUrl.searchParams.get('user');
+if (userFromUrl) $('user').value = userFromUrl;
+
+const passFromUrl = currentUrl.searchParams.get('password');
+if (passFromUrl) {
+    $('password').value = passFromUrl;
+    /// Strip the password back out of the address bar so it is not left in a shareable
+    /// URL or in browser history (`file:` URLs disallow `history` edits).
+    if (!openedLocally) {
+        currentUrl.searchParams.delete('password');
+        window.history.replaceState(null, '',
+            window.location.origin + window.location.pathname + '?'
+            + currentUrl.searchParams.toString() + window.location.hash);
+    }
+}
+
+/// Browser Credential Management API: remember the entered credentials so the browser
+/// can offer to save and later autofill them — same as `play.html`. Guarded because
+/// `PasswordCredential` exists only in Chromium-based browsers.
+///
+/// Persist only for a same-origin target. `PasswordCredential` is scoped to the page origin,
+/// not to the backend named in `#url` (its `name` field is a display label, not an isolation
+/// key). Storing a cross-origin login here would let the browser autofill it on a later plain
+/// visit; because the page then auto-loads the same-origin default (`isSameOriginTarget` at the
+/// bottom of the script), those remembered credentials would be POSTed to this page's own server
+/// instead of the cross-origin one they belong to. `play.html` can store unconditionally because
+/// it never auto-contacts a server on open; `/schema` does, so it must not persist a credential
+/// that its own auto-load could later misdirect. This is the same `isSameOriginTarget` invariant
+/// that already gates the page-load auto-load and the paste probe.
+function storeCredentials() {
+    if (window.PasswordCredential && $('password').value && isSameOriginTarget($('url').value)) {
+        try {
+            navigator.credentials.store(new PasswordCredential({
+                id: $('user').value,
+                password: $('password').value,
+                name: $('url').value,
+            }));
+        } catch (e) { console.warn('credentials.store failed:', e); }
+    }
+}
+
+/// Live credential feedback, as in `play.html`: paint the user/password fields green
+/// once a probe query succeeds and red when it fails, and surface the server version.
+/// The `Connected to ClickHouse v...` message shares the single `#status` line with the load
+/// status, so we record when that line currently holds a credential-probe message. That lets
+/// `resetCredentialsStatus` clear the stale message — and only that message — when the fields
+/// change, without wiping an unrelated load status such as `Loaded N tables`.
+let statusIsCredentialProbe = false;
+function setCredentialStatus(ok, version) {
+    for (const id of ['user', 'password']) {
+        $(id).classList.toggle('ok', ok);
+        $(id).classList.toggle('fail', !ok);
+    }
+    if (ok && version) {
+        setStatus(`Connected to ClickHouse v${version}.`);
+        /// `setStatus` clears the flag, so claim ownership of the line afterwards.
+        statusIsCredentialProbe = true;
+    }
+}
+
+function resetCredentialsStatus() {
+    for (const id of ['user', 'password']) $(id).classList.remove('ok', 'fail');
+    /// Editing a field invalidates the probe: drop the now-stale `Connected to ...` text, but
+    /// leave a load status in place — it describes the last load, not the current credentials.
+    if (statusIsCredentialProbe) setStatus('');
+}
+
+/// Capture the connection (`url` / `user` / `password`) a load is about to use. The captured
+/// values are passed to `chQuery` for every request in the batch, so the whole batch is bound
+/// to the target the user committed to when they triggered the load: a cross-origin URL pasted
+/// into the field mid-load cannot redirect the remaining automatic queries — and their
+/// credentials — to a new server without an explicit `Load`. The returned `isCurrent` predicate
+/// additionally reports whether the fields still hold those exact values, so a result that
+/// arrives after the user edits a field, or after another load runs with different credentials,
+/// cannot repaint or store the now-stale credential status.
+function connectionSnapshot() {
+    const url = $('url').value;
+    const user = $('user').value;
+    const password = $('password').value;
+    return {
+        url, user, password,
+        isCurrent: () => $('url').value === url && $('user').value === user && $('password').value === password,
+    };
+}
+
+/// Monotonic token shared by every operation that can repaint the credential status (the green/red
+/// on the user/password fields and the `Connected to ...` line): the `checkCredentials` probe below
+/// and each `loadAll` batch. Both bump it at start and capture the value, and apply the paint/store
+/// only while their captured value is still the latest. Field equality (`conn.isCurrent()`) alone is
+/// not enough: two operations against the *same* `url`/`user`/`password` — `Load` clicked twice, or a
+/// paste-probe racing a newer load — both satisfy it, so an older callback could otherwise flip the
+/// fields to `fail` after a newer load has already succeeded. The token makes the latest-started
+/// probe-or-load the sole authority over the credential status.
+let credentialStatusGeneration = 0;
+async function checkCredentials() {
+    const myStatus = ++credentialStatusGeneration;
+    const conn = connectionSnapshot();
+    /// A newer probe or load supersedes this one, even when the field values are unchanged.
+    const isCurrentStatus = () => myStatus === credentialStatusGeneration && conn.isCurrent();
+    try {
+        const res = await chQuery('SELECT version() AS v', conn);
+        if (isCurrentStatus()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
+    } catch (e) {
+        if (isCurrentStatus()) setCredentialStatus(false);
+    }
+}
+
+for (const id of ['url', 'user', 'password']) {
+    /// Editing any connection field invalidates the displayed status, including the `url`:
+    /// a green probe against one server must not stay green after the target changes.
+    $(id).addEventListener('input', resetCredentialsStatus);
+    /// The URL and credentials are usually pasted; re-check shortly after so we read the new value.
+    /// Only auto-probe a same-origin target: `checkCredentials` sends `user`/`password` to the
+    /// current `url`, so pasting a cross-origin URL into a trusted page that carries
+    /// password-manager-filled credentials must not contact it until an explicit `Load` — the
+    /// same invariant `isSameOriginTarget` enforces for page-load auto-load.
+    $(id).addEventListener('paste', () => setTimeout(() => {
+        if (isSameOriginTarget($('url').value)) checkCredentials();
+    }, 100));
 }
 
 let theme = window.localStorage.getItem('theme') || 'light';
@@ -697,6 +847,9 @@ const state = {
 function setStatus(text, isError) {
     $('status').textContent = text;
     $('status').classList.toggle('error', !!isError);
+    /// Any non-credential status (load progress/result/failure) takes over the line, so a later
+    /// field edit must not treat it as a stale probe message. `setCredentialStatus` re-sets this.
+    statusIsCredentialProbe = false;
 }
 
 /// Unambiguous composite key for a `(database, table)` pair. We cannot use
@@ -723,10 +876,13 @@ function backQuoteIfNeed(s) {
 }
 function quotedFullName(db, t) { return backQuoteIfNeed(db) + '.' + backQuoteIfNeed(t); }
 
-async function chQuery(query) {
-    const host = $('url').value.replace(/\/+$/, '');
-    const user = $('user').value;
-    const password = $('password').value;
+async function chQuery(query, conn) {
+    /// `conn` binds the request to a connection captured by `connectionSnapshot` so a whole
+    /// load batch targets one server even if the fields change mid-load; without it we read
+    /// the live fields, as the single-shot credential probe does.
+    const host = (conn ? conn.url : $('url').value).replace(/\/+$/, '');
+    const user = conn ? conn.user : $('user').value;
+    const password = conn ? conn.password : $('password').value;
     const params = new URLSearchParams();
     params.set('default_format', 'JSONCompactEachRowWithNamesAndTypes');
     /// Always request CORS headers: covers both `file://` and the case where the
@@ -779,7 +935,35 @@ function engineLabel(n) {
     return n.engine || '';
 }
 
+/// Monotonic load generation. `connectionSnapshot` binds a batch's requests — and its
+/// credential status — to one server, but two loads can still race over the *rendered* result:
+/// a same-origin auto-load can start, the user can edit `url` / credentials and press `Load`,
+/// and if the newer load renders first the older batch's awaited queries can still return and
+/// overwrite `state` and the graph with data from the superseded connection. Each load captures
+/// the generation it started in and applies its results only while it is still the latest one,
+/// so a superseded batch quietly drops its stale `state` / status / heat-map / render.
+let loadGeneration = 0;
+
+/// A finer-grained token for the `system.query_views_log` heat-map alone. The heat-map is
+/// (re)loaded both at the end of every `loadAll` and standalone whenever the lookback selector
+/// changes, so it can be superseded without a new `loadGeneration`: a standalone reload started
+/// against one graph while a `loadAll` for the same generation rebuilds `state.nodes` and runs
+/// its own heat-map, or two quick lookback changes. Each heat-map load captures this token and
+/// only the latest may reset or apply `state.loadByMv` / `loadByEdge` / `loadMax`, so a stale
+/// reload cannot write keys from a superseded graph onto the current one.
+let viewsLoadGeneration = 0;
+
+/// The connection (`connectionSnapshot`) that produced the currently displayed `state.nodes`,
+/// committed by the last successful `loadAll`. A standalone heat-map reload from the lookback
+/// selector binds to this — not the live form fields — so merely changing the lookback after
+/// editing `url` cannot contact a newly-edited (possibly cross-origin) target before an explicit
+/// `Load`, and cannot overlay one server's `query_views_log` onto another server's graph. Null
+/// until the first load commits.
+let loadedConnection = null;
+
 async function loadAll() {
+    const myGeneration = ++loadGeneration;
+    const isLatestLoad = () => myGeneration === loadGeneration;
     setStatus('Loading tables...');
     /// Skip server-internal databases; they pollute the graph and aren't user-facing.
     const sysFilter = "WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
@@ -829,24 +1013,51 @@ async function loadAll() {
         FROM system.view_refreshes
     `;
 
+    /// Bind every query in this load to one captured connection (see `connectionSnapshot`):
+    /// the whole batch targets the server the user committed to, and a URL pasted mid-load
+    /// cannot redirect later queries — or their credentials — to a different origin. The same
+    /// snapshot decides whether a result may paint or store a now-stale credential status.
+    const conn = connectionSnapshot();
+    /// Take the shared credential-status token too (see `credentialStatusGeneration`): this load
+    /// may repaint the credential status below, and a newer probe or load must win even when the
+    /// connection fields are identical, so gating on `conn.isCurrent()` alone is not enough — an
+    /// older load that fails after a newer one succeeded would otherwise flip the fields to `fail`.
+    const myStatus = ++credentialStatusGeneration;
+    const isCurrentStatus = () => myStatus === credentialStatusGeneration && conn.isCurrent();
     let tablesRes;
     try {
-        tablesRes = await chQuery(tablesQ);
+        tablesRes = await chQuery(tablesQ, conn);
     } catch (e) {
-        setStatus('Failed: ' + e.message, true);
+        if (isLatestLoad()) setStatus('Failed: ' + e.message, true);
+        if (isCurrentStatus()) setCredentialStatus(false);
         return;
+    }
+    /// The probe succeeded, so the credentials are valid: reflect that, and offer to
+    /// remember them through the Credential Management API - but only while this is still the
+    /// latest credential-determining operation and the fields still hold the validated values.
+    if (isCurrentStatus()) {
+        setCredentialStatus(true);
+        storeCredentials();
     }
 
     let columnsRes = { rows: [] };
-    try { columnsRes = await chQuery(columnsQ); } catch (e) { console.warn(e); }
+    try { columnsRes = await chQuery(columnsQ, conn); } catch (e) { console.warn(e); }
 
     let dictsRes = { rows: [] };
-    try { dictsRes = await chQuery(dictsQ); } catch (e) { console.warn(e); }
+    try { dictsRes = await chQuery(dictsQ, conn); } catch (e) { console.warn(e); }
 
     let refreshesRes = { rows: [] };
-    try { refreshesRes = await chQuery(refreshesQ); } catch (e) { /// table may not exist
+    try { refreshesRes = await chQuery(refreshesQ, conn); } catch (e) { /// table may not exist
         console.info('system.view_refreshes not available:', e.message);
     }
+
+    /// A newer load started while these queries were in flight — it owns the view now, so
+    /// applying this batch would render a schema from a superseded (possibly different) connection.
+    if (!isLatestLoad()) return;
+
+    /// This batch now owns the view: record the connection that produced it so a standalone
+    /// heat-map reload (a lookback change) stays bound to this server rather than the live fields.
+    loadedConnection = conn;
 
     state.tables = tablesRes.rows;
     state.columnsByTable = new Map();
@@ -869,7 +1080,8 @@ async function loadAll() {
     setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
     buildGraph();
     updateDbFilter();
-    await loadViewsLoad();
+    await loadViewsLoad(conn, myGeneration);
+    if (!isLatestLoad()) return;
     render();
 }
 
@@ -877,13 +1089,35 @@ async function loadAll() {
 /// lookback window and stores it on `state.loadByMv` / `state.loadByEdge`. Best-effort:
 /// if the table is empty, missing, or query_views_log is disabled, we silently fall back
 /// to an empty heat-map.
-async function loadViewsLoad() {
-    state.loadByMv = new Map();
-    state.loadByEdge = new Map();
-    state.loadMax = { byMv: {}, byEdge: {} };
+async function loadViewsLoad(conn, generation) {
+    /// Reuse the load batch's captured connection when called from `loadAll`. A standalone reload
+    /// from the lookback selector (`conn` omitted) must target the connection that produced the
+    /// displayed `state.nodes` — `loadedConnection`, committed by the last successful `loadAll` —
+    /// not the live form fields: otherwise editing `url` to a cross-origin target and then merely
+    /// changing the lookback would POST `user`/`password` there before any explicit `Load`, and
+    /// would overlay that server's `query_views_log` onto the displayed graph. Fail closed if no
+    /// load has committed a connection yet (there is no graph to key a heat-map against anyway).
+    conn = conn || loadedConnection;
+    if (!conn) return;
+    /// Reuse the caller's load generation (a `loadAll` batch) or, for a standalone reload from
+    /// the lookback selector, read the current one without bumping it — a standalone heat-map
+    /// reload must not cancel an in-flight `loadAll`, but a newer `loadAll` does supersede it.
+    if (generation === undefined) generation = loadGeneration;
+    /// On top of the load generation the heat-map carries its own monotonic token: it is reloaded
+    /// at the end of every `loadAll` and standalone on a lookback change, so it can be superseded
+    /// with no new `loadGeneration`. A reload is the latest only while both are still current, so
+    /// a stale batch — a standalone reload whose `state.nodes` a same-generation `loadAll` has
+    /// since rebuilt, or the earlier of two quick lookback changes — neither resets nor applies.
+    const myViewsLoad = ++viewsLoadGeneration;
+    const isLatestLoad = () => generation === loadGeneration && myViewsLoad === viewsLoadGeneration;
 
     const days = Number(state.loadPeriodDays || 0);
     if (!days || !state.nodes.size) {
+        /// Heat-map disabled or no graph to key against: clear it. This path is synchronous, so
+        /// nothing can have superseded us between the token capture above and here.
+        state.loadByMv = new Map();
+        state.loadByEdge = new Map();
+        state.loadMax = { byMv: {}, byEdge: {} };
         return;
     }
 
@@ -915,13 +1149,33 @@ async function loadViewsLoad() {
 
     let rows;
     try {
-        const res = await chQuery(q);
+        const res = await chQuery(q, conn);
         rows = res.rows;
     } catch (e) {
         console.info('system.query_views_log not available:', e.message);
-        setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
+        /// query_views_log is unavailable for the current graph: clear any stale heat-map and
+        /// report it — but only while we are still the latest reload, so a superseded probe
+        /// cannot blank a newer heat-map or overwrite its status.
+        if (isLatestLoad()) {
+            state.loadByMv = new Map();
+            state.loadByEdge = new Map();
+            state.loadMax = { byMv: {}, byEdge: {} };
+            setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
+        }
         return;
     }
+
+    /// A newer load or heat-map reload started while query_views_log was loading; it owns `state`
+    /// now, so this stale heat-map must neither reset nor overwrite the newer one
+    /// (`state.loadByMv` / `loadByEdge` / `loadMax`).
+    if (!isLatestLoad()) return;
+
+    /// Only now that we are still the latest reload do we replace the heat-map maps. Resetting
+    /// here rather than before the await means a superseded reload leaves the current heat-map
+    /// intact instead of blanking it.
+    state.loadByMv = new Map();
+    state.loadByEdge = new Map();
+    state.loadMax = { byMv: {}, byEdge: {} };
 
     const metricKeys = ['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
                         'written_rows', 'written_bytes', 'peak_memory_usage'];
@@ -1009,8 +1263,8 @@ function buildGraph() {
         const node = {
             key,
             /// `key` is the unambiguous lookup key (a JSON tuple); `displayName`
-            /// is the human-facing qualified name we render in tooltips, lonely
-            /// labels, and the sidebar.
+            /// is the human-facing qualified name we render in node tooltips and the
+            /// sidebar (node headers themselves show just the table name).
             displayName: quotedFullName(t.database, t.name),
             database: t.database,
             name: t.name,
@@ -1215,14 +1469,15 @@ function connectedComponentsIn(nodeSet) {
 }
 
 /// Layout strategy:
-///   1. Each database section contains only its multi-node chains. Within a section
-///      we stack chains top-to-bottom, ordered by depth desc then load desc — the
-///      longest / beefiest MV graph rises to the top.
-///   2. Database sections themselves are then ordered the same way: the database
-///      with the longest top chain (and highest load) goes first.
-///   3. Singleton (lonely) nodes from every database are pulled out into one wide
-///      "Independent tables" section at the bottom, packed into a grid grouped by
-///      engine kind and sorted by `db.name` within each group.
+///   1. Each database gets one section holding *all* of its tables. Multi-node
+///      dependency chains are laid out as layered graphs and stacked top-to-bottom,
+///      ordered by depth desc then load desc — the longest / beefiest MV graph rises
+///      to the top.
+///   2. A database's standalone (single-node) tables are packed into a grid directly
+///      below its chains, grouped by engine kind and sorted by `db.name`, so every
+///      table stays grouped under its own database (no separate global bucket).
+///   3. Database sections are then ordered the same way — the database with the
+///      longest top chain (and highest load) first — and wrap to fill the viewport.
 function layoutAll() {
     const visibleDbs = Array.from(state.nodesByDb.keys())
         .filter(db => !state.dbFilter || state.dbFilter === db)
@@ -1241,7 +1496,6 @@ function layoutAll() {
         const s = estimateNodeSize(n);
         n.w = s.w;
         n.h = s.h;
-        n._lonely = false;
     }
 
     const metric = state.loadMetric;
@@ -1254,25 +1508,29 @@ function layoutAll() {
         return s;
     }
 
+    const MARGIN = 8;
+    const viewportW = Math.max(LAYER_W, $('viewport').clientWidth - MARGIN * 2);
+
     const dbSections = [];
-    const lonelyNodes = [];
 
     for (const db of visibleDbs) {
         const dbNodes = state.nodesByDb.get(db);
         const dbKeys = new Set(dbNodes.map(n => n.key));
         const comps = connectedComponentsIn(dbKeys);
 
+        /// Split this database's tables into multi-node dependency chains and
+        /// standalone (single-node) tables. Both stay inside this database's own
+        /// section, so grouping is consistent — independent tables are no longer
+        /// hoisted out into a separate global bucket.
         const chains = [];
+        const singles = [];
         for (const comp of comps) {
-            if (comp.length === 1) {
-                lonelyNodes.push(state.nodes.get(comp[0]));
-            } else {
-                chains.push(comp);
-            }
+            if (comp.length === 1) singles.push(state.nodes.get(comp[0]));
+            else chains.push(comp);
         }
-        if (!chains.length) continue;
+        if (!chains.length && !singles.length) continue;
 
-        /// Layered layout per chain.
+        /// 1) Layered layout per chain; chains stacked top-to-bottom.
         const chainLayouts = [];
         for (const comp of chains) {
             const compNodes = comp.map(k => state.nodes.get(k));
@@ -1290,13 +1548,7 @@ function layoutAll() {
             }
             const chainW = Math.max(0, (maxDepth + 1) * LAYER_W + maxDepth * NODE_GAP_X);
             const chainH = Math.max(...Array.from(layerHeights.values()), 0);
-            chainLayouts.push({
-                comp,
-                maxDepth,
-                loadSum: chainLoad(comp),
-                chainW,
-                chainH,
-            });
+            chainLayouts.push({ comp, maxDepth, loadSum: chainLoad(comp), chainW, chainH });
         }
 
         chainLayouts.sort((a, b) =>
@@ -1304,7 +1556,6 @@ function layoutAll() {
             (b.loadSum - a.loadSum) ||
             ((a.comp[0] || '').localeCompare(b.comp[0] || '')));
 
-        /// Stack chains vertically inside the section.
         let curY = 0;
         let sectionW = 0;
         for (const cl of chainLayouts) {
@@ -1316,15 +1567,50 @@ function layoutAll() {
             curY += cl.chainH + CHAIN_GAP_Y;
             sectionW = Math.max(sectionW, cl.chainW);
         }
-        const sectionH = Math.max(0, curY - CHAIN_GAP_Y);
+        const chainsBlockH = chains.length ? Math.max(0, curY - CHAIN_GAP_Y) : 0;
+
+        /// 2) Independent tables of this database, packed into a grid below its
+        ///    chains, grouped by engine kind and sorted by `db.name` within a group.
+        let singlesBlockH = 0;
+        if (singles.length) {
+            const kindOrder = ['mt', 'view', 'mv', 'rmv', 'dict', 'distributed', 'other'];
+            singles.sort((a, b) => {
+                const ra = kindOrder.indexOf(a.kind), rb = kindOrder.indexOf(b.kind);
+                const pa = ra < 0 ? 99 : ra, pb = rb < 0 ? 99 : rb;
+                if (pa !== pb) return pa - pb;
+                return a.key.localeCompare(b.key);
+            });
+
+            /// Column count grows ~sqrt with the table count, so a database with many
+            /// independent tables forms a compact block instead of one tall column —
+            /// capped so a single section never grows wider than the viewport.
+            const maxCols = Math.max(1,
+                Math.floor((viewportW - DB_PADDING * 2 + NODE_GAP_X) / (LAYER_W + NODE_GAP_X)));
+            const cols = Math.max(1, Math.min(maxCols, Math.round(Math.sqrt(singles.length * 1.6))));
+
+            const startY = chains.length ? chainsBlockH + CHAIN_GAP_Y : 0;
+            let col = 0, gy = 0, rowMaxH = 0;
+            for (const n of singles) {
+                n._rx = col * (LAYER_W + NODE_GAP_X);
+                n._ry = startY + gy;
+                rowMaxH = Math.max(rowMaxH, n.h);
+                if (++col >= cols) { gy += rowMaxH + NODE_GAP_Y; rowMaxH = 0; col = 0; }
+            }
+            singlesBlockH = gy + (col > 0 ? rowMaxH : 0);
+            sectionW = Math.max(sectionW, cols * LAYER_W + (cols - 1) * NODE_GAP_X);
+        }
+
+        const contentH = chainsBlockH
+            + (chains.length && singles.length ? CHAIN_GAP_Y : 0)
+            + singlesBlockH;
 
         dbSections.push({
             kind: 'db',
             db,
-            nodes: chains.flat().map(k => state.nodes.get(k)),
+            nodes: chains.flat().map(k => state.nodes.get(k)).concat(singles),
             w: sectionW + DB_PADDING * 2,
-            h: sectionH + DB_PADDING_TOP + DB_PADDING,
-            sortDepth: chainLayouts[0].maxDepth,
+            h: contentH + DB_PADDING_TOP + DB_PADDING,
+            sortDepth: chainLayouts.length ? chainLayouts[0].maxDepth : 0,
             sortLoad: chainLayouts.reduce((s, c) => s + c.loadSum, 0),
         });
     }
@@ -1336,8 +1622,6 @@ function layoutAll() {
         a.db.localeCompare(b.db));
 
     /// Pack DB sections in a wrapping grid that fills viewport width.
-    const MARGIN = 8;
-    const viewportW = Math.max(LAYER_W, $('viewport').clientWidth - MARGIN * 2);
     let cursorX = MARGIN, cursorY = MARGIN, rowH = 0;
     const placed = [];
     for (const s of dbSections) {
@@ -1355,64 +1639,6 @@ function layoutAll() {
         cursorX += s.w + DB_GAP;
         rowH = Math.max(rowH, s.h);
         placed.push(s);
-    }
-
-    /// Spread lonely tables across the full viewport width.
-    if (lonelyNodes.length) {
-        for (const n of lonelyNodes) n._lonely = true;
-
-        /// Group by engine kind, sort alphabetically by `db.name` within each group.
-        const kindOrder = ['mt', 'view', 'mv', 'rmv', 'dict', 'distributed', 'other'];
-        lonelyNodes.sort((a, b) => {
-            const ka = kindOrder.indexOf(a.kind);
-            const kb = kindOrder.indexOf(b.kind);
-            const ra = ka < 0 ? 99 : ka;
-            const rb = kb < 0 ? 99 : kb;
-            if (ra !== rb) return ra - rb;
-            return a.key.localeCompare(b.key);
-        });
-
-        /// Drop down to a new row so the grid stretches across the full width.
-        if (cursorX > MARGIN) {
-            cursorX = MARGIN;
-            cursorY += rowH + DB_GAP;
-            rowH = 0;
-        }
-
-        const innerW = viewportW - DB_PADDING * 2;
-        const cols = Math.max(1, Math.floor((innerW + NODE_GAP_X) / (LAYER_W + NODE_GAP_X)));
-        const usedW = cols * LAYER_W + (cols - 1) * NODE_GAP_X;
-
-        /// Row-major grid: when we wrap to a new row use the *prior* row's max height.
-        let col = 0;
-        let gx = 0, gy = 0, rowMaxH = 0;
-        for (const n of lonelyNodes) {
-            n._rx = col * (LAYER_W + NODE_GAP_X);
-            n._ry = gy;
-            rowMaxH = Math.max(rowMaxH, n.h);
-            col++;
-            if (col >= cols) {
-                gy += rowMaxH + NODE_GAP_Y;
-                rowMaxH = 0;
-                col = 0;
-            }
-        }
-        const lonelyInnerH = gy + (col > 0 ? rowMaxH : 0);
-
-        const lonelySection = {
-            kind: 'lonely',
-            db: `Independent tables (${lonelyNodes.length})`,
-            nodes: lonelyNodes.slice(),
-            w: usedW + DB_PADDING * 2,
-            h: lonelyInnerH + DB_PADDING_TOP + DB_PADDING,
-            x: cursorX,
-            y: cursorY,
-        };
-        for (const n of lonelyNodes) {
-            n.x = cursorX + DB_PADDING + (n._rx || 0);
-            n.y = cursorY + DB_PADDING_TOP + (n._ry || 0);
-        }
-        placed.push(lonelySection);
     }
 
     state.sections = placed;
@@ -1518,9 +1744,9 @@ function render() {
         const nameEl = document.createElement('span');
         nameEl.className = 'node-name';
         nameEl.title = n.displayName;
-        /// Lonely nodes live in the shared "Independent tables" section that doesn't
-        /// have a per-database label, so show the qualified name there.
-        nameEl.textContent = n._lonely ? n.displayName : n.name;
+        /// Every node now lives inside its own database section, so the header shows
+        /// just the table name; the fully-qualified name is on hover and in the sidebar.
+        nameEl.textContent = n.name;
         const kindEl = document.createElement('span');
         kindEl.className = 'node-kind';
         kindEl.textContent = engineLabel(n);
@@ -1611,11 +1837,9 @@ function render() {
         }
     }
 
-    /// Update section bounds based on actual node sizes. Use the section index
-    /// stamped on each `.db-group` so we can resolve nodes via `state.sections`
-    /// instead of looking up by label text — the synthetic "Independent tables"
-    /// section's label is not a database key and would otherwise collapse the
-    /// section to the empty 24x24 padding.
+    /// Update section bounds based on actual node sizes. Resolve nodes via the
+    /// section index stamped on each `.db-group` (rather than by label text), so the
+    /// box is sized from exactly the nodes the layout assigned to that section.
     for (const g of canvas.querySelectorAll('.db-group')) {
         const idx = Number(g.dataset.sectionIndex);
         const section = state.sections[idx];
@@ -1928,6 +2152,16 @@ $('zoom-out').onclick = () => { state.zoom = Math.max(0.2, state.zoom / 1.2); ap
 $('zoom-reset').onclick = () => { state.zoom = 1; applyZoom(); };
 
 $('load').onclick = loadAll;
+/// The connection inputs live in a `<form>` (with `name=` attributes, as in `play.html`) so the
+/// browser offers to save and later autofill the credentials. Handle its submit — triggered by
+/// Enter in a field — by loading the schema instead of navigating away.
+$('connection-form').addEventListener('submit', (e) => { e.preventDefault(); loadAll(); });
+/// Pressing Enter in any connection field loads the schema, mirroring the Load button.
+for (const id of ['url', 'user', 'password']) {
+    $(id).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); loadAll(); }
+    });
+}
 $('relayout').onclick = render;
 $('db-filter').onchange = (e) => { state.dbFilter = e.target.value; render(); };
 $('toggle-columns').onclick = (e) => {
@@ -1962,10 +2196,54 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') clearHighlight();
 });
 
-/// Auto-load if same-origin (location.protocol !== 'file:') and user is default.
-if (location.protocol !== 'file:') {
+/// Auto-load only when the target is this page's own origin. We must NOT auto-load a
+/// cross-origin `?url=...` taken from the query string: the page may carry credentials
+/// filled in by the browser's password manager for the trusted page origin, and
+/// `chQuery` would forward them as `user`/`password` to the attacker-chosen server
+/// (which controls CORS). Cross-origin targets require an explicit `Load` click.
+function isSameOriginTarget(value) {
+    try {
+        return new URL(value, window.location.href).origin === window.location.origin;
+    } catch (e) {
+        return false;
+    }
+}
+/// Auto-load the same-origin default on open. First give the browser a chance to supply a
+/// remembered same-origin login: `storeCredentials` saves one via the Credential Management API,
+/// but that stored credential is only surfaced through `navigator.credentials.get` — the bare
+/// inputs are not autofilled reliably before this automatic first load, so it could otherwise fire
+/// with empty fields and show `Failed: ...` even though a saved login exists. Retrieve it here —
+/// only when the fields are empty and only for a same-origin target (the same `isSameOriginTarget`
+/// gate that guards this auto-load), so the credential stays bound to the origin it was stored for
+/// — then start the load once the values are in place. `mediation: 'silent'` never shows UI: it
+/// returns a previously granted credential or nothing, so opening the page stays non-interactive.
+/// This completes the `play.html`-style remembered auth (`play.html` needs no retrieval step
+/// because it never auto-contacts a server on open).
+async function autoLoadOnOpen() {
+    if (openedLocally || !isSameOriginTarget($('url').value)) return;
+    if (window.PasswordCredential && !$('user').value && !$('password').value) {
+        /// `navigator.credentials.get` is async, so the same-origin target and empty fields checked
+        /// above can change while it is pending: the user could paste a cross-origin URL into `#url`
+        /// or start typing their own credentials. Filling the saved same-origin login and then
+        /// auto-loading against the *now-current* fields would forward those credentials to the
+        /// user-chosen (possibly attacker) target — the very leak `isSameOriginTarget` guards against
+        /// on this path. Snapshot the URL, and after the retrieval re-establish both invariants; if
+        /// either changed, abort the whole auto-load — the user is now driving and will load
+        /// explicitly via the form (`Load` / Enter).
+        const url = $('url').value;
+        let cred = null;
+        try {
+            cred = await navigator.credentials.get({ password: true, mediation: 'silent' });
+        } catch (e) { console.warn('credentials.get failed:', e); }
+        if ($('url').value !== url || $('user').value || $('password').value) return;
+        if (cred && cred.password) {
+            $('user').value = cred.id;
+            $('password').value = cred.password;
+        }
+    }
     loadAll();
 }
+autoLoadOnOpen();
 </script>
 </body>
 </html>

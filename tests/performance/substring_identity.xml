@@ -1,0 +1,10 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT substring(concat(toString(number), repeat('x', 256)), 1) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(concat(toString(number), repeat('x', 256)), 1) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substringUTF8(concat('żółć', toString(number), repeat('x', 256)), 1) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT substring(concat(toString(number), repeat('x', 256)), 2) FROM numbers(1000000) FORMAT Null</query>
+</test>

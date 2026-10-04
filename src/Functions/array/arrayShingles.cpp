@@ -94,7 +94,7 @@ REGISTER_FUNCTION(ArrayShingles)
         {"l", "The length of each shingle.", {"(U)Int*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of generated shingles", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayShingles([1, 2, 3, 4], 3) as res;", "[[1, 2, 3], [2, 3, 4]]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayShingles([1, 2, 3, 4], 3) as res;", "[[1,2,3],[2,3,4]]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

@@ -6,6 +6,7 @@
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
+#include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -29,6 +30,7 @@ class InternalTextLogsQueue;
 
 class ThreadStatus;
 class ThreadGroup;
+class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
@@ -42,7 +44,7 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
  * - https://en.cppreference.com/w/cpp/language/constinit
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
-extern thread_local constinit ThreadStatus * current_thread;
+extern constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
@@ -62,7 +64,6 @@ public:
     static ThreadGroupPtr getGroup();
 
     /// MemoryTracker for user that owns current thread if any
-    static MemoryTracker * getUserMemoryTracker();
 
     /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
     static void flushUntrackedMemory();
@@ -83,6 +84,9 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+
+    /// The current query's memory-pressure monitor when in a thread group, else the global monitor.
+    static MemoryPressureMonitor & getMemoryPressureMonitor();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -106,6 +110,10 @@ public:
     static ContextPtr tryGetQueryContext();
 
     static std::string_view getQueryId();
+
+    /// Throws the real cancellation cause of the current query (`TIMEOUT_EXCEEDED`, or an exception
+    /// stored by `QueryStatus::cancelQuery`) if it has been cancelled. No-op otherwise.
+    static void checkIfNotCancelled();
 
     // For IO Scheduling
     static void attachReadResource(ResourceLink link);

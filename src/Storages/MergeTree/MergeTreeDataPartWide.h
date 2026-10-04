@@ -22,7 +22,10 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const IMergeTreeDataPart * parent_part_,
+        PartDirIntent intent);
+
+    Strings getPreferredFileOrder() const override;
 
     bool isStoredOnReadonlyDisk() const override;
 
@@ -30,7 +33,7 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 

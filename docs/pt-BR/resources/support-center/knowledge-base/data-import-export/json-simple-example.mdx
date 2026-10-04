@@ -1,0 +1,109 @@
+---
+title: Fluxo de exemplo simples para extrair dados JSON usando uma tabela de entrada com uma visão materializada
+description: "Fluxo de exemplo simples para extrair dados JSON usando uma tabela de entrada com uma visão materializada"
+date: 2024-05-20
+tags: ['Formatos de Dados']
+keywords: ['JSON', 'Tabela de entrada', 'Visão materializada']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso trabalhar com mensagens JSON usando uma source ou tabela de entrada para extrair dados com uma visão materializada?
+Como posso trabalhar com JSON sem usar o JSON Object experimental?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Um padrão comum para trabalhar com dados JSON é enviar os dados para uma tabela de entrada e usar funções JSONExtract para extrair os dados para uma nova tabela usando um gatilho de visão materializada.
+Normalmente, isso é feito conforme o fluxo e o padrão a seguir:
+
+```
+dados de origem --> tabela MergeTree --> visão materializada (com tabela base) --> aplicação/cliente
+```
+
+A tabela de entrada deve ter um campo `raw` do tipo String onde você armazenaria o JSON bruto. Ela também deve ter de um a dois outros campos que possam ser usados no gerenciamento dessa tabela, para que ela possa ser particionada e os dados antigos removidos com o tempo.
+
+*algumas integrações podem adicionar campos aos dados originais, por exemplo, ao usar o ClickHouse Kafka Connector Sink.
+
+Exemplo simplificado abaixo:
+
+* crie o banco de dados de exemplo
+
+```
+create database db1;
+```
+
+* crie uma tabela de entrada na qual seu JSON bruto será inserido:
+
+```
+create table db1.table2_json_raw
+(
+    id Int32,
+    timestamp DateTime,
+    raw String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* crie a tabela base da visão materializada
+
+```
+create table db1.table2_json_mv_base
+(
+ id Int32,
+ timestamp DateTime,
+ raw_string String,
+ custId Int8,
+ custName String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* crie a visão materializada da tabela base
+
+```
+create materialized view db1.table2_json_mv to db1.table2_json_mv_base
+AS SELECT
+ id,
+ timestamp,
+ raw as raw_string,
+ simpleJSONExtractRaw(raw, 'customerId') as custId,
+ simpleJSONExtractRaw(raw, 'customerName') as custName
+ FROM
+db1.table2_json_raw;
+```
+
+* insira algumas linhas de exemplo
+
+```
+ insert into db1.table2_json_raw
+ values
+ (1, '2024-05-16 00:00:00', '{"customerId":1, "customerName":"ABC"}'),
+ (2, '2024-05-16 00:00:01', '{"customerId":2, "customerName":"XYZ"}');
+```
+
+* visualizar os resultados da extração e da visão materializada que seria usada nas consultas
+
+```
+clickhouse-cloud :) select * from db1.table2_json_mv;
+
+SELECT *
+FROM db1.table2_json_mv
+
+Query id: 12655fd3-567a-4dfb-9ef7-abc4b11ad044
+
+┌─id─┬───────────timestamp─┬─raw_string─────────────────────────────┬─custId─┬─custName─┐
+│  1 │ 2024-05-16 00:00:00 │ {"customerId":1, "customerName":"ABC"} │ 1      │ "ABC"    │
+│  2 │ 2024-05-16 00:00:01 │ {"customerId":2, "customerName":"XYZ"} │ 2      │ "XYZ"    │
+└────┴─────────────────────┴────────────────────────────────────────┴────────┴──────────┘
+```
+
+Links de referência adicionais:
+Visões materializadas: [https://clickhouse.com/docs/guides/developer/cascading-materialized-views](https://clickhouse.com/docs/guides/developer/cascading-materialized-views)
+Como trabalhar com JSON: [https://clickhouse.com/docs/integrations/data-formats/json#other-approaches](https://clickhouse.com/docs/integrations/data-formats/json#other-approaches)
+Funções JSON: [https://clickhouse.com/docs/sql-reference/functions/json-functions](https://clickhouse.com/docs/sql-reference/functions/json-functions)

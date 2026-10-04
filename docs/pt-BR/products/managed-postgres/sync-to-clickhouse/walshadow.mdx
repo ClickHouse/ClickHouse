@@ -1,0 +1,89 @@
+---
+slug: /cloud/managed-postgres/walshadow
+sidebarTitle: 'WalShadow'
+title: 'Sincronizar com o ClickHouse usando o WalShadow'
+description: 'Replique seus dados do Postgres para o ClickHouse com o WalShadow, um mecanismo de replicação nativo que lê diretamente do WAL do PostgreSQL'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'walshadow', 'wal', 'data sync']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+`WalShadow` é um mecanismo de replicação nativo para o ClickHouse Managed Postgres que lê diretamente do Write-Ahead Log (WAL) do PostgreSQL. Ele é otimizado para menor latência e workloads de alto throughput, entregando uma defasagem de replicação inferior a um segundo entre o Postgres e o ClickHouse. Seu desenvolvimento é aberto em [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow).
+
+`WalShadow` é um dos dois métodos de replicação disponíveis em **Sync to ClickHouse**. O outro, [ClickPipes](/pt-BR/cloud/managed-postgres/clickpipes), é um pipeline de dados totalmente gerenciado. Escolha o `WalShadow` quando precisar da menor latência e da menor sobrecarga de replicação.
+
+Quando o `WalShadow` estiver disponível para o seu service, um banner de **Private Preview** aparece na página **Overview**. Clique em **Configure WalShadow** para começar.
+
+<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="Página de visão geral do Postgres service exibindo o banner de private preview do WalShadow com os links Learn more e Configure WalShadow" size="md" border />
+
+<Note>
+  Antes de prosseguir, verifique se o seu Postgres service está acessível ao ClickHouse. O `WalShadow` se conecta diretamente ao ClickHouse service de destino, portanto você precisará de um ClickHouse user e uma senha com permissão para criar bancos de dados e tabelas.
+</Note>
+
+Para configurar a replicação, clique em **Sync to ClickHouse** na barra lateral do seu Postgres instance e, em seguida, clique em **Replicate data in ClickHouse**.
+
+<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="Página inicial de Sync to ClickHouse exibindo os métodos de replicação ClickPipes e WalShadow" size="md" border />
+
+<Steps>
+  <Step title="Selecione o mecanismo de replicação" id="select-replication-engine">
+    Escolha **WalShadow** como mecanismo de replicação e clique em **Next**.
+
+    <Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="Etapa de seleção do mecanismo de replicação mostrando as opções ClickPipes e WalShadow, com WalShadow selecionado" size="md" border />
+  </Step>
+
+  <Step title="Configure o serviço de replicação" id="configure-replication-service">
+    Preencha as configurações de replicação:
+
+    * **ClickHouse service**: selecione um ClickHouse service existente ou crie um novo
+    * **Postgres database**: selecione o banco de dados de origem a ser replicado ou crie um novo
+    * **Replication method**: escolha uma das opções:
+      * **Carga inicial + CDC**: importa os dados existentes e mantém as tabelas atualizadas com as novas alterações (recomendado)
+      * **Apenas carga inicial**: importação única dos dados existentes, sem atualizações contínuas
+      * **CDC only**: ignora a importação inicial e captura apenas as novas alterações a partir de então
+
+    <Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="Etapa de configuração do serviço de replicação mostrando as opções de ClickHouse service, banco de dados Postgres e método de replicação" size="md" border />
+
+    Clique em **Next** para prosseguir.
+  </Step>
+
+  <Step title="Selecione as tabelas a replicar" id="select-tables">
+    Escolha um banco de dados de destino e selecione quais tabelas replicar:
+
+    * **Destination database**: selecione um banco de dados ClickHouse existente ou crie um novo
+    * **Tables**: expanda cada schema e selecione tabelas individuais ou ative **Select all tables**. Para cada tabela, você pode personalizar o **Destination table name** e ajustar as **Column settings**.
+    * **ClickHouse user** e **ClickHouse password**: o `WalShadow` se conecta diretamente ao ClickHouse service de destino, portanto precisa de credenciais com permissão para criar o banco de dados e as tabelas de destino.
+
+    <Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="Etapa de seleção de tabelas mostrando a seleção de schema e tabelas, nomes das tabelas de destino e credenciais do ClickHouse" size="md" border />
+
+    Clique em **Replicate data to ClickHouse** para iniciar a replicação.
+  </Step>
+
+  <Step title="Monitore o WalShadow" id="monitor-walshadow">
+    Depois de iniciar a replicação, o `WalShadow` aparece na página **Sync to ClickHouse**. Seu status fica como **Creating** enquanto o pipeline é provisionado e a carga inicial é preparada.
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="Página Sync to ClickHouse mostrando o WalShadow no estado Creating" size="md" border />
+
+    Concluído o provisionamento, o status muda para **Running**. A página exibe métricas em tempo real da replicação:
+
+    * **Status**: o estado atual do pipeline (por exemplo, `Running`)
+    * **Rows synced**: o número total de linhas replicadas para o ClickHouse
+    * **Backfills pending**: o número de tabelas que ainda aguardam sua carga inicial
+    * **Lag**: o volume de dados de WAL que ainda falta aplicar
+    * **Lag time**: o quanto o destino está atrasado em relação ao Postgres no momento
+    * **Uptime**: há quanto tempo o pipeline está em execução
+    * **Last updated**: quando as métricas foram reportadas pela última vez
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="Página Sync to ClickHouse mostrando o WalShadow no estado Running com métricas de linhas sincronizadas, defasagem e uptime" size="md" border />
+  </Step>
+</Steps>
+
+## Ressalvas {#caveats}
+
+Alguns pontos a observar enquanto o `WalShadow` está em Private Preview:
+
+* Por enquanto, apenas um `WalShadow` por Postgres service.
+* Operações e métricas mais detalhadas estão no roadmap.

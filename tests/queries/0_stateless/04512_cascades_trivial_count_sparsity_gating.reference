@@ -1,0 +1,10 @@
+-- counts match the non-distributed baseline
+499
+9501
+499
+-- the plan is a distributed read, not a prepared single-chunk source
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_count_sparsity)

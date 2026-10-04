@@ -1,0 +1,15 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>lazy_replication</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- A big array consumed by arraySlice/arrayElement after lazy ARRAY JOIN replication. -->
+    <query>SELECT sum(length(arraySlice(big, x, 2))) FROM (SELECT materialize(range(10000)) AS big, range(100) AS r FROM numbers(100)) ARRAY JOIN r AS x SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+    <query>SELECT sum(big[x * 50]) FROM (SELECT materialize(range(10000)) AS big, range(100) AS r FROM numbers(100)) ARRAY JOIN r AS x SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+</test>

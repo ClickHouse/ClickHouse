@@ -383,9 +383,9 @@ SELECT extractTextFromHTML('
 ');
         )",
         R"(
-┌─extractTextFromHTML('<html><head>...')─┐
-│ Page Title Hello World!                │
-└────────────────────────────────────────┘
+┌─extractTextFromHTML('\n<html>\n    <head><title>Page Title</title></head>\n    <body>\n        <p>Hello <b>World</b>!</p>\n        <script>alert("test");</script>\n        <!-- comment -->\n    </body>\n</html>\n')─┐
+│ Page Title Hello World !                                                                                                                                                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

@@ -228,6 +228,10 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized + virtuals.
     Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
+    /// All columns (incl. alias/ephemeral) plus virtual columns, a physical column shadowing a
+    /// virtual of the same name. Used to resolve implicit indices over virtual columns.
+    ColumnsDescription getColumnsWithVirtuals() const;
+
     /// Returns whether the column is virtual and not shadowed by a real column.
     bool isVirtualColumn(const String & column_name) const;
 
@@ -287,6 +291,9 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by. For example: 'a', 'x
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
+
+    /// Columns of the partition, sorting and primary keys, with a subcolumn replaced by the column it is stored in.
+    NameSet getStorageColumnsRequiredForKeys() const;
 
     /// Returns structure with unique key (UNIQUE KEY clause).
     const KeyDescription & getUniqueKey() const;

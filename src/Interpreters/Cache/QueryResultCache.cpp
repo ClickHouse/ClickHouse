@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -87,6 +88,15 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
+            /// The `eval` table function hides its real query inside an opaque string argument, so the
+            /// generated query cannot be inspected here. Treat it as non-deterministic (and, in
+            /// HasSystemTablesMatcher, as touching a system table) to keep such queries out of the cache,
+            /// e.g. `eval('SELECT now()')` must not be cached as if it were deterministic.
+            if (function->name == "eval")
+            {
+                data.has_non_deterministic_functions = true;
+                return;
+            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
@@ -95,9 +105,14 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
-                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
-                data.has_non_deterministic_functions = true;
-                return;
+                /// Driver-created executable functions are also persisted in the SQL-object storage,
+                /// but their determinism is described by the generated executable UDF configuration checked below.
+                if (!udf_sql->as<ASTCreateFunctionWithDriverQuery>())
+                {
+                    /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
+                    data.has_non_deterministic_functions = true;
+                    return;
+                }
             }
             if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {
@@ -151,6 +166,13 @@ struct HasSystemTablesMatcher
         ///     [...]
         else if (const auto * function = node->as<ASTFunction>())
         {
+            /// See HasNonDeterministicFunctionsMatcher: the query behind `eval` is opaque here, so
+            /// conservatively assume it may read a system table (e.g. `eval('SELECT * FROM system.processes')`).
+            if (function->name == "eval")
+            {
+                data.has_system_tables = true;
+                return;
+            }
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;
@@ -205,11 +227,21 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
+bool canWriteToQueryResultCache(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::enable_writes_to_query_cache])
+        return false;
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    return query_result_cache && query_result_cache->canStoreEntries();
+}
+
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
 
-    if ((skip_context_check || context->getCanUseQueryResultCache()) && settings[Setting::enable_writes_to_query_cache])
+    /// A query result cache which can not store anything (e.g. in `clickhouse-local`, or with a zero limit in the server configuration)
+    /// must not trigger the checks below: they only protect against storing wrong results.
+    if ((skip_context_check || context->getCanUseQueryResultCache()) && canWriteToQueryResultCache(context))
     {
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
@@ -930,6 +962,14 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
+
+    /// A cache with a zero limit can not store entries, so no writer will ever insert into it again (see `canStoreEntries`).
+    /// The eviction is lazy and happens only upon insert, hence drop the existing entries now, otherwise they would linger.
+    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0 || max_entry_size_in_rows_ == 0)
+    {
+        cache.clear();
+        times_executed.clear();
+    }
 }
 
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
@@ -971,6 +1011,16 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+}
+
+bool QueryResultCache::canStoreEntries() const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (max_entry_size_in_bytes == 0 || max_entry_size_in_rows == 0)
+            return false;
+    }
+    return cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const

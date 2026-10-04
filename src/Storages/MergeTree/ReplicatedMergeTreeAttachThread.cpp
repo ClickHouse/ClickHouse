@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -31,7 +32,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
     retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
@@ -127,7 +128,7 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
     if (!replica_metadata_exists || replica_metadata.empty())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Upgrade from 20.3 and older to 22.9 and newer "
-                        "should be done through an intermediate version (failed to get metadata or metadata_version for {},"
+                        "should be done through an intermediate version (failed to get metadata or metadata_version for {}, "
                         "assuming it's because of upgrading)", replica_path);
     }
 }
@@ -196,7 +197,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
-    storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    storage.clearOldTemporaryDirectories(0, MergeTreeData::ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
     storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});

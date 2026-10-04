@@ -1,0 +1,28 @@
+---
+title: 'ClickHouse는 페더레이티드 쿼리를 지원합니까?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/federated
+description: 'ClickHouse는 다양한 페더레이티드 및 하이브리드 쿼리를 지원합니다'
+doc_type: 'reference'
+keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']
+---
+
+ClickHouse는 분석용 데이터베이스 중에서 페더레이티드 쿼리와 하이브리드 쿼리 실행을 가장 폭넓게 지원합니다.
+
+다음과 같은 외부 데이터베이스를 쿼리할 수 있습니다:
+
+* PostgreSQL
+* MySQL
+* MongoDB
+* Redis
+* 모든 ODBC 데이터 소스
+* 모든 JDBC 데이터 소스
+* 모든 Arrow Flight 데이터 소스
+* Kafka 및 RabbitMQ와 같은 스트리밍 데이터 소스
+* Iceberg, Delta Lake, Apache Hudi, Apache Paimon과 같은 데이터 레이크
+* AWS S3, GCS, Minio, Cloudflare R2, Azure Blob Storage, Alicloud OSS, Tencent COS와 같은 공유 스토리지나 로컬 스토리지에 있는 외부 파일(다양한 데이터 포맷 지원)
+
+ClickHouse는 단일 쿼리에서 서로 다른 여러 데이터 소스를 join할 수 있습니다. 또한 로컬 리소스를 활용하면서 쿼리의 일부를 원격 머신으로 오프로딩하는 하이브리드 쿼리 실행 옵션도 제공합니다.
+
+흥미롭게도 ClickHouse는 데이터를 이동하지 않고도 외부 데이터 소스에 대한 쿼리 성능을 높일 수 있습니다. 예를 들어 MySQL의 집계 쿼리는 ClickHouse에서 실행할 때 더 빠르게 처리될 수 있습니다. 데이터 이동 오버헤드보다 더 빠른 쿼리 engine의 이점이 더 크기 때문입니다.

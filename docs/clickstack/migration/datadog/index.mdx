@@ -1,0 +1,354 @@
+---
+slug: /use-cases/observability/clickstack/migration/datadog
+title: 'Migrating to ClickStack from Datadog'
+sidebarTitle: 'Migrating from Datadog'
+description: 'Migrating to ClickStack from Datadog using the Datadog receiver in the ClickStack OpenTelemetry collector'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', 'migration', 'observability', 'ClickStack']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+Migrating an observability platform usually means more than changing where data is stored. Datadog agents and SDKs may already be deployed across thousands of applications, hosts, virtual machines, and Kubernetes pods. Re-instrumenting all of that before you can even evaluate another backend turns a migration into a large project before it delivers any value.
+
+The **Datadog receiver** built into the ClickStack distribution of the OpenTelemetry (OTel) collector removes that upfront cost. Your existing Datadog agents and SDKs keep running unchanged. Instead of sending telemetry to Datadog, you point them at the receiver, which translates Datadog's native log, trace, and metric payloads into the OpenTelemetry data model and passes them through the standard collector pipeline into ClickStack.
+
+Because the receiver sits inside a normal collector pipeline, you can use it to:
+
+- **Evaluate ClickStack alongside Datadog** without touching application code, using your existing agents to send the same telemetry to both platforms.
+- **Ease a migration**, moving to ClickStack while keeping your current collection layer in place and adopting OpenTelemetry instrumentation gradually.
+- **Run both stacks in parallel** over the long term, using each platform for what it does best.
+
+<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Migrating datadog agents" size="lg" background/>
+
+## Why run ClickStack alongside Datadog {#why-run-clickstack-alongside-datadog}
+
+For most teams, the reason to move observability data out of Datadog is cost. Log and trace volumes grow as applications scale and more services are instrumented, leaving a choice between higher spend and keeping less of the telemetry you produce. Those cost controls then limit what you can see during an investigation: sampled traces, unindexed logs, rolled-up metrics, and short retention windows all reduce the context available when you need it most.
+
+[ClickStack](/clickstack/overview) is built on ClickHouse, which for large log and tracing workloads can be over 100x more cost-efficient than Datadog. That difference in storage economics is what makes running ClickStack alongside Datadog worthwhile:
+
+- **Longer retention.** Set retention to match your operational needs rather than your budget, and keep the events you may need weeks or months later.
+- **Full-fidelity data.** Store every log and trace without sampling, so investigations run against complete data rather than a subset.
+- **No API rate limits.** Query your telemetry as a database rather than through a metered API, with no per-query or per-endpoint throttling.
+- **Full SQL access.** Analyze logs, metrics, and traces with SQL, and join them with business or infrastructure data already in ClickHouse.
+- **Agentic workloads.** Expose your telemetry to AI agents through the [ClickStack MCP server](/clickstack/mcp) and run unlimited analytical queries directly against ClickHouse.
+
+Full-fidelity telemetry is especially valuable for agentic investigations. An agent cannot reason about an event that was discarded before the investigation began, and it needs enough history to compare a current incident against earlier failures, behavioral changes, and longer-running patterns.
+
+## How the Datadog receiver works {#how-the-datadog-receiver-works}
+
+In a typical OpenTelemetry deployment, telemetry is sent to an OpenTelemetry collector before it reaches a backend. The collector receives data from agent-mode collectors and from [OpenTelemetry SDKs](/clickstack/ingesting-data/sdks/index) instrumenting applications, applies any filtering or transformations, batches events, and exports them to the target destination.
+
+<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="Simple OTel pipeline" size="lg" background/>
+
+The [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) adds another input to this architecture. It exposes an endpoint that understands the protocols used by Datadog agents and SDKs, and converts incoming Datadog payloads into the OpenTelemetry data model. From there they pass through the normal collector pipeline like any other telemetry.
+
+Existing Datadog agents are simply reconfigured to send logs and traces to the receiver running on a ClickStack collector. Applications keep their existing Datadog SDKs, and the agents already deployed across your infrastructure stay in place.
+
+<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog to OpenTelemetry" size="lg" background/>
+
+Because a collector pipeline can use more than one exporter, the same telemetry can be sent to Datadog and to ClickStack at the same time. This is what makes side-by-side evaluation and long-term parallel operation possible: you compare both platforms using identical data, then decide independently whether to migrate.
+
+<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Migrating datadog agents" size="lg" background/>
+
+## What the receiver handles {#what-the-receiver-handles}
+
+The receiver translates Datadog payloads into their correct OpenTelemetry representation so that ClickStack can interpret, correlate, and query the data without any Datadog-specific logic:
+
+- **Log records.** Datadog millisecond timestamps are converted to nanoseconds and used to populate the OpenTelemetry timestamp, observed timestamp, body, and severity fields, so records no longer appear at the Unix epoch.
+- **Resource attributes and severity.** Datadog statuses such as `info`, `warn`, and `error` map to the corresponding OpenTelemetry `SeverityNumber` and `SeverityText`. Hostnames, service names, environments, and known container, cloud, and Kubernetes tags are promoted to standard resource attributes.
+- **Trace and log correlation.** The `dd.trace_id` and `dd.span_id` fields populate the OpenTelemetry trace and span identifiers, and the receiver reconstructs full 128-bit trace IDs from Datadog's split representation. Enabled by default, this lets Datadog-sourced logs and spans correlate with services instrumented using OpenTelemetry.
+- **Structured JSON logs.** A `decode_json_message` option, enabled by default, performs the JSON processing that normally happens in the Datadog backend, extracting the body, timestamp, severity, trace identifiers, resource fields, and remaining attributes.
+- **Compatibility with current agents.** Datadog Agent 7.59 and later compresses HTTP payloads with Zstandard by default. The receiver supports Zstandard alongside gzip, so current agents connect without their payloads being rejected.
+
+These changes are included in the ClickStack collector distribution and auto-configured but are also available in the [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) project.
+
+## Enabling the Datadog receiver {#enabling-the-datadog-receiver}
+
+The Datadog receiver is included in the ClickStack distribution of the OpenTelemetry collector, listening on port `8126`. It is disabled by default and enabled with the `ENABLE_DATADOG_RECEIVER` environment variable.
+
+Once enabled, you point your Datadog agent at the receiver and authenticate it with a ClickStack ingestion key. Where that key comes from depends on your deployment: with **Managed ClickStack** you run a standalone collector and set the key yourself at startup, while with **Open Source ClickStack** the key is generated for you and copied from the ClickStack interface (HyperDX). Select your deployment below.
+
+<Tabs>
+<Tab title="Managed ClickStack">
+
+With Managed ClickStack you deploy a standalone ClickStack collector that ingests into your ClickHouse Cloud service. You secure the collector at startup with an authentication token that you choose, and reuse that same token as the Datadog agent's API key.
+
+<Steps>
+
+<Step title="Deploy a collector with the receiver enabled" id="deploy-collector-managed">
+
+<Note>
+**ClickStack OpenTelemetry collector vs standard OpenTelemetry collector**
+
+The Datadog receiver is built into and pre-configured in the ClickStack distribution of the OpenTelemetry collector. If you prefer to use the standard [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) distribution, you'll need to configure the receiver yourself. All of our changes and improvements to the receiver are pushed upstream, so they're available there too. For configuration options, see the [Datadog receiver README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/datadogreceiver/README.md).
+</Note>
+
+Run the [standalone ClickStack collector](/clickstack/ingesting-data/collector), pointing it at your ClickHouse Cloud service. Enable the Datadog receiver with `ENABLE_DATADOG_RECEIVER=true`, expose port `8126`, and secure ingestion by setting your own `OTLP_AUTH_TOKEN`:
+
+```shell
+export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+docker run --name clickstack-collector \
+  -e ENABLE_DATADOG_RECEIVER=true \
+  -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -p 8126:8126 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+The receiver is now available at `http://localhost:8126`, and the token in `OTLP_AUTH_TOKEN` is the key you pass to the Datadog agent. For more detail on securing the collector, including the Helm equivalent, see ["Securing the collector"](/clickstack/ingesting-data/collector#securing-the-collector).
+
+</Step>
+
+<Step title="Configure the Datadog agent" id="configure-datadog-agent-managed">
+
+Update the agent configuration file at `/opt/datadog-agent/etc/datadog.yaml` to send logs, traces, and metrics to the receiver. Use the value of `OTLP_AUTH_TOKEN` as the API key, and point each destination at the receiver endpoint:
+
+```yaml
+api_key: "<YOUR_OTLP_AUTH_TOKEN>"
+
+# Metrics destination
+dd_url: "http://localhost:8126"
+
+# ClickStack currently supports the Datadog v2 metrics intake.
+use_v3_api:
+  series:
+    enabled: false
+
+# Trace destination
+apm_config:
+  enabled: true
+  apm_dd_url: "http://localhost:8126"
+
+# Log destination
+logs_enabled: true
+
+logs_config:
+  logs_dd_url: "http://localhost:8126"
+  force_use_http: true
+
+# These require Datadog's backend, which we aren't using, so we disable them.
+remote_updates: false
+
+remote_configuration:
+  enabled: false
+```
+
+This configuration:
+
+- Sends metrics, traces, and logs to the receiver rather than to Datadog.
+- Disables the v3 metrics intake, since ClickStack supports the Datadog v2 metrics endpoint.
+- Turns off remote updates and remote configuration, which depend on the Datadog backend.
+
+</Step>
+
+<Step title="Restart the agent" id="restart-agent-managed">
+
+Restart the Datadog agent so it picks up the new configuration. On macOS:
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+Telemetry from the agent now flows into ClickStack, where you can explore it in HyperDX.
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+<Tab title="Open Source ClickStack">
+
+With Open Source ClickStack the collector secures its endpoints using an ingestion key generated when the stack is deployed. You enable the receiver, copy that key from the ClickStack interface (HyperDX), and use it as the Datadog agent's API key.
+
+<Steps>
+
+<Step title="Start a collector with the receiver enabled" id="start-collector-oss">
+
+The example below will use the [all-in-one image](/clickstack/deployment/all-in-one). If you're using a different distribution model, ensure the same flag is applied to the container running the collector.
+
+Set `ENABLE_DATADOG_RECEIVER=true` and expose port `8126`:
+
+```shell
+docker run --name clickstack \
+  -p 8080:8080 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -p 8126:8126 \
+  -e ENABLE_DATADOG_RECEIVER=true \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+The receiver is now available at `http://localhost:8126`.
+
+<Note>
+**Running a local Datadog agent**
+
+The Datadog agent also listens on port `8126`. If the agent runs on the same host as the collector, map the collector to a different host port to avoid a conflict, for example `-p 18126:8126`, and point the agent at that port instead.
+</Note>
+
+Complete the remaining setup process as described in the [open source getting started guide](/clickstack/getting-started/oss#navigate-to-hyperdx-ui).
+
+</Step>
+
+<Step title="Copy your ingestion API key" id="copy-ingestion-key-oss">
+
+In the ClickStack interface (HyperDX), select your user in the bottom-left corner, go to **Team Settings > API Keys**, and copy the **Ingestion API Key**.
+
+<Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="ClickStack Ingestion key" size="lg" background/>
+
+</Step>
+
+<Step title="Configure the Datadog agent" id="configure-datadog-agent-oss">
+
+Update the agent configuration file at `/opt/datadog-agent/etc/datadog.yaml` to send logs, traces, and metrics to the receiver. Use your ClickStack ingestion key as the API key, and point each destination at the receiver endpoint:
+
+```yaml
+api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
+
+# Metrics destination
+dd_url: "http://localhost:8126"
+
+# ClickStack currently supports the Datadog v2 metrics intake.
+use_v3_api:
+  series:
+    enabled: false
+
+# Trace destination
+apm_config:
+  enabled: true
+  apm_dd_url: "http://localhost:8126"
+
+# Log destination
+logs_enabled: true
+
+logs_config:
+  logs_dd_url: "http://localhost:8126"
+  force_use_http: true
+
+# These require Datadog's backend, which we aren't using, so we disable them.
+remote_updates: false
+
+remote_configuration:
+  enabled: false
+```
+
+This configuration:
+
+- Sends metrics, traces, and logs to the receiver rather than to Datadog.
+- Disables the v3 metrics intake, since the receiver supports the Datadog v2 metrics endpoint.
+- Turns off remote updates and remote configuration, which depend on the Datadog backend.
+
+</Step>
+
+<Step title="Restart the agent" id="restart-agent-oss">
+
+Restart the Datadog agent so it picks up the new configuration. On macOS:
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+Telemetry from the agent now flows into ClickStack, where you can explore it in HyperDX.
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+</Tabs>
+
+## Worked example {#worked-example}
+
+The following example uses a sample application to show the full path from an instrumented app through the Datadog agent into ClickStack.
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/i4wj8C8yqYw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+<Steps>
+
+<Step title="Clone and run the sample app" id="clone-sample-app">
+
+The example uses the [Hacker News demo app](https://github.com/ClickHouse/hn-news-analyzer), instrumented with Datadog on the `datadog-instrumentation` branch. Clone that branch:
+
+```shell
+git clone --branch datadog-instrumentation https://github.com/ClickHouse/hn-news-analyzer.git
+```
+
+Follow the [instructions in the README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) to run the app.
+
+<Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="The HackerNews Analyzer application running locally"/>
+
+</Step>
+
+<Step title="Launch ClickStack with the receiver enabled" id="launch-clickstack-example">
+
+Start the all-in-one image with the Datadog receiver enabled. Here we map the receiver to host port `18126` so it doesn't clash with the local Datadog agent, which also uses `8126`:
+
+```shell
+docker run --name clickstack \
+  -p 8080:8080 \
+  -p 8123:8123 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -p 127.0.0.1:18126:8126 \
+  -e ENABLE_DATADOG_RECEIVER=true \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+The receiver is available at `http://127.0.0.1:18126`.
+
+</Step>
+
+<Step title="Install and configure the Datadog agent" id="install-agent-example">
+
+[Install the Datadog agent](https://docs.datadoghq.com/agent/?tab=Host-based). On macOS:
+
+```shell
+DD_SITE="datadoghq.com" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_mac_os.sh)"
+```
+
+Update `/opt/datadog-agent/etc/datadog.yaml` to point at the receiver on port `18126`, using your ClickStack ingestion key as the API key, then restart the agent:
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+See [Enabling the Datadog receiver](#enabling-the-datadog-receiver) for the full agent configuration and for where to find your ingestion key.
+
+</Step>
+
+<Step title="Explore your telemetry in ClickStack" id="explore-telemetry">
+
+Open the HyperDX interface at [http://localhost:8080](http://localhost:8080) and explore the traces, logs, and metrics captured from the Datadog agent.
+
+<Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="Datadog in clickstack traces 2" size="lg" background/>
+
+<Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="Datadog in clickstack traces 1" size="lg" background/>
+
+<Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="Datadog in clickstack traces 3" size="lg" background/>
+
+</Step>
+
+</Steps>
+
+## What you can migrate today {#what-you-can-migrate-today}
+
+The Datadog receiver is an alpha component in OpenTelemetry Collector Contrib and is marked experimental in the ClickStack collector distribution, which is why it requires a feature flag to enable.
+
+The receiver has been tested extensively with **log and trace** workloads, and is recommended for evaluating ClickStack with these signals. **Metrics** work but require further testing and development. The receiver currently supports Datadog's v1 and v2 metrics intake endpoints, and agents using newer protocol versions must be configured explicitly to send metrics through a supported endpoint.
+
+For now, the receiver gives you a quick way to evaluate ClickStack when your applications already use Datadog SDKs or your infrastructure runs Datadog agents. Run both pipelines in parallel, validate how your data is represented and queried in ClickStack, and then decide whether to proceed with a wider migration. If the evaluation shows clear benefits, the same architecture supports a gradual migration, keeping your existing Datadog instrumentation in place while services move to OpenTelemetry over time.

@@ -1,0 +1,188 @@
+---
+title: Backups configuráveis via CLI
+---
+
+Esta página aborda como consultar e alterar o agendamento de backups de um ClickHouse Cloud serviço pela linha de comando com a [ClickHouse CLI](/pt-BR/products/cloud/features/cli) (`clickhousectl`). Os comandos são não interativos; o `clickhousectl` gera saída em JSON com `--json`.
+
+Os backups configuráveis estão disponíveis nos planos Scale e Enterprise.
+
+## Pré-requisitos {#prerequisites}
+
+Instale o ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Você também precisa do `jq`.
+
+Alterar a configuração de backup é uma operação de escrita e requer [autenticação por API key](/pt-BR/products/cloud/features/admin-features/api/openapi); o login via OAuth é somente leitura:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Como alternativa, defina as variáveis de ambiente `CLICKHOUSE_CLOUD_API_KEY` e `CLICKHOUSE_CLOUD_API_SECRET`. Verifique com `clickhousectl cloud auth status`: confira se a credencial **ativa** é a que possui o escopo `read/write`. Credenciais salvas por um `auth login` anterior têm precedência sobre as variáveis de ambiente; nesse caso, a linha `Env vars` ainda pode exibir o escopo `read/write`, mas aparece marcada como inativa (`Configured (inactive, outranked by credentials file)`), e os comandos de escrita abaixo são executados com as credenciais salvas. Se quiser que as variáveis de ambiente sejam usadas, execute antes `clickhousectl cloud auth logout`.
+
+## Encontre o ID do serviço {#find-the-service-id}
+
+A configuração de backup é definida por serviço. Localize o ID do serviço pelo nome:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+Se você pertencer a mais de uma organização, a organização não poderá ser detectada automaticamente e este comando falhará com `Multiple organizations found. Specify --org-id to choose one.`. Liste suas organizações com `clickhousectl cloud org list` e passe `--org-id <org-id>` neste comando e em todos os comandos `backup-config` abaixo.
+
+## Ler a configuração atual de backup {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+Um serviço que ainda usa o agendamento padrão retorna:
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+`backupStartTime` só aparece na saída depois que um horário de início é definido.
+
+## Alterar retenção e frequência {#change-retention-and-frequency}
+
+O `backup-config update` aceita as mesmas configurações do formulário do console — retenção (`--backup-retention-period-hours`), frequência (`--backup-period-hours`) e horário de início (`--backup-start-time`) — e exibe a configuração resultante. As flags que você omitir mantêm seus valores atuais:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+A alteração entra em vigor imediatamente; leia a configuração novamente para confirmar:
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## Definir um horário de início do backup {#set-a-backup-start-time}
+
+`--backup-start-time` recebe um horário diário de início em UTC, em hora cheia (`HH:00`). Um horário de início restringe a frequência: o período do backup deve ser de `24` ou `48` horas, seja informado no mesmo comando ou já armazenado no serviço. A partir do `clickhousectl 0.4.2`, tanto o format quanto a regra do período são verificados no client, antes de qualquer chamada de API. Um horário que não esteja em hora cheia — ou sem zero à esquerda, como `2:00` — é rejeitado pelo parser de argument com o código de saída `2`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+Passar `--backup-start-time` junto com um `--backup-period-hours` diferente de `24` ou `48` também é rejeitado antes do envio da requisição, com código de saída `1`:
+
+```text
+Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
+```
+
+`--backup-period-hours` pode ser omitido; nesse caso, o serviço mantém o período que já tem — mas esse período armazenado precisa ser `24` ou `48`. Em um serviço que ainda usa o agendamento padrão, o período é `24`, portanto basta informar o horário de início. O serviço acima foi definido como `12` no passo anterior, então omitir o período falha: o `clickhousectl` lê primeiro a configuração armazenada e recusa a operação com código de saída `1`, novamente sem chamar a API:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
+```
+
+```text
+Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
+```
+
+Passar o period explicitamente é a combinação válida:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+O caso inverso não é detectado no cliente: com um horário de início já armazenado, uma atualização que altera apenas `--backup-period-hours` para um valor diferente de `24` ou `48` chega até a API e falha nela, com código de saída `1`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-period-hours 12 --json
+```
+
+```text
+Error: BAD_REQUEST: customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set
+```
+
+Limpar o horário de início no mesmo comando evita isso, conforme mostrado a seguir.
+
+## Limpar o horário de início do backup {#clear-the-backup-start-time}
+
+`--clear-backup-start-time` remove o horário de início armazenado e suspende a restrição de `24`/`48` horas sobre o period:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`backupStartTime` desaparece da saída em vez de ser reportado como `null`, e `backup-config get` deixa de retorná-lo. Limpar um horário de início que nunca foi definido é um no-op que, mesmo assim, encerra com `0`.
+
+Combine o comando com `--backup-period-hours` para limpar o horário de início e definir qualquer period em um único comando — é assim que se contorna o error da API mencionado acima:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --backup-period-hours 12 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`--clear-backup-start-time` e `--backup-start-time` não podem ser combinados; o parser rejeita o par com o código de saída `2`:
+
+```text
+error: the argument '--clear-backup-start-time' cannot be used with '--backup-start-time <BACKUP_START_TIME>'
+```
+
+Para alterar um horário de início em vez de removê-lo, informe apenas o novo `--backup-start-time`; ele sobrescreve o valor armazenado.
+
+<Note>
+  Alterar o agendamento de backup pode gerar cobranças mensais mais altas de armazenamento, pois alguns dos backups podem não estar cobertos pelos backups padrão do serviço. Consulte [&quot;Entendendo o custo de backup&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

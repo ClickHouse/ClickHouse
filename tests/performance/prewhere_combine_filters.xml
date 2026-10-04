@@ -1,0 +1,19 @@
+<test>
+    <!-- Conditions on different columns become separate PREWHERE read steps, and the filter of each step
+         is merged into the filter of the previous steps by `combineFilters`. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>CREATE TABLE prewhere_combine_filters (a UInt8, b UInt8, c UInt8, d UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO prewhere_combine_filters SELECT intHash32(number) % 100, intHash32(number + 1) % 100, intHash32(number + 2) % 100, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_combine_filters FINAL</fill_query>
+
+    <query>SELECT count() FROM prewhere_combine_filters WHERE a &lt; 50 AND b &lt; 50 AND c &lt; 50</query>
+    <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 90 AND b &lt; 90 AND c &lt; 90</query>
+    <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 10 AND b &lt; 50 AND c &lt; 50</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_combine_filters</drop_query>
+</test>

@@ -1,0 +1,52 @@
+---
+sidebarTitle: 'Erathos'
+keywords: ['clickhouse', 'Erathos', 'connect', 'integrate', 'ELT', 'etl', 'data integration', 'real-time', 'sync']
+description: 'Sync data into ClickHouse using Erathos, an ELT platform for control and observability'
+title: 'Connect Erathos to ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://erathos.com'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx'; import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+<a href="https://erathos.com/" target="_blank">Erathos</a> is an ELT platform built for control without the overhead, letting teams manage every sync job from SaaS tools and databases into the warehouse.
+
+## Overview {#overview}
+
+Erathos gives teams visibility and control over every sync job as data moves from SaaS tools, ERPs, and CRMs into ClickHouse. Instead of managing pipelines as opaque, scheduled jobs, Erathos lets you monitor and control syncs in real time, making it easier to catch issues early and keep your warehouse up to date.
+
+## Connecting Erathos to ClickHouse {#connecting-erathos-to-clickhouse}
+
+<Steps>
+<Step title="Find your ClickHouse credentials" id="1-find-your-clickhouse-credentials">
+
+After creating a service in ClickHouse Cloud, find the following required settings:
+
+<ConnectionDetails />
+
+</Step>
+<Step title="Configure the destination in Erathos" id="2-configure-the-destination-in-erathos">
+
+In Erathos, go to **Settings > Destination**, select **ClickHouse**, and enter the following:
+
+- **Host** — your ClickHouse service URL (ClickHouse Cloud URLs typically end in `.clickhouse.cloud`)
+- **Port** — usually `8443` for HTTPS connections
+- **Username** — often `default`
+- **Password** — the password for the account above
+
+Save the configuration to complete the connection.
+
+<Note>
+If you're connecting a self-hosted ClickHouse instance, make sure to allow Erathos's IP address (`35.212.87.86`) in your firewall's whitelist.
+</Note>
+
+</Step>
+</Steps>
+
+## Additional resources {#additional-resources}
+
+For more details, see <a href="https://docs.erathos.com/destinations/what-is-a-destination/clickhouse" target="_blank">Erathos's ClickHouse destination docs</a>, or contact <a href="mailto:support@erathos.com">support@erathos.com</a>.

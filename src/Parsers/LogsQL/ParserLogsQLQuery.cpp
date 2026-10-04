@@ -1,0 +1,148 @@
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+
+#include <Parsers/LogsQL/LogsQLParser.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/TokenIterator.h>
+
+#include <Common/Exception.h>
+#include <Common/StringUtils.h>
+
+#include <algorithm>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// SET queries are parsed with the normal ClickHouse parser, so that settings
+    /// like `dialect` and `logsql_table` can always be changed. This is checked before
+    /// the feature gate so users can recover from misconfigured profiles. The escape
+    /// applies only to a complete standalone SET statement: a LogsQL query merely
+    /// starting with the word `set` (e.g. `set error | count()`) keeps its word-filter
+    /// meaning. The statement is re-tokenized from the raw text after skipping LogsQL
+    /// `#` comments, which are lexer errors for the ClickHouse token stream.
+    {
+        const char * probe = pos->begin;
+        while (probe < raw_end)
+        {
+            if (isWhitespaceASCII(*probe))
+                ++probe;
+            else if (*probe == '#')
+                while (probe < raw_end && *probe != '\n')
+                    ++probe;
+            else
+                break;
+        }
+
+        /// The `max_query_size` budget is measured from the raw query begin, so the
+        /// LogsQL comments and whitespace skipped above count toward it: the token
+        /// stream of the escape gets only what is left of the budget. When the prefix
+        /// alone has already exhausted it, a single byte is left, so that no token can
+        /// fit and the escape is rejected in favour of the LogsQL path, which reports
+        /// `Max query size exceeded`.
+        size_t set_max_query_size = max_query_size;
+        if (max_query_size)
+        {
+            const size_t skipped = probe > raw_begin ? static_cast<size_t>(probe - raw_begin) : 0;
+            set_max_query_size = skipped < max_query_size ? max_query_size - skipped : 1;
+        }
+
+        Tokens set_tokens(probe, raw_end, set_max_query_size, /*skip_insignificant=*/ true);
+        Pos set_pos(set_tokens, pos);
+        ASTPtr set_node;
+        /// The shorthand form `SET name` (without a value) is not accepted here: it
+        /// would steal LogsQL word filters such as `set error`, while the escape only
+        /// needs to assign settings like `dialect` and `logsql_table`.
+        ParserSetQuery set_parser(/*parse_only_internals_=*/ false, /*shorthand_syntax_=*/ false);
+        if (set_parser.parse(set_pos, set_node, expected))
+        {
+            const char * set_statement_end = set_pos->begin;
+            const char * set_end = set_statement_end;
+            if (set_pos->type == TokenType::Semicolon)
+                ++set_end;
+
+            /// The normal SQL lexer has stricter `#` comment rules than LogsQL.
+            /// Consume a LogsQL comment suffix from the raw statement so a standalone
+            /// SET remains a valid recovery query before and after a semicolon.
+            while (set_end < raw_end)
+            {
+                if (isWhitespaceASCII(*set_end))
+                    ++set_end;
+                else if (*set_end == '#')
+                    while (set_end < raw_end && *set_end != '\n')
+                        ++set_end;
+                else
+                    break;
+            }
+
+            /// The escape applies only when the `SET` covers the whole statement.
+            /// Otherwise the text is a LogsQL query that merely starts with the word
+            /// `set` (e.g. `set error | count()`), and it is parsed as LogsQL below.
+            if (set_end == raw_end || set_pos->type == TokenType::Semicolon)
+            {
+                node = std::move(set_node);
+                /// Keep the separator visible to the multiquery scanner when another
+                /// statement follows. Advancing past it makes the following statement
+                /// look like unexpected input after this `SET` query. For a standalone
+                /// `SET` with a LogsQL-only comment suffix, consume the whole input so
+                /// that the generic token stream does not have to tokenize the comment.
+                const char * position_end = set_end == raw_end ? set_end : set_statement_end;
+                while (!pos->isEnd() && pos->begin < position_end)
+                    ++pos;
+                return true;
+            }
+        }
+    }
+
+    if (!feature_enabled)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Support for the LogsQL dialect is disabled (turn on setting 'allow_experimental_logsql_dialect')");
+
+    if (table.empty())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The name of the logs table to use with the logsql dialect is not specified, use: SET logsql_table = '...'");
+
+    const char * begin = pos->begin;
+
+    /// The LogsQL text is scanned from the raw query string, bypassing the ClickHouse
+    /// token stream (which is bounded by `max_query_size` on its own), so the limit
+    /// must be applied to the raw slice as well. The budget is measured from the raw
+    /// query begin (before the leading whitespace and comments skipped by the token
+    /// stream), the same way the SQL path measures it. The end is clipped rather than
+    /// checked against the whole slice, because in a multi-statement input the slice
+    /// extends to the end of all statements, while the limit applies to a single query.
+    const char * end = raw_end;
+    bool truncated = false;
+    if (max_query_size && static_cast<size_t>(raw_end - raw_begin) > max_query_size)
+    {
+        end = std::max(begin, raw_begin + max_query_size);
+        truncated = true;
+    }
+
+    LogsQLParser::Context context;
+    context.database = database;
+    context.table = table;
+    context.time_column = time_column;
+    context.msg_column = msg_column;
+    context.max_depth = max_parser_depth;
+    context.truncated = truncated;
+
+    LogsQLParser parser(begin, end, std::move(context));
+    node = parser.parse();
+
+    /// Advance the token iterator to the end of the parsed LogsQL text,
+    /// so that the caller can detect the end of the query (a semicolon or the end of input).
+    const char * parsed_end = parser.getParsedEnd();
+    while (!pos->isEnd() && pos->begin < parsed_end)
+        ++pos;
+
+    return true;
+}
+
+}

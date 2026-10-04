@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP server'
+title: 'O servidor MCP do ClickHouse'
+description: 'Como o ClickHouse MCP server fornece a camada de acesso de padrão aberto para a stack de dados agêntica'
+doc_type: 'guide'
+keywords: ['stack de dados agêntica', 'MCP', 'Model Context Protocol', 'ClickHouse MCP server']
+---
+
+O ClickHouse MCP server é a **camada de acesso de padrão aberto** da [Agentic Data Stack](/pt-BR/products/agentic-data-stack/overview): ele expõe o ClickHouse ao front-end de chat por meio do Model Context Protocol, para que o agente possa explorar seus dados e executar consultas somente leitura.
+
+Na stack, o servidor de código aberto é executado ao lado do ClickHouse e vem pré-configurado no LibreChat. Ele expõe três ferramentas ao agente:
+
+* **List databases** — enumera os bancos de dados na instância conectada do ClickHouse.
+* **List tables** — inspeciona as tabelas e seus esquemas dentro de um banco de dados.
+* **Run SELECT queries** — executa consultas somente leitura e retorna os resultados.
+
+Para executá-lo como parte da stack, consulte o [guia de configuração do Docker](/pt-BR/products/agentic-data-stack/docker-setup). Para usar o ClickHouse MCP server com outros clientes e frameworks de agentes, ou para ler seu código-fonte e sua configuração:
+
+* [catálogo de integrações MCP](/pt-BR/guides/use-cases/ai-ml/MCP): guias de clientes e bibliotecas de agentes.
+* [repositório MCP](https://github.com/ClickHouse/mcp-clickhouse): código-fonte e configuração.
+
+<Info>
+  **Prefere um servidor MCP gerenciado?** O ClickHouse Cloud oferece um [Remote MCP server](/pt-BR/products/cloud/features/ai-ml/remote-mcp) totalmente gerenciado — sem necessidade de instalação, com autenticação OAuth e um conjunto de ferramentas mais amplo, que adiciona operações de gerenciamento (serviços, faturamento, ClickPipes, backups) além das ferramentas somente leitura acima. Veja sua [comparação com o servidor de código aberto](/pt-BR/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss).
+</Info>

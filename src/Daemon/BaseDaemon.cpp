@@ -39,8 +39,10 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/CoverageCollection.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getConfigPath.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
@@ -71,6 +73,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -115,12 +118,24 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from 'config.xml' file in current directory,
+      *  then we use config from the 'config.xml', 'config.yaml' or 'config.yml' file in current directory,
       *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in config.xml.
+      *  instead of using files specified in the config.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", getDefaultConfigFileName());
+    if (config().has("config-file"))
+    {
+        /// An explicitly requested configuration file is used as is: substituting a different file for it
+        /// would silently start the server with a configuration the user did not ask for.
+        config_path = config().getString("config-file");
+    }
+    else
+    {
+        /// A configuration file can be written in XML or in YAML, so the default one is looked up with
+        /// every supported extension, not only with `.xml`.
+        config_path = getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
+    }
+
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -138,8 +153,7 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
+        stopSignalListener();
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -252,6 +266,11 @@ void BaseDaemon::initialize(Application & self)
 
     loadConfiguration();
 
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// As early as possible, so that the coverage of the startup (and of its failure) is attributed too.
+    initCoverageFromEnvironment(config().getString("logger.log", ""));
+#endif
+
 #if USE_JEMALLOC
     Jemalloc::setup(
         config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
@@ -353,8 +372,8 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd = 0;
-            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+            int fd = creat(stderr_path.c_str(), 0600);
+            if (fd == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
@@ -479,19 +498,56 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
+#endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
-    signal_listener_thread.start(*signal_listener);
+    startSignalListener();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+#endif
+}
+
+void BaseDaemon::startSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
+    /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
+    /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
+    /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
+    /// and restore the mask of this thread afterwards.
+    ///
+    /// This is what makes it possible to keep every thread out of the signal handling path for a while:
+    /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
+    BlockSignalsScope block_signals(asynchronousHandledSignals());
+    signal_listener_thread.start(*signal_listener);
+    signal_listener_thread_started = true;
+#endif
+}
+
+void BaseDaemon::stopSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    if (!signal_listener_thread_started)
+        return;
+
+    /// `isRunning` only reports that Poco still has a runnable target. A listener which has already
+    /// returned still has a joinable native thread, so always join a started listener. Only send the
+    /// stop request while it can still consume it.
+    if (signal_listener_thread.isRunning())
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    signal_listener_thread_started = false;
 #endif
 }
 
@@ -544,8 +600,16 @@ void BaseDaemon::onTerminateRequestSignal()
 
 void BaseDaemon::waitForTerminationRequest()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
+#else
+    /// There is no listener without signals, and nothing could deliver a termination request to it
+    /// anyway: waiting here would block forever. Daemon-style entry points are not supported on
+    /// such a platform, so say so instead of hanging or dereferencing a null listener.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination request requires POSIX signals, which this platform does not have");
+#endif
 }
 
 
@@ -578,7 +642,7 @@ void BaseDaemon::setupWatchdog()
         /// Temporarily close the logging thread and open it in each process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->close();
+            async_channel->closeAndJoinThreads();
         pid = fork();
 
 #if USE_JEMALLOC

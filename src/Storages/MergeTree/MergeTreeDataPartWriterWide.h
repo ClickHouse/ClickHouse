@@ -96,6 +96,12 @@ private:
         const NameAndTypePair & name_and_type,
         const ASTPtr & effective_codec_desc) override;
 
+    /// The stream count is derived from the substreams inventory and read by addStreams(), so the
+    /// three initializations must happen in this order.
+    void initStreamsAndSubstreamsIfNeeded();
+
+    void initStreamsToOpenCount();
+
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
     /// errors.
@@ -146,6 +152,10 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    /// Number of streams opened for the whole part. Peak write memory scales with this rather than
+    /// with the number of columns, since one column can own thousands of substreams.
+    std::optional<size_t> streams_to_open_in_part;
 
     String already_written_stream_holder;
 };

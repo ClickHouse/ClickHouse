@@ -1,0 +1,91 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArrayIf'
+title: 'uniqArrayIf'
+description: 'uniqArrayIf combinatorの使用例'
+keywords: ['uniq', 'array', 'if', 'combinator', 'examples', 'uniqArrayIf']
+sidebarTitle: 'uniqArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Array`](/ja/reference/functions/aggregate-functions/combinators#-array) と [`If`](/ja/reference/functions/aggregate-functions/combinators#-if) の combinator は、[`uniq`](/ja/reference/functions/aggregate-functions/uniq)
+関数に適用できます。`uniqArrayIf` aggregate combinator function を使用すると、条件が true の
+行に含まれる配列内の一意な値の数を数えられます。
+
+<Note>
+  -`If` と -`Array` は組み合わせて使用できます。ただし、`Array` を先に、その後に `If` を指定する必要があります。
+</Note>
+
+これは、`arrayJoin` を使わずに、
+特定の条件に基づいて配列内の一意な要素を数えたい場合に便利です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="count-unique-products">
+  ### セグメントタイプとエンゲージメントレベルごとのユニーク閲覧商品数を数える
+</div>
+
+この例では、ユーザーのショッピングセッションデータを含むテーブルを使用して、
+特定のユーザーセグメントに属し、セッション内の滞在時間をエンゲージメント指標とする
+ユーザーが閲覧したユニークな商品数を数えます。
+
+```sql title="Query"
+CREATE TABLE user_shopping_sessions
+(
+    session_date Date,
+    user_segment String,
+    viewed_products Array(String),
+    session_duration_minutes Int32
+) ENGINE = Memory;
+
+INSERT INTO user_shopping_sessions VALUES
+    ('2024-01-01', 'new_customer', ['smartphone_x', 'headphones_y', 'smartphone_x'], 12),
+    ('2024-01-01', 'returning', ['laptop_z', 'smartphone_x', 'tablet_a'], 25),
+    ('2024-01-01', 'new_customer', ['smartwatch_b', 'headphones_y', 'fitness_tracker'], 8),
+    ('2024-01-02', 'returning', ['laptop_z', 'external_drive', 'laptop_z'], 30),
+    ('2024-01-02', 'new_customer', ['tablet_a', 'keyboard_c', 'tablet_a'], 15),
+    ('2024-01-02', 'premium', ['smartphone_x', 'smartwatch_b', 'headphones_y'], 22);
+
+-- セグメントタイプとエンゲージメントレベル別にユニーク商品数をカウント
+SELECT 
+    session_date,
+    -- 新規顧客の長時間セッションで閲覧されたユニーク商品数をカウント
+    uniqArrayIf(viewed_products, user_segment = 'new_customer' AND session_duration_minutes > 10) AS new_customer_engaged_products,
+    -- リピーター顧客が閲覧したユニーク商品数をカウント
+    uniqArrayIf(viewed_products, user_segment = 'returning') AS returning_customer_products,
+    -- 全セッションで閲覧されたユニーク商品数をカウント
+    uniqArray(viewed_products) AS total_unique_products
+FROM user_shopping_sessions
+GROUP BY session_date
+ORDER BY session_date
+FORMAT Vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+session_date:                2024-01-01
+new_customer⋯ed_products:    2
+returning_customer_products: 3
+total_unique_products:       6
+
+Row 2:
+──────
+session_date:                2024-01-02
+new_customer⋯ed_products:    2
+returning_customer_products: 2
+total_unique_products:       7
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`uniq`](/ja/reference/functions/aggregate-functions/uniq)
+* [`Array combinator`](/ja/reference/functions/aggregate-functions/combinators#-array)
+* [`If combinator`](/ja/reference/functions/aggregate-functions/combinators#-if)

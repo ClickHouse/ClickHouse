@@ -1,0 +1,215 @@
+---
+slug: /use-cases/AI/MCP/claude-desktop
+sidebarTitle: 'ClickHouse MCPサーバーをセットアップする'
+title: 'ClickHouse MCPサーバーをセットアップする'
+description: 'ClickHouse MCPサーバーをClaude Code、Claude Desktop、Codex、ChatGPT、Cursor、またはWindsurfに接続します。'
+keywords: ['AI', 'ClickHouse', 'MCP', 'Claude', 'Codex', 'ChatGPT']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+[ClickHouse MCPサーバー](https://github.com/ClickHouse/mcp-clickhouse)を使用すると、対応するAIアシスタントでデータベースを探索し、テーブルを確認して、ClickHouseに対してSQLクエリを実行できます。
+このガイドでは、`uv`を使用してローカルの`stdio`サーバーを設定し、主要なMCPクライアントに接続する方法を説明します。
+
+このサーバーでは、デフォルトで読み取り専用のクエリのみが許可されます。
+アシスタントに必要な権限のみを持つ専用のClickHouseユーザーを使用し、defaultユーザーや管理者ユーザーは使用しないでください。
+
+以下の手順では、Claude Desktopでのセットアップを例に説明します。
+このガイドで扱う他のクライアントにも、同じClickHouse接続情報を使用します。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="Claude DesktopでClickHouse MCPサーバーをセットアップする" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+開始前に、以下を準備してください。
+
+1. [`uv` をインストールします](https://docs.astral.sh/uv/getting-started/installation/)。
+2. 使用する MCP クライアントをインストールします。
+3. ClickHouse サービスのホスト名、ユーザー名、パスワードを確認します。
+
+以下の例では、次のプレースホルダー値を使用します。
+
+| 環境変数                  | 値                          |
+| --------------------- | -------------------------- |
+| `CLICKHOUSE_HOST`     | `your-clickhouse-host`     |
+| `CLICKHOUSE_USER`     | `your-clickhouse-user`     |
+| `CLICKHOUSE_PASSWORD` | `your-clickhouse-password` |
+
+これらを実際の接続情報に置き換えてください。
+ClickHouse Cloud サービスでは、サーバーはデフォルトでポート `8443` の HTTPS を使用します。
+プレーン HTTP を使用するセルフマネージドサービスでは、`CLICKHOUSE_SECURE=false` も設定し、必要に応じて `CLICKHOUSE_PORT=8123` を設定してください。
+
+<div id="configure-mcp-client">
+  ## MCPクライアントを設定する
+</div>
+
+<Tabs>
+  <Tab title="Claude Code" icon="/images/logo-claudecode-color.svg">
+    端末で次のコマンドを実行します。
+
+    ```bash
+    claude mcp add \
+      --transport stdio \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      --scope user \
+      mcp-clickhouse -- \
+      uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
+    ```
+
+    `claude mcp list` を実行して接続を確認するか、Claude Code で `/mcp` を入力してサーバーとそのツールを確認します。
+  </Tab>
+
+  <Tab title="Claude Desktop" icon="/images/logo-claude.svg">
+    Claude Desktop で **Settings** を開き、**Developer** を選択して **Edit config** をクリックします。
+    次のサーバーを `claude_desktop_config.json` に追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    ファイルを保存し、Claude Desktop を再起動します。
+    チャットのコンポーザーから**コネクタ**を開き、`mcp-clickhouse`が利用可能であることを確認します。
+  </Tab>
+
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    Codex CLI からサーバーを追加します。
+
+    ```bash
+    codex mcp add mcp-clickhouse \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
+    ```
+
+    `codex mcp list` を実行して接続を確認するか、Codex の端末 UI で `/mcp` を入力します。
+    Codex CLI、Codex IDE 拡張機能、ChatGPT デスクトップアプリは、`~/.codex/config.toml` の MCP 設定を共有します。
+  </Tab>
+
+  <Tab title="ChatGPT" icon="/images/logo-codex.svg">
+    ChatGPTデスクトップアプリでは、Codexホスト用のローカルMCPサーバーを設定できます。
+    この設定はCodex CLIおよびCodex IDE拡張機能と共有されます。
+
+    ChatGPTデスクトップアプリで、以下の操作を行います。
+
+    1. **Settings** を開き、**MCP servers** を選択します。
+    2. **Add server** を選択し、**STDIO** を選択します。
+    3. 名前に `mcp-clickhouse`、コマンドに `uv` を入力します。
+    4. 引数として、`run`、`--with`、`mcp-clickhouse`、`--python`、`3.10`、`mcp-clickhouse` をこの順序で追加します。
+    5. `CLICKHOUSE_HOST`、`CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` を追加し、それぞれに接続情報を入力します。
+    6. サーバーを保存し、アプリを再起動します。
+
+    アプリの再起動後、Codexを開き、コンポーザーに `/mcp` と入力して接続済みのサーバーを確認します。
+
+    <Note>
+      これらの手順では、ChatGPTデスクトップアプリでCodex用のローカル `stdio` サーバーを設定します。
+      一方、ChatGPT Webでは、プラグインが提供するリモートMCP対応ツールを使用します。
+      ChatGPT WebでClickHouseツールを使用する方法については、[ClickHouse CloudのリモートMCPサーバー](/ja/products/cloud/features/ai-ml/remote-mcp)を参照してください。
+    </Note>
+  </Tab>
+
+  <Tab title="Cursor" icon="/images/logo-cursor.webp">
+    現在のプロジェクトの `.cursor/mcp.json` またはグローバル Cursor MCP 設定に、以下のサーバーを追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    Cursorを再起動し、MCP設定を開いてサーバーが有効になっていることを確認します。
+  </Tab>
+
+  <Tab title="Windsurf" icon="/images/logo-windsurf.svg">
+    以下のサーバーを `~/.codeium/windsurf/mcp_config.json` に追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    Windsurf を再読み込みし、MCP 設定を開いてサーバーが有効になっていることを確認します。
+  </Tab>
+</Tabs>
+
+<div id="verify-connection">
+  ## 接続を確認する
+</div>
+
+クライアントから `mcp-clickhouse` に接続した旨の報告があったら、次のように尋ねます。
+
+```text
+List the databases available in ClickHouse, then show me the tables in one of them.
+```
+
+クライアントから、最初のツール呼び出しの承認を求められることがあります。
+アクセスを許可する前に、各リクエストを確認してください。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+クライアントで `uv` が見つからない場合は、コマンドまたは設定内の `uv` を絶対パスに置き換えてください。
+macOS または Linux では `which uv`、Windows では `where uv` を実行してパスを確認します。
+
+追加の接続設定、任意の chDB サポート、HTTP トランスポート、認証については、[`mcp-clickhouse` README](https://github.com/ClickHouse/mcp-clickhouse) を参照してください。

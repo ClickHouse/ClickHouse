@@ -22,6 +22,9 @@ private:
     std::string host_name;
     std::string server_display_name;
 
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
+
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 
@@ -37,9 +40,16 @@ public:
       * and set the information about forwarded address accordingly.
       * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
       */
-    TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end())
+    TCPHandlerFactory(
+        IServer & server_,
+        bool secure_,
+        bool parse_proxy_protocol_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
+        std::optional<String> default_session_user_ = {})
         : server(server_), parse_proxy_protocol(parse_proxy_protocol_)
         , log(getLogger(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
+        , default_session_user(std::move(default_session_user_))
         , read_event(read_event_)
         , write_event(write_event_)
     {
@@ -52,7 +62,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name, host_name, read_event, write_event);
+            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name, host_name, default_session_user, read_event, write_event);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -66,7 +76,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPHandler(server, tcp_server, socket, stack_data, server_display_name, host_name, read_event, write_event);
+            return new TCPHandler(server, tcp_server, socket, stack_data, server_display_name, host_name, default_session_user, read_event, write_event);
         }
         catch (const Poco::Net::NetException &)
         {

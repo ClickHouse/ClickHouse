@@ -11,7 +11,7 @@ CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = MergeTree 
 INSERT INTO t VALUES (1, 'l');
 INSERT INTO nr VALUES (2, NULL);
 
-{% for enable_analyzer in [0, 1] -%}
+{% for enable_analyzer in [1] -%}
 
 SET enable_analyzer = {{ enable_analyzer }};
 

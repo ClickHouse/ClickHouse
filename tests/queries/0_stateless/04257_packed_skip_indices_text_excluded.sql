@@ -4,6 +4,7 @@
 -- the drop).
 
 SET allow_experimental_full_text_index = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_text_no_pack;
 CREATE TABLE t_text_no_pack

@@ -12,7 +12,7 @@ INSERT INTO test_json_no_lazy VALUES (1, '{"val": 100}');
 INSERT INTO test_json_no_lazy VALUES (2, '{"val": 200}');
 
 -- Disable lazy type hints (default behavior)
-SET allow_experimental_json_lazy_type_hints = 0;
+SET enable_json_lazy_type_hints = 0;
 
 -- This ALTER should trigger a mutation
 ALTER TABLE test_json_no_lazy MODIFY COLUMN j JSON(val UInt32);

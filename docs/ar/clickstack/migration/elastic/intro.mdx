@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: 'الترحيل إلى ClickStack من Elastic'
+sidebarTitle: 'نظرة عامة'
+description: 'نظرة عامة على الترحيل إلى حزمة ClickHouse Observability من Elastic'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## الانتقال إلى ClickStack من Elastic
+</div>
+
+هذا الدليل موجّه للمستخدمين الذين ينتقلون من Elastic Stack — وتحديدًا من يستخدمون Kibana لمراقبة السجلات والتتبعات والمقاييس التي يجمعها Elastic Agent وتُخزَّن في Elasticsearch. ويعرض المفاهيم وأنواع البيانات المقابلة في ClickStack، ويشرح كيفية ترجمة الاستعلامات المعتمدة على Lucene في Kibana إلى صياغة HyperDX، كما يقدّم إرشادات لنقل كلٍّ من البيانات والوكلاء لضمان انتقال سلس.
+
+قبل البدء في عملية الترحيل، من المهم فهم المفاضلات بين ClickStack وElastic Stack.
+
+ينبغي أن تفكّر في الانتقال إلى ClickStack إذا كنت:
+
+* تستوعب كميات كبيرة من بيانات الرصد وتجد أن Elastic مرتفع التكلفة بسبب الضغط غير الفعّال وضعف استغلال الموارد. يمكن أن يخفّض ClickStack تكاليف التخزين والحوسبة بشكل كبير — إذ يوفّر ضغطًا لا يقل عن 10x للبيانات الخام.
+* تواجه ضعفًا في أداء البحث عند التوسّع أو اختناقات في الاستيعاب.
+* تريد ربط إشارات الرصد ببيانات الأعمال باستخدام SQL، بما يوحّد سير عمل الرصد والتحليلات.
+* ملتزمًا بـ OpenTelemetry وتريد تجنّب الارتهان إلى مزوّد واحد.
+* تريد الاستفادة من فصل التخزين عن الحوسبة في ClickHouse Cloud، بما يتيح توسّعًا غير محدود عمليًا — مع الدفع فقط مقابل حوسبة الاستيعاب وتخزين الكائنات خلال فترات الخمول.
+
+ومع ذلك، قد لا يكون ClickStack مناسبًا إذا كنت:
+
+* تستخدم بيانات الرصد أساسًا لحالات الاستخدام الأمنية وتحتاج إلى منتج يركّز على SIEM.
+* يشكّل التحليل الشامل للأداء جزءًا بالغ الأهمية من سير عملك.
+* تحتاج إلى منصة لوحات معلومات لذكاء الأعمال (BI). يوفّر ClickStack عمدًا مسارات عمل مرئية موجّهة لمهندسي SREs والمطوّرين، ولم يُصمَّم كأداة لذكاء الأعمال (BI). وللحصول على قدرات مكافئة، نوصي باستخدام [Grafana with the ClickHouse plugin](/ar/integrations/connectors/data-visualization/grafana/index) أو [Superset](/ar/integrations/connectors/data-visualization/superset-and-clickhouse).

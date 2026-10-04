@@ -39,6 +39,10 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 
+-- Query-based parallel replicas only: this checks what `parallel_replicas_allow_view_over_mergetree`
+-- does to the query sent to the replicas, and the plan-based implementation sends a plan fragment.
+SET parallel_replicas_plan_based = 0;
+
 -- For a simple view, ReadFromRemoteParallelReplicas references the view name (v_simple)
 -- because the outer query over the view is sent to replicas.
 SELECT '-- simple view: query sent over view';

@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'استخدام remoteSecure'
+slug: /cloud/migration/clickhouse-to-cloud
+title: 'الترحيل بين ClickHouse مُدار ذاتيًا وClickHouse Cloud باستخدام remoteSecure'
+description: 'صفحة تشرح كيفية الترحيل بين ClickHouse مُدار ذاتيًا وClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['الترحيل', 'ClickHouse Cloud', 'OSS', 'ترحيل ClickHouse مُدار ذاتيًا إلى Cloud']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx';
+
+import CompatibilityNote from '/snippets/ar/compatibility.mdx';
+
+<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="الترحيل من ClickHouse المُدار ذاتيًا" />
+
+يوضح هذا الدليل كيفية الترحيل من خادم ClickHouse مُدار ذاتيًا إلى ClickHouse Cloud، وكذلك كيفية الترحيل بين خدمات ClickHouse Cloud.
+تُستخدم الدالة [`remoteSecure`](/ar/reference/functions/table-functions/remote) في استعلامات `SELECT` و`INSERT` لإتاحة الوصول إلى خوادم ClickHouse البعيدة، مما يجعل ترحيل الجداول بسيطًا بمجرد كتابة استعلام `INSERT INTO` يتضمن `SELECT`.
+
+<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
+  ## الترحيل من ClickHouse المُدار ذاتيًا إلى ClickHouse Cloud
+</div>
+
+<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+بغضّ النظر عمّا إذا كان جدول المصدر لديك مُجزّأً و/أو مُكرَّرًا، ففي ClickHouse Cloud لا تحتاج إلا إلى إنشاء جدول وجهة (يمكنك ترك معلمة `Engine` لهذا الجدول، إذ سيُختار `SharedMergeTree` تلقائيًا بوصفه محرك الجدول)،
+وسيتولى ClickHouse Cloud تلقائيًا التوسّع الرأسي والأفقي.
+ولا حاجة من جانبك للتفكير في كيفية تكرار الجدول أو تجزئته.
+
+في هذا المثال، يكون ClickHouse server المُدار ذاتيًا هو *المصدر*، وتكون خدمة ClickHouse Cloud هي *الوجهة*.
+
+<div id="overview">
+  ### نظرة عامة
+</div>
+
+العملية كالتالي:
+
+1. أضِف مستخدمًا للقراءة فقط إلى خدمة المصدر
+2. أنشئ بنية جدول المصدر نفسها على خدمة الوجهة
+3. اسحب البيانات من المصدر إلى الوجهة، أو ادفعها من المصدر، بحسب مدى توفّر الشبكة لدى المصدر
+4. أزل خادم المصدر من IP Access List على الوجهة (إن أمكن)
+5. أزل المستخدم المخصّص للقراءة فقط من خدمة المصدر
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### ترحيل الجداول من نظام إلى آخر:
+</div>
+
+يشرح هذا المثال كيفية ترحيل جدول واحد من خادم ClickHouse مُدار ذاتيًا إلى ClickHouse Cloud.
+
+<CompatibilityNote />
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  ### على نظام ClickHouse المصدر (النظام الذي يستضيف البيانات حاليًا)
+</div>
+
+* أضف مستخدمًا بصلاحية القراءة فقط يمكنه قراءة الجدول المصدر (`db.table` في هذا المثال)
+
+```sql
+CREATE USER exporter
+IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+SETTINGS readonly = 1;
+```
+
+```sql
+GRANT SELECT ON db.table TO exporter;
+```
+
+* انسخ تعريف الجدول
+
+```sql
+SELECT create_table_query
+FROM system.tables
+WHERE database = 'db' AND table = 'table'
+```
+
+<div id="on-the-destination-clickhouse-cloud-system">
+  ### في نظام ClickHouse Cloud الوجهة:
+</div>
+
+* أنشئ قاعدة البيانات المستهدفة:
+
+```sql
+CREATE DATABASE db
+```
+
+* باستخدام عبارة CREATE TABLE من المصدر، أنشئ الوجهة.
+
+<Tip>
+  غيّر `ENGINE` إلى `ReplicatedMergeTree` من دون أي معلمات عند تشغيل عبارة CREATE. تكون الجداول في ClickHouse Cloud مكرّرة دائمًا، ويوفّر الخدمة المعلمات الصحيحة. مع ذلك، احتفِظ ببنود `ORDER BY` و`PRIMARY KEY` و`PARTITION BY` و`SAMPLE BY` و`TTL` و`SETTINGS`.
+</Tip>
+
+```sql
+CREATE TABLE db.table ...
+```
+
+* استخدم الدالة `remoteSecure` لسحب البيانات من المصدر المُدار ذاتيًا
+
+<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+```sql
+INSERT INTO db.table SELECT * FROM
+remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+<Note>
+  إذا لم يكن نظام المصدر متاحًا من الشبكات الخارجية، فيمكنك دفع البيانات بدلًا من سحبها، لأن الدالة `remoteSecure` تعمل مع كلٍّ من عمليات `SELECT` و`INSERT`. راجع الخيار التالي.
+</Note>
+
+* استخدم الدالة `remoteSecure` لدفع البيانات إلى خدمة ClickHouse Cloud
+
+<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+<Tip>
+  **أضف النظام البعيد إلى IP Access List الخاصة بخدمة ClickHouse Cloud**
+
+  لكي تتمكن الدالة `remoteSecure` من الاتصال بخدمة ClickHouse Cloud، يجب السماح بعنوان IP الخاص بالنظام البعيد ضمن IP Access List. وسِّع **Manage your IP Access List** أسفل هذه الملاحظة لمزيد من المعلومات.
+</Tip>
+
+<AddARemoteSystem />
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
+'default', 'PASS') SELECT * FROM db.table
+```
+
+<div id="migrating-between-clickhouse-cloud-services">
+  ## الترحيل بين خدمات ClickHouse Cloud
+</div>
+
+<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+فيما يلي بعض الاستخدامات الشائعة لترحيل البيانات بين خدمات ClickHouse Cloud:
+
+* ترحيل البيانات من نسخة احتياطية تمت استعادتها
+* نسخ البيانات من خدمة تطوير إلى خدمة مرحلية (أو من الخدمة المرحلية إلى بيئة production)
+
+في هذا المثال، توجد خدمتان من ClickHouse Cloud، وسيُشار إليهما باسم *المصدر* و*الوجهة*. ستُسحب البيانات من المصدر إلى الوجهة. ومع أنه يمكنك استخدام الدفع إذا رغبت، فإن السحب هو المعروض هنا لأنه يستخدم مستخدمًا للقراءة فقط.
+
+<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+تتضمن عملية الترحيل بضع خطوات:
+
+1. حدِّد إحدى خدمتي ClickHouse Cloud لتكون *المصدر*، والأخرى لتكون *الوجهة*
+2. أضف مستخدمًا للقراءة فقط إلى الخدمة المصدر
+3. أنشئ بنية جدول المصدر نفسها على الخدمة الوجهة
+4. اسمح مؤقتًا بالوصول عبر IP إلى الخدمة المصدر
+5. انسخ البيانات من المصدر إلى الوجهة
+6. أعد تفعيل IP Access List على الوجهة
+7. أزل المستخدم المخصص للقراءة فقط من الخدمة المصدر
+
+<div id="add-a-read-only-user-to-the-source-service">
+  #### أضِف مستخدمًا للقراءة فقط إلى خدمة المصدر
+</div>
+
+* أضِف مستخدمًا للقراءة فقط يمكنه قراءة الجدول المصدر (`db.table` في هذا المثال)
+
+  ```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+  ```
+
+  ```sql
+  GRANT SELECT ON db.table TO exporter;
+  ```
+
+* انسخ تعريف الجدول
+  ```sql
+  select create_table_query
+  from system.tables
+  where database = 'db' and table = 'table'
+  ```
+
+<div id="duplicate-the-table-structure-on-the-destination-service">
+  #### انسخ بنية الجدول إلى خدمة الوجهة
+</div>
+
+على الوجهة، أنشئ قاعدة البيانات إذا لم تكن موجودة بالفعل:
+
+* أنشئ قاعدة بيانات الوجهة:
+  ```sql
+  CREATE DATABASE db
+  ```
+
+* باستخدام عبارة CREATE TABLE من المصدر، أنشئ الجدول على الوجهة.
+
+  على الوجهة، أنشئ الجدول باستخدام ناتج `select create_table_query...` من المصدر:
+
+  ```sql
+  CREATE TABLE db.table ...
+  ```
+
+<div id="allow-remote-access-to-the-source-service">
+  #### اسمح بالوصول عن بُعد إلى خدمة المصدر
+</div>
+
+لكي تتمكن من سحب البيانات من المصدر إلى الوجهة، يجب أن تسمح خدمة المصدر بالاتصالات. عطّل مؤقتًا ميزة &quot;IP Access List&quot; على خدمة المصدر.
+
+<Tip>
+  إذا كنت ستواصل استخدام خدمة ClickHouse Cloud المصدر، فصدّر &quot;IP Access List&quot; الحالية إلى ملف JSON قبل التبديل إلى السماح بالوصول من أي مكان؛ فهذا يتيح لك إعادة استيراد قائمة الوصول بعد اكتمال ترحيل البيانات.
+</Tip>
+
+عدّل قائمة السماح واسمح بالوصول من **Anywhere** مؤقتًا. راجع وثائق [IP Access List](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لمزيد من التفاصيل.
+
+<div id="copy-the-data-from-source-to-destination">
+  #### انسخ البيانات من المصدر إلى الوجهة
+</div>
+
+* استخدم الدالة `remoteSecure` لسحب البيانات من خدمة ClickHouse Cloud المصدر
+  اتصل بالوجهة. شغّل هذا الأمر على خدمة ClickHouse Cloud الوجهة:
+
+  ```sql
+  INSERT INTO db.table SELECT * FROM
+  remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  ```
+
+* تحقّق من البيانات في خدمة الوجهة
+
+<div id="re-establish-the-ip-access-list-on-the-source">
+  #### أعد إعداد IP Access List على المصدر
+</div>
+
+إذا كنت قد صدّرت IP Access List سابقًا، فيمكنك إعادة استيرادها باستخدام **Share**، وإلا فأعد إضافة عناوينك إلى قائمة الوصول.
+
+<div id="remove-the-read-only-exporter-user">
+  #### أزل المستخدم `exporter` ذو صلاحية القراءة فقط
+</div>
+
+```sql
+DROP USER exporter
+```
+
+* غيّر IP Access List الخاصة بالخدمة لتقييد الوصول

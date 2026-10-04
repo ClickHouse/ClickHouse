@@ -132,7 +132,7 @@ SELECT id % 7, sum(u) FROM t_sparse GROUP BY id % 7 ORDER BY id % 7;
 4	190
 5	330
 6	270
-SELECT arrayFilter(x -> x % 2 = 1, arr2) FROM t_sparse WHERE arr2 != [] LIMIT 5;
+SELECT arrayFilter(x -> x % 2 = 1, arr2) FROM t_sparse WHERE arr2 != [] ORDER BY id LIMIT 5;
 [1]
 [1,3]
 [1,3,5]

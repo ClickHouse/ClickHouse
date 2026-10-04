@@ -17,6 +17,6 @@ INSERT INTO t_qbit_ws_full SELECT NULL;
 SELECT * FROM t_qbit_ws_full;
 DROP TABLE t_qbit_ws_full;
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SELECT ifNull(CAST(NULL AS Nullable(Tuple(Map(String, Nullable(QBit(Float32, 8)))))),
               CAST(tuple(map()) AS Tuple(Map(String, Nullable(QBit(Float32, 8))))));

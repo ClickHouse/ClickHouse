@@ -1,0 +1,8 @@
+0
+Expression: (k > 0)
+Expression: (k < 1000)
+1
+Constraint `c` cannot contain arrayJoin, because it changes the number of rows
+0	2
+1
+0

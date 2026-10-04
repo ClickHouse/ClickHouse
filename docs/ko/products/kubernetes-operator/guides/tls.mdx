@@ -1,0 +1,342 @@
+---
+position: 6
+slug: /clickhouse-operator/guides/tls
+title: TLS로 클러스터 보안 설정하기
+keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'security', 'certificates']
+description: 'cert-manager를 사용해 TLS로 ClickHouse 클러스터를 보호하는 방법을 설명합니다. 클라이언트 연결과 Keeper 암호화도 포함됩니다.'
+doc_type: 'guide'
+---
+
+이 가이드에서는 ClickHouse 클러스터를 엔드 투 엔드로 암호화하는 방법을 안내합니다. [cert-manager](https://cert-manager.io/)를 사용해
+인증서를 발급하고, 클러스터에서 TLS를 활성화하며, 보안 포트를 통해
+클라이언트를 연결하고, 암호화를 Keeper 조정 트래픽까지 확장하는 과정이 포함됩니다.
+
+이 문서는 작업 중심으로 구성되어 있습니다. `spec.settings.tls`의 필드별 참고 정보는
+[구성 → TLS/SSL 구성](/ko/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
+및 [API 참조](/ko/products/kubernetes-operator/reference/api-reference#clustertlsspec)를 확인하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구사항
+</div>
+
+* 연산자가 관리하는 실행 중인 ClickHouse 클러스터([Introduction](/ko/products/kubernetes-operator/guides/introduction) 참조)
+* 클러스터에 [cert-manager](https://cert-manager.io/docs/installation/)가 설치되어 있어야 합니다.
+* 클러스터의 네임스페이스에 대한 `kubectl` 접근 권한.
+
+연산자는 인증서를 직접 생성하지 않으며, 대신 사용자가 제공한 Kubernetes
+`시크릿`을 사용합니다. cert-manager는 해당 `시크릿`을 생성하고
+교체하는 데 권장되는 방법이지만, 필요한 포맷으로 `시크릿`을 작성할 수 있는 도구라면 무엇이든 사용할 수 있습니다.
+
+<div id="secret-format">
+  ## 연산자가 기대하는 인증서 형식
+</div>
+
+TLS는 `spec.settings.tls.serverCertSecret`이 서버 키 쌍을 포함한 시크릿을
+가리키도록 설정해 활성화합니다:
+
+| 시크릿 키     | 내용                     | 필수 |
+| --------- | ---------------------- | -- |
+| `tls.crt` | PEM으로 인코딩된 서버 인증서      | 예  |
+| `tls.key` | PEM으로 인코딩된 private key | 예  |
+
+이는 cert-manager가 `Certificate` 리소스에 기록하는 레이아웃과 정확히 같으므로
+변환할 필요가 없습니다. 연산자는 키 쌍을 각 파드의
+`/etc/clickhouse-server/tls/`에 마운트하고 ClickHouse의 `openSSL` 구성에 연결합니다.
+
+<Note>
+  `serverCertSecret`는 `tls.enabled: true`일 때 **필수**입니다. 검증
+  웹훅은 이 값 없이 TLS를 활성화한 cluster를 거부하며, `enabled: true`가 아니면
+  `required: true`도 거부합니다.
+</Note>
+
+<div id="step-1-ca">
+  ## 1단계 — cert-manager로 CA Bootstrap
+</div>
+
+가장 재현 가능한 구성은 자체 서명된 CA를 생성한 뒤, 해당 CA로 서버 인증서에 서명하는 방식입니다. 이렇게 하면 클라이언트가 신뢰할 수 있는 안정적인 `ca.crt`를 사용할 수 있습니다.
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: Issuer
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+운영 환경에서는 자체 서명된 Bootstrap을 실제 issuer(사내
+CA, Vault, ACME 등)로 대체하십시오. 변경되는 것은 Step 2뿐이며, 클러스터 구성은
+동일합니다.
+
+<div id="step-2-cert">
+  ## 2단계 — 서버 인증서 발급
+</div>
+
+CA issuer에 리프 인증서를 요청합니다. `dnsNames`는 클라이언트가
+파드에 접속할 때 사용하는 주소를 포함해야 합니다. 연산자는
+`<cluster-name>-clickhouse-headless`라는 이름의 단일 **헤드리스** Service를 생성하며,
+각 레플리카 파드는
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`로
+주소를 지정할 수 있습니다.
+헤드리스 Service 도메인에 대한 와일드카드를 사용하면 모든 레플리카를 포괄할 수 있습니다:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
+    kind: Issuer
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
+
+<Note>
+  연산자는 클러스터 전반에서 사용하는(로드 밸런싱된) Service를 **생성하지 않습니다**. 연결에
+  사용할 안정적인 단일 endpoint가 필요하면, 클러스터의 파드를 선택하는 `클러스터 IP` Service를
+  직접 생성하고 해당 DNS 이름을 위의 `dnsNames`에 추가하십시오.
+</Note>
+
+cert-manager는 `tls.crt`, `tls.key`, `ca.crt`가 포함된 `clickhouse-cert` 시크릿을 생성하며,
+만료 전에 이를 갱신합니다. 다음과 같이 존재 여부를 확인하십시오:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
+
+<div id="step-3-enable">
+  ## 단계 3 — 클러스터에서 TLS를 활성화
+</div>
+
+클러스터가 시크릿을 참조하도록 설정합니다:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
+
+<div id="what-the-operator-does">
+  ### 연산자의 동작
+</div>
+
+`tls.enabled: true`로 설정하면 연산자는 다음을 수행합니다.
+
+* 모든 파드와 헤드리스 Service에 **보안 포트** `9440`
+  (네이티브 TLS) 및 `8443` (HTTPS)를 **엽니다**. 이 포트는 기존 포트에 추가됩니다.
+* **시크릿을** `/etc/clickhouse-server/tls/`에 마운트하고,
+  `verificationMode: relaxed`,
+  `disableProtocols: sslv2,sslv3`, `preferServerCiphers: true`가 포함된
+  ClickHouse `openSSL` 블록을 생성합니다. 이는 기본값이므로, 재정의하려면
+  [TLS 설정 사용자 지정](#custom-tls-settings)을 참조하십시오.
+
+추가로 `required: true`도 설정하면 연산자는 다음 작업도 수행합니다.
+
+* **비보안 포트** `9000` (네이티브) 및 `8123` (HTTP)를 **제거**합니다. 따라서 TLS
+  포트만 남으며, plaintext 클라이언트는 더 이상 연결할 수 없습니다.
+* 파드의 **활성 상태 프로브(liveness probe)**를 보안 네이티브 포트 `9440`으로 **전환**하므로, plaintext 리스너 없이도 상태
+  확인이 계속 작동합니다.
+
+<Note>
+  TLS 포트 `8443` 및 `9440`은 TLS가 비활성화된 경우에도 웹훅이 **항상**
+  예약하므로, 나중에 `tls.enabled`를 전환하더라도
+  `spec.additionalPorts` 항목과 충돌하지 않습니다. 자세한 내용은
+  [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports)를 참조하십시오.
+</Note>
+
+<div id="step-4-connect">
+  ## 4단계 — TLS를 통해 연결
+</div>
+
+`required: true`로 설정하면 클라이언트는 보안 포트를 사용하고 CA를 신뢰해야 합니다. 헤드리스 Service(또는 직접 만든 경우 자체 `클러스터 IP`
+Service)를 통해 특정 레플리카 파드에 연결하십시오.
+
+**네이티브 프로토콜** (`clickhouse-client`, port `9440`):
+
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
+
+**HTTPS** (포트 `8443`):
+
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
+
+로컬 테스트용으로 시크릿에서 `ca.crt`를 직접 가져오세요:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
+
+<div id="keeper-tls">
+  ## Keeper 트래픽 암호화
+</div>
+
+ClickHouse 클러스터에서 TLS를 활성화해도 Keeper로 연결되는 구간은 **암호화되지 않습니다**.
+`KeeperCluster`에서는 별도로 TLS를 활성화해야 합니다 — Keeper
+서비스용 인증서를 발급하고(Keeper 서비스 `dnsNames`를 사용하는 1–2단계) 이를 참조하십시오:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: <keeper-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+```
+
+Keeper는 보안 클라이언트 포트를 `2281`에서 제공합니다. Keeper에서 TLS가 활성화되면 **ClickHouse 클러스터는 별도 설정 없이
+자동으로 TLS를 통해 Keeper에 연결됩니다** — ClickHouseCluster 측에
+추가로 설정할 것은 없습니다. ClickHouse는 시스템 신뢰 저장소와
+구성한 모든 [`caBundle`](#custom-ca)을 기준으로 Keeper 인증서를 검증합니다.
+
+<div id="custom-ca">
+  ## 사용자 지정 CA 번들
+</div>
+
+기본적으로 ClickHouse는 연결하는 피어(다른 레플리카, Keeper, HTTPS
+딕셔너리 소스, S3, …)를 **시스템 신뢰 저장소**를 기준으로 검증합니다. 시스템 저장소에
+루트 인증서가 없는 자체 서명 또는 내부 CA 같은 사설 CA도 **추가로** 신뢰하려면
+`caBundle`을 지정하십시오:
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      serverCertSecret:
+        name: clickhouse-cert
+      caBundle:
+        name: <ca-secret-name>
+        key: ca.crt
+```
+
+연산자는 이 번들을 마운트하고 이를 `openSSL` 클라이언트 신뢰 저장소
+(`caConfig`)에 추가합니다. 시스템 신뢰 저장소는 계속 유효하며 — 프라이빗 CA는 공개 루트에 **추가로**
+신뢰되므로 공개 endpoint에 대한 연결도 계속 작동합니다. 자체 서명 설정의 경우,
+cert-manager가 생성한 동일한 시크릿의 `ca.crt` 키를 `caBundle`이 가리키도록 설정하십시오
+(`cluster_with_ssl` 예시와 동일).
+
+<div id="custom-tls-settings">
+  ## TLS 설정 사용자 지정
+</div>
+
+연산자가 생성하는 `openSSL` 블록은 기본값일 뿐, 상한선은 아닙니다. 이 설정은
+기본 서버 구성에 기록되며, `spec.settings.extraConfig` 아래의 모든 항목은
+`config.d/99-extra-config.yaml`에 렌더링됩니다. ClickHouse는 이를 **마지막에**
+머지하므로 생성된 값을 재정의합니다.
+
+기본값을 더 강화하려면 — 예를 들어 엄격한 피어 검증을 요구하고 최소
+프로토콜을 TLS 1.2로 높이려면 — 변경할 `openSSL.server` 키를 설정하십시오:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      openSSL:
+        server:
+          verificationMode: strict
+          disableProtocols: "sslv2,sslv3,tlsv1,tlsv1_1"
+```
+
+머지는 키별로 수행됩니다. 설정한 값만 대체되며, 생략한 생성 키
+(인증서 경로, CA 구성)는 유지됩니다. 사용 가능한 옵션은
+[`openSSL` server 설정](/ko/reference/settings/server-settings/settings#openssl)
+을 참조하고, `extraConfig`가 어떻게 머지되는지는
+[구성 → 내장 추가 구성](/ko/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+을 참조하십시오.
+
+<div id="troubleshoot">
+  ## 확인 및 문제 해결
+</div>
+
+**헤드리스 Service에서 보안 포트가 열려 있는지 확인합니다:**
+
+```bash
+kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
+  -o jsonpath='{.spec.ports[*].name}'
+# expect: ... tcp-secure http-secure   (and NO tcp/http when required: true)
+```
+
+**파드에 인증서가 마운트되었는지 확인합니다:**
+
+```bash
+kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
+```
+
+| 증상                                   | 가능한 원인                                                                                                                                                                                         |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TLS 활성화 후 파드가 시작되지 않음 / 볼륨 마운트 오류 발생 | 참조된 시크릿이 없거나 `tls.crt`/`tls.key`가 없거나 (`caBundle`이 설정된 경우) 해당 시크릿 또는 참조된 키가 없습니다. 연산자는 시크릿 내용을 검증하지 않으므로, 키가 누락되면 별도의 상태 조건으로 표시되지 않고 파드 볼륨 마운트 실패로 나타납니다. `kubectl describe pod`로 파드를 확인하십시오. |
+| 웹훅이 클러스터를 거부함                        | `enabled: true` 없이 `required: true`가 설정되었거나, `serverCertSecret` 없이 `enabled: true`가 설정되었습니다.                                                                                                   |
+| 클라이언트 `certificate verify failed`    | 클라이언트가 CA를 신뢰하지 않습니다. 시크릿의 `ca.crt`를 전달하거나, 인증서의 `dnsNames`에 연결하려는 호스트가 포함되어 있는지 확인하십시오.                                                                                                       |
+| 평문 클라이언트가 갑자기 연결되지 않음                | `required: true`로 인해 포트 `9000`/`8123`가 제거되었습니다. 클라이언트를 `9440`/`8443`로 전환하거나, 전환 중에도 비보안 포트를 계속 열어 두려면 `required: false`로 설정하십시오.                                                               |
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [구성 → TLS/SSL 구성](/ko/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — 필드 참조
+* [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports) — 예약 포트
+* [API 참조 → ClusterTLSSpec](/ko/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings#openssl) — `extraConfig`를 통해 재정의할 수 있는 TLS 옵션

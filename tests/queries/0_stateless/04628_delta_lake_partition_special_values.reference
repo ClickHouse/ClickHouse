@@ -1,0 +1,56 @@
+-- slash: 'a/b' must round-trip (was truncated to 'a'); committed inside one path segment
+1	a/b
+committed path: part=a%252Fb/<uuid>.parquet
+-- percent: '%' must round-trip (committed file was previously unreadable)
+1	%
+committed path: part=%2525/<uuid>.parquet
+-- assorted reserved characters must round-trip
+1	a/b
+2	%
+3	a b
+4	a=b
+5	plain
+-- dash and other Hive-safe characters are NOT escaped in the directory (readable names),
+-- but the committed add.path is URI-encoded (space -> %20)
+1	comment-0
+2	a b
+committed paths: part=a%20b/<uuid>.parquet
+part=comment-0/<uuid>.parquet
+-- null: NULL partition value must be accepted and read back as NULL (was NOT_IMPLEMENTED)
+1	\N
+committed path: part=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+committed partitionValues: "partitionValues":{"part":null}
+-- empty string is null-equivalent per the Delta protocol (reads back as NULL)
+1	\N
+committed path: part=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+committed partitionValues: "partitionValues":{"part":null}
+-- NULL and the literal string '__HIVE_DEFAULT_PARTITION__' stay distinct
+1	\N
+2	__HIVE_DEFAULT_PARTITION__
+-- null-equivalent value into a non-nullable partition column is rejected up front
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+-- rejection uses the Delta schema, not the input header: an explicit Nullable structure
+-- over a non-nullable Delta partition column must still reject a NULL
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+-- non-string (Int32) partition column serializes with toString, not raw bytes
+1	42
+2	-7
+3	\N
+-- multiple partition columns with reserved characters round-trip
+1	a/b	c%d
+2	p	q
+committed paths: a=a%252Fb/b=c%2525d/<uuid>.parquet
+a=p/b=q/<uuid>.parquet
+-- Unicode (UTF-8) partition values round-trip; non-ASCII bytes stay literal in the
+-- directory and are URI-encoded in the committed add.path
+1	café
+2	日本語
+3	a/münchen
+committed paths: part=%E6%97%A5%E6%9C%AC%E8%AA%9E/<uuid>.parquet
+part=a%252Fm%C3%BCnchen/<uuid>.parquet
+part=caf%C3%A9/<uuid>.parquet
+-- the legacy (non-kernel) reader must also read a null partition value back as NULL
+-- (the committed JSON null previously threw in the String-only parsing path)
+1	\N
+2	x
+3	\N

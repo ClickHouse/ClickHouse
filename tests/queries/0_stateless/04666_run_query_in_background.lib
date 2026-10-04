@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+function wait_for_query()
+{
+    local query=$1
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT -q "$query" 2>/dev/null) != 1 ]]; do
+        if ((EPOCHSECONDS - start > 180)); then
+            echo "Timeout waiting for: $query" >&2
+            exit 1
+        fi
+        sleep 0.3
+    done
+}
+
+function wait_for()
+{
+    local condition=$1
+    wait_for_query "SELECT $condition"
+}
+
+function wait_for_query_log()
+{
+    local condition=$1
+    wait_for_query "SYSTEM FLUSH LOGS query_log; SELECT $condition"
+}
+
+function finished_in_query_log()
+{
+    echo "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$1' AND type = 'QueryFinish'"
+}
+
+function shared_native_and_http_tests()
+{
+    local run=$1
+    echo "=== $run ==="
+    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t"
+
+    echo '--- INSERT SELECT in background: no output, rows land, attributed in query_log'
+    local insert_id="insert_${run}_${CLICKHOUSE_DATABASE}"
+    local out
+    out=$($run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(30) WHERE NOT ignore(sleepEachRow(0.05))" "$insert_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for_query_log "$(finished_in_query_log "$insert_id")"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM t;
+        SELECT memory_usage > 0, length(ProfileEvents) > 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$insert_id' AND type = 'QueryFinish'"
+
+    echo '--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it'
+    local victim_id="victim_${run}_${CLICKHOUSE_DATABASE}"
+    $run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(600) WHERE NOT ignore(sleepEachRow(0.1))" "$victim_id"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND user = currentUser() AND current_database = currentDatabase() AND read_rows > 0"
+    echo "attributed in system.processes"
+    out=$($run "KILL QUERY WHERE query_id = '$victim_id' SYNC")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$victim_id' AND type = 'ExceptionWhileProcessing' AND exception_code = 394"
+    echo "killed"
+
+    echo '--- SELECT in background discards the result'
+    out=$($run "SELECT 1")
+    [[ -z "$out" ]] && echo "no output"
+
+    echo '--- CREATE TABLE AS SELECT in background'
+    $run "CREATE TABLE t_ctas_${run} ENGINE = MergeTree ORDER BY n AS SELECT number AS n FROM numbers(10)"
+    wait_for "count() = 10 FROM t_ctas_${run}"
+    echo "created with rows"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_${run}"
+
+    echo '--- enabling the setting for a whole session is rejected'
+    $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
+
+    echo '--- a query that cannot run in the background fails asynchronously'
+    local set_id="set_${run}_${CLICKHOUSE_DATABASE}"
+    $run "SET max_threads = 4" "$set_id"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
+    echo "failed asynchronously"
+
+    echo '--- a background query runs as the submitting user, and a missing grant is denied asynchronously'
+    local user="user_${run}_${CLICKHOUSE_DATABASE}"
+    $CLICKHOUSE_CLIENT -q "CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_result_rows = 4 CONST; GRANT INSERT ON t TO $user"
+    local denied_id="denied_${run}_${CLICKHOUSE_DATABASE}"
+    out=$($run "INSERT INTO t SELECT count() FROM t" "$denied_id" 1 "$user")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$denied_id' AND user = '$user' AND exception_code = 497"
+    echo "denied asynchronously"
+
+    echo '--- a settings constraint of the user is enforced on a background query'
+    $run "SELECT 1 SETTINGS max_result_rows = 8" "" 1 "$user" | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
+    $CLICKHOUSE_CLIENT -q "DROP USER $user"
+
+    echo '--- the database setting is applied before the target table of a background query is checked'
+    local other_database="db_${run}_${CLICKHOUSE_DATABASE}"
+    $CLICKHOUSE_CLIENT -q "CREATE DATABASE $other_database; CREATE TABLE $other_database.t2 (n UInt64) ENGINE = MergeTree ORDER BY n"
+    out=$($run "INSERT INTO t2 SETTINGS database = '$other_database' SELECT 1")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM $other_database.t2"
+    echo "rows land in the database of the setting"
+    out=$($run "OPTIMIZE TABLE t2 SETTINGS database = '$other_database'")
+    [[ -z "$out" ]] && echo "no output"
+    $CLICKHOUSE_CLIENT -q "DROP DATABASE $other_database"
+}

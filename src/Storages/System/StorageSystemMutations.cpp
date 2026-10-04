@@ -1,10 +1,12 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -27,10 +29,16 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
         { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
         { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
+        { "finish_time",                   std::make_shared<DataTypeDateTime>(),
+            "Date and time when the mutation was completed. Zero if the mutation is not completed yet or if its completion time is unknown. "
+            "For non-replicated tables the value is tracked in memory and is reset when the table is reloaded (e.g. on server restart). "
+            "For replicated tables the value is per-replica; after a restart, the completion time of the most recently completed mutation "
+            "is restored from Keeper, while older completed mutations report zero."
+        },
         { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
@@ -44,9 +52,9 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "0 if the mutation is still in process. "
         },
         { "is_killed", std::make_shared<DataTypeUInt8>(),
-            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud."
-            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized."
-            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period."
+            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud. "
+            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized. "
+            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period. "
             "This can occur if another long-running mutation is blocking the killed mutation. This is a normal situation."
         },
         { "latest_failed_part",           std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
@@ -71,7 +79,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain MergeTree tables
         if (db.second->isExternal())
@@ -81,11 +89,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
@@ -135,6 +140,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
+            /// NOLINT(storage-cast): `merge_tree_tables` is filled with already resolved storages.
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
         }
@@ -177,6 +183,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(status.id);
             res_columns[col_num++]->insert(status.command);
             res_columns[col_num++]->insert(UInt64(status.create_time));
+            res_columns[col_num++]->insert(UInt64(status.finish_time));
             res_columns[col_num++]->insert(block_partition_ids);
             res_columns[col_num++]->insert(block_numbers);
             res_columns[col_num++]->insert(parts_in_progress_names);
@@ -194,3 +201,6 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMutations) }

@@ -1,0 +1,18 @@
+Pass 1 QueryAnalysis - Resolve type for each query expression. Replace identifiers, matchers with query expressions. Perform constant folding. Evaluate scalar subqueries.
+Pass 2 GroupingFunctionsResolvePass - Resolve GROUPING functions based on GROUP BY modifiers
+Pass 3 AutoFinalOnQueryPass - Automatically applies final modifier to table expressions in queries if it is supported and if user level final setting is set
+
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(1, 1) UInt16
+  PROJECTION
+    LIST id: 1, nodes: 1
+      CONSTANT id: 2, constant_value: UInt64_2, constant_value_type: UInt16
+        EXPRESSION
+          FUNCTION id: 3, function_name: plus, function_type: ordinary, result_type: UInt16
+            ARGUMENTS
+              LIST id: 4, nodes: 2
+                CONSTANT id: 5, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: system.one

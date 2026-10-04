@@ -1,0 +1,29 @@
+<clickhouse>
+    <https_port>8443</https_port>
+
+    <!-- Same as ssl.xml, but `loadDefaultCAFile` is not set and so has its default value (true). -->
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/node.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/node.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+            <!-- A client certificate is not required, but if the client presents one it must be issued by a trusted CA. -->
+            <verificationMode>relaxed</verificationMode>
+            <cacheSessions>false</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <certificateFile>/etc/clickhouse-server/config.d/node.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/node.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <cacheSessions>false</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

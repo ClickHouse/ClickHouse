@@ -1,0 +1,109 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: Escalado de clústeres
+keywords: ['kubernetes', 'escalado', 'réplicas', 'segmentos', 'keeper', 'quórum']
+description: 'Cómo escalar las réplicas y los segmentos de ClickHouse y los miembros del quórum de Keeper, y qué hace automáticamente el operador.'
+doc_type: 'guide'
+---
+
+Para escalar un clúster, edite el número de réplicas y segmentos en el recurso personalizado. El operador reconcilia el clúster en ejecución con la nueva topología: crea o elimina los StatefulSets de cada réplica, mantiene el esquema sincronizado y refleja el progreso mediante las condiciones de estado.
+
+Esta guía explica cómo escalar las réplicas y los segmentos de `ClickHouseCluster`, cómo escalar de forma segura el quórum de un `KeeperCluster` y qué condiciones observar mientras una operación de escalado está en curso.
+
+<Note>
+  Un `ClickHouseCluster` siempre necesita un Keeper, al que se hace referencia mediante el campo obligatorio `spec.keeperClusterRef`; el operador coordina el clúster a través de él independientemente de su tamaño. Para ejecutar más de una réplica por segmento, los datos también deben residir en tablas `ReplicatedMergeTree`, ya que la replicación es lo que permite que una segunda réplica pueda servir las mismas filas.
+</Note>
+
+<div id="scaling-replicas">
+  ## Escalado de réplicas
+</div>
+
+`spec.replicas` establece el número de réplicas en cada segmento. Cada réplica se ejecuta en su propio StatefulSet llamado `<cluster>-clickhouse-<shard>-<replica>`, por lo que un clúster con `shards: 2` y `replicas: 3` ejecuta seis StatefulSets.
+
+Aumente o reduzca la cantidad directamente:
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+Al ampliar la escala, el operador crea los nuevos StatefulSets por réplica, espera a que cada pod de Kubernetes esté listo y, a continuación, sincroniza el esquema con las nuevas réplicas (consulte [Sincronización automática del esquema](#automatic-schema-sync)). Al reducir la escala, elimina los StatefulSets sobrantes y limpia los registros obsoletos de réplicas de la base de datos replicada que dejaron las réplicas eliminadas.
+
+<div id="scaling-shards">
+  ## Escalado de segmentos
+</div>
+
+`spec.shards` establece el número de segmentos. Cada segmento nuevo añade un conjunto completo de StatefulSets por réplica, y el operador crea un [PodDisruptionBudget por segmento](/es/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) para que una interrupción en un segmento no se contabilice para otro.
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+Cada segmento contiene una porción distinta de los datos, y el operador no copia ni mueve filas entre segmentos. Una tabla `Distributed` o un esquema de enrutamiento explícito decide en qué segmento acaba una fila, por lo que agregar un segmento proporciona un destino para las nuevas escrituras sin afectar a las filas ya almacenadas en los segmentos existentes.
+
+<div id="automatic-schema-sync">
+  ## Sincronización automática del esquema
+</div>
+
+Cuando `spec.settings.enableDatabaseSync` es `true` (valor predeterminado), el operador mantiene el esquema sincronizado a medida que cambia la topología:
+
+* **Al ampliar la escala** — una vez que al menos dos réplicas están listas, el operador replica las definiciones de las bases de datos en las réplicas recién creadas, de modo que una réplica nueva se una con las mismas bases de datos `Replicated` y de integración que el resto del clúster.
+* **Al reducir la escala** — antes de que desaparezca una réplica, el operador elimina el registro de esa réplica de cada base de datos `Replicated` con `SYSTEM DROP DATABASE REPLICA`, para que el clúster reducido no espere a una réplica de base de datos `Replicated` que ya no existe.
+
+Esto cubre las bases de datos `Replicated` y los motores de base de datos de integración. No mueve datos de tablas: los datos a nivel de fila residen en tablas `ReplicatedMergeTree` y se replican mediante Keeper de forma independiente de esta sincronización del esquema. Con una sola réplica lista, no hay nada que replicar, por lo que el operador omite este paso y registra que no tiene ningún destino.
+
+Establece `enableDatabaseSync: false` para desactivar este comportamiento, por ejemplo, cuando una herramienta externa se encarga de la propagación del esquema. En ese caso, el operador informa del motivo `SchemaSyncDisabled` en la condición `SchemaInSync`.
+
+<div id="scaling-conditions">
+  ## Condiciones que debe vigilar
+</div>
+
+Inspeccione el progreso del recurso personalizado mientras se ejecuta una operación de escalado:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| Condición            | Motivo                 | Significado                                                                                  |
+| -------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `ClusterSizeAligned` | `UpToDate`             | El número de réplicas en ejecución coincide con la topología solicitada                      |
+| `ClusterSizeAligned` | `ScalingUp`            | El operador está añadiendo réplicas                                                          |
+| `ClusterSizeAligned` | `ScalingDown`          | El operador está eliminando réplicas                                                         |
+| `SchemaInSync`       | `ReplicasInSync`       | Las bases de datos existen en todas las réplicas y se han limpiado los metadatos obsoletos   |
+| `SchemaInSync`       | `DatabasesNotCreated`  | El operador aún no ha terminado de crear las bases de datos en las nuevas réplicas           |
+| `SchemaInSync`       | `ReplicasNotCleanedUp` | Los metadatos obsoletos de las réplicas tras una reducción de escala aún no se han eliminado |
+| `SchemaInSync`       | `SchemaSyncDisabled`   | `enableDatabaseSync` es `false`                                                              |
+| `Ready`              | `AllShardsReady`       | Cada segmento tiene una réplica lista                                                        |
+| `Ready`              | `SomeShardsNotReady`   | Al menos un segmento no tiene ninguna réplica lista                                          |
+
+Una operación de escalado se completa cuando `ClusterSizeAligned` informa `UpToDate`, `SchemaInSync` informa `ReplicasInSync` y `Ready` informa `AllShardsReady`.
+
+<div id="scaling-keeper">
+  ## Escalado de Keeper
+</div>
+
+Un `KeeperCluster` ejecuta un quorum de RAFT, por lo que el operador modifica sus miembros **una réplica cada vez** y solo cuando el clúster se encuentra en un estado estable. Esto protege el quorum: un clúster `2F+1` tolera la caída de `F` miembros, de modo que un clúster de 3 nodos sigue funcionando si falta un miembro y uno de 5 nodos, si faltan dos.
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+Al aumentar la escala, el operador añade al quórum el ID de réplica libre más bajo; al reducirla, elimina el ID más alto. Cada paso espera a que el quórum se estabilice antes de iniciar el siguiente. El [PodDisruptionBudget de Keeper](/es/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) usa de forma predeterminada `maxUnavailable: replicas/2` para preservar el quórum durante interrupciones voluntarias.
+
+La condición `ScaleAllowed` indica si el quórum puede cambiar de miembros en este momento:
+
+| Motivo                     | Significado                                                                 |
+| -------------------------- | --------------------------------------------------------------------------- |
+| `ReadyToScale`             | El quórum es estable y el operador puede añadir o eliminar un miembro       |
+| `ReplicaHasPendingChanges` | Una réplica aún tiene un cambio de configuración pendiente                  |
+| `ReplicaNotReady`          | Una réplica no está lista, por lo que los cambios de miembros deben esperar |
+| `NoQuorum`                 | El clúster no tiene quórum y no puede cambiar de miembros de forma segura   |
+| `WaitingFollowers`         | El operador está esperando a que los seguidores se pongan al día            |
+
+Escala Keeper de uno en uno y deja que `ScaleAllowed` vuelva a `ReadyToScale` entre cambios. Saltar varios miembros a la vez no evita la reconciliación paso a paso: el operador sigue recorriendo el quórum, un miembro por paso.

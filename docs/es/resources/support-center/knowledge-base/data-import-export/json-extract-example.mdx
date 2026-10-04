@@ -1,0 +1,72 @@
+---
+title: Ejemplo de JSON Extract
+description: "Un breve ejemplo de cómo extraer tipos básicos de JSON"
+date: 2021-09-01
+tags: ['Formatos de datos']
+keywords: ['JSON', 'extraer tipos básicos']
+---
+
+<div id="json-extract-example">
+  ## Ejemplo de JSON Extract
+</div>
+
+Este es solo un breve ejemplo que ilustra el uso de las funciones [JSONExtract](/es/reference/functions/regular-functions/json-functions).
+
+Cree una tabla:
+
+```sql
+CREATE TABLE default.json_extract_example
+(
+    `rawJSON` String EPHEMERAL,
+    `a1` String DEFAULT JSONExtractString(rawJSON, 'a1'),
+    `a2` Boolean DEFAULT JSONExtractBool(rawJSON, 'a2'),
+    `a3.aa1` Float DEFAULT JSONExtractFloat(JSONExtractRaw(rawJSON, 'a3'), 'aa1'),
+    `a3.aa2` UInt8 DEFAULT JSONExtractUInt(JSONExtractRaw(rawJSON, 'a3'), 'aa2')
+)
+ENGINE = MergeTree
+ORDER BY (a1, a2)
+```
+
+Añade tu cadena JSON sin formato:
+
+```sql
+INSERT INTO default.json_extract_example (rawJSON) VALUES ('{"a1": "XX", "a2": true, "a3":{"aa1":23.11,"aa2":12}}');
+```
+
+Consulta tus datos:
+
+```
+SELECT *
+FROM json_extract_example
+FORMAT Pretty
+```
+
+Resultado:
+
+```
+┏━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ a1 ┃ a2   ┃ a3.aa1 ┃ a3.aa2 ┃
+┡━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ XX │ true │  23.11 │     12 │
+└────┴──────┴────────┴────────┘
+```
+
+Cada uno se almacena como el tipo JSON original:
+
+```sql
+SELECT
+    toTypeName(a1),
+    toTypeName(a2),
+    toTypeName(a3.aa1),
+    toTypeName(a3.aa2)
+FROM default.json_extract_example
+FORMAT Pretty
+```
+
+```
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ toTypeName(a1) ┃ toTypeName(a2) ┃ toTypeName(a3.aa1) ┃ toTypeName(a3.aa2) ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ String         │ Bool           │ Float32            │ UInt8              │
+└────────────────┴────────────────┴────────────────────┴────────────────────┘
+```

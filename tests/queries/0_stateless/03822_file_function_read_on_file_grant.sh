@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# With a replicated access storage, the entity serialization round trip widens `GRANT READ ON FILE`
+# to both `READ` and `WRITE` (see issue #111402), so the test would pass for the wrong reason.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

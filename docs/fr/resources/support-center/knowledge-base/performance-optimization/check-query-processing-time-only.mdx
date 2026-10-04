@@ -1,0 +1,38 @@
+---
+title: Comment mesurer le temps de traitement d’une requête sans renvoyer de lignes
+description: Découvrez comment utiliser l’option `FORMAT Null` dans ClickHouse pour mesurer le temps de traitement d’une requête sans renvoyer aucune ligne au client.
+date: 2023-06-07
+tags: ['Performance et optimisations']
+keywords: ['Temps de traitement des requêtes']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Ma requête renvoie de nombreuses lignes, mais seul le temps de traitement d’une requête m&#39;intéresse. Comment ne pas afficher le résultat de la requête et vérifier le temps de traitement d’une requête ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Ajoutez `FORMAT Null` à votre requête afin de définir le format de sortie sur `Null`. Cela empêche la transmission des données au client.
+
+Par exemple :
+
+```sql
+SELECT
+    customer_id,
+    count() AS total,
+    any(review_headline)
+FROM amazon_reviews
+GROUP BY customer_id
+ORDER BY total DESC
+FORMAT Null
+```
+
+La réponse renverra le nombre de lignes traitées et le temps écoulé, mais aucune ligne ne sera renvoyée :
+
+```response
+0 rows in set. Elapsed: 25.288 sec. Processed 222.04 million rows, 13.50 GB (8.78 million rows/s., 533.77 MB/s.)
+```

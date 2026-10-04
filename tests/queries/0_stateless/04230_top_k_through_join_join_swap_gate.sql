@@ -30,7 +30,7 @@ FROM ( EXPLAIN actions = 0
     ORDER BY l.k DESC LIMIT 10
     SETTINGS query_plan_join_swap_table = false,
              optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -49,7 +49,7 @@ FROM ( EXPLAIN actions = 0
     ORDER BY l.k DESC LIMIT 10
     SETTINGS query_plan_join_swap_table = true,
              optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,

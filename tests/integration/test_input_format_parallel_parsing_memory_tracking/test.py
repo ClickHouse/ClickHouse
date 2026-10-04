@@ -41,7 +41,7 @@ def test_memory_tracking_total():
         [
             "bash",
             "-c",
-            "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') from numbers(10000)\" > data.jsonl",
+            "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') AS row from numbers(10000) FORMAT JSONEachRow\" > data.jsonl",
         ]
     )
 
@@ -55,7 +55,7 @@ def test_memory_tracking_total():
                     "--silent",
                     "--show-error",
                     "--data-binary",
-                    "@data.json",
+                    "@data.jsonl",
                     "http://127.1:8123/?query=INSERT%20INTO%20null%20FORMAT%20JSONEachRow",
                 ]
             )

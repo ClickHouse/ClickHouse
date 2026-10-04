@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_min_max_index_perf (a Array(UInt64)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO array_min_max_index_perf
+        SELECT arrayMap(x -&gt; if(x = number % 256, toUInt64(1000), x), range(256))
+        FROM numbers(10000)</fill_query>
+
+    <query>SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a)) FROM array_min_max_index_perf FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a))) FROM array_min_max_index_perf FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf</drop_query>
+</test>

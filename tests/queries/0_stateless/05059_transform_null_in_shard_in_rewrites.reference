@@ -1,0 +1,24 @@
+has, parallel replicas	6
+notHas	194
+equals chain	12
+notEquals chain	9888
+has rewritten	1
+has rewritten, setting off	1
+notHas rewritten	1
+equals chain rewritten	1
+notEquals chain rewritten	1
+dictionary rewritten	1
+dictionary rewritten, setting off	1
+dictionary subquery rewritten	1
+dictionary subquery rewritten, setting off	1
+nullable declined	90	3
+nullable declined, chain off	90	3
+nullable not rewritten	0
+nullable rewritten, setting off	1
+nullable dict declined	90	3
+nullable dict declined, setting off	90	3
+nullable dict not rewritten	0
+nullable dict rewritten, setting off	1
+nested nullable rewritten	1
+nested nullable	100	3
+nested nullable, setting off	100	3

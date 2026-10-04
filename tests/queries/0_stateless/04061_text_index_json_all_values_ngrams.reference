@@ -30,13 +30,6 @@ Description: text GRANULARITY 100000000
 Condition: (mode: All; tokens: ["fox"])
 Parts: 1/4
 Granules: 1/4
-SELECT id FROM tab WHERE hasToken(data.key1, 'quick') ORDER BY id
-0
-2
-Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["ick", "qui", "uic"])
-Parts: 2/4
-Granules: 2/4
 -- CAST with ::String
 SELECT id FROM tab WHERE hasAllTokens(data.key1::String, 'the quick brown fox') ORDER BY id
 0
@@ -63,13 +56,6 @@ Description: text GRANULARITY 100000000
 Condition: (mode: All; tokens: ["azy", "laz"])
 Parts: 1/4
 Granules: 1/4
-SELECT id FROM tab WHERE hasToken(data.key1::String, 'quick') ORDER BY id
-0
-2
-Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["ick", "qui", "uic"])
-Parts: 2/4
-Granules: 2/4
 SELECT id FROM tab WHERE hasAnyTokens(data.key1::String, 'quick lazy') ORDER BY id
 0
 1

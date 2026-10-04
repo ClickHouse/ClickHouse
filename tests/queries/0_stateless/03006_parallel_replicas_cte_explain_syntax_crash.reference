@@ -1,14 +1,1 @@
-WITH
-    cte1 AS
-    (
-        SELECT n
-        FROM numbers_1e6__fuzz_34
-    ),
-    cte2 AS
-    (
-        SELECT n
-        FROM numbers_1e6__fuzz_33
-        PREWHERE in(n, cte1)
-    )
-SELECT count()
-FROM cte2
+WITH\n    cte1 AS\n    (\n        SELECT n\n        FROM numbers_1e6__fuzz_34\n    ),\n    cte2 AS\n    (\n        SELECT n\n        FROM numbers_1e6__fuzz_33\n        PREWHERE in(n, cte1)\n    )\nSELECT count()\nFROM cte2

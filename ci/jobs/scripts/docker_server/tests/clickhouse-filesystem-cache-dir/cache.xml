@@ -1,0 +1,8 @@
+<clickhouse>
+    <filesystem_caches>
+        <docker_test_cache>
+            <max_size>10000000</max_size>
+            <path>/mnt/clickhouse-cache/docker_test_cache</path>
+        </docker_test_cache>
+    </filesystem_caches>
+</clickhouse>

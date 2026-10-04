@@ -40,3 +40,23 @@ ${CLICKHOUSE_LOCAL} --verbose --query="select 1+1" 2>/dev/null
 # including in clickhouse-local. See https://github.com/ClickHouse/ClickHouse/pull/106191.
 echo '--- local: fixed query_id is preserved with echo-query-id ---'
 ${CLICKHOUSE_LOCAL} --query_id="04308_fixed_id" --echo-query-id --query="SELECT currentQueryID()"
+
+# --echo-query-separator prints a separator line before the formatted echo (requires --echo-formatted).
+echo '--- echo-query-separator ---'
+${CLICKHOUSE_CLIENT} --echo --echo-formatted --echo-query-separator='-- // -- // -- // --' --query="select 1+1"
+
+# The separator is ignored when the echo is not formatted (there is no formatted query to delimit).
+echo '--- echo-query-separator without echo-formatted ---'
+${CLICKHOUSE_CLIENT} --echo --echo-formatted=false --echo-query-separator='-- // -- // -- // --' --query="select 1+1"
+
+# Without the option the formatted echo is unchanged (separator disabled by default).
+echo '--- echo-formatted without separator (default) ---'
+${CLICKHOUSE_CLIENT} --echo --echo-formatted --query="select 1+1"
+
+# --echo-query-separator delimits every query in a multi-query string.
+echo '--- echo-query-separator multi-query ---'
+${CLICKHOUSE_CLIENT} --echo --echo-formatted --echo-query-separator='-- // --' --query="select 1+1; select 2+2"
+
+# Same behavior in clickhouse-local.
+echo '--- local: echo-query-separator ---'
+${CLICKHOUSE_LOCAL} --echo --echo-formatted --echo-query-separator='-- // -- // -- // --' --query="select 1+1"

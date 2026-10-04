@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Speeds up the test: estimated_recovery_time decreases over
+                 distributed_replica_error_half_life seconds per halving round.
+                 The default 60s makes recovery from 3 errors take ~120s. 10s keeps
+                 ~20 one-second poll samples (so the strict-decrease assertions stay
+                 robust) while cutting the wait to ~20s. -->
+            <distributed_replica_error_half_life>10</distributed_replica_error_half_life>
+        </default>
+    </profiles>
+</clickhouse>

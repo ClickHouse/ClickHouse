@@ -1,0 +1,4 @@
+three joins that share a kind and a strictness
+a repeated combination and a distinct one, in the same query
+05045_join_multiplicity_a_same	3	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[('INNER','ALL'),('INNER','ALL'),('INNER','ALL')]	1
+05045_join_multiplicity_b_mixed	3	['INNER','INNER','LEFT']	['ANY','ANY','ALL']	[('INNER','ANY'),('INNER','ANY'),('LEFT','ALL')]	1

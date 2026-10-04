@@ -1,0 +1,75 @@
+---
+date: 2025-11-19
+title: How to restore a replica after storage failure
+tags: ['Deployments and Scaling']
+keywords: ['restore', 'replica', 'storage failure', 'atomic database']
+description: 'This article explains how to recover data when using replicated tables in atomic databases in ClickHouse and disks/storage on one of the replica is lost/currupted.'
+---
+
+<Note>
+This guide assumes that the `<path>` parameter in your config.xml file is set to:
+
+```text
+<path>/var/lib/clickhouse/</path>
+```
+
+If you have configured a different data path, replace all instances of `/var/lib/clickhouse` in the below commands with the actual value of your `<path>` setting.
+</Note>
+
+<Steps>
+<Step title="Copy access configuration from the healthy replica" id="copy-access-config">
+Copy the contents of the `access` folder which contains local users from the healthy replica:
+
+```text
+/var/lib/clickhouse/access
+```
+</Step>
+<Step title="Back up the metadata folder from the healthy replica" id="back-up-the-metadata-folder-from-the-healthy-replica">
+1. Navigate to the ClickHouse data directory:
+
+```text
+cd /var/lib/clickhouse
+```
+
+2. Create a backup of the metadata folder (including symbolic links): The metadata directory contains DDLs for databases and tables.
+   The database directory has symlinks to `/var/lib/clickhouse/store/..` which contains all the table DDLs.
+
+```bash
+{ find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+```
+
+<Note>
+This command ensures that both the **metadata files**, and the symlink architecture are preserved in the backup.
+</Note>
+</Step>
+<Step title="Restore the metadata on the faulty replica" id="restore-the-metadata-on-the-faulty-replica">
+1. Copy the generated `backup.tar` file to the faulty replica.
+2. Extract it to the ClickHouse data directory:
+
+```text
+cd /var/lib/clickhouse/
+tar -xvPf backup.tar
+```
+</Step>
+<Step title="Create the force restore flag" id="create-force-restore-flag">
+To trigger automatic data synchronization from other replicas, create the following flag:
+
+```text
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+</Step>
+<Step title="Restart the faulty replica" id="restart-faulty-replica">
+1. Restart the ClickHouse server on the faulty node.
+2. Check the server logs, you should observe parts being downloaded from the healthy replicas:
+
+```bash
+2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+```
+</Step>
+</Steps>

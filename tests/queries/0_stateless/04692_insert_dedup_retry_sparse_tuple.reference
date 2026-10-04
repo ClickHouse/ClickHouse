@@ -1,0 +1,14 @@
+source element is sparse	1
+nested tuple, first insert	20000
+nested tuple, repeated insert deduplicated	20000
+destination element is still sparse	1
+doubly nested source element is sparse	1
+doubly nested tuple, first insert	20000
+doubly nested tuple, repeated insert deduplicated	20000
+doubly nested destination element is still sparse	1
+materialized view target, first insert	20000
+materialized view target, repeated insert deduplicated	20000
+materialized view target element is still sparse	1
+top level column is sparse	Sparse
+top level sparse, repeated insert deduplicated	20000
+insert without deduplication appends	40000

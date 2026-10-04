@@ -1,0 +1,15 @@
+---
+slug: /faq/general/mapreduce
+title: '왜 MapReduce 같은 시스템을 사용하지 않나요?'
+toc_hidden: true
+toc_priority: 110
+description: '이 페이지에서는 MapReduce 대신 ClickHouse를 사용하는 이유를 설명합니다'
+keywords: ['MapReduce']
+doc_type: 'reference'
+---
+
+MapReduce와 같은 시스템은 reduce 연산이 분산 정렬에 기반한 분산 컴퓨팅 시스템으로 볼 수 있습니다. 이 범주에서 가장 널리 사용되는 오픈소스 솔루션은 [Apache Hadoop](http://hadoop.apache.org)입니다.
+
+이러한 시스템은 지연 시간이 높기 때문에 온라인 쿼리에는 적합하지 않습니다. 다시 말해, 웹 인터페이스의 백엔드로 사용할 수 없습니다. 또한 이런 유형의 시스템은 실시간 데이터 업데이트에도 적합하지 않습니다. 일반적으로 온라인 쿼리에서는 연산 결과와 모든 중간 결과(있는 경우)가 단일 서버의 RAM에 위치하므로, 이런 경우 분산 정렬은 reduce 연산을 수행하는 최선의 방법이 아닙니다. 이때는 해시 테이블이 reduce 연산을 수행하는 최적의 방식입니다. 맵-리듀스 작업을 최적화하는 일반적인 방법은 RAM의 해시 테이블을 사용하는 사전 집계(부분 reduce)입니다. 이 최적화는 사용자가 수동으로 수행합니다. 분산 정렬은 단순한 맵-리듀스 작업을 실행할 때 성능 저하를 일으키는 주요 원인 중 하나입니다.
+
+대부분의 MapReduce 구현은 cluster에서 임의의 코드를 실행할 수 있도록 합니다. 하지만 실험을 빠르게 수행하려면 선언형 쿼리 언어가 OLAP에 더 적합합니다. 예를 들어 Hadoop에는 Hive와 Pig가 있습니다. 또한 Spark용 Cloudera Impala 또는 Shark(구식), 그리고 Spark SQL, Presto, Apache Drill도 고려할 수 있습니다. 이러한 작업을 실행할 때의 성능은 특화된 시스템과 비교하면 매우 비최적화되어 있으며, 지연 시간도 비교적 높기 때문에 이러한 시스템을 웹 인터페이스의 백엔드로 사용하는 것은 현실적이지 않습니다.

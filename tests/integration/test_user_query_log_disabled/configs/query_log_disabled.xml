@@ -1,0 +1,15 @@
+<clickhouse>
+    <access_control_improvements>
+        <select_from_system_db_requires_grant>1</select_from_system_db_requires_grant>
+    </access_control_improvements>
+
+    <!-- The `system.user_query_log` feature is disabled, and the raw query log is configured to use the
+         freed name. `system.user_query_log` is then an ordinary MergeTree table containing every user's
+         records, so it must not be readable without an explicit grant. -->
+    <query_log>
+        <enable_user_query_log>0</enable_user_query_log>
+        <database>system</database>
+        <table>user_query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>

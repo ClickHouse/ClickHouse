@@ -1,0 +1,152 @@
+---
+title: CLI での CSV アップロード
+---
+
+このページでは、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使用して、コマンドラインからローカルファイル (例: CSV) を ClickHouse Cloud サービス上のテーブルにアップロードする方法を説明します。手順の流れはコンソールのファイルアップロードウィザードと同様で、ファイルのスキーマを確認し、宛先テーブルを作成し、Query API を使って HTTP 経由でファイルを insert します。`clickhouse` binary もサービスの password も必要ありません。
+
+## 前提条件 {#cli-prerequisites}
+
+ClickHouse CLI をインストールします。
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+また、`jq` も必要です。
+
+書き込み操作には [API キー認証](/ja/products/cloud/features/admin-features/api/openapi)が必要です。OAuth ログインは読み取り専用です:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+`clickhousectl cloud auth status` で確認してください。`read/write` の scope を持つエントリが表示されるはずです。
+
+## サービスを選択する {#pick-a-service}
+
+このガイドは、すでに稼働中のサービスがあることを前提としています。まだない場合は、CLI から作成する方法を [Cloud クイックスタート](/ja/get-started/setup/cloud) で確認してください。サービスの ID は、名前を指定して次のように調べます。
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+## ファイルの準備 {#prepare-the-file}
+
+`data.csv` という名前の CSV ファイルに、次のようなテキストが入っているとします。1 行目はヘッダー行なので、対応する入力フォーマットは `CSVWithNames` です:
+
+```text title="data.csv"
+user_id,url,visited_at,duration_ms
+101,https://clickhouse.com/docs,2026-08-14 09:15:32,4210
+102,https://clickhouse.com/pricing,2026-08-14 09:16:01,1830
+101,https://clickhouse.com/cloud,2026-08-14 09:17:45,2650
+103,https://clickhouse.com/blog,2026-08-15 11:02:10,980
+102,https://clickhouse.com/docs/cloud,2026-08-15 11:05:44,3120
+```
+
+## スキーマを確認する {#inspect-the-schema}
+
+コンソールのウィザードでは各ソースフィールドの推論された型が表示されますが、CLI でこれに相当するのは、ファイルのサンプルをインラインで指定した [`format`](/ja/reference/functions/table-functions/format) テーブル関数に対する `DESCRIBE` です:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
+```
+
+最初の `query` 呼び出し時に、Query API endpoint と、その service にスコープされた API キー が自動的にプロビジョニングされます:
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+   ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
+2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
+3. │ visited_at  │ Nullable(DateTime) │              │                    │         │                  │                │
+4. │ duration_ms │ Nullable(Int64)    │              │                    │         │                  │                │
+   └─────────────┴────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+サンプルは SQL の文字列リテラルに埋め込まれるため、シングルクォートやバックスラッシュを含めることはできません。これらを含むファイルの場合は、エスケープするか、`CREATE TABLE` を手動で記述してください。
+
+## テーブルの作成 {#create-the-table}
+
+ウィザードの「Configure table」ステップで行えること — 推論された型、NULL 許容性、デフォルト値、除外するフィールド、テーブルエンジン、およびソートキー、パーティション化、主キーの式の調整 — は、ここではすべて通常の [`CREATE TABLE`](/ja/reference/statements/create/table) で表現できます。たとえば、推論された型をより厳密にし、ソートキーを指定する場合は次のようになります。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE default.website_visits (
+    user_id UInt32,
+    url String,
+    visited_at DateTime,
+    duration_ms UInt32
+  ) ENGINE = MergeTree
+  ORDER BY (user_id, visited_at)"
+```
+
+このコマンドは `OK` と出力します。代わりに既存のテーブルへ読み込む場合は、この手順をスキップしてください。
+
+## ファイルのアップロード {#upload-the-file}
+
+`INSERT ... FORMAT` は stdin からデータを読み取るため、クエリとファイルをパイプでつないで渡します:
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+このコマンドは `OK` を出力します。
+
+<Warning>
+  **クエリとデータはまとめてパイプする**
+
+  `--query` で `INSERT` を渡し、ファイルを stdin にリダイレクトまたはパイプする方法 (`--query "INSERT ..." < data.csv`) は機能しません。`--query` は stdin を読み取らないため、データはどこにも渡されません。CLI は何も挿入しないまま黙って終了するのではなく、この組み合わせをはっきりと拒否します。終了コード `1` で終了し、行は挿入されず、次のように出力されます:
+
+  ```text
+  Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
+  ```
+
+  上記のように、クエリとデータは常に 1 つのストリームとして stdin から送信してください。`--query` と競合するのは実際にデータを伴う stdin のみであるため、stdin が端末ではないスクリプトやパイプラインでも `--query` を単独で使用できます。
+</Warning>
+
+行が挿入されたことを確認します:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --json \
+  --query "SELECT count() FROM default.website_visits"
+```
+
+```text
+{"count()":5}
+```
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "SELECT * FROM default.website_visits ORDER BY visited_at"
+```
+
+```text
+   ┌─user_id─┬─url───────────────────────────────┬──────────visited_at─┬─duration_ms─┐
+1. │     101 │ https://clickhouse.com/docs       │ 2026-08-14 09:15:32 │        4210 │
+2. │     102 │ https://clickhouse.com/pricing    │ 2026-08-14 09:16:01 │        1830 │
+3. │     101 │ https://clickhouse.com/cloud      │ 2026-08-14 09:17:45 │        2650 │
+4. │     103 │ https://clickhouse.com/blog       │ 2026-08-15 11:02:10 │         980 │
+5. │     102 │ https://clickhouse.com/docs/cloud │ 2026-08-15 11:05:44 │        3120 │
+   └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
+```
+
+## その他のファイルフォーマット {#other-file-formats}
+
+同じパターンは、ClickHouse がサポートするあらゆる [入力フォーマット](/ja/reference/formats/index) で機能します。これには、コンソールのアップロードウィザードが受け付けるすべてのフォーマット (`CSV`、`JSONEachRow`、`TabSeparatedWithNames` など) が含まれます。別のフォーマットを使用する場合は、`DESCRIBE format(...)` によるスキーマ推論のステップと `INSERT ... FORMAT` ステートメントの両方でフォーマット名を一貫して変更し、そのフォーマットに合致するサンプルファイル (`TabSeparatedWithNames` なら TSV のサンプル、`JSONEachRow` なら JSON Lines のサンプルなど) を使用してください。たとえば、TSV ファイルのアップロード手順は次のようになります。
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+## クリーンアップ {#cleanup}
+
+お試しでの実行だった場合は、テーブルを削除してインポートしたデータを取り除きます。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "DROP TABLE default.website_visits"
+```

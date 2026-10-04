@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 Field createFieldFromAST(ASTPtr ast)
@@ -23,6 +24,17 @@ Field createFieldFromAST(ASTPtr ast)
 [[noreturn]] void FieldFromASTImpl::throwNotImplemented(std::string_view method) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Method {} not implemented for {}", method, getTypeName());
+}
+
+bool FieldFromASTImpl::operator == (const CustomTypeImpl & rhs) const
+{
+    if (std::string_view(getTypeName()) != std::string_view(rhs.getTypeName()))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Comparing custom types with different type names: {} and {}",
+            getTypeName(), rhs.getTypeName());
+
+    /// Compare the unmasked text: masking rewrites every credential to `[HIDDEN]`, so two values
+    /// differing only in a credential would compare equal.
+    return toString(/*show_secrets=*/ true) == rhs.toString(/*show_secrets=*/ true);
 }
 
 bool FieldFromASTImpl::isSecret() const

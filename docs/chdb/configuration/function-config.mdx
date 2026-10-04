@@ -1,0 +1,258 @@
+---
+title: 'Function-level configuration'
+sidebarTitle: 'Function config'
+slug: /chdb/configuration/function-config
+description: 'Configure execution engine and Dtype correction at the function level'
+keywords: ['chdb', 'datastore', 'function', 'config', 'Dtype', 'correction']
+doc_type: 'reference'
+---
+
+DataStore allows fine-grained control over execution at the function level, including engine selection and Dtype correction.
+
+## Function Engine Configuration {#function-engine}
+
+Override the execution engine for specific functions.
+
+### Setting Function Engines {#setting-engines}
+
+```python
+from chdb.datastore.config import function_config
+
+# Force specific functions to use chdb
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Force specific functions to use pandas
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# Set default preference
+function_config.prefer_chdb()    # Default to chdb
+function_config.prefer_pandas()  # Default to pandas
+
+# Reset to auto
+function_config.reset()
+```
+
+### When to Use {#when-to-use}
+
+**Force chdb for:**
+- Functions with better ClickHouse performance
+- Functions that benefit from SQL optimization
+- Large-scale string/datetime operations
+
+**Force pandas for:**
+- Functions with pandas-specific behavior
+- When exact pandas compatibility is required
+- Custom string operations
+
+### Example {#function-example}
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# Configure function engines
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() will use chdb
+ds['name_len'] = ds['name'].str.len()
+
+# substring() will use chdb  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() will use pandas
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+---
+
+## Overlapping Functions {#overlapping}
+
+159+ functions are available in both chdb and pandas engines:
+
+| Category | Functions |
+|----------|-----------|
+| **String** | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **Math** | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan` |
+| **DateTime** | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter` |
+| **Aggregation** | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median` |
+
+For overlapping functions, the engine is selected based on:
+1. Explicit function configuration (if set)
+2. Global execution_engine setting
+3. Auto-selection based on context
+
+---
+
+## chdb-Only Functions {#chdb-only}
+
+Some functions are only available through ClickHouse:
+
+| Category | Functions |
+|----------|-----------|
+| **Array** | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON** | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas` |
+| **URL** | `domain`, `path`, `protocol`, `extractURLParameter` |
+| **IP** | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String` |
+| **Geo** | `greatCircleDistance`, `geoDistance`, `geoToH3` |
+| **Hash** | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256` |
+| **Conditional** | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf` |
+
+These functions automatically use chdb engine regardless of configuration.
+
+---
+
+## pandas-Only Functions {#pandas-only}
+
+Some functions are only available through pandas:
+
+| Category | Functions |
+|----------|-----------|
+| **Apply** | Custom lambda functions, user-defined functions |
+| **Complex Pivot** | Pivot tables with custom aggregations |
+| **Stack/Unstack** | Complex reshaping operations |
+| **Interpolate** | Time series interpolation methods |
+
+These functions automatically use pandas engine regardless of configuration.
+
+---
+
+## Dtype Correction {#dtype-correction}
+
+Configure how DataStore corrects data types between engines.
+
+### Correction Levels {#correction-levels}
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# No correction
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Critical types only (NULL handling, boolean)
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# High priority (default) - common type mismatches
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# Medium - more aggressive correction
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# All - correct all possible types
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+### Correction Level Details {#level-details}
+
+| Level | Description | Types Corrected |
+|-------|-------------|-----------------|
+| `NONE` | No automatic correction | None |
+| `CRITICAL` | Essential corrections | NULL handling, boolean conversion |
+| `HIGH` (default) | Common corrections | Integer/float precision, datetime, string encoding |
+| `MEDIUM` | More corrections | Decimal precision, timezone handling |
+| `ALL` | Maximum correction | All type differences |
+
+### When Types Need Correction {#when-correction}
+
+Type differences can occur when:
+
+1. **ClickHouse → pandas**: Different integer sizes (Int64 vs int64)
+2. **pandas → ClickHouse**: Python objects to SQL types
+3. **NULL handling**: pandas NA vs ClickHouse NULL
+4. **Boolean**: Different boolean representations
+5. **DateTime**: Timezone differences
+
+### Example {#correction-example}
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Strict mode - expect exact type matches
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Relaxed mode - auto-fix type issues
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+---
+
+## Function Configuration API {#api}
+
+### function_config Object {#function-config-object}
+
+```python
+from chdb.datastore.config import function_config
+
+# Force engine for functions
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# Set default preference
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# Reset to default (auto)
+function_config.reset()
+
+# Check configuration
+function_config.get_engine('length')  # Returns 'chdb', 'pandas', or 'auto'
+```
+
+### Per-Call Override {#per-call}
+
+Some methods support per-call engine override:
+
+```python
+# Using engine parameter (where supported)
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+---
+
+## Best Practices {#best-practices}
+
+### 1. Start with Defaults {#start-with-defaults}
+
+```python
+# Use auto mode, let DataStore decide
+config.use_auto()
+```
+
+### 2. Configure for Specific Workloads {#configure-for-specific-workloads}
+
+```python
+# For ClickHouse-optimized string processing
+function_config.use_chdb('length', 'substring', 'concat')
+
+# For pandas-compatible string behavior
+function_config.use_pandas('upper', 'lower')
+```
+
+### 3. Use Appropriate Correction Level {#use-appropriate-correction-level}
+
+```python
+# Development: more permissive
+config.set_correction_level(CorrectionLevel.ALL)
+
+# Production: stricter
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+### 4. Test Both Engines {#test-both-engines}
+
+```python
+# Test with chdb
+config.use_chdb()
+result_chdb = process_data()
+
+# Test with pandas
+config.use_pandas()
+result_pandas = process_data()
+
+# Compare results
+assert result_chdb.equals(result_pandas)
+```

@@ -1,0 +1,12 @@
+=== the spliced node carries direction = -1 ===
+StorageOrderByElement direction=-1
+=== turning an ascending key descending is refused ===
+Code: 36
+BAD_ARGUMENTS
+refused
+=== the key is still ascending and reads stay correct ===
+0
+374750
+374750
+=== an ascending MODIFY ORDER BY through the same dialect is still accepted ===
+accepted

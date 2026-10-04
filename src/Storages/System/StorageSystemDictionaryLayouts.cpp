@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDictionaryLayouts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -16,7 +17,10 @@ ColumnsDescription StorageSystemDictionaryLayouts::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the dictionary layout, as specified in the LAYOUT clause."},
         {"is_complex", std::make_shared<DataTypeUInt8>(), "Whether the layout requires a complex key (a key consisting of several attributes or of a non-integer type)."},
-        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the dictionary layout does."},
+        {"description", std::make_shared<DataTypeString>(),
+            "A description of what the dictionary layout does. "
+            "For layouts that have a dedicated documentation page, this contains the full Markdown body of that page; "
+            "for the remaining layouts it is a concise summary."},
         {"syntax", std::make_shared<DataTypeString>(), "How the layout is specified in the LAYOUT clause of a CREATE DICTIONARY query."},
         {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
         {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the layout was first introduced, in the form major.minor."},
@@ -47,3 +51,6 @@ void StorageSystemDictionaryLayouts::fillData(MutableColumns & res_columns, Cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaryLayouts) }

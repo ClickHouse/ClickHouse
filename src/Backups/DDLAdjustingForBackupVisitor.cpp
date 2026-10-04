@@ -1,6 +1,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <Databases/DatabaseReplicatedSettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -71,6 +72,18 @@ namespace
         }
     }
 
+    void visitStorageReplicatedDatabaseEngine(ASTStorage & storage)
+    {
+        /// Precondition: engine_name == "Replicated"
+
+        /// A definition written by an older server may hold `logs_to_keep` above `UInt32::max`, which `CREATE` now
+        /// rejects. Store the clamped value, the one the database actually runs with, so that the definition in the
+        /// backup is accepted back, and so that a definition from an older backup compares equal to the definition
+        /// of the database restored from it.
+        if (storage.settings)
+            DatabaseReplicatedSettings::checkOrClampLogsToKeep(*storage.settings, /*clamp_on_overflow=*/ true);
+    }
+
     void visitStorage(ASTStorage & storage, const DDLAdjustingForBackupVisitor::Data & data)
     {
         if (!storage.engine)
@@ -81,6 +94,8 @@ namespace
             visitStorageSystemTableEngine(storage, data);
         else if (engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree"))
             visitStorageReplicatedTableEngine(storage, data);
+        else if (engine_name == "Replicated")
+            visitStorageReplicatedDatabaseEngine(storage);
     }
 
     void visitCreateQuery(ASTCreateQuery & create, const DDLAdjustingForBackupVisitor::Data & data)

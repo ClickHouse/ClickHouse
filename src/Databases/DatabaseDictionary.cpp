@@ -169,7 +169,32 @@ void registerDatabaseDictionary(DatabaseFactory & factory)
             args.context);
     };
     factory.registerDatabase("Dictionary", create_fn, {}, Documentation{
-        .description = "A read-only database that automatically exposes every configured dictionary as a table.",
+        .description = R"DOCS_MD(
+The `Dictionary` database engine exposes every configured [dictionary](/reference/statements/create/dictionary) as a read-only table. It is useful when a query needs to read or join dictionary data using ordinary table syntax.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE dictionaries
+ENGINE = Dictionary;
+```
+
+## Usage {#usage}
+
+After creating the database, use a configured dictionary name as the table name:
+
+```sql
+SELECT *
+FROM dictionaries.products;
+```
+
+The database has no tables of its own. Its tables are the dictionaries configured on the server, so creating, dropping, or altering tables in the database is not supported. Manage the dictionaries themselves with [`CREATE DICTIONARY`](/reference/statements/create/dictionary) or the server configuration.
+
+## See also {#see-also}
+
+- [Dictionaries](/concepts/features/dictionaries/index)
+- [`Dictionary` table engine](/reference/engines/table-engines/special/dictionary)
+)DOCS_MD",
         .syntax = "ENGINE = Dictionary",
         .related = {}});
 }

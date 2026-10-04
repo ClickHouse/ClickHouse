@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- ^ polygon clipping uses the wagyu contrib, which is disabled in the fast-test (ENABLE_LIBRARIES=0) build.
 -- Tests for MVTEncodeGeom geometry clipping (the buffer and clip arguments) and the tile bounding-box
 -- helpers MVTBoundingBox / MVTBoundingBoxMercator.
 
@@ -83,3 +85,33 @@ SELECT MVTEncodeGeom((13.37, 52.52)::Point, CAST(10, 'Nullable(UInt8)'), 550, 33
 
 SELECT '-- the largest valid tile index for a zoom is accepted';
 SELECT MVTBoundingBox(1, 1, 1) IS NOT NULL, MVTEncodeGeom((13.37, 52.52)::Point, 1, 1, 0, 4096, 0, false) IS NOT NULL;
+
+SELECT '-- MVTEncodeGeom: a point that rounds onto the tile edge is kept (snapped to the grid before clipping)';
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0);
+
+SELECT '-- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments';
+SELECT MVTEncodeGeom([(0.005, 10.0), (-0.005, 20.0), (-0.006, 30.0), (0.004, 40.0), (0.005, 50.0)]::LineString, 2, 2, 1, 4096, 0);
+
+SELECT '-- MVTEncodeGeom: a self-intersecting ring inside the tile is repaired into valid polygons (it was dropped)';
+SELECT wkt(MVTEncodeGeom([[(10.0, 10.0), (50.0, 50.0), (10.0, 50.0), (50.0, 10.0), (10.0, 10.0)]]::Polygon, 2, 2, 1));
+
+SELECT '-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill';
+SELECT wkt(MVTEncodeGeom([[(15.403, 0.667), (15.335, 0.28), (15.398, -0.186), (15.331, 0.374), (15.403, 0.667)]]::Polygon, 2, 2, 1));
+
+SELECT '-- MVTEncodeGeom: a self-intersecting ring crossing the tile is repaired into two valid polygons (it was emitted as one self-intersecting ring)';
+SELECT wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1));
+
+SELECT '-- MVTEncodeGeom: a polygon far larger than the tile renders its in-tile portion at high zoom (clipped to the tile box)';
+SELECT wkt(MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608));
+
+SELECT '-- MVTEncodeGeom: a polygon entirely outside the tile becomes NULL';
+SELECT MVTEncodeGeom([[(100.0, 10.0), (150.0, 50.0), (100.0, 50.0), (150.0, 10.0), (100.0, 10.0)]]::Polygon, 2, 0, 0) IS NULL;
+
+SELECT '-- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping';
+SELECT wkt(MVTEncodeGeom([[(13.3, 52.4), (13.7, 52.4), (13.7, 52.7), (13.3, 52.7), (13.3, 52.4)], [(13.45, 52.5), (13.55, 52.5), (13.55, 52.6), (13.45, 52.6), (13.45, 52.5)]]::Polygon, 10, 550, 335));
+
+SELECT '-- MVTEncodeGeom: clip=false still validates a self-intersecting polygon through wagyu (repaired into valid polygons, like PostGIS)';
+SELECT wkt(MVTEncodeGeom([[(10.0, 10.0), (50.0, 50.0), (10.0, 50.0), (50.0, 10.0), (10.0, 10.0)]]::Polygon, 2, 2, 1, 4096, 0, false));
+
+SELECT '-- MVTEncodeGeom: clip=false validates but does not clip to the tile (the repaired geometry keeps its out-of-tile coordinates)';
+SELECT wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1, 4096, 0, false));

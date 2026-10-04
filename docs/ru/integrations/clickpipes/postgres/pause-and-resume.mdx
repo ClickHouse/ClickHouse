@@ -1,0 +1,55 @@
+---
+title: 'Приостановка и возобновление ClickPipe для Postgres'
+description: 'Приостановка и возобновление ClickPipe для Postgres'
+sidebarTitle: 'Приостановить таблицу'
+slug: /integrations/clickpipes/postgres/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В некоторых случаях бывает полезно приостановить ClickPipe для Postgres. Например, чтобы выполнить анализ существующих данных в неизменном состоянии. Или если вы проводите обновление Postgres. Вот как приостановить и затем возобновить ClickPipe для Postgres.
+
+<div id="pause-clickpipe-steps">
+  ## Как приостановить ClickPipe для Postgres
+</div>
+
+1. На вкладке «Источники данных» выберите ClickPipe для Postgres, который хотите приостановить.
+2. Перейдите на вкладку **Настройки**.
+3. Нажмите кнопку **Pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Появится диалоговое окно подтверждения. Ещё раз нажмите **Pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Перейдите на вкладку **Метрики**.
+5. Примерно через 5 секунд (или после обновления страницы) статус пайпа должен измениться на **Приостановлен**.
+
+<Warning>
+  Приостановка ClickPipe для Postgres не остановит рост числа слотов репликации.
+</Warning>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Шаги по возобновлению ClickPipe для Postgres
+</div>
+
+1. На вкладке Источники данных нажмите на ClickPipe для Postgres, который нужно возобновить. Изначально status mirror должен быть **приостановлен**.
+2. Перейдите на вкладку **Настройки**.
+3. Нажмите кнопку **Resume**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Должно появиться диалоговое окно подтверждения. Нажмите **Resume** ещё раз.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Перейдите на вкладку **Метрики**.
+6. Примерно через 5 секунд (а также после обновления страницы) status пайпа должен стать **Running**.

@@ -1,0 +1,34 @@
+<test>
+    <!-- Pinned so that the per-partition skip of the final `DISTINCT` engages on any runner: with the
+         default max_threads of a large machine the 16-partition tables would fail its
+         partitions >= max_threads / 2 heuristic. -->
+    <settings>
+        <max_threads>16</max_threads>
+    </settings>
+
+    <!-- Preliminary-`DISTINCT` abandoning (`allow_preliminary_distinct_abandoning`):
+         every key is unique, so the preliminary `DISTINCT` removes nothing; it abandons after its
+         observation window, freeing the per-stream hash tables that otherwise hold a second copy of
+         all the unique keys and re-hash every row before the final `DISTINCT` deduplicates them again.
+         The tables are partitioned by a function of the key so that the final `DISTINCT` skips stream
+         merging (`allow_distinct_partitions_independently`) and runs in parallel: with a single-stream
+         final its serial hashing dominates the runtime and would mask the win. -->
+    <create_query>CREATE TABLE t_distinct_abandon_int (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+
+    <!-- The same shape with a `LowCardinality(Nullable)` key: abandoning also frees the per-dictionary
+         seen-index bookkeeping, which is pure overhead when nearly every row carries a new value.
+         All NULLs land in one partition, so only a small NULL share keeps the layout balanced. -->
+    <create_query>CREATE TABLE t_distinct_abandon_lc (a LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(coalesce(a, '')) % 16</create_query>
+
+    <fill_query>INSERT INTO t_distinct_abandon_int SELECT number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_distinct_abandon_int FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_distinct_abandon_lc SELECT if(number % 16 = 0, NULL, concat('k', toString(number))) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_distinct_abandon_lc FINAL</fill_query>
+
+    <query>SELECT DISTINCT a FROM t_distinct_abandon_int FORMAT Null</query>
+    <query>SELECT DISTINCT a FROM t_distinct_abandon_lc FORMAT Null</query>
+
+    <drop_query>DROP TABLE t_distinct_abandon_int</drop_query>
+    <drop_query>DROP TABLE t_distinct_abandon_lc</drop_query>
+</test>

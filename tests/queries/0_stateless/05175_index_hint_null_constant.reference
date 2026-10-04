@@ -1,0 +1,37 @@
+0
+0
+0
+0
+0
+0
+0
+1
+a truthy constant that does not fit UInt8
+3
+3
+3
+3
+3
+3
+a Nothing-typed argument
+3
+10
+10
+1
+a NULL that does not fold, and a NULL beside a surviving virtual-column atom
+100
+100
+0
+25
+25
+100
+100
+100
+controls
+100
+100
+1
+10
+1
+the hint still narrows the read
+1

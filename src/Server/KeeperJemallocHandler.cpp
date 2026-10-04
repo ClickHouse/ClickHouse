@@ -4,6 +4,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
@@ -12,13 +13,13 @@
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
+#include <Common/filesystemHelpers.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <base/scope_guard.h>
-#include <filesystem>
 #include <optional>
 #endif
 
@@ -47,9 +48,9 @@ void KeeperJemallocWebUIHandler::handleRequest(
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
 }
 
 void KeeperJemallocRedirectHandler::handleRequest(
@@ -96,12 +97,7 @@ try
     }
 
     auto raw_file = std::string(Jemalloc::flushProfile("/tmp/jemalloc_keeper"));
-    SCOPE_EXIT({
-        std::error_code ec;
-        std::filesystem::remove(raw_file, ec);
-        if (ec)
-            LOG_WARNING(getLogger("KeeperJemallocProfileHandler"), "Failed to remove temporary heap profile {}: {}", raw_file, ec.message());
-    });
+    SCOPE_EXIT({ FS::tryDelete(raw_file, getLogger("KeeperJemallocProfileHandler")); });
 
     std::string output;
 

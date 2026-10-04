@@ -1,5 +1,8 @@
--- Tags: long
+-- Tags: long, no-random-merge-tree-settings
+-- no-random-merge-tree-settings: the EXPLAIN/index output depends on the default
+-- compression codec, which is randomized server-side; this pins it to the LZ4 default.
 
+set explain_query_plan_default='legacy';
 set optimize_read_in_order=1;
 set enable_json_type=1;
 set allow_experimental_variant_type=1;

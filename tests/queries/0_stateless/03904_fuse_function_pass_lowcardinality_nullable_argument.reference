@@ -28,45 +28,13 @@ SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'LowCardinality(Nulla
 SET enable_analyzer = 1;
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
-SELECT multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`
-FROM
-(
-    SELECT __table2.b AS b
-    FROM default.test AS __table2
-) AS __table1
+SELECT multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`\nFROM\n(\n    SELECT __table2.b AS b\n    FROM default.test AS __table2\n) AS __table1
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT avg(b) * 3, (sum(b) + 1) + count(b), count(b) * count(b), count() IGNORE NULLS FROM (SELECT b FROM test);
-SELECT
-    multiply(avg(__table1.b), 3) AS `multiply(avg(b), 3)`,
-    plus(plus(sum(__table1.b), 1), count(__table1.b)) AS `plus(plus(sum(b), 1), count(b))`,
-    multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`,
-    count() AS `count()`
-FROM
-(
-    SELECT __table2.b AS b
-    FROM default.test AS __table2
-) AS __table1
+SELECT\n    multiply(avg(__table1.b), 3) AS `multiply(avg(b), 3)`,\n    plus(plus(sum(__table1.b), 1), count(__table1.b)) AS `plus(plus(sum(b), 1), count(b))`,\n    multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`,\n    count() AS `count()`\nFROM\n(\n    SELECT __table2.b AS b\n    FROM default.test AS __table2\n) AS __table1
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT sum(b), count(b), sum(a), count(a) FROM (SELECT a, b FROM test);
-SELECT
-    sum(__table1.b) AS `sum(b)`,
-    count(__table1.b) AS `count(b)`,
-    tupleElement(sumCount(__table1.a), 1) AS `sum(a)`,
-    tupleElement(sumCount(__table1.a), 2) AS `count(a)`
-FROM
-(
-    SELECT
-        __table2.a AS a,
-        __table2.b AS b
-    FROM default.test AS __table2
-) AS __table1
+SELECT\n    sum(__table1.b) AS `sum(b)`,\n    count(__table1.b) AS `count(b)`,\n    tupleElement(sumCount(__table1.a), 1) AS `sum(a)`,\n    tupleElement(sumCount(__table1.a), 2) AS `count(a)`\nFROM\n(\n    SELECT\n        __table2.a AS a,\n        __table2.b AS b\n    FROM default.test AS __table2\n) AS __table1
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'LowCardinality(Nullable(Int32))') AS a) t;
-SELECT
-    sum(__table1.a) AS `sum(a)`,
-    count(__table1.a) AS `count(a)`
-FROM
-(
-    SELECT CAST(materialize(1), \'LowCardinality(Nullable(Int32))\') AS a
-    FROM system.one AS __table2
-) AS __table1
+SELECT\n    sum(__table1.a) AS `sum(a)`,\n    count(__table1.a) AS `count(a)`\nFROM\n(\n    SELECT CAST(materialize(1), \'LowCardinality(Nullable(Int32))\') AS a\n    FROM system.one AS __table2\n) AS __table1

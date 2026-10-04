@@ -1,0 +1,14 @@
+--- the separator between two digit groups is an element with no content
+return groups.join('<span class="num-sep"></span>');
+--- its width is a quarter of a digit: an inline-block box measured in `ch`
+                    display: inline-block;
+                    width: 0.25ch;
+--- the leading group is the short one, and the rest are groups of three
+    const head = digits.length % 3 || 3;
+    for (let i = head; i < digits.length; i += 3) { groups.push(digits.slice(i, i + 3)); }
+--- a numeric cell of at least five digits is grouped (as in `clickhouse-client`), shorter ones are not
+if (this._column_is_number[name] && text.match(/^\d{5,}$/))
+--- and so is a row number of at least five digits
+if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }
+--- the value the cell reports to the filter menu is the raw text, not the grouped rendering
+        td._filterText = text;

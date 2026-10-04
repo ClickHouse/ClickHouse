@@ -1,0 +1,54 @@
+<test>
+    <!-- The values are deliberately random and much wider than the keys. The paired queries
+         keep the predicate identical and toggle only optimize_functions_to_subcolumns, so the
+         comparison exposes both elapsed time and ProfileEvents read_bytes/read_compressed_bytes. -->
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_has_subcolumn_perf (id UInt64, m Map(String, String))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_has_subcolumn_perf
+        SELECT number AS id,
+               mapFromArrays(
+                   arrayMap(i -> 'k' || toString(i), range(16)),
+                   arrayMap(i -> randomString(64), range(16))) AS m
+        FROM numbers_mt(1000000)
+    </fill_query>
+
+    <!-- The key is present in every row, and the missing key is absent in every row. Both
+         predicates scan the complete keys stream while the baseline also reads all values. -->
+    <query tag="has Map key, optimized">
+        SELECT count() FROM map_has_subcolumn_perf
+        WHERE has(m, 'k15')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+    <query tag="has Map key, baseline">
+        SELECT count() FROM map_has_subcolumn_perf
+        WHERE has(m, 'k15')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+    <query tag="notHas Map key, optimized">
+        SELECT count() FROM map_has_subcolumn_perf
+        WHERE notHas(m, 'missing')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+    <query tag="notHas Map key, baseline">
+        SELECT count() FROM map_has_subcolumn_perf
+        WHERE notHas(m, 'missing')
+        FORMAT Null
+        SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0, max_threads = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS map_has_subcolumn_perf</drop_query>
+</test>

@@ -59,6 +59,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::INTERSERVER_HTTP:
             case Type::INTERSERVER_HTTPS:
             case Type::ARROW_FLIGHT:
+            case Type::ICEBERG_REST_CATALOG:
                 return true;
             default:
                 return false;
@@ -154,6 +155,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "cloud.port")
         port_type = Type::CLOUD;
+
+    else if (port_name == "iceberg_rest_catalog.port")
+        port_type = Type::ICEBERG_REST_CATALOG;
 
     else
         return false;

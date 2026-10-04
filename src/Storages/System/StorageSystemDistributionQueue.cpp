@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,78 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-}
-
-
-namespace
-{
-
-using namespace DB;
-
-/// Drop "password" from the path.
-///
-/// In case of use_compact_format_in_distributed_parts_names=0 the path format is:
-///
-///     user[:password]@host:port#default_database format
-///
-/// And password should be masked out.
-///
-/// See:
-/// - Cluster::Address::fromFullString()
-/// - Cluster::Address::toFullString()
-std::string maskDataPath(const std::string & path)
-{
-    std::string masked_path = path;
-
-    if (!masked_path.ends_with('/'))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path format");
-
-    masked_path.pop_back();
-
-    size_t node_pos = masked_path.rfind('/');
-    /// Loop through each node, that separated with a comma
-    while (node_pos != std::string::npos)
-    {
-        ++node_pos;
-
-        size_t user_pw_end = masked_path.find('@', node_pos);
-        if (user_pw_end == std::string::npos)
-        {
-            /// Likely new format (use_compact_format_in_distributed_parts_names=1)
-            return path;
-        }
-
-        size_t pw_start = masked_path.find(':', node_pos);
-        if (pw_start > user_pw_end)
-        {
-            /// No password in path
-            return path;
-        }
-        ++pw_start;
-
-        size_t pw_length = user_pw_end - pw_start;
-        /// Replace with a single '*' to hide even the password length.
-        masked_path.replace(pw_start, pw_length, 1, '*');
-
-        /// "," cannot be in the node specification since it will be encoded in hex.
-        node_pos = masked_path.find(',', node_pos);
-    }
-
-    masked_path.push_back('/');
-
-    return masked_path;
-}
-
-}
 
 namespace DB
 {
@@ -121,7 +50,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain distributed tables
         if (db.second->isExternal())
@@ -188,7 +117,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
-            res_columns[col_num++]->insert(maskDataPath(status.path));
+            res_columns[col_num++]->insert(status.path);
             res_columns[col_num++]->insert(status.is_blocked);
             res_columns[col_num++]->insert(status.error_count);
             res_columns[col_num++]->insert(status.files_count);
@@ -206,3 +135,6 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDistributionQueue) }

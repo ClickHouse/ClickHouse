@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_sparse_pk_truncation;
 
 CREATE TABLE t_sparse_pk_truncation
@@ -13,6 +15,8 @@ ORDER BY (c0, c1)
 SETTINGS index_granularity = 1;
 
 INSERT INTO t_sparse_pk_truncation VALUES (1, 1), (2, 2), (3, 3), (4, 4);
+
+SET optimize_redundant_comparisons = 0;
 
 -- { echoOn }
 

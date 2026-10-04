@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# In a FileLog directory, a file that cannot be opened and a file with lines that do not parse
+# (default handle_error_mode) must not stop the table: both are logged and the other rows still arrive.
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
+target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_target.jsonl
+bad=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_bad.jsonl
+sel_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel
+sel_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sel_target.jsonl
+ren_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ren
+ovr_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr
+ovr_target=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ovr_target.jsonl
+skip_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_skip
+rm -rf "${logs_dir:?}" "${target}" "${bad}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}" "${skip_dir:?}"
+mkdir -p "${logs_dir}" "${sel_dir}" "${ren_dir}" "${ovr_dir}" "${skip_dir}"
+
+function wait_for_rows()
+{
+    for _ in {1..120}; do
+        [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM dst')" -ge "$1" ] && return
+        sleep 0.5
+    done
+}
+
+function wait_for_value()
+{
+    for _ in {1..120}; do
+        [ "$(${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = $2) FROM $1")" -ge 1 ] && return
+        sleep 0.5
+    done
+}
+
+printf '{"a":1}\n{"a":2}\n' > "${logs_dir}/good.jsonl"
+printf '{"a":100}\n' > "${target}"
+ln -s "${target}" "${logs_dir}/broken.jsonl"
+
+# One stream and one record per poll: a run of broken lines then makes polls that return no rows.
+# A short backoff bounds how soon a file that could not be opened is retried.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log (a UInt64) ENGINE = FileLog('${logs_dir}/', 'JSONEachRow')
+    SETTINGS max_threads = 1, poll_max_batch_size = 1,
+             poll_directory_watch_events_backoff_init = 500, poll_directory_watch_events_backoff_max = 1000"
+# The table tracks broken.jsonl; once its target is gone, the file cannot be opened.
+rm "${target}"
+
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst (file String, a UInt64) ENGINE = MergeTree ORDER BY (file, a)"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv TO dst AS SELECT _filename AS file, a FROM file_log"
+# An aggregate without GROUP BY gives one row per block it receives, so an empty block would show up as 0.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_count (c UInt64) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_count TO dst_count AS SELECT count() AS c FROM file_log"
+
+wait_for_rows 2
+${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst ORDER BY file, a"
+
+# The file becomes readable again without any event in the directory: it is retried and read.
+printf '{"a":100}\n' > "${target}"
+wait_for_rows 3
+${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'broken.jsonl'"
+
+# A file with lines that do not parse is moved into the directory, as logrotate does with a compressed log.
+# No later event follows, so its last line arrives only if reading continues past the broken lines.
+{ echo '{"a":10}'; for _ in {1..50}; do echo 'not json'; done; echo '{"a":20}'; } > "${bad}"
+mv "${bad}" "${logs_dir}/bad.jsonl"
+wait_for_rows 5
+${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'bad.jsonl' ORDER BY a"
+
+# Direct reads of a single-file table, which has no directory watcher: a file whose symlink target is gone is skipped
+# and logged once, a target created again is read from its start, with the old inode even if the table is reloaded
+# first and with a new inode not again after a reload, and a record that does not parse fails the query.
+printf '{"a":200}\n' > "${sel_target}"
+ln -s "${sel_target}" "${sel_dir}/link.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_sel (a UInt64) ENGINE = FileLog('${sel_dir}/link.jsonl', 'JSONEachRow')"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+# The target is removed and created again with the same inode, as a file system that reuses inode numbers does:
+# a second link keeps the inode while the name is gone, the content is rewritten through it and linked back.
+ln "${sel_target}" "${sel_target}.old"
+rm "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf '{"a":201}\n' > "${sel_target}.old"
+ln "${sel_target}.old" "${sel_target}"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+# The target is removed again and created with a new inode, because `.old` still holds the old one.
+rm "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf '{"a":202}\n' > "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel"
+printf 'not json\n' >> "${sel_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_sel" 2>&1 \
+    | grep -o -m1 'CANNOT_PARSE_INPUT_ASSERTION_FAILED'
+
+# A file renamed in a watched directory keeps its offset even if the next round finds its old name gone:
+# a direct SELECT reads only the first records, then the file is renamed before a view starts reading.
+for i in {300..309}; do echo "{\"a\":$i}"; done > "${ren_dir}/r.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_ren (a UInt64) ENGINE = FileLog('${ren_dir}/', 'JSONEachRow')
+    SETTINGS max_block_size = 1, poll_max_batch_size = 1"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_ren LIMIT 1"
+mv "${ren_dir}/r.jsonl" "${ren_dir}/r.jsonl.1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_ren (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_ren TO dst_ren AS SELECT a FROM file_log_ren"
+wait_for_value dst_ren 309
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = 300), countIf(a = 309) FROM dst_ren"
+
+# A file moved over a symlink that cannot be opened keeps its own offset.
+printf '{"a":600}\n' > "${ovr_dir}/b.jsonl"
+printf '{"a":500}\n' > "${ovr_target}"
+ln -s "${ovr_target}" "${ovr_dir}/l.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_ovr (a UInt64) ENGINE = FileLog('${ovr_dir}/', 'JSONEachRow')"
+rm "${ovr_target}"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_ovr"
+mv "${ovr_dir}/b.jsonl" "${ovr_dir}/l.jsonl"
+printf '{"a":601}\n' >> "${ovr_dir}/l.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_ovr (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_ovr TO dst_ovr AS SELECT a FROM file_log_ovr"
+wait_for_value dst_ovr 601
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(a = 600), countIf(a = 601) FROM dst_ovr"
+
+# Records that do not parse are reported per file, also when one read covers two files.
+for _ in {1..3}; do echo 'not json'; done > "${skip_dir}/x1.jsonl"
+for _ in {1..4}; do echo 'not json'; done > "${skip_dir}/x2.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_skip (a UInt64) ENGINE = FileLog('${skip_dir}/', 'JSONEachRow') SETTINGS max_threads = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_skip (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_skip TO dst_skip AS SELECT a FROM file_log_skip"
+skipped="SELECT extract(message, 'of file ([^ ]+) that') AS file, sum(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records'))) AS n
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
+        AND message LIKE 'Skipped % records of file %'
+    GROUP BY file ORDER BY file"
+for _ in {1..120}; do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT sum(n) FROM (${skipped})")" -ge 7 ] && break
+    sleep 0.5
+done
+${CLICKHOUSE_CLIENT} -q "${skipped}"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0, countIf(c = 0) FROM dst_count"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT countIf(message LIKE 'Cannot open file %broken.jsonl%') > 0,
+           sumIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%'),
+           countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49,
+           maxIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%') <= 10
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT countIf(message LIKE 'Cannot open file %link.jsonl%')
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_count"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_count"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_sel"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ren"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_ovr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_ovr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_ovr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_skip"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_skip"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_skip"
+rm -rf "${logs_dir:?}" "${target}" "${sel_dir:?}" "${sel_target}" "${sel_target}.old" "${ren_dir:?}" "${ovr_dir:?}" "${ovr_target}" "${skip_dir:?}"

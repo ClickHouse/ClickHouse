@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -207,7 +208,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             canceled_cost = ptr->canceled_cost.load();
             rejected_cost = ptr->rejected_cost.load();
             busy_periods = ptr->busy_periods.load();
-            throughput = ptr->throughput.rate(static_cast<double>(clock_gettime_ns())/1e9);
+            throughput = ptr->getThroughput();
         }
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {
@@ -292,3 +293,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemScheduler) }

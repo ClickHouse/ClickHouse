@@ -1,0 +1,27 @@
+200000
+parallel
+0
+3
+3
+0
+3
+1
+0
+0
+0
+Sparse
+1
+50000	123
+0
+Sparse
+1
+50000	64
+0
+10000	1024
+0
+reason: estimated block size
+3064	2100152
+0
+3
+3
+0

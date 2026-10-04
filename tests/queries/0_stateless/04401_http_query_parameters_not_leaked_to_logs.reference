@@ -1,0 +1,9 @@
+--- secret values must NOT appear in text_log ---
+0
+0
+--- a percent-encoded sensitive name (pass%77ord -> password) must also be redacted ---
+0
+--- the Request URI line for the secret param must be logged with [HIDDEN] ---
+1
+--- a non-sensitive parameter value is still visible ---
+1

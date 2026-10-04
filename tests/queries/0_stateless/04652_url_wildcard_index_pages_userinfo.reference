@@ -1,0 +1,2 @@
+url_wildcard_plain	URL(\'http://127.0.0.1:1/dir/sub/**/part*.tsv\', \'TSV\')
+url_wildcard_userinfo	URL(\'sub/**/part*.tsv\', \'TSV\')

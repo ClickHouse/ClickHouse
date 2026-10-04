@@ -1,0 +1,9 @@
+<clickhouse>
+    <s3>
+        <disk_client_replacement_endpoint>
+            <endpoint>http://minio1:9001/root/data/disk_client_replacement</endpoint>
+            <access_key_id>wrong_key</access_key_id>
+            <secret_access_key>wrong_secret</secret_access_key>
+        </disk_client_replacement_endpoint>
+    </s3>
+</clickhouse>

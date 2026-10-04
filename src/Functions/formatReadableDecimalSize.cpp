@@ -27,12 +27,12 @@ SELECT
     formatReadableDecimalSize(filesize_bytes) AS filesize
         )",
         R"(
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB    │
-│        1048576 │ 1.05 MB    │
-│      192851925 │ 192.85 MB  │
-└────────────────┴────────────┘
+┌─filesize_bytes─┬─filesize──┐
+│              1 │ 1.00 B    │
+│           1024 │ 1.02 KB   │
+│        1048576 │ 1.05 MB   │
+│      192851925 │ 192.85 MB │
+└────────────────┴───────────┘
         )"
     },
     {

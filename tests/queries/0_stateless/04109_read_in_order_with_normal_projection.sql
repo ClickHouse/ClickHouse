@@ -1,10 +1,10 @@
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET read_in_order_use_virtual_row = 1;
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_for_non_replicated_merge_tree = 0;
@@ -18,7 +18,7 @@ CREATE TABLE mt
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity = 1, auto_statistics_types = 'minmax, uniq';
+SETTINGS index_granularity = 1, auto_statistics_types = 'basic, uniq';
 
 INSERT INTO mt SELECT 1, 1;
 INSERT INTO mt SELECT 2, 2;

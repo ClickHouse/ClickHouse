@@ -1,0 +1,23 @@
+openSSL:
+  server:
+    certificateFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.crt'
+    privateKeyFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.key'
+    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
+    loadDefaultCAFile: true
+    verificationMode: 'none'
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+    # Lexes, but names only a TLS 1.3 suite, so it selects no TLS 1.2 or older
+    # cipher. SSL_CTX_set_cipher_list reports failure for this, and it must be
+    # tolerated rather than rejected.
+    cipherList: 'TLS_AES_256_GCM_SHA384'
+  client:
+    certificateFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.crt'
+    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
+    loadDefaultCAFile: true
+    verificationMode: 'relaxed'
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+    cipherList: 'TLS_AES_256_GCM_SHA384'

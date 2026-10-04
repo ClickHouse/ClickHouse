@@ -1,0 +1,24 @@
+-- the first row makes the column Int64, a REAL value in a later row fails the read
+x	Nullable(Int64)					
+-- a TEXT value in an Int64 column fails as well
+-- the first row makes the column Float64, a small INTEGER value converts exactly and is read
+x	Nullable(Float64)					
+1.5
+2
+3
+-- an INTEGER value beyond 2^53 does not convert exactly to Float64 and fails the read
+-- a TEXT value in a Float64 column fails the read
+-- mixed values are read when the column is declared as String or cast to text in SQLite
+1
+1.5
+1.5
+1	Nullable(String)
+1.5	Nullable(String)
+1.5	Nullable(String)
+-- a declared column keeps its declared type contract and is read as before
+2	Nullable(Int64)
+3	Nullable(Int64)
+-- an explicitly declared numeric type over an undeclared column is enforced the same way
+2
+4
+6

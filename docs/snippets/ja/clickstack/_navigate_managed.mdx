@@ -1,0 +1,37 @@
+---
+title: マネージド版のナビゲーション
+---
+
+ClickStack UI (HyperDX) にアクセスするには、[Launch ClickStack] を選択します。自動的に認証され、リダイレクトされます。
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    OpenTelemetry データ用のデータソースはあらかじめ作成されています。
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+
+  <Tab title="Vector">
+    Vector を使用している場合は、データソースを自分で作成する必要があります。初回ログイン時に作成を求められます。以下に、ログ用データソースの設定例を示します。
+
+    <img src="/images/clickstack/create-vector-datasource.webp" alt="" />
+
+    この設定は、タイムスタンプとして `time_local` カラムを使用する Nginx 形式のスキーマを前提としています。可能であれば、このカラムには主キーで宣言されたタイムスタンプカラムを指定してください。**このカラムは必須です**。
+
+    また、ログビューで返すカラムを明示的に定義するため、`Default SELECT` を更新することも推奨します。service name、log level、body カラムなどの追加フィールドが利用可能な場合は、それらも設定できます。タイムスタンプの表示カラムが、テーブルの主キーで使用され、上で設定したカラムと異なる場合は、それも上書きできます。
+
+    上記の例では、データに `Body` カラムは存在しません。その代わり、利用可能なフィールドから Nginx のログ行を再構築する SQL expression を使って定義しています。
+
+    その他のオプションについては、[configuration reference](/ja/clickstack/managing/config) を参照してください。
+
+    作成が完了すると、Search view に移動し、すぐにデータの確認を開始できます。
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+</Tabs>
+
+<br />
+
+以上で完了です。🎉
+
+さっそく ClickStack を活用してみましょう。ログやトレースを検索し、ログ・トレース・メトリクスの相関をリアルタイムで確認し、ダッシュボードを作成し、サービスマップを確認し、イベントデルタやパターンを見つけ、アラートを設定して問題を未然に把握できます。

@@ -4,6 +4,7 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
@@ -68,7 +69,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         const auto & part = future_part->parts[0];
-        partition = part->partition.serializeToString(part->getMetadataSnapshot());
+        partition = part->partition.serializeToString(*part);
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
@@ -133,7 +134,9 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
+    /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
+    thread_group->memory_tracker.setDriftExpected();
+    setCurrentQueryMemoryDriftExpected();
 }
 
 }

@@ -1,0 +1,25 @@
+1	42
+1	MATERIALIZED	JSONExtractUInt(event, \'x\')
+2	7
+2	DEFAULT	7
+3	ALIAS	length(event)	cc
+4	EPHEMERAL	5	cc
+5		
+5	7
+6	42
+6	MATERIALIZED	cc	CODEC(T64, LZ4)
+7single	42	MATERIALIZED
+7notype	42	MATERIALIZED
+7removenotype	
+7typechange	42
+7typechange	43
+7typechange	UInt64	MATERIALIZED	JSONExtractUInt(event, \'x\')
+7restate	42	MATERIALIZED
+7codeconly	42	MATERIALIZED
+7enum	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)
+8set	42
+8set	UInt64	MATERIALIZED	JSONExtractUInt(event, \'x\')
+8remove	UInt64	
+8remove	7
+11	Int8	
+12	MATERIALIZED	k + 1

@@ -1,0 +1,332 @@
+---
+position: 6
+slug: /clickhouse-operator/guides/tls
+title: 使用 TLS 保护集群
+keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'security', 'certificates']
+description: '介绍如何使用 cert-manager 通过 TLS 保护 ClickHouse 集群，包括客户端连接和 Keeper 加密。'
+doc_type: 'guide'
+---
+
+本指南将逐步介绍如何对 ClickHouse 集群进行端到端加密：使用 [cert-manager](https://cert-manager.io/) 签发证书、在集群上启用 TLS、让客户端通过安全端口连接，以及将加密扩展到 Keeper 协调流量。
+
+本指南以任务为导向。有关 `spec.settings.tls` 的按字段参考说明，请参阅
+[配置 → TLS/SSL 配置](/zh/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
+和 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#clustertlsspec)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 由 Operator 管理的正在运行中的 ClickHouse 集群 (参见 [简介](/zh/products/kubernetes-operator/guides/introduction)) 。
+* 集群中已安装 [cert-manager](https://cert-manager.io/docs/installation/)。
+* 具有访问集群命名空间的 `kubectl` 权限。
+
+Operator 本身不会生成证书——它使用的是你提供的 Kubernetes
+`Secret`。推荐使用 cert-manager 生成并轮换该 `Secret`，但任何能够按预期格式写入 `Secret` 的工具都可以。
+
+<div id="secret-format">
+  ## operator 要求的证书格式
+</div>
+
+通过将 `spec.settings.tls.serverCertSecret` 指向一个包含服务器密钥对的 Secret，即可启用 TLS：
+
+| Secret 键  | 内容           | 必需 |
+| --------- | ------------ | -- |
+| `tls.crt` | PEM 编码的服务器证书 | 是  |
+| `tls.key` | PEM 编码的私钥    | 是  |
+
+这正是 cert-manager 为 `Certificate` 资源写入的布局，因此
+无需进行转换。operator 会将该密钥对挂载到每个 pod (容器组) 的
+`/etc/clickhouse-server/tls/` 路径下，并将其配置到 ClickHouse 的 `openSSL` 中。
+
+<Note>
+  当 `tls.enabled: true` 时，`serverCertSecret` 是**必填**项。验证
+  webhook 会拒绝启用了 TLS 却未设置该项的集群，也会在
+  未设置 `enabled: true` 的情况下拒绝 `required: true`。
+</Note>
+
+<div id="step-1-ca">
+  ## 步骤 1 — 使用 cert-manager 引导 CA
+</div>
+
+最便于复现的配置方式是先创建一个自签名 CA，再由它为服务器
+证书签名。这样，你就能获得一个稳定的、客户端可验证的 `ca.crt`。
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: Issuer
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+在生产环境中，请将自签名的引导配置替换为实际的签发方 (企业
+CA、Vault、ACME 等) 。只有第 2 步需要变更——集群连接配置
+完全相同。
+
+<div id="step-2-cert">
+  ## 步骤 2 — 签发服务器证书
+</div>
+
+从 CA 签发方申请一个叶子证书。`dnsNames` 必须覆盖
+客户端访问这些 pod (容器组) 时使用的地址。Operator 会创建一个名为
+`<cluster-name>-clickhouse-headless` 的单个 **无头** Service，并且每个副本 pod (容器组) 都可通过
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local` 进行访问。
+对该无头 Service 域名使用通配符即可覆盖所有副本：
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
+    kind: Issuer
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
+
+<Note>
+  Operator **不会**创建集群级 (负载均衡) 的 Service。如果你
+  想要一个可供连接的稳定单一端点，请自行创建一个选择该集群的 Pod (容器组) 的 `ClusterIP` Service，
+  并将其 DNS name 添加到上面的 `dnsNames` 中。
+</Note>
+
+cert-manager 会创建名为 `clickhouse-cert` 的 Secret，其中包含 `tls.crt`、`tls.key` 和
+`ca.crt`，并会在证书到期前刷新它。请确认它已存在：
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
+
+<div id="step-3-enable">
+  ## 步骤 3 — 为集群启用 TLS
+</div>
+
+让集群引用该 Secret：
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
+
+<div id="what-the-operator-does">
+  ### Operator 的作用
+</div>
+
+当 `tls.enabled: true` 时，operator 会：
+
+* **在每个 pod (容器组) 和无头 Service 上开放安全端口**：`9440`
+  (原生 TLS) 和 `8443` (HTTPS) 。这些端口会在现有端口之外一并添加。
+* **将 Secret 挂载到** `/etc/clickhouse-server/tls/`，并生成带有
+  `verificationMode: relaxed`、
+  `disableProtocols: sslv2,sslv3` 和 `preferServerCiphers: true` 的 ClickHouse `openSSL` 配置块。这些都是
+  默认值——如需覆盖，请参见[自定义 TLS 设置](#custom-tls-settings)。
+
+如果你同时设置 `required: true`，operator 还会：
+
+* **移除不安全端口** `9000` (原生) 和 `8123` (HTTP) ——仅保留 TLS
+  版本，因此明文客户端将无法再连接。
+* **将 pod (容器组) 的存活探针切换** 到安全的原生端口 `9440`，这样即使没有明文监听器，
+  健康检查也能继续工作。
+
+<Note>
+  TLS 端口 `8443` 和 `9440` 会被 webhook **无条件**预留，
+  即使 TLS 已关闭也是如此，因此之后切换 `tls.enabled` 时，永远不会与
+  `spec.additionalPorts` 条目发生冲突。参见
+  [Configuration → `additionalPorts`](/zh/products/kubernetes-operator/guides/configuration#additional-ports)。
+</Note>
+
+<div id="step-4-connect">
+  ## 第 4 步——通过 TLS 连接
+</div>
+
+设置 `required: true` 后，客户端必须使用安全端口，并信任 CA。请通过无头 Service 访问特定的副本 pod (容器组)  (如果你创建了自己的 `集群IP`
+Service，也可以使用它) 。
+
+**原生协议** (`clickhouse-client`，端口 `9440`) ：
+
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
+
+**HTTPS** (端口 `8443`) ：
+
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
+
+直接从 Secret 中获取 `ca.crt`，用于本地测试：
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
+
+<div id="keeper-tls">
+  ## 加密 Keeper 流量
+</div>
+
+在 ClickHouse 集群上启用 TLS **不会** 加密与 Keeper 之间的连接。
+需要在 `KeeperCluster` 上单独启用——为 Keeper
+service 签发证书 (步骤 1–2，使用 Keeper service 的 `dnsNames`) ，并引用该证书：
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: <keeper-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+```
+
+Keeper 在 `2281` 上开放其安全客户端端口。一旦 Keeper 启用 TLS，**ClickHouse 集群
+会自动通过 TLS 连接到它**——无需在
+ClickHouseCluster 端进行额外设置。ClickHouse 会根据系统
+信任存储以及你配置的任何 [`caBundle`](#custom-ca) 来验证 Keeper 证书。
+
+<div id="custom-ca">
+  ## 自定义 CA 证书包
+</div>
+
+默认情况下，ClickHouse 会使用 **系统信任存储** 来验证其连接的对端 (其他副本、Keeper、HTTPS
+字典源、S3 等) 。如果还需要 **额外** 信任私有 CA (即根证书不在系统存储中的自签名 CA 或内部 CA) ，请提供 `caBundle`：
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      serverCertSecret:
+        name: clickhouse-cert
+      caBundle:
+        name: <ca-secret-name>
+        key: ca.crt
+```
+
+该 operator 会挂载此捆绑包，并将其添加到 `openSSL` 客户端信任存储
+(`caConfig`) 中。系统信任存储仍会继续生效 —— 你的私有 CA 会在**额外信任**
+公网根证书的同时一并被信任，因此到公网端点的连接仍可正常工作。对于
+自签名设置，请将 `caBundle` 指向 cert-manager 写入的同一个 Secret 中 `ca.crt` 键
+(如 `cluster_with_ssl` 示例所示) 。
+
+<div id="custom-tls-settings">
+  ## 自定义 TLS 设置
+</div>
+
+operator 生成的 `openSSL` 块只是默认配置，并非上限。它会被写入主 server configuration；`spec.settings.extraConfig` 下的任何内容都会渲染到
+`config.d/99-extra-config.yaml`，而 ClickHouse 会在**最后**进行 merge——因此会覆盖
+生成的值。
+
+如果要进一步加固这些默认设置——例如，要求严格的对等端验证，并将
+最低 protocol 提高到 TLS 1.2——请设置你想修改的 `openSSL.server` 配置项：
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      openSSL:
+        server:
+          verificationMode: strict
+          disableProtocols: "sslv2,sslv3,tlsv1,tlsv1_1"
+```
+
+合并是按键逐项进行的：只会替换你设置的值，而你
+省略的自动生成键 (证书路径、CA 配置) 会予以保留。可用选项请参阅
+[`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings#openssl)
+，`extraConfig` 的合并方式请参阅
+[Configuration → 嵌入式额外配置](/zh/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)。
+
+<div id="troubleshoot">
+  ## 验证与排查故障
+</div>
+
+**确认无头 Service 上的安全端口已正常开放：**
+
+```bash
+kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
+  -o jsonpath='{.spec.ports[*].name}'
+# expect: ... tcp-secure http-secure   (and NO tcp/http when required: true)
+```
+
+**确认该证书已挂载到 pod (容器组) 中：**
+
+```bash
+kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
+```
+
+| 症状                                 | 可能原因                                                                                                                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 启用 TLS 后 Pod (容器组) 无法启动 / 卷挂载报错    | 引用的 Secret 不存在，或缺少 `tls.crt`/`tls.key` (或者在设置了 `caBundle` 时，缺少其引用的 Secret/键) 。Operator 不会校验 Secret 的内容——缺失这些键时，表现为 pod (容器组) 卷挂载失败，而不是专门的 status 条件。请使用 `kubectl describe pod` 检查该 pod (容器组) 。 |
+| Webhook 拒绝该集群                      | 设置了 `required: true` 但未设置 `enabled: true`，或设置了 `enabled: true` 但未设置 `serverCertSecret`。                                                                                                        |
+| Client `certificate verify failed` | Client 不信任该 CA。传入 Secret 中的 `ca.crt`，或检查证书中的 `dnsNames` 是否覆盖了你连接使用的 host。                                                                                                                      |
+| 明文 client 突然无法连接                   | `required: true` 关闭了端口 `9000`/`8123`。请将 client 切换到 `9440`/`8443`，或设置 `required: false`，以在迁移期间保持不安全端口开放。                                                                                        |
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [配置 → TLS/SSL 配置](/zh/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — 字段参考
+* [配置 → `additionalPorts`](/zh/products/kubernetes-operator/guides/configuration#additional-ports) — 保留端口
+* [API 参考文档 → ClusterTLSSpec](/zh/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings#openssl) — 可通过 `extraConfig` 覆盖的 TLS 选项

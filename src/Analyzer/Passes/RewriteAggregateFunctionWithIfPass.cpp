@@ -161,6 +161,13 @@ public:
         }
         else if (first_const_node)
         {
+            /// This direction has to negate the condition, and `not(NULL)` is `NULL`: the `-If`
+            /// combinator then skips a row that `if(NULL, const, x)` sends down the else branch, so
+            /// the row silently leaves the aggregate. `SumIfToCountIfPass` refuses a `Nullable`
+            /// condition in its own negated direction for the same reason.
+            if (isNullableOrLowCardinalityNullable(if_arguments_nodes[0]->getResultType()))
+                return;
+
             const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
                 || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.safeGet<UInt64>() == 0

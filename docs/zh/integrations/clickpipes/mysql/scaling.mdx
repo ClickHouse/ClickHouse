@@ -1,0 +1,105 @@
+---
+title: '通过 OpenAPI 扩缩容 MySQL ClickPipes'
+description: '如何通过 OpenAPI 扩缩容 MySQL ClickPipes'
+slug: /integrations/clickpipes/mysql/scaling
+sidebarTitle: '扩缩容'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', '数据摄取', '实时同步', '扩缩容']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **大多数用户都不需要这个 API**
+
+  DB ClickPipes 的默认配置开箱即用，足以应对绝大多数工作负载。如果您认为自己的工作负载需要扩缩容，请提交一个[支持工单](https://clickhouse.com/support/program)，我们会指导您为该使用场景选择最佳设置。
+</Warning>
+
+扩缩容 API 可能适用于：
+
+* 大规模初始加载 (超过 4 TB)
+* 以尽可能快的速度迁移中等规模的数据
+* 在同一服务下支持超过 8 个 CDC ClickPipes
+
+在尝试扩容之前，请先考虑：
+
+* 确保源 DB 具备足够的可用容量
+* 在创建 ClickPipe 时，先调整[初始加载并行度和分区](/zh/integrations/clickpipes/mysql/parallel-initial-load)
+* 检查源端是否存在可能导致 CDC 延迟的[长时间运行的事务](/zh/integrations/clickpipes/mysql/controlling-sync#transactions)
+
+**提高规模会按比例增加您的 ClickPipes 计算成本。** 如果您扩容只是为了完成初始加载，那么在快照完成后及时缩容非常重要，以避免产生意外费用。有关定价的更多详情，请参阅 [ClickPipes 定价](/zh/products/cloud/reference/billing/clickpipes/index)。
+
+<div id="prerequisites">
+  ## 此流程的前置条件
+</div>
+
+开始之前，您需要具备：
+
+1. 目标 ClickHouse Cloud 服务上具有 Admin 权限的 [ClickHouse API key](/zh/products/cloud/features/admin-features/api/openapi)。
+2. 在该服务中已预配过一个 DB ClickPipe (Postgres、MySQL 或 MongoDB) 。CDC 基础设施会在创建第一个 ClickPipe 时一并创建，此后扩缩容端点即可用。
+
+<div id="cdc-scaling-steps">
+  ## DB ClickPipes 扩缩容步骤
+</div>
+
+在运行任何命令之前，请先设置以下环境变量：
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+获取当前扩缩容配置 (可选) ：
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# 示例结果：
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+设置所需的扩缩容。支持的配置包括 1–24 个 CPU 核心，内存 (GB) 按核心数的 4 倍设置：
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 24000,
+  "replicaMemoryGb": 96
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+等待配置传播完成 (通常需要 3-5 分钟) 。扩缩容完成后，GET 端点会显示新的值：
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# 示例结果：
+{
+  "result": {
+    "replicaCpuMillicores": 24000,
+    "replicaMemoryGb": 96
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```
