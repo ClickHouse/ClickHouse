@@ -51,11 +51,11 @@ Expression ((Project names + Projection))
         Expression (Change column names to column identifiers)
           ReadFromMergeTree (default.t_push_dims)
 -- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        ShuffleExchange
           JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.t_push_facts)
@@ -367,11 +367,11 @@ Expression ((Project names + Projection))
               ShuffleExchange
                 ReadFromMergeTree (ParallelRead default.t_push_dims)
 -- 25. negative: ASOF JOIN never pushes
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        ShuffleExchange
           JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.t_push_facts)

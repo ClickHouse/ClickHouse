@@ -10472,6 +10472,12 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL, \
         {"25.7", 0, 0, "New experimental setting"}) \
+    DECLARE(Bool, distributed_plan_partial_aggregation_before_shuffle, true, R"(
+Aggregate partially on the nodes that read the data before a distributed aggregation shuffles it by the `GROUP BY` keys, so the shuffle sends one aggregation state per group from each node instead of every input row, and each bucket merges the states of its own keys.
+The rule-based planner keeps shuffling the input rows when column statistics show that partial aggregation would not reduce the data at least twofold. With `enable_cascades_optimizer`, the setting allows the optimizer to choose such a merge per bucket by cost.
+Takes effect only together with `make_distributed_plan = 1`, and not with `distributed_plan_force_shuffle_aggregation`, which shuffles the input rows.
+)", BETA, \
+        {"26.10", false, true, "New experimental setting: a distributed aggregation shuffles partial aggregation states instead of input rows."}) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
