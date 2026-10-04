@@ -1,0 +1,16 @@
+--- staged
+injected faults: 1
+persisted: 4.bin:non-empty 
+staged: mut.bin mut.commit 
+25	100	124
+persisted: 3.bin:0 4.bin:non-empty 
+staged: 
+--- in place
+injected faults: 1
+persisted: 4.bin:non-empty 
+staged: mut.bin mut.commit 
+persisted: 3.bin:0 4.bin:non-empty 
+staged: mut.commit 
+25	100	124
+persisted: 3.bin:0 4.bin:non-empty 
+staged: 
