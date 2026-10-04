@@ -3,6 +3,8 @@
 
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
+-- The columns cache holds whole granules, the columns read through it are not filtered (tested separately below).
+SET use_columns_cache = 0;
 
 DROP TABLE IF EXISTS t_filtered_deserialization;
 
@@ -121,6 +123,12 @@ SETTINGS filtered_deserialization_max_ratio = 1, max_block_size = 100;
 -- Column that is used both in PREWHERE and read after it.
 SELECT 'prewhere column', count(), sum(cityHash64(toString((arr, s)))) FROM t_filtered_deserialization PREWHERE has(arr, 5) AND id % 3 = 0 SETTINGS filtered_deserialization_max_ratio = 0;
 SELECT 'prewhere column', count(), sum(cityHash64(toString((arr, s)))) FROM t_filtered_deserialization PREWHERE has(arr, 5) AND id % 3 = 0 SETTINGS filtered_deserialization_max_ratio = 1;
+
+-- The columns cache holds whole granules, the columns read through it are not filtered.
+SELECT 'columns cache', count(), sum(cityHash64(toString((arr, arr_arr, m, n.x, s))))
+FROM t_filtered_deserialization PREWHERE id % 31 = 5 SETTINGS filtered_deserialization_max_ratio = 0, use_columns_cache = 1;
+SELECT 'columns cache', count(), sum(cityHash64(toString((arr, arr_arr, m, n.x, s))))
+FROM t_filtered_deserialization PREWHERE id % 31 = 5 SETTINGS filtered_deserialization_max_ratio = 1, use_columns_cache = 1;
 
 -- An element of `Nested` added after the data was written, its sizes are read from the other elements.
 ALTER TABLE t_filtered_deserialization ADD COLUMN `n.z` Array(UInt64);
