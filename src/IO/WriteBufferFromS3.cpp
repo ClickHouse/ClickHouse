@@ -19,6 +19,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <utility>
 
@@ -434,6 +435,7 @@ void WriteBufferFromS3::createMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -483,6 +485,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     auto outcome = client_ptr->AbortMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -608,6 +611,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+        HTTPConnectionInfoScope connection_info_scope;
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         auto elapsed = watch.elapsedMicroseconds();
@@ -689,6 +693,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+        HTTPConnectionInfoScope connection_info_scope;
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
         auto elapsed = watch.elapsedMicroseconds();
@@ -795,6 +800,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
             CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+            HTTPConnectionInfoScope connection_info_scope;
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             auto elapsed = watch.elapsedMicroseconds();
