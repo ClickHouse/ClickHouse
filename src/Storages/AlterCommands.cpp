@@ -46,6 +46,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1057,10 +1058,12 @@ void AlterCommand::apply(
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(
-            insert_it,
-            IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+        auto index = IndexDescription::getIndexFromAST(
+            index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+
+        checkTextIndexPreAndPostProcessorPermissions(index, context);
+
+        metadata.secondary_indices.emplace(insert_it, std::move(index));
     }
     else if (type == DROP_INDEX)
     {
