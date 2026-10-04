@@ -33,6 +33,30 @@ TEST(OptimizeRE, analyze)
     test_f("(?-s)bob", "bob", {}, false, false, true);
     test_f("(?s)bob", "bob", {}, false, false, true);
     test_f("(?i:bob)x", "", {}, false, false, false);
+    /// A repetition with a lower bound of at least one keeps its character; a negated or scoped
+    /// case flag leaves the literals outside its scope.
+    test_f("foo{1}", "foo", {}, false, false, true);
+    test_f("a{3}", "aaa", {}, false, false, true);
+    test_f("(abc){2}", "abc", {}, false, true, true);
+    test_f("xé{2}", "xé", {}, false, false, true);
+    test_f("\\.{3}", "...", {}, false, false, true);
+    /// re2 reads a repetition it cannot parse as literal text.
+    test_f("foo{03}", "");
+    test_f("foo{2,03}", "");
+    test_f("foo{2,1000000000}", "");
+    test_f("(ab|cd)e{3}", "eee", {"abeee", "cdeee"}, false, true, false);
+    test_f("(?i:a|b)c", "");
+    test_f("fo{2,}?bar", "foo", {}, false, false, true);
+    test_f("fo{2,}bar", "foo", {}, false, false, true);
+    test_f("foo{1,3}bar", "foo", {}, false, false, true);
+    test_f("foo{0,3}", "", {}, false, false, false);
+    test_f("(?-i)foo", "foo", {}, false, false, true);
+    test_f("(?s-i)foo", "foo", {}, false, false, true);
+    test_f("(?i)foo", "", {}, false, false, false);
+    test_f("(?i-s)foo", "", {}, false, false, false);
+    test_f("(?i:foo)bar", "bar", {}, false, false, false);
+    test_f("foo(?i:bar)", "foo", {}, false, false, true);
+    test_f("(?i)foo(?-i:bar)", "", {}, false, false, false);
     /// A capture nested in a non-capturing group, or one preceding it, is still a capture.
     test_f("(?i:(b))x", "", {}, false, true, false);
     test_f("(a)(?:b)c", "abc", {}, false, true, true);
