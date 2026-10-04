@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -23,7 +24,8 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
-    bool reset_columns_)
+    bool reset_columns_,
+    const SerializationInfoByName & part_serialization_infos_)
     : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
@@ -42,7 +44,22 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , new_serialization_infos(info_settings)
 {
     if (reset_columns)
+    {
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+
+        /// Keep the info for an already encoded column even when sparse serialization is disabled.
+        /// Do not create entries for unrelated String columns: that would add `serialization.json`
+        /// when a part is rewritten while automatic LowCardinality is disabled.
+        for (const auto & column : columns_list)
+        {
+            auto part_info = part_serialization_infos_.tryGet(column.name);
+            if (isStringOrFixedString(column.type)
+                && part_info
+                && ISerialization::hasKind(part_info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY)
+                && !new_serialization_infos.contains(column.name))
+                new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(info_settings));
+        }
+    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

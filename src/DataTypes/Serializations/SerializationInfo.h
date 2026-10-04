@@ -47,6 +47,13 @@ public:
         /// rewrite, sparsity pruning) must require this flag.
         bool exact_num_defaults = false;
 
+        /// Number of aggregated infos (e.g. parts) that contribute a LowCardinality kind. Used by the
+        /// per-table serialization hint to stop reporting LowCardinality once the last such part is gone.
+        /// Maintained only when aggregating infos (`SerializationInfo::add`/`remove`); not serialized.
+        /// Every column of every part holds a `Data`, so the counter is 32-bit and placed after the flag
+        /// to fit into the padding instead of growing the structure.
+        UInt32 num_low_cardinality_parts = 0;
+
         /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
         /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
         /// at its current value).
@@ -87,10 +94,16 @@ public:
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
+    /// Forgets that any aggregated info contributed a `LowCardinality` kind (see `add`) and re-derives
+    /// the kind stack from the accumulated data alone, so that the kind of an aggregated info can be
+    /// chosen anew instead of being inherited. Used when a merge or a mutation re-evaluates automatic
+    /// `LowCardinality` serialization for the part it is about to write: without the reset a single
+    /// encoded source part would keep the result encoded and would also outvote sparse serialization.
+    void resetLowCardinality();
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
-    ISerialization::KindStack getKindStack() const { return kind_stack; }
+    const ISerialization::KindStack & getKindStack() const { return kind_stack; }
 
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 

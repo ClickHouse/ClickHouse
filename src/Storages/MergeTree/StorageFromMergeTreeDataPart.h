@@ -60,6 +60,16 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    {
+        return storage.tryGetSerializationHints();
+    }
+
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override
+    {
+        return storage.hasAutomaticLowCardinalitySerialization(column_name);
+    }
+
     String getPartitionId() const
     {
         return partition_id;

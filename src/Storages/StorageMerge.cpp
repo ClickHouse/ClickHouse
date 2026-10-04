@@ -428,6 +428,41 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
+std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() const
+{
+    std::optional<SerializationInfoByName> result;
+    traverseTablesUntil([&result](const auto & table)
+    {
+        if (auto hints = table->tryGetSerializationHints())
+        {
+            if (result)
+            {
+                for (const auto & [name, info] : *hints)
+                {
+                    if (auto it = result->find(name); it != result->end())
+                        it->second->add(*info);
+                    else
+                        result->emplace(name, info->clone());
+                }
+            }
+            else
+                result.emplace(std::move(*hints));
+        }
+        return false;
+    });
+    return result;
+}
+
+bool StorageMerge::hasAutomaticLowCardinalitySerialization(const String & /*column_name*/) const
+{
+    /// Fail closed. The answer is used during query analysis, but `ReadFromMerge` enumerates the
+    /// matching tables again when it builds the read plan. A table created, attached or renamed into
+    /// the match set in between can store the column with automatic `LowCardinality` serialization,
+    /// and reading a subcolumn of such a column throws. The caller asks only about `String` and
+    /// `FixedString` columns, so this disables only their subcolumn rewrites over a `Merge` table.
+    return true;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
