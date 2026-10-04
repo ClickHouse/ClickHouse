@@ -394,7 +394,7 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context || lazy_materializing_rows)
+    if (index_build_context || lazy_materializing_rows || info->delete_bitmap)
         initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
@@ -435,9 +435,10 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
         }
     }
 
-    if (index_read_result || lazy_materializing_rows)
+    if (index_read_result || lazy_materializing_rows || info->delete_bitmap)
     {
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(
+            readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
     }
 
 }

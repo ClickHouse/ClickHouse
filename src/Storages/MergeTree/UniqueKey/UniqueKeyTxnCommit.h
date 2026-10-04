@@ -15,14 +15,13 @@ namespace DB
 {
 
 class StorageMergeTree;
-class MergeTreeSink;
 class MergedPartOffsets;
 
 struct UniqueKeyInsertOutcome
 {
-    /// The dedup-log conflicts that ask the sink to retry.
+    /// Block ids already in the table's insert-deduplication log
     std::vector<std::string> conflicting_blocks;
-    /// `unique_key_conflict_action = ignore` filtered every incoming row, so there is no part.
+    /// Every incoming row conflicted under `unique_key_conflict_action = 'ignore'`, so there is no part.
     bool part_discarded = false;
 };
 
@@ -34,13 +33,11 @@ class UniqueKeyTxnCommit
 public:
     struct InsertRequest
     {
-        MergeTreeSink & sink;
-        MergeTreeData & storage;
+        StorageMergeTree & storage;
         StorageMetadataPtr metadata_snapshot;
         ContextPtr context;
-        /// Replaced in place when `ignore` filters the block and the part is rewritten.
-        MergeTreeTemporaryPartPtr & temp_part;
-        /// The rows `temp_part` was written from.
+        const MergeTreeTemporaryPart & temp_part;
+        /// The rows `temp_part` was written from, before the writer sorted them.
         std::shared_ptr<const Block> block;
         const std::vector<DeduplicationHash> & deduplication_hashes;
         MergeTreeTransactionHolder & transaction;

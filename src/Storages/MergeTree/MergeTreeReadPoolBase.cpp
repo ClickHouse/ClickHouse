@@ -225,7 +225,10 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     );
     read_task_info.read_hints = part_with_ranges.read_hints;
     if (const auto * uk_read_snapshot = tryGetUniqueKeyReadSnapshot(*storage_snapshot))
-        read_task_info.delete_bitmap = uk_read_snapshot->bitmapAt(data_part->info);
+    {
+        if (auto delete_bitmap = uk_read_snapshot->bitmapAt(data_part->info); !delete_bitmap->empty())
+            read_task_info.delete_bitmap = std::move(delete_bitmap);
+    }
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)

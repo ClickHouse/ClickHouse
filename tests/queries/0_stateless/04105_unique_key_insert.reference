@@ -10,6 +10,7 @@ oldest_overwritten	9	new_9
 many_parts_made	1
 many_parts_rows	600
 many_parts_last_value	1805
+moved_to_prewhere	3
 marker_count	1
 marker_survivors	2	b
 reinsert_count	2

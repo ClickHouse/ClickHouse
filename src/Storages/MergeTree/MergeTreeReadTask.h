@@ -134,7 +134,7 @@ struct MergeTreeReadTaskInfo
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
 
-    /// Rows the reader drops from this part; null or empty drops none.
+    /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
     ConstDeleteBitmapPtr delete_bitmap;
 };
 

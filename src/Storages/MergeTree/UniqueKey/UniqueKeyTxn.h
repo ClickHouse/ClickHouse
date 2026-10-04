@@ -6,7 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger.h>
 
-#include <atomic>
 #include <unordered_map>
 #include <mutex>
 #include <memory>
@@ -30,7 +29,7 @@ class PartitionWriteGuard;
 
 /// One unique-key write (INSERT, DELETE, MERGE): its part and the bitmaps that kill the rows it replaces
 /// become visible at one csn. Inside the partition's critical section, so `stage` sees every committed write:
-///   0. wait out unresolved parts (`UniqueKeyTxnManager::waitForUnresolvedParts`);
+///   0. refuse the write while a part's creation csn is not stamped yet (`UniqueKeyTxnManager::throwIfUnresolvedPart`);
 ///   1. stage: write the bitmaps. Durable, not visible;
 ///   2. publish: register the part on the transaction. Active, not visible; `addNewPart` refuses a
 ///      committing transaction, so this precedes the commit;
@@ -92,21 +91,21 @@ public:
 
     DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
-    /// Commit a write under a transaction, returning the commit sequence number of the commit point.
-    /// Throws if a lost commit reply resolves to a rollback, or if @cancelled turns true while it is unresolved.
+    /// Commits one unique-key write (INSERT, DELETE, MERGE) under @transaction, returning the csn of the commit point.
+    /// Throws ABORTED if a lost commit reply resolves to a rollback, or if the partition has an unresolved part:
+    /// Active, with no creation csn stamped yet. Throws UNKNOWN_STATUS_OF_TRANSACTION if a lost reply is still
+    /// unresolved at shutdown.
     ///
     /// Commit wait involve:
-    /// - an unresolved part: Active, with no creation csn stamped yet;
     /// - commits in flight: writers holding the partition guard;
     /// - a lost commit reply: the outcome of the writer's own transaction is unknown;
     /// - csn loaded: `latest_snapshot` has reached a csn.
     CSN commitTransaction(
-        MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write, const std::atomic<bool> * cancelled = nullptr);
+        MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & commit);
 
 private:
-    /// Returns once no Active part in @partition_id is unresolved
-    void waitForUnresolvedParts(
-        const String & partition_id, std::string_view kind, const TransactionID & tid, const std::atomic<bool> * cancelled) const;
+    /// Throws ABORTED if an Active part in @partition_id is unresolved
+    void throwIfUnresolvedPart(const String & partition_id, std::string_view kind) const;
 
     /// The pessimistic write lock for a partition
     std::mutex & partitionLock(const String & partition_id);
