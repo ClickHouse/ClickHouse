@@ -291,15 +291,16 @@ struct AdaptiveAggregationProducer
     /// table absorbs nothing.
     struct FrozenState
     {
-        explicit FrozenState(size_t allocated_bytes_per_key_)
-            : allocated_bytes_per_key(allocated_bytes_per_key_)
+        explicit FrozenState(size_t estimated_table_bytes_per_key_)
+            : estimated_table_bytes_per_key(estimated_table_bytes_per_key_)
         {
         }
 
-        /// Hash-table buffer and arena allocations per key when the producer froze, including capacity
-        /// and allocation overhead. This excludes staged records, other workers' memory and allocations
-        /// owned directly by aggregate states, matching `AggregatedDataVariants::allocatedBytes`.
-        size_t allocated_bytes_per_key;
+        /// Estimated hash-table buffer and arena bytes per key. A populated table supplies its measured
+        /// allocations, including capacity and allocation overhead. An empty table uses the aggregate state
+        /// size as a lower bound. This excludes staged records, other workers' memory and allocations owned
+        /// directly by aggregate states, matching `AggregatedDataVariants::allocatedBytes`.
+        size_t estimated_table_bytes_per_key;
         size_t sampled_rows = 0;
         size_t sampled_hits = 0;
         bool bypass_local_probe = false;
@@ -351,9 +352,9 @@ struct AdaptiveAggregationProducer
     bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
-    void freeze(size_t allocated_bytes_per_key)
+    void freeze(size_t estimated_table_bytes_per_key)
     {
-        phase.emplace<FrozenState>(allocated_bytes_per_key);
+        phase.emplace<FrozenState>(estimated_table_bytes_per_key);
     }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }

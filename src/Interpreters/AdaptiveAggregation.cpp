@@ -103,12 +103,12 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (adaptive.isFrozen() && adaptiveMayThaw(shared))
     {
         /// Admission compares complete executions, so its state cost includes the hash buffer and arenas
-        /// an ordinary local table would retain. The snapshot at the freeze includes hash-table capacity
-        /// and arena overhead, and remains available if the table is flushed before its producer finishes.
+        /// an ordinary local table would retain. A populated table's snapshot at the freeze includes hash-table
+        /// capacity and arena overhead, and remains available if the table is flushed before its producer finishes.
         const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         if (adaptiveStagingWastes(
                 frozen,
-                frozen.allocated_bytes_per_key,
+                frozen.estimated_table_bytes_per_key,
                 adaptive_state_bytes_per_distinct_input,
                 /*state_cost_multiplier=*/1))
             shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
