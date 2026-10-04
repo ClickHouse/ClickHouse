@@ -553,6 +553,13 @@ protected:
         return aggregator.getResult(getGridPoint(grid_index));
     }
 
+    /// The window of the sliding aggregator, see `removeOutOfWindow`. A derived class whose buckets cover more than
+    /// the aggregator's window shadows this.
+    GridScaleIntervalType getAggregatorWindow() const
+    {
+        return window;
+    }
+
     /// The columns of the extra arguments, which follow the sample arguments (one array of pairs, or timestamps and values).
     const IColumn ** extraArgumentColumns(const IColumn ** columns) const
     {
@@ -1394,7 +1401,7 @@ private:
 
     /// Drops buckets that have left grid point `grid_index`'s window from the front of the sliding `aggregator`. A bucket
     /// is out of window once all its samples are at or before the cutoff `grid_timestamp - window`; window-aligned
-    /// buckets are fully in or out, so the bucket's latest timestamp decides.
+    /// buckets are fully in or out, so the bucket's latest timestamp decides. The window is `getAggregatorWindow`.
     template <typename Aggregator>
     void removeOutOfWindow(Aggregator & aggregator, size_t grid_index) const
     {
@@ -1403,8 +1410,9 @@ private:
         chassert(grid_index < grid_size);
         static constexpr Int64 min_timestamp = std::numeric_limits<Int64>::min();
         const Int64 grid_timestamp = toInt64(getGridPoint(grid_index));
-        if (grid_timestamp >= min_timestamp + static_cast<Int64>(window))
-            aggregator.removeBefore(static_cast<GridScaleTimestampType>(grid_timestamp - static_cast<Int64>(window)));
+        const Int64 aggregator_window = static_cast<Int64>(derived().getAggregatorWindow());
+        if (grid_timestamp >= min_timestamp + aggregator_window)
+            aggregator.removeBefore(static_cast<GridScaleTimestampType>(grid_timestamp - aggregator_window));
     }
 
 };

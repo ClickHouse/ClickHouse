@@ -52,6 +52,11 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
+        /// The exact rate also measures from the last sample before the window, not older than `window` before the window's start,
+        /// so the range is [start_time - 2 * window, end_time].
+        if (needsSamplesBeforeWindow(node, context))
+            min_time = node_range.start_time - node_range.window - node_range.window;
+
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),

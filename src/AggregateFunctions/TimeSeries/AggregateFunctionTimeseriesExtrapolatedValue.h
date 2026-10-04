@@ -105,14 +105,35 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         GridScaleIntervalType window;
         Int64 grid_ticks_per_second;
         Int64 column_to_grid_multiplier;
+        bool exact_rate;
 
-        Aggregator(GridScaleIntervalType window_, Int64 grid_ticks_per_second_, Int64 column_to_grid_multiplier_)
+        Aggregator(GridScaleIntervalType window_, Int64 grid_ticks_per_second_, Int64 column_to_grid_multiplier_, bool exact_rate_)
             : window(window_), grid_ticks_per_second(grid_ticks_per_second_), column_to_grid_multiplier(column_to_grid_multiplier_)
+            , exact_rate(exact_rate_)
         {
         }
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
+            if (exact_rate)
+            {
+                /// In the exact mode the buckets cover more than the window (see `getBucketsWindow`), so a bucket can be
+                /// partly in the window: each sample is added on its own, with its own timestamp, to leave the window exactly.
+                samples.forEachSample([this](TimestampType timestamp, ValueType value)
+                {
+                    Summary summary;
+                    summary.first_timestamp = timestamp;
+                    summary.first_value = value;
+                    summary.last_timestamp = timestamp;
+                    summary.last_value = value;
+                    summary.count = 1;
+                    /// The sample is in a bucket, so its timestamp converted to the scale of the grid can't overflow.
+                    const GridScaleTimestampType grid_timestamp{static_cast<Int64>(timestamp) * column_to_grid_multiplier};
+                    sliding_sum.add(std::move(summary), grid_timestamp);
+                });
+                return;
+            }
+
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
@@ -148,6 +169,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         std::optional<ResultType> getResult(GridScaleTimestampType grid_timestamp) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
+
+            if (exact_rate)
+                return getExactResult(combined, grid_timestamp);
 
             /// Need at least two samples to calculate the rate or delta.
             if (combined.count < 2)
@@ -219,6 +243,45 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
             return value_difference;
         }
+
+        /// The exact mode: no extrapolation to the boundaries of the window. The difference is measured from the last sample
+        /// before the window if it is not older than `window` before the window's start, otherwise from the first sample in the window.
+        std::optional<ResultType> getExactResult(const Summary & combined, GridScaleTimestampType grid_timestamp) const
+        {
+            if (combined.count == 0)
+                return std::nullopt;
+
+            const Float64 first_value = static_cast<Float64>(combined.first_value);
+            const Float64 last_value = static_cast<Float64>(combined.last_value);
+            Float64 value_difference = last_value - first_value + combined.resets;
+
+            bool has_previous_sample = false;
+            if (const auto & last_removed = sliding_sum.getLastRemoved())
+            {
+                const Summary & previous = last_removed->second;
+                /// Subtract in `Int128` for the same reason as in `getResult`.
+                const Int128 previous_timestamp = static_cast<Int128>(static_cast<Int64>(previous.last_timestamp)) * column_to_grid_multiplier;
+                const Int128 window_length = static_cast<Int128>(static_cast<Int64>(window));
+                const Int128 window_start = static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - window_length;
+                if (previous_timestamp <= window_start && window_start - previous_timestamp <= window_length)
+                {
+                    has_previous_sample = true;
+                    const Float64 previous_value = static_cast<Float64>(previous.last_value);
+                    value_difference += first_value - previous_value;
+                    if (check_resets && previous_value > first_value)
+                        value_difference += previous_value;     /// reset between the previous sample and the window
+                }
+            }
+
+            /// Need at least two samples to calculate the rate or delta.
+            if (!has_previous_sample && combined.count < 2)
+                return std::nullopt;
+
+            if constexpr (is_rate)
+                value_difference = value_difference * static_cast<Float64>(grid_ticks_per_second) / static_cast<Float64>(window);
+
+            return value_difference;
+        }
     };
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
@@ -245,12 +308,49 @@ public:
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
-    using Base::Base;
+
+    /// `exact_rate` comes from the optional fifth parameter, so it is a part of the function's type.
+    /// The exact mode also keeps the samples before each window in the state (see `getBucketsWindow`), so the states
+    /// of the two modes differ.
+    AggregateFunctionTimeseriesExtrapolatedValue(const DataTypes & argument_types_, const Array & parameters_,
+        GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, typename Traits::GridScaleIntervalType grid_step_,
+        typename Traits::GridScaleIntervalType window_, UInt32 grid_scale_, UInt32 column_timestamp_scale_, bool exact_rate_)
+        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, getBucketsWindow(window_, exact_rate_), grid_scale_, column_timestamp_scale_)
+        , aggregator_window(window_)
+        , exact_rate(exact_rate_)
+    {
+    }
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{Base::window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier};
+        return Aggregator{aggregator_window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier, exact_rate};
     }
+
+    /// See `AggregateFunctionTimeseriesBase::getAggregatorWindow`.
+    typename Traits::GridScaleIntervalType getAggregatorWindow() const
+    {
+        return aggregator_window;
+    }
+
+private:
+    /// The exact mode measures from the last sample before the window if it is not older than `window` before the window's
+    /// start, so the buckets must hold the samples in `[grid_timestamp - 2 * window, grid_timestamp]`: the base class gets
+    /// the window `2 * window + 1` for its buckets, while the aggregator keeps `window` (see `getAggregatorWindow`).
+    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window_, bool exact_rate_)
+    {
+        /// A negative window is rejected by the base class.
+        const Int64 window_value = static_cast<Int64>(window_);
+        if (!exact_rate_ || window_value <= 0)
+            return window_;
+        /// A window this big covers every timestamp anyway.
+        static constexpr Int64 max_window = std::numeric_limits<Int64>::max();
+        if (window_value > (max_window - 1) / 2)
+            return max_window;
+        return 2 * window_value + 1;
+    }
+
+    const typename Traits::GridScaleIntervalType aggregator_window;
+    const bool exact_rate;
 };
 
 /// Each SQL function as a template with its `is_rate` / `check_resets` variant baked in, so
