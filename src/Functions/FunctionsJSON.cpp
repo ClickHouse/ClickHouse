@@ -41,6 +41,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
@@ -704,6 +705,8 @@ public:
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
         , allow_experimental_time_decay_aggregate_functions(
               context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        , data_type_validation_settings(
+              DataTypeValidationSettings::forNonStorageDefinition(context->getSettingsRef()))
         , format_settings(getFormatSettings(context))
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
@@ -734,6 +737,8 @@ public:
                 "allow_experimental_time_decay_aggregate_functions",
                 json_return_type->getName());
 
+        validateDataType(json_return_type, data_type_validation_settings);
+
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
         if (has_nothing_argument)
@@ -756,6 +761,7 @@ public:
 private:
     const bool allow_simdjson;
     const bool allow_experimental_time_decay_aggregate_functions;
+    const DataTypeValidationSettings data_type_validation_settings;
     FormatSettings format_settings;
 };
 

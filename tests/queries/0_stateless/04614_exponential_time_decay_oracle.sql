@@ -176,6 +176,8 @@ SELECT exponentialTimeDecaying(10)(toFloat64(1), toFloat64(0)); -- { serverError
 SELECT defaultValueOfTypeName('ExponentialTimeDecaying(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)'); -- { serverError BAD_ARGUMENTS }
 SELECT defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)'); -- { serverError BAD_ARGUMENTS }
+SELECT JSONExtract('{}', 'AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)'); -- { serverError BAD_ARGUMENTS }
+SELECT JSONExtract('{}', 'AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)'); -- { serverError BAD_ARGUMENTS }
 
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
