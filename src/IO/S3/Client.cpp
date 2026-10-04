@@ -12,6 +12,7 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
+#include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -603,7 +604,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
     const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
         && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
-            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
+            || isRefusedPrecondition(outcome.GetError()));
 
     if (may_be_replay_of_a_landed_completion)
     {
@@ -657,7 +658,7 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 
     /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
-    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
+    if (!outcome.IsSuccess() && isRefusedPrecondition(outcome.GetError()))
     {
         const auto & key = request.GetKey();
         const auto & bucket = request.GetBucket();
@@ -1427,6 +1428,14 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
 
     return config;
+}
+
+/// The SDK has no typed model error for a refused precondition, so the raw code reaches only the
+/// exception name, which endpoints spell differently; the status is `412` on all of them.
+bool isRefusedPrecondition(const Aws::S3::S3Error & error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
+        || error.GetExceptionName() == "PreconditionFailed";
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)

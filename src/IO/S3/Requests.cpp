@@ -94,6 +94,13 @@ constexpr std::string_view GCS_DROPPED_HEADERS[] = {
     "x-amz-api-version",
 };
 
+/// GCS applies `If-None-Match` to requests that retrieve data, so on a write it is accepted and
+/// ignored; `x-goog-if-generation-match` is the write precondition, and it takes a generation.
+constexpr auto IF_NONE_MATCH_HEADER = "if-none-match";
+constexpr auto ANY_GENERATION = "*";
+constexpr auto GCS_IF_GENERATION_MATCH_HEADER = "x-goog-if-generation-match";
+constexpr auto GCS_NO_GENERATION = "0";
+
 }
 
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
@@ -126,6 +133,17 @@ void translateHeadersToGCS(Aws::Http::HttpRequest & request)
     for (const auto & [name, value] : after)
         if (!before.contains(name))
             request.SetHeaderValue(name, value);
+
+    /// Only a `PUT` takes a GCS write precondition: a read honours `If-None-Match`, the completing `POST` takes none.
+    if (request.GetMethod() != Aws::Http::HttpMethod::HTTP_PUT)
+        return;
+
+    /// `GetHeaderValue` asserts the header is present.
+    if (!request.HasHeader(IF_NONE_MATCH_HEADER) || request.GetHeaderValue(IF_NONE_MATCH_HEADER) != ANY_GENERATION)
+        return;
+
+    request.DeleteHeader(IF_NONE_MATCH_HEADER);
+    request.SetHeaderValue(GCS_IF_GENERATION_MATCH_HEADER, GCS_NO_GENERATION);
 }
 
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers)

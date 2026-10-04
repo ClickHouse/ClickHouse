@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 struct WriteBufferFromS3::PartData
@@ -97,6 +98,15 @@ static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3Reques
     allocation_settings.max_single_size = settings[S3RequestSetting::max_single_part_upload_size];
 
     return BufferAllocationPolicy::create(allocation_settings);
+}
+
+/// Callers above this layer recognise a refused precondition by the `PreconditionFailed` token in the
+/// message, which an endpoint's own name for the refusal does not carry.
+static std::string describeRefusal(const Aws::S3::S3Error & error)
+{
+    if (S3::isRefusedPrecondition(error) && !error.GetMessage().contains("PreconditionFailed"))
+        return fmt::format("PreconditionFailed: {}", error.GetMessage());
+    return error.GetMessage();
 }
 
 
@@ -408,6 +418,20 @@ void WriteBufferFromS3::writeMultipartUpload()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
+    /// GCS's XML API evaluates no precondition on a multipart upload: `x-goog-if-generation-match` is
+    /// answered `400 NotImplemented`, and the `If-None-Match` it does accept applies to reads only.
+    if (client_ptr->isClientForGCS()
+        && (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty()))
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Google Cloud Storage does not support conditional writes (If-None-Match / If-Match) on a "
+            "multipart upload, so the requested compare-and-swap on {} cannot be performed atomically. "
+            "Only a single-part upload can carry the precondition: the object has to be no larger than "
+            "s3_max_single_part_upload_size, and it has to fit in the first upload part, which is "
+            "s3_strict_upload_part_size when that setting is set and is bounded by "
+            "s3_max_upload_part_size otherwise",
+            key);
+
     LOG_TEST(limited_log, "Create multipart upload. {}", getShortLogDetails());
 
     S3::CreateMultipartUploadRequest req;
@@ -722,7 +746,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
             throw S3Exception(
                 error.GetErrorType(),
                 "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                describeRefusal(error), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
         }
     }
 
@@ -823,7 +847,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
                 /// not a genuine error — the caller handles it. A replay of our own write never reaches here.
-                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
+                if (S3::isRefusedPrecondition(outcome.GetError()))
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 else
@@ -832,7 +856,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, bucket {}, key {}, object size {}",
-                    outcome.GetError().GetMessage(), bucket, key, content_length);
+                    describeRefusal(outcome.GetError()), bucket, key, content_length);
             }
         }
 
