@@ -1487,6 +1487,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & varia
 }
 
 template <typename Method>
+/// NOLINTNEXTLINE(readability-non-const-parameter): The map-table callback updates the count bins.
 size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const
 {
     size_t work = 0;
