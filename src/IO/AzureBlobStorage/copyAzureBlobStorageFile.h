@@ -18,6 +18,8 @@ class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
+bool isAzureDestinationAlreadyExistsError(const Azure::Core::RequestFailedException & exception);
+
 /// Copies a whole blob from AzureBlobStorage to AzureBlobStorage. `src_size` is the size of the source blob.
 ///
 /// There is deliberately no way to ask for a part of the source: the native copy (`CopyFromUri` /
@@ -37,7 +39,13 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    BlobStorageLogWriterPtr blob_storage_log = {});
+    BlobStorageLogWriterPtr blob_storage_log = {},
+    /// Pass `*` to fail instead of overwriting the destination blob.
+    const String & dest_if_none_match = {},
+    /// The `ETag` of the source generation the caller decided to copy, or empty when it is not known.
+    /// The native copy is pinned to it with a source-side `If-Match`, so a source blob overwritten
+    /// after the caller looked at it throws `FILE_CHANGED_DURING_READ` instead of being copied.
+    const String & src_etag = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.

@@ -148,6 +148,8 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
+    /// S3 only, and only on buckets with versioning enabled; empty otherwise.
+    std::string version_id;
     ObjectAttributes tags;
     ObjectAttributes attributes;
 
@@ -169,6 +171,12 @@ struct RelativePathWithMetadata
     bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
+    /// When set, the read of this object must be pinned to the generation named by
+    /// `metadata->etag`, whatever the read settings say. It is set by a caller that acts on the
+    /// generation it ingested after the read (the `MOVE`/`DELETE` of `ObjectStorageQueue`), for
+    /// which reading another generation than the one the post-processing moves or deletes is a
+    /// lost file rather than a torn read.
+    bool require_read_pinned_to_generation = false;
 
     RelativePathWithMetadata() = default;
 

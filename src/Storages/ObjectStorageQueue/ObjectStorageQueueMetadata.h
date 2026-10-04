@@ -120,6 +120,9 @@ public:
     ObjectStorageType getType() const { return storage_type; }
     /// Get base path to keeper metadata.
     std::string getPath() const { return zookeeper_path; }
+    /// The queue's identity: the base path, qualified by the Keeper name unless it is the default
+    /// one - one path under two Keeper names is two queues, not one.
+    std::string getKeeperIdentity() const;
     /// Get statuses (state, processed rows, processing time)
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
