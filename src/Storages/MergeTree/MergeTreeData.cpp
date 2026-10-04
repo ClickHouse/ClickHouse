@@ -646,6 +646,40 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+namespace
+{
+
+/// The parts locks of any table this thread holds, counted by `PartsLockHoldCount`.
+thread_local size_t parts_locks_held = 0;
+
+}
+
+bool partsLockHeldByCurrentThread()
+{
+    return parts_locks_held > 0;
+}
+
+PartsLockHoldCount::PartsLockHoldCount() : held(true)
+{
+    ++parts_locks_held;
+}
+
+PartsLockHoldCount & PartsLockHoldCount::operator=(PartsLockHoldCount && other) noexcept
+{
+    release();
+    held = std::exchange(other.held, false);
+    return *this;
+}
+
+void PartsLockHoldCount::release() noexcept
+{
+    if (!std::exchange(held, false))
+        return;
+    chassert(parts_locks_held > 0, "a parts lock is released on a thread that did not take it");
+    --parts_locks_held;
+}
+
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -655,7 +689,6 @@ DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeDat
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::PartsLocks);
 }
-
 
 DataPartsLock::~DataPartsLock()
 {
@@ -677,6 +710,11 @@ DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
     ProfileEvents::increment(ProfileEvents::SharedPartsLocks);
 }
 
+void DataPartsSharedLock::unlock()
+{
+    lock.unlock();
+    hold_count.release();
+}
 
 DataPartsSharedLock::~DataPartsSharedLock()
 {
@@ -907,7 +945,7 @@ MergeTreeData::MergeTreeData(
             bitmap_cache = ctx->getDeleteBitmapCache();
 
         unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
-            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
+            *this, std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
     }
 
     String reason;
@@ -8863,6 +8901,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
+    const MergeTreeData::DataPartState & state, const String & partition_id) const
+{
+    auto lock = readLockParts();
+    return getDataPartsVectorInPartitionForInternalUsage(state, partition_id, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
