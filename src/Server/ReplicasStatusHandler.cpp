@@ -11,6 +11,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 
@@ -54,7 +55,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
@@ -68,12 +69,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                const auto & table = iterator->table();
-                if (!table)
-                    continue;
-
-                StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
                 if (!table_replicated)
                     continue;
 

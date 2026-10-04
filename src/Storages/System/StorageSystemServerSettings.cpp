@@ -1,4 +1,5 @@
 #include <Core/ServerSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -46,3 +47,6 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemServerSettings) }

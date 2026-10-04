@@ -1,0 +1,66 @@
+---
+title: 'MongoDB ClickPipe の同期を制御する'
+description: 'MongoDB ClickPipe の同期制御に関するドキュメント'
+slug: /integrations/clickpipes/mongodb/sync_control
+sidebarTitle: '同期の制御'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、MongoDB ClickPipe が **CDC (実行中) モード** のときに、ClickPipe の同期を制御する方法について説明します。
+
+<div id="overview">
+  ## 概要
+</div>
+
+Database ClickPipes は、ソースデータベースからのプルと移行先データベースへのプッシュという、2 つの並行プロセスで構成されるアーキテクチャです。プルのプロセスは同期設定によって制御され、この設定でデータをどのくらいの頻度でプルするか、また 1 回にどれだけのデータをプルするかを定義します。ここでいう「1 回に」とは 1 バッチのことです。ClickPipe はデータをバッチ単位でプルおよびプッシュするためです。
+
+MongoDB ClickPipe の同期を制御する主な方法は 2 つあります。以下の設定のいずれかの条件を満たすと、ClickPipe はプッシュを開始します。
+
+<div id="interval">
+  ### 同期間隔
+</div>
+
+パイプの同期間隔は、ClickPipe がソースデータベースからレコードを取得する時間の長さ (秒単位) を指します。取得したデータを ClickHouse に送信するための時間は、この間隔には含まれません。
+
+デフォルトは **1 分** です。
+同期間隔には任意の正の整数値を設定できますが、10 秒より大きい値に保つことを推奨します。
+
+<div id="batch-size">
+  ### プルバッチサイズ
+</div>
+
+プルバッチサイズは、ClickPipe が 1 回のバッチでソースデータベースから取得するレコード数です。ここでいうレコードとは、パイプに含まれるコレクションに対して行われる挿入、更新、削除を指します。
+
+デフォルトは **100,000** レコードです。
+安全な最大値は 1,000 万です。
+
+<div id="configuring">
+  ### 同期設定を構成する
+</div>
+
+ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔とプルバッチサイズを設定できます。
+ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップに表示されます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="同期設定の作成" size="md" />
+
+既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="同期の編集ボタン" size="md" />
+
+すると、同期設定を表示するフライアウトが開き、そこで同期間隔とプルバッチサイズを変更できます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="同期設定の編集" size="md" />
+
+<div id="monitoring">
+  ### 同期制御の動作を監視する
+</div>
+
+各バッチにかかる時間は、ClickPipe の **メトリクス** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間にはプッシュ時間が含まれます。また、受信する行がない場合は ClickPipe が待機し、その待機時間も所要時間に含まれる点に注意してください。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs テーブル" size="md" />

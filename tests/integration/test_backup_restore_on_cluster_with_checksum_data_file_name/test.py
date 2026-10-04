@@ -51,6 +51,20 @@ node3 = cluster.add_instance(
     with_zookeeper=True,
 )
 
+# Unlike the other nodes, uses the default `data_file_name_generator`.
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=[
+        config
+        for config in main_configs
+        if config != "configs/data_file_name_generator_from_checksum.xml"
+    ],
+    user_configs=user_configs,
+    external_dirs=["/backups/"],
+    macros={"replica": "node4", "shard": "shard2"},
+    with_zookeeper=True,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -108,7 +122,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -140,7 +154,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -249,10 +263,10 @@ def test_projection():
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
     )
-    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
 
     node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
-    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+    node1.query("INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
 
     assert (
         node1.query(
@@ -264,7 +278,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(
@@ -314,7 +328,7 @@ def test_file_deduplication():
 
     # Unique data.
     node1.query(
-        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+        "INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
     )
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
@@ -339,3 +353,19 @@ def test_file_deduplication():
 
     assert num_bin_file_writings == 1
     assert num_bin_file_skips == 3
+
+
+def test_initiator_with_other_data_file_name_generator():
+    node4.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster_mixed' SYNC")
+    node4.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster_mixed' (x UInt32) ENGINE=MergeTree ORDER BY x"
+    )
+    node1.query("INSERT INTO tbl VALUES (111)")
+
+    backup_name = new_backup_name()
+    node4.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster_mixed' TO {backup_name}")
+
+    node4.query("DROP TABLE tbl ON CLUSTER 'cluster_mixed' SYNC")
+
+    node4.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster_mixed' FROM {backup_name}")
+    assert node1.query("SELECT * FROM tbl") == TSV([111])

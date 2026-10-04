@@ -1,0 +1,358 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration-v1
+title: 'Configuration de Helm (v1.x)'
+description: 'Configuration des clés API, des secrets et de l’ingress pour les déploiements ClickStack avec Helm v1.x'
+doc_type: 'guide'
+keywords: ['configuration ClickStack', 'secrets Helm', 'configuration des clés API', 'configuration de l’ingress', 'configuration TLS']
+---
+
+<Warning>
+  **Déprécié — chart v1.x**
+
+  Cette page décrit la configuration du chart Helm inline-template **v1.x**, désormais en mode maintenance. Pour le chart v2.x, consultez [Configuration de Helm](/fr/clickstack/deployment/helm-configuration). Pour la migration, consultez le [guide de mise à niveau](/fr/clickstack/deployment/helm-upgrade).
+</Warning>
+
+Ce guide présente les options de configuration des déploiements ClickStack avec Helm. Pour l’installation de base, consultez le [guide principal de déploiement avec Helm](/fr/clickstack/deployment/helm-v1).
+
+<div id="api-key-setup">
+  ## Configuration de la clé API
+</div>
+
+Après avoir déployé ClickStack avec succès, configurez la clé API pour activer la collecte des données de télémétrie :
+
+1. **Accédez à votre instance HyperDX** via l’Ingress configuré ou le point de terminaison du service
+2. **Connectez-vous au tableau de bord HyperDX** et accédez aux paramètres de l’équipe pour générer ou récupérer votre clé API
+3. **Mettez à jour votre déploiement** avec la clé API à l’aide de l’une des méthodes suivantes :
+
+<div id="api-key-values-file">
+  ### Méthode 1 : mise à jour avec Helm upgrade à l’aide d’un fichier de valeurs
+</div>
+
+Ajoutez la clé API à votre `values.yaml` :
+
+```yaml
+hyperdx:
+  apiKey: "your-api-key-here"
+```
+
+Ensuite, mettez à jour votre déploiement :
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### Méthode 2 : Mettre à jour via Helm upgrade avec l’option --set
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### Redémarrer les pods pour appliquer les modifications
+</div>
+
+Après avoir mis à jour la clé API, redémarrez les pods pour qu’ils prennent en compte la nouvelle configuration :
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-clickstack-otel-collector
+```
+
+<Note>
+  Le chart crée automatiquement un secret Kubernetes (`<release-name>-app-secrets`) contenant votre clé API. Aucune configuration supplémentaire de secret n’est nécessaire, sauf si vous souhaitez utiliser un secret externe.
+</Note>
+
+<div id="secret-management">
+  ## Gestion des secrets
+</div>
+
+Pour gérer des données sensibles, comme des clés API ou des identifiants de base de données, utilisez des secrets Kubernetes.
+
+<div id="using-pre-configured-secrets">
+  ### Utiliser des secrets préconfigurés
+</div>
+
+Le Helm chart inclut un modèle de secret par défaut situé à [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml). Ce fichier fournit une structure de base pour gérer les secrets.
+
+Si vous devez appliquer manuellement un secret, modifiez puis appliquez le modèle `secrets.yaml` fourni :
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperdx-secret
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  API_KEY: <base64-encoded-api-key>
+```
+
+Appliquez le secret à votre cluster :
+
+```shell
+kubectl apply -f secrets.yaml
+```
+
+<div id="creating-a-custom-secret">
+  ### Création d’un secret personnalisé
+</div>
+
+Créez manuellement un secret Kubernetes personnalisé :
+
+```shell
+kubectl create secret generic hyperdx-secret \
+  --from-literal=API_KEY=my-secret-api-key
+```
+
+<div id="referencing-a-secret">
+  ### Référencer un secret dans values.yaml
+</div>
+
+```yaml
+hyperdx:
+  apiKey:
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: API_KEY
+```
+
+<div id="ingress-setup">
+  ## Configuration de la ressource Ingress
+</div>
+
+Pour exposer l’interface utilisateur HyperDX et l’API via un nom de domaine, activez la ressource Ingress dans votre `values.yaml`.
+
+<div id="general-ingress-configuration">
+  ### Configuration générale de l’Ingress
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # Must match ingress host
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **Note importante sur la configuration**
+
+  `hyperdx.frontendUrl` doit correspondre à l’hôte configuré pour l’Ingress et inclure le protocole (par exemple, `https://hyperdx.yourdomain.com`). Cela garantit que tous les liens, cookies et redirections générés fonctionnent correctement.
+</Info>
+
+<div id="enabling-tls">
+  ### Activation du TLS (HTTPS)
+</div>
+
+Pour sécuriser votre déploiement avec HTTPS :
+
+**1. Créez un secret TLS avec votre certificat et votre clé :**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. Activez TLS dans votre configuration de l’Ingress :**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### Exemple de configuration d’Ingress
+</div>
+
+À titre indicatif, voici à quoi ressemble la ressource Ingress générée :
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### Pièges courants liés à l’Ingress
+</div>
+
+**Configuration du chemin et de la réécriture :**
+
+* Pour Next.js et les autres SPA, utilisez toujours un chemin avec expression régulière et une annotation de réécriture, comme indiqué ci-dessus
+* N’utilisez pas seulement `path: /` sans réécriture, car cela empêchera le chargement correct des ressources statiques
+
+**Incohérence entre `frontendUrl` et `ingress.host` :**
+
+* S’ils ne correspondent pas, vous risquez de rencontrer des problèmes de cookies, de redirections et de chargement des ressources
+
+**Mauvaise configuration de TLS :**
+
+* Assurez-vous que votre secret TLS est valide et correctement référencé dans l’Ingress
+* Les navigateurs peuvent bloquer le contenu non sécurisé si vous accédez à l’application en HTTP alors que TLS est activé
+
+**Version du contrôleur Ingress :**
+
+* Certaines fonctionnalités (comme les chemins avec expression régulière et les réécritures) nécessitent une version récente du contrôleur Ingress nginx
+* Vérifiez votre version avec :
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## Ingress du collector OTel
+</div>
+
+Si vous devez exposer les points de terminaison de votre OTel collector (pour les traces, les métriques et les logs) via un Ingress, utilisez la configuration `additionalIngresses`. C&#39;est utile pour envoyer des données de télémétrie depuis l&#39;extérieur du cluster ou pour utiliser un domaine personnalisé pour le collector.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* Cela crée une ressource Ingress distincte pour les points de terminaison de l’OTel collector
+* Vous pouvez utiliser un domaine différent, configurer des paramètres TLS spécifiques et appliquer des annotations personnalisées
+* La règle de chemin basée sur une expression régulière vous permet d’acheminer tous les signaux OTLP (traces, métriques, logs) au moyen d’une seule règle
+
+<Note>
+  Si vous n’avez pas besoin d’exposer l’OTel collector en externe, vous pouvez ignorer cette configuration. Pour la plupart des utilisateurs, la configuration générale de l’Ingress suffit.
+</Note>
+
+<div id="troubleshooting-ingress">
+  ## Dépannage de l’Ingress
+</div>
+
+**Vérifiez la ressource Ingress :**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**Consultez les journaux du contrôleur Ingress :**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**Tester les URL des ressources :**
+
+Utilisez `curl` pour vérifier que les ressources statiques sont renvoyées au format JS, et non HTML :
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Should return Content-Type: application/javascript
+```
+
+**Outils de développement du navigateur :**
+
+* Vérifiez l’onglet Network pour repérer les erreurs 404 ou les ressources qui renvoient du HTML au lieu de JS
+* Recherchez des erreurs comme `Unexpected token <` dans la console (cela indique que du HTML est renvoyé à la place de JS)
+
+**Vérifier les réécritures de chemins :**
+
+* Assurez-vous que la ressource Ingress ne supprime pas les chemins des ressources et ne les réécrit pas de manière incorrecte
+
+**Vider le cache du navigateur et du CDN :**
+
+* Après les modifications, videz le cache de votre navigateur ainsi que tout cache CDN/proxy pour éviter d’utiliser des ressources obsolètes
+
+<div id="customizing-values">
+  ## Personnalisation des valeurs
+</div>
+
+Vous pouvez personnaliser les valeurs à l’aide des options `--set` :
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+Vous pouvez également créer un fichier `values.yaml` personnalisé. Pour obtenir les valeurs par défaut :
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+Exemple de configuration :
+
+```yaml
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+hyperdx:
+  ingress:
+    enabled: true
+    host: hyperdx.example.com
+```
+
+Appliquez vos valeurs personnalisées :
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Options de déploiement (v1.x)](/fr/clickstack/deployment/helm-deployment-options-v1) - Systèmes externes et déploiements minimaux
+* [Déploiements Cloud (v1.x)](/fr/clickstack/deployment/helm-cloud-v1) - Configurations pour GKE, EKS et AKS
+* [Guide principal Helm (v1.x)](/fr/clickstack/deployment/helm-v1) - Installation de base
+* [Configuration de Helm (v2.x)](/fr/clickstack/deployment/helm-configuration) - Guide de configuration v2.x
+* [Guide de mise à niveau](/fr/clickstack/deployment/helm-upgrade) - Migration de v1.x vers v2.x

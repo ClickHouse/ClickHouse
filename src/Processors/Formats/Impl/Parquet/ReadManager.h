@@ -44,6 +44,11 @@ public:
 
     ~ReadManager();
 
+    /// Same handshake as the destructor, but keeps `reader` and its metadata intact. After this
+    /// returns, no decode task runs anymore, so nothing can re-enter the prefetcher. Idempotent.
+    /// Drain this before the prefetcher: decode tasks read ranges through it.
+    void shutdownTasks();
+
     struct ReadResult
     {
         Chunk chunk;
@@ -114,8 +119,29 @@ private:
     /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 
+    /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
+    struct TopKAdmission
+    {
+        size_t min_outstanding = 1;
+        std::mutex mutex;
+        size_t next_row_group = 0;
+        /// Admitted row groups that are not fully read yet.
+        size_t outstanding = 0;
+        size_t admitted = 0;
+    };
+    TopKAdmission top_k_admission;
+
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
+    /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
+    /// reader's memory high watermark minus what the `BloomFilterBlocksOrDictionary` stage already holds
+    /// (the decoded dictionaries and value sets other row groups are holding right now, plus this batch's
+    /// in-flight `diff`). Both the decoded dictionaries (`Reader::decodeDictionaryPage`) and the value
+    /// sets built while evaluating a row-group filter (`Reader::hashDictionaryValues`) reserve through it,
+    /// charging the shared stage counter directly, so the pruning memory stays within the watermark
+    /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
+    /// `Reader::applyBloomAndDictionaryFilters`).
+    PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
@@ -127,6 +153,9 @@ private:
     void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
+    void admitTopKRowGroups(MemoryUsageDiff & diff);
+    /// Called when the row group is fully read or skipped; no-op if it wasn't admitted by admitTopKRowGroups.
+    void releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);
     std::string collectDeadlockDiagnostics();
 };

@@ -15,29 +15,25 @@ namespace DB
 {
 struct Settings;
 
-struct GroupConcatDataBase
-{
-    UInt64 data_size = 0;
-    UInt64 allocated_size = 0;
-    char * data = nullptr;
-
-    void checkAndUpdateSize(UInt64 add, Arena * arena);
-    void insertChar(const char * str, UInt64 str_size, Arena * arena);
-    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
-};
-
-struct GroupConcatData : public GroupConcatDataBase
+struct GroupConcatData
 {
     using Offset = UInt64;
     using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
     using Offsets = PODArray<Offset, 32, Allocator>;
 
+    UInt64 data_size = 0;
+    UInt64 allocated_size = 0;
+    char * data = nullptr;
     Offsets offsets;
     UInt64 num_rows = 0;
+
+    void checkAndUpdateSize(UInt64 add, Arena * arena);
+    void insertChar(const char * str, UInt64 str_size, Arena * arena);
 
     UInt64 getSize(size_t i) const;
     UInt64 getString(size_t i) const;
 
+    void insertString(std::string_view str, Arena * arena);
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 
@@ -63,7 +59,7 @@ public:
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
+    void mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override;
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;

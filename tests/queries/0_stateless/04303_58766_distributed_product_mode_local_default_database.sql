@@ -8,8 +8,8 @@
 -- "failed at position 98 ('``')", because the subquery rewriter produced an unqualified table
 -- reference like `` ``.`smaller_table` `` with empty backticks for the database name.
 --
--- The new analyzer (`enable_analyzer = 1`) handles this correctly. This test guards against a
--- regression on the new analyzer path.
+-- The analyzer (`enable_analyzer = 1`) handles this correctly. This test guards against a
+-- regression on the analyzer path.
 
 DROP TABLE IF EXISTS dist_smaller_58766;
 DROP TABLE IF EXISTS dist_larger_58766;

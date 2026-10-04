@@ -1,0 +1,113 @@
+---
+slug: '/examples/aggregate-function-combinators/sumSimpleState'
+title: 'sumSimpleState'
+description: 'sumSimpleState 组合器使用示例'
+keywords: ['sum', 'state', 'simple', 'combinator', 'examples', 'sumSimpleState']
+sidebarTitle: 'sumSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 描述
+</div>
+
+[`SimpleState`](/zh/reference/functions/aggregate-functions/combinators#-simplestate) 组合器可应用于 [`sum`](/zh/reference/functions/aggregate-functions/sum)
+函数，以返回所有输入值之和。返回结果的类型为
+[`SimpleAggregateFunction`](/zh/reference/data-types/simpleaggregatefunction)。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+<div id="tracking-post-votes">
+  ### 跟踪顶票和踩票
+</div>
+
+来看一个使用表来跟踪帖子投票情况的实际示例。
+对于每篇帖子，我们希望维护顶票数、踩票数以及
+总分的累计值。对于这种用例，使用带有 sum 的 `SimpleAggregateFunction` 类型非常合适，
+因为我们只需要存储这些累计值，而不必存储聚合的完整状态。
+因此，它会更快，而且无需合并部分聚合状态。
+
+首先，我们为原始数据创建一个表：
+
+```sql title="Query"
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+接下来，创建一个用于存储聚合数据的目标表：
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+然后，创建一个包含 `SimpleAggregateFunction` 类型列的 materialized view：
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- sum 状态的初始值（upvote 时为 1，否则为 0）
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- sum 状态的初始值（downvote 时为 1，否则为 0）
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- sum 状态的初始值（upvote 时为 1，downvote 时为 -1）
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+插入示例数据：
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+使用 `SimpleState` 组合器查询该 materialized view：
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- 查询目标表
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`sum`](/zh/reference/functions/aggregate-functions/sum)
+* [`SimpleState 组合器`](/zh/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/zh/reference/data-types/simpleaggregatefunction)

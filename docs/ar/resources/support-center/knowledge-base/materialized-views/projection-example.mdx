@@ -1,0 +1,145 @@
+---
+title: "كيفية التأكد مما إذا كان الاستعلام يستخدم إسقاط؟"
+date: 2022-07-10
+description: "تعرّف على كيفية التحقق مما إذا كان يتم استخدام إسقاط في استعلامات ClickHouse من خلال الاختبار باستخدام بيانات تجريبية واستخدام EXPLAIN للتأكد من استخدام إسقاط."
+tags: ['نمذجة البيانات']
+keywords: ['إسقاط']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف يمكنني معرفة ما إذا كان يُستخدم الإسقاط؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+1. أنشئ قاعدة بيانات نموذجية
+
+```
+CREATE database db1;
+```
+
+2. أنشئ جدولًا نموذجيًا يستخدم column1 كمفتاح أساسي
+
+```
+CREATE table db1.table1_projections
+(
+ column1 Int32,
+ column2 Int32
+)
+engine = MergeTree()
+order by column1;
+```
+
+3. أضِف إسقاطًا `for_column2` لجعل column2 المفتاح الأساسي
+
+```
+ALTER table db1.table1_projections add projection for_column2
+(
+  select * 
+  order by column2
+);
+```
+
+4. أدرج بيانات اختبار
+
+*سيؤدي ذلك إلى إدراج 100000 صف بقيم عشوائية في column1 وcolumn2
+
+```
+INSERT INTO db1.table1_projections
+select 
+ floor(randNormal(50, 5)) as column1,
+ floor(randUniform(1, 100)) as column2
+from numbers(100000);
+```
+
+5. تحقّق من عيّنة من البيانات
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_projections limit 5;
+
+SELECT *
+FROM db1.table1_projections
+LIMIT 5
+
+Query id: d6940799-b507-4a5e-9843-df55ebe818ab
+
+┌─column1─┬─column2─┐
+│      28 │      41 │
+│      29 │      12 │
+│      30 │      73 │
+│      30 │      75 │
+│      30 │      70 │
+└─────────┴─────────┘
+```
+
+6. تحقّق من أنه يستخدم الجدول الأصلي مع column1:
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT count() from db1.table1_projections where column1 > 50;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM db1.table1_projections
+WHERE column1 > 50
+
+Query id: e04d5236-1a05-4f1f-9502-7e41986beb44
+
+┌─explain────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))        │
+│   Aggregating                                      │
+│     Expression (Before GROUP BY)                   │
+│       Filter (WHERE)                               │
+│         ReadFromMergeTree (db1.table1_projections) │
+│         Indexes:                                   │
+│           PrimaryKey                               │
+│             Condition: true                        │
+│             Parts: 1/1                             │
+│             Granules: 12/12                        │
+└────────────────────────────────────────────────────┘
+```
+
+*لاحظ أنه يقرأ من `db1.table1_projections`
+
+7. اختبر القراءة من الإسقاط باستخدام column2 في عبارة WHERE
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT * from db1.table1_projections where column2 > 50;
+
+EXPLAIN indexes = 1
+SELECT *
+FROM db1.table1_projections
+WHERE column2 > 50
+
+Query id: d2b20e01-93bf-4b60-a370-4aac7b454267
+
+┌─explain─────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY)) │
+│   Filter                                    │
+│     ReadFromMergeTree (for_column2)         │
+│     Indexes:                                │
+│       PrimaryKey                            │
+│         Keys:                               │
+│           column2                           │
+│         Condition: (column2 in [51, +Inf))  │
+│         Parts: 1/1                          │
+│         Granules: 6/12                      │
+└─────────────────────────────────────────────┘
+```
+
+*لاحظ أنه يُستخدم الآن الإسقاط `for_column2`.
+
+**لمزيد من المعلومات**
+
+الإسقاطات:
+[https://clickhouse.com/docs/sql-reference/statements/alter/projection](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+
+دالة الجدول numbers: [https://clickhouse.com/docs/sql-reference/table-functions/numbers](https://clickhouse.com/docs/sql-reference/table-functions/numbers)s
+
+مدونة حول إنشاء بيانات عشوائية:
+[https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

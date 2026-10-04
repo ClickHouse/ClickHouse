@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 #include <gtest/gtest.h>
 

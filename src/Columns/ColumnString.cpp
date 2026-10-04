@@ -1,6 +1,8 @@
 #include <Columns/ColumnString.h>
 
+#include <cstring>
 #include <Columns/Collator.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
@@ -25,6 +27,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -54,16 +57,22 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_offset = src_concrete.offsets[position - 1];
     const size_t src_buf_size
         = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_rows = offsets.size();
+    const size_t new_rows = old_rows + length;
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + src_buf_size * length;
     chars.resize(new_size);
 
-    const size_t old_rows = offsets.size();
-    offsets.resize(old_rows + length);
+    const UInt8 * src_buf = &src_concrete.chars[src_offset];
+
+    offsets.resize_assume_reserved(new_rows);
 
     for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
         memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
@@ -339,7 +348,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -363,6 +372,16 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (string_size < serialize_string_with_zero_byte)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
+
+    /// Callers wrap one complete in-memory record, never a refillable stream, so a size past its end can never be satisfied.
+    if (string_size - serialize_string_with_zero_byte > in.available())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data. Bytes read: {}. Bytes expected: {}.",
+            in.available(), string_size - serialize_string_with_zero_byte);
+
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
@@ -370,13 +389,6 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
-}
-
-void ColumnString::skipSerializedInArena(ReadBuffer & in) const
-{
-    size_t string_size = 0;
-    readBinaryLittleEndian<size_t>(string_size, in);
-    in.ignore(string_size);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
@@ -577,10 +589,6 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     size_t res_chars_size = 0;
-    /// This is a dependent prefix-sum where each iteration depends on the
-    /// previous one.  Auto-vectorization adds horizontal-reduction overhead
-    /// without improving throughput for dependent chains.
-#pragma clang loop vectorize(disable)
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
@@ -799,6 +807,22 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 }
 
+size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// Compare length first then bytes if needed.
+    const size_t ref_size = sizeAt(begin);
+    const UInt8 * ref_data = chars.data() + offsetAt(begin);
+    auto equals = [&](size_t i)
+    { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
+
+    /// A string comparison reads offsets and bytes, which is relatively expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
+}
+
 void ColumnString::protect()
 {
     getChars().protect();
@@ -867,4 +891,57 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     return column_sizes;
 }
 
+bool ColumnString::hasOnlyTypeDefaults() const
+{
+    return chars.empty();
+}
+
+/// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
+/// Uses memchr+append fast path: no-NUL strings are copied in one append call.
+void ColumnString::serializeAsComparable(size_t n, String & out) const
+{
+    const size_t string_size = sizeAt(n);
+    const auto string_offset = offsetAt(n);
+    const char * src = reinterpret_cast<const char *>(&chars[string_offset]);
+    const char * const end = src + string_size;
+
+    out.reserve(out.size() + string_size + 2);
+
+    const char * p = static_cast<const char *>(std::memchr(src, '\0', string_size));
+    if (p == nullptr)
+    {
+        out.append(src, string_size);
+    }
+    else
+    {
+        const char * cursor = src;
+        do
+        {
+            out.append(cursor, p - cursor);
+            out.append("\0\x01", 2);
+            cursor = p + 1;
+            p = static_cast<const char *>(std::memchr(cursor, '\0', end - cursor));
+        }
+        while (p != nullptr);
+        out.append(cursor, end - cursor);
+    }
+
+    out.append("\0\x00", 2);
+}
+
+void ColumnString::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
+}
+
+ColumnPlanes ColumnString::getPlanes() const
+{
+    return ColumnPlanes(ColumnPlanes::Shape::String, offsets.data(), chars.data());
+}
 }

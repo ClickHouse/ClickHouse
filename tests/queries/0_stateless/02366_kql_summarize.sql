@@ -53,51 +53,71 @@ Customers | summarize MyAvg = avgif(Age, Age<40) by Occupation | order by Occupa
 Customers | summarize MySum = sumif(Age, Age<40) by Occupation | order by Occupation;
 Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
-Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
 Customers | summarize job_count = count() by Occupation | where job_count > 0 | order by Occupation;
 Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError SYNTAX_ERROR }
 
 print '-- make_list() --';
 Customers | summarize f_list = make_list(Education) by Occupation | sort by Occupation;
-Customers | summarize f_list = make_list(Education, 2) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 32: 'make_list' takes 1 argument(s), got 2, found 'make_list'
+-- Customers | summarize f_list = make_list(Education, 2) by Occupation | sort by Occupation;
 print '-- make_list_if() --';
-Customers | summarize f_list = make_list_if(FirstName, Age>30) by Occupation | sort by Occupation;
-Customers | summarize f_list = make_list_if(FirstName, Age>30, 1) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_list_if(FirstName, Age>30) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_list_if(FirstName, Age>30, 1) by Occupation | sort by Occupation;
 print '-- make_set() --';
 Customers | summarize f_list = make_set(Education) by Occupation | sort by Occupation;
-Customers | summarize f_list = make_set(Education, 2) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 32: 'make_set' takes 1 argument(s), got 2, found 'make_set'
+-- Customers | summarize f_list = make_set(Education, 2) by Occupation | sort by Occupation;
 print '-- make_set_if() --';
-Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation | sort by Occupation;
-Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation | sort by Occupation;
 print '-- stdev() --';
 Customers | project Age | summarize stdev(Age);
 print '-- stdevif() --';
 Customers | project Age | summarize stdevif(Age, Age%2==0);
 print '-- binary_all_and --';
-Customers | project Age | where Age > 40 | summarize binary_all_and(Age);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 54: 'binary_all_and' is not supported by the KQL dialect, found 'binary_all_and'
+-- Customers | project Age | where Age > 40 | summarize binary_all_and(Age);
 print '-- binary_all_or --';
-Customers | project Age | where Age > 40 | summarize binary_all_or(Age);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 54: 'binary_all_or' is not supported by the KQL dialect, found 'binary_all_or'
+-- Customers | project Age | where Age > 40 | summarize binary_all_or(Age);
 print '-- binary_all_xor --';
-Customers | project Age | where Age > 40 | summarize binary_all_xor(Age);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 54: 'binary_all_xor' is not supported by the KQL dialect, found 'binary_all_xor'
+-- Customers | project Age | where Age > 40 | summarize binary_all_xor(Age);
 
 Customers | project Age | summarize percentile(Age, 95);
-Customers | project Age | summarize percentiles(Age, 5, 50, 95)|project round(percentiles_Age[0],2),round(percentiles_Age[1],2),round(percentiles_Age[2],2);
-Customers | project Age | summarize percentiles(Age, 5, 50, 95)[1];
-Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew(AgeBucket, w, 75);
-Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 37: 'percentiles' is not supported by the KQL dialect, found 'percentiles'
+-- Customers | project Age | summarize percentiles(Age, 5, 50, 95)|project round(percentiles_Age[0],2),round(percentiles_Age[1],2),round(percentiles_Age[2],2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 37: 'percentiles' is not supported by the KQL dialect, found 'percentiles'
+-- Customers | project Age | summarize percentiles(Age, 5, 50, 95)[1];
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 70: 'percentilew' is not supported by the KQL dialect, found 'percentilew'
+-- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilew(AgeBucket, w, 75);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 70: 'percentilesw' is not supported by the KQL dialect, found 'percentilesw'
+-- Customers | summarize w=count() by AgeBucket=bin(Age, 5) | summarize percentilesw(AgeBucket, w, 50, 75, 99.9);
 
 print '-- Summarize following sort --';
 Customers | sort by FirstName | summarize count() by Occupation | sort by Occupation;
 
 print '-- summarize with bin --';
-EventLog | summarize count=count() by bin(Created, 1000) | sort by Created asc;
-EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s) | sort by Columns1 asc;
-EventLog | summarize count=count() by time_label=bin(Created/1000, 1s) | sort by time_label asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- EventLog | summarize count=count() by bin(Created, 1000) | sort by Created asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s) | sort by Columns1 asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- EventLog | summarize count=count() by time_label=bin(Created/1000, 1s) | sort by time_label asc;
 Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
-Customers | summarize t = make_list_with_nulls(FirstName);
-Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation | sort by Occupation;
-Customers | summarize f_list = make_list_with_nulls(FirstName), a_list = make_list_with_nulls(Age) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize t = make_list_with_nulls(FirstName);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation | sort by Occupation;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | summarize f_list = make_list_with_nulls(FirstName), a_list = make_list_with_nulls(Age) by Occupation | sort by Occupation;
 -- TODO:
 -- arg_max()
 -- arg_min()

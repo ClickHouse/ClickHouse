@@ -9,7 +9,13 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
+
 #include <Databases/IDatabase.h>
+
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -19,6 +25,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
 
@@ -27,6 +34,7 @@
 #include <IO/S3/Client.h>
 #endif
 
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -57,7 +65,7 @@ namespace HistogramMetrics
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
 }
 
 namespace DB
@@ -162,7 +170,12 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
+    , AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -218,10 +231,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
-        const UInt64 req_bytes = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorDeliveredBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -232,7 +243,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
                 "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
                 " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
-                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorDeliveredBytes."
                 " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
                 " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
         }
@@ -246,8 +257,31 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Current limit on the size of userspace page cache, in bytes." };
     }
 
+#if ENABLE_DISTRIBUTED_CACHE
+    DistributedCache::updateDistributedCacheMetrics(new_values);
+#endif
+
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
+
+#if defined(OS_LINUX)
+    try
+    {
+        const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
+            "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
+            " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
+            " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
+            " physical memory footprint of the UDF processes." };
+        new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
+            "Number of live processes spawned for executable and executable_pool user-defined functions,"
+            " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
 
     if (const auto stats = getHashTablesCacheStatistics())
     {
@@ -300,6 +334,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Free and total space on every configured disk.
     {
         DisksMap disks_map = getContext()->getDisksMap();
+
+        AsynchronousMetricKeyValues disk_total;
+        AsynchronousMetricKeyValues disk_used;
+        AsynchronousMetricKeyValues disk_available;
+        AsynchronousMetricKeyValues disk_unreserved;
+#if USE_AWS_S3
+        AsynchronousMetricKeyValues disk_put_object_throttler_rps;
+        AsynchronousMetricKeyValues disk_put_object_throttler_available;
+        AsynchronousMetricKeyValues disk_get_object_throttler_rps;
+        AsynchronousMetricKeyValues disk_get_object_throttler_available;
+#endif
+        AsynchronousMetricKeyValues dead_blobs_queue_estimate;
+        AsynchronousMetricKeyValues missing_blobs_queue_estimate;
+
         for (const auto & [name, disk] : disks_map)
         {
             auto total = disk->getTotalSpace();
@@ -310,21 +358,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 auto available = disk->getAvailableSpace();
                 auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                disk_total[name] = static_cast<double>(*total);
 
                 if (available)
                 {
-                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information." };
-
-                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                    disk_used[name] = static_cast<double>(*total - *available);
+                    disk_available[name] = static_cast<double>(*available);
                 }
 
                 if (unreserved)
-                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                    disk_unreserved[name] = static_cast<double>(*unreserved);
             }
 
 #if USE_AWS_S3
@@ -332,25 +375,69 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             {
                 if (auto put_throttler = s3_client->getPutRequestThrottler())
                 {
-                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
-                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
-                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                    disk_put_object_throttler_rps[name] = static_cast<double>(put_throttler->getMaxSpeed());
+                    disk_put_object_throttler_available[name] = static_cast<double>(put_throttler->getAvailable());
                 }
                 if (auto get_throttler = s3_client->getGetRequestThrottler())
                 {
-                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
-                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
-                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                    disk_get_object_throttler_rps[name] = static_cast<double>(get_throttler->getMaxSpeed());
+                    disk_get_object_throttler_available[name] = static_cast<double>(get_throttler->getAvailable());
                 }
             }
 #endif
+
+            if (auto object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk))
+            {
+                dead_blobs_queue_estimate[name] = static_cast<double>(object_storage_disk->getDeadBlobsQueueEstimate());
+                missing_blobs_queue_estimate[name] = static_cast<double>(object_storage_disk->getMissingBlobsQueueEstimate());
+            }
+        }
+
+        if (!disk_total.empty())
+            new_values["DiskTotal"] = { "disk", std::move(disk_total),
+                "The total size in bytes of every disk (virtual filesystem), keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+        if (!disk_used.empty())
+            new_values["DiskUsed"] = { "disk", std::move(disk_used),
+                "Used bytes on every disk (virtual filesystem), keyed by the disk name. Remote filesystems do not always provide this information." };
+
+        if (!disk_available.empty())
+            new_values["DiskAvailable"] = { "disk", std::move(disk_available),
+                "Available bytes on every disk (virtual filesystem), keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+        if (!disk_unreserved.empty())
+            new_values["DiskUnreserved"] = { "disk", std::move(disk_unreserved),
+                "Available bytes on every disk (virtual filesystem) without the reservations for merges, fetches, and moves, keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+#if USE_AWS_S3
+        if (!disk_put_object_throttler_rps.empty())
+        {
+            new_values["DiskPutObjectThrottlerRPS"] = { "disk", std::move(disk_put_object_throttler_rps),
+                "PutObject Request throttling limit on every disk in requests per second (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+            new_values["DiskPutObjectThrottlerAvailable"] = { "disk", std::move(disk_put_object_throttler_available),
+                "Number of PutObject requests that can be currently issued without hitting throttling limit on every disk (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+        }
+
+        if (!disk_get_object_throttler_rps.empty())
+        {
+            new_values["DiskGetObjectThrottlerRPS"] = { "disk", std::move(disk_get_object_throttler_rps),
+                "GetObject Request throttling limit on every disk in requests per second (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+            new_values["DiskGetObjectThrottlerAvailable"] = { "disk", std::move(disk_get_object_throttler_available),
+                "Number of GetObject requests that can be currently issued without hitting throttling limit on every disk (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+        }
+#endif
+
+        if (!dead_blobs_queue_estimate.empty())
+        {
+            new_values["DeadBlobsQueueEstimate"] = { "disk", std::move(dead_blobs_queue_estimate),
+                "Estimated number of blobs enqueued for removal from the disk object storage (the blob manager dead queue), keyed by the disk name. Disks without blob replication report 0." };
+            new_values["MissingBlobsQueueEstimate"] = { "disk", std::move(missing_blobs_queue_estimate),
+                "Estimated number of blobs awaiting replication to other locations of the disk (the blob manager missing queue), keyed by the disk name. Disks without blob replication report 0." };
         }
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -409,11 +496,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
+                auto table = iterator->table();
                 if (!table)
                     continue;
 
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip))
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
@@ -455,7 +542,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     }
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
                 {
                     StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -536,7 +623,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        const auto user_info = getContext()->getProcessList().getUserInfo(false);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
@@ -591,18 +678,14 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip))
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {
@@ -911,7 +994,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  "Update heavy metrics. "
                  "Update period {} sec. "
                  "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
+                 "Heavy metrics calculation elapsed: {:.3f} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
                  watch.elapsedSeconds());
@@ -946,6 +1029,21 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+#define MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION \
+    "Approximate resident set size of pthread stacks, summed from `Rss:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or " \
+    "newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it " \
+    "is summed from the resident pages of the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION \
+    "Approximate virtual size of pthread stacks, summed from `Size:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or newer; absent on older kernels (see " \
+    "the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it is summed from the sizes of the " \
+    "task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION \
+    "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]` in /proc/self/smaps. Refreshed on the heavy-metrics " \
+    "cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in " \
+    "`system.warnings`). On macOS, it counts the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
     /// present between heavy-cadence refreshes. They are emitted only after a
     /// successful sample; in environments where the source cannot be read, or
@@ -957,42 +1055,24 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
 #if defined(OS_LINUX)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from `Rss:`"
-            " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
-            " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
-            " cadence. Requires Linux 5.17 or newer; absent on older kernels"
-            " (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from `Size:` of"
-            " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
-            " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
-            " newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
-            " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
-            " Requires Linux 5.17 or newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #elif defined(OS_DARWIN)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from the"
-            " resident pages of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from the sizes"
-            " of the task's VM regions tagged `VM_MEMORY_STACK` (excluding the"
-            " inaccessible guard regions). Refreshed on the heavy-metrics"
-            " cadence." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #endif
     }
+
+#undef MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION
 #endif
 }
 

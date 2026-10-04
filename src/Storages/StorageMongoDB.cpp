@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -49,6 +50,12 @@ using bsoncxx::to_json;
 namespace DB
 {
 
+MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
+{
+    static MongoDBInstanceHolder instance;
+    return instance;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -58,7 +65,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
@@ -76,7 +82,7 @@ void MongoDBConfiguration::checkCollection() const
     /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
     /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
     /// effectively empty collection name, which aborts the process inside the driver.
-    if (collection.empty() || collection.find('\0') != String::npos)
+    if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
@@ -320,7 +326,7 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
         return {};
     if (table_function && table_function->getStorage()->getStorageID() != storage_id)
         return {};
-    if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
+    if (join_node && column->getColumnSource().get() != join_node->getLeftTableExpressionNode().get())
         return {};
 
     return column;
@@ -367,23 +373,71 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        if (const_value.getType() == Field::Types::Array)
+        /// A list of one member arrives as a plain constant.
+        Array elements;
+        if (const_value.getType() == Field::Types::Tuple)
         {
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            const auto & value_tuple = const_value.safeGet<Tuple>();
+            elements.assign(value_tuple.begin(), value_tuple.end());
         }
-        else if (const_value.getType() == Field::Types::Tuple)
+        else if (const_value.getType() == Field::Types::Array)
+            elements = const_value.safeGet<Array>();
+        else
+            elements.push_back(const_value);
+
+        /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
+        /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
+        /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
+        /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+        Array converted_elements;
+        converted_elements.reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); ++i)
         {
-            auto & value_tuple = const_value.safeGet<Tuple>();
-            const_value = Array(value_tuple.begin(), value_tuple.end());
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            DataTypePtr element_type;
+            if (tuple_type && i < tuple_type->getElements().size())
+                element_type = tuple_type->getElements()[i];
+            else if (array_type)
+                element_type = array_type->getNestedType();
+            else if (!tuple_type)
+                element_type = const_type;
+
+            /// Every element is converted: the list is written with the column's type, so a `Float64`
+            /// element under an integer column would be read back as an integer.
+            if (element_type && element_type->equals(*column_type))
+            {
+                converted_elements.push_back(elements[i]);
+                continue;
+            }
+
+            auto converted = tryConvertFieldToType(elements[i], *column_type, element_type.get(), {}, /*strict=*/ true);
+            if (converted.isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
+                continue;
+            }
+            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
+                return {};
+            }
+            converted_elements.push_back(std::move(converted));
         }
+
+        const_value = std::move(converted_elements);
+        column_type = std::make_shared<DataTypeArray>(column_type);
+        const_type = column_type;
     }
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get());
+        /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
 
         if (converted_value.isNull())
         {
@@ -499,13 +553,6 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
-        return make_document();
-    }
-
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (throw_on_error)
@@ -537,7 +584,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit())
+    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)
@@ -596,16 +643,16 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasWhere())
     {
-        const auto & join_tree = query_tree.getJoinTree();
+        const auto & join_tree = query_tree.getJoinTreeNode();
         const auto * join_node = join_tree->as<JoinNode>();
         bool allow_where = true;
 
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
-                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getLeftTableExpressionNode()->isEqual(*query.table_expression);
             else if (join_node->getKind() == JoinKind::Right)
-                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getRightTableExpressionNode()->isEqual(*query.table_expression);
             else
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }
@@ -656,7 +703,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         .description = R"DOCS_MD(
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
-Only MongoDB v3.6+ servers are supported.
+Only MongoDB >=7 is supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
 ## Creating a table {#creating-a-table}
@@ -682,10 +729,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 | `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
 
-:::tip
+<Tip>
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
-:::
+</Tip>
 
 Alternatively, you can pass a URI:
 
@@ -775,10 +822,10 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
-You can disable all these restriction, using [mongodb_throw_on_unsupported_query](../../../operations/settings/settings.md#mongodb_throw_on_unsupported_query).
+You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
 In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
 
-:::note
+<Note>
 It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
 For example you want to filter by `Date`:
 
@@ -793,8 +840,7 @@ SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024
 ```
 
 This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
-
-:::
+</Note>
 
 ## Usage example {#usage-example}
 

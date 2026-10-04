@@ -1,0 +1,69 @@
+---
+slug: '/examples/aggregate-function-combinators/countResample'
+title: 'countResample'
+description: 'count와 함께 사용하는 Resample 조합자 예시'
+keywords: ['count', 'Resample', 'combinator', '예시', 'countResample']
+sidebarTitle: 'countResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Resample`](/ko/reference/functions/aggregate-functions/combinators#-resample)
+조합자는 [`count`](/ko/reference/functions/aggregate-functions/count)
+집계 함수에 적용하여 지정된 키 컬럼의 값을 고정된 개수의
+인터벌(`N`)로 나누어 셀 수 있습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="basic-example">
+  ### 기본 예시
+</div>
+
+예시를 살펴보겠습니다. 직원의 `name`, `age`, `wage`를 포함하는 테이블을 만들고,
+여기에 몇 개의 데이터를 삽입해 보겠습니다:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+나이가 `[30,60)`
+및 `[60,75)` 인터벌에 속하는 모든 사람의 수를 계산해 보겠습니다. 나이는 정수로 표현하므로
+실제로는 `[30, 59]` 및 `[60,74]` 인터벌에 해당합니다. 이를 위해 `count`에
+`Resample` 조합자를 적용합니다.
+
+```sql
+SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
+```
+
+```response
+┌─amount─┐
+│ [3,2]  │
+└────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`count`](/ko/reference/functions/aggregate-functions/count)
+* [`Resample 조합자`](/ko/reference/functions/aggregate-functions/combinators#-resample)

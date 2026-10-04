@@ -1,5 +1,6 @@
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
+#include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
@@ -11,7 +12,7 @@
 #include <atomic>
 #include <utility>
 
-#if 0
+#ifdef SCHEDULER_DEBUG
 #define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
     lease_id, settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, requests.hasEnqueued())
@@ -193,7 +194,7 @@ void CPULeaseAllocation::RequestChain::scheduled()
         cancel_cv.notify_one();
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
     , log(getLogger("CPULeaseAllocation"))
@@ -203,6 +204,13 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
+    // initial_max_slots_ == 0 is the eager default: request all max_threads up front.
+    // A lazy caller passes a smaller value (typically 1 for the master thread) and grows
+    // the ceiling later via setMax.
+    current_max_slots = (initial_max_slots_ == 0 || initial_max_slots_ > max_threads)
+        ? max_threads
+        : initial_max_slots_;
+
     // Capture query-level counters (ThreadGroup) that outlive all worker threads.
     // Cannot use CurrentThread::getProfileEvents() in schedule() — it returns the calling
     // thread's counters, which may be destroyed before the timer is flushed (UAF).
@@ -438,8 +446,32 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
         else
             break; // No preempted threads, we are done
     }
+}
 
-    // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning, but this requires modification of the PipelineExecutor as well
+void CPULeaseAllocation::setMax(SlotCount new_max)
+{
+    chassert(new_max > 0);
+    std::unique_lock lock{mutex};
+
+    // Clamp to the hard cap that all internal vectors (`requests` chain, `threads` bitsets)
+    // were sized for in the constructor. Growing beyond `max_threads` is not supported.
+    new_max = std::min(new_max, max_threads);
+    if (new_max == current_max_slots)
+        return;
+
+    const bool growing = new_max > current_max_slots;
+    current_max_slots = new_max;
+
+    // Only growth needs an immediate kick: it may need to enqueue a new resource request
+    // for the additional capacity. The grant chain (driven by grantImpl after each scheduler
+    // grant) then naturally fills up to `current_max_slots` one request at a time.
+    // Shrinking does not reclaim already-granted slots — it simply caps future grants
+    // because the next `schedule()` will see `allocated >= current_max_slots` and bail out.
+    if (growing && !shutdown && allocated < current_max_slots && !requests.hasEnqueued())
+    {
+        if (!schedule(lock))
+            grantImpl(lock); // Non-competing path: grant immediately and chain.
+    }
 }
 
 bool CPULeaseAllocation::renew(Lease & lease)
@@ -495,6 +527,13 @@ bool CPULeaseAllocation::renew(Lease & lease)
             // We only preempt the last running thread to avoid running many threads with low utilization (e.g spread 2 CPU among 10 threads).
             // It is better to run less threads, but utilize CPU better to avoid frequent context switches. This is how down-scaling works.
             setPreempted(thread_num);
+
+            // No thread is running now, so nothing reports consumption until a grant resumes one.
+            // With no running thread, preemption implies `consumed_ns >= requested_ns`: every request
+            // in consumption is fully consumed, but `consume` finishes only one per report. The rest
+            // would hold their slots while we wait, and the grant we wait for may need one of them.
+            if (threads.running_count == 0)
+                finishConsumedRequests(lock);
 
             std::optional<OpenTelemetry::SpanHolder> preemption_span;
             if (settings.trace_cpu_scheduling)
@@ -596,9 +635,33 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
     }
 }
 
+void CPULeaseAllocation::finishConsumedRequests(std::unique_lock<std::mutex> & lock)
+{
+    if (allocated == 0)
+        return;
+
+    while (allocated > 0)
+    {
+        chassert(consumed_ns >= requests.getMaxConsumed());
+        --allocated;
+        --granted;
+        requests.finish();
+        LOG_EVENT(C);
+    }
+    if (granted <= 0 && !exception)
+        acquirable.store(false, std::memory_order_relaxed);
+
+    // Ask for a slot to resume a preempted thread
+    if (!requests.hasEnqueued())
+    {
+        if (!schedule(lock))
+            grantImpl(lock);
+    }
+}
+
 bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
 {
-    if (allocated == max_threads || shutdown)
+    if (allocated >= current_max_slots || shutdown)
         return true;
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);

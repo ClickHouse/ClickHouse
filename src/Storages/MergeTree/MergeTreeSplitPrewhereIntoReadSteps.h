@@ -11,10 +11,14 @@
 namespace DB
 {
 
+class ColumnsDescription;
+
 bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
-    bool force_short_circuit_execution);
+    bool force_short_circuit_execution,
+    const ColumnsDescription * columns = nullptr,
+    bool read_ahead_columns = false);
 
 }

@@ -217,3 +217,40 @@ LIMIT 4
 SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_self_read_overwrite SYNC;
+
+-- The keep-old fallback IS read when the UPDATE condition is not constant-true. With a
+-- partial `UPDATE v = 100 WHERE id > 5`, the lowered `if(id > 5, _CAST(100, UInt64), v)` is
+-- declared UInt64, and for the unmatched rows `FunctionIf` returns the `v` fallback. That `v`
+-- must arrive in the post-`MODIFY` UInt64 type, or the executor aborts with
+-- `LOGICAL_ERROR: Unexpected return type from if. Expected UInt64. Got String`. The on-disk
+-- values are convertible, so the result must match a synchronous UPDATE + MODIFY.
+DROP TABLE IF EXISTS t_keep_old_nonconst_cond SYNC;
+
+CREATE TABLE t_keep_old_nonconst_cond
+(
+    id UInt64,
+    v String,
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_keep_old_nonconst_cond SELECT number, toString(number * 10), number % 2 FROM numbers(10);
+
+SYSTEM STOP MERGES t_keep_old_nonconst_cond;
+
+ALTER TABLE t_keep_old_nonconst_cond
+    UPDATE v = 100 WHERE id > 5
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_keep_old_nonconst_cond
+    MODIFY COLUMN v UInt64
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT v, b
+FROM t_keep_old_nonconst_cond
+ORDER BY id
+LIMIT 8
+SETTINGS apply_mutations_on_fly = 1;
+
+DROP TABLE t_keep_old_nonconst_cond SYNC;

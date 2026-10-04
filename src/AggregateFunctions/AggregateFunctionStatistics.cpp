@@ -72,9 +72,17 @@ struct AggregateFunctionVarianceData
 
     void mergeWith(const AggregateFunctionVarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        if (source.count == 0)
             return;
+
+        /// With an empty side, `delta * delta * factor` is `x * 0`, which is NaN when `delta * delta` overflows.
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
+        UInt64 total_count = count + source.count;
 
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
@@ -139,8 +147,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return m2 / static_cast<Float64>(count);
     }
 
@@ -214,7 +220,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).mergeWith(data(rhs));
     }
@@ -316,9 +322,17 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
     void mergeWith(const CovarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        if (source.count == 0)
             return;
+
+        /// With an empty side, `left_delta * right_delta * factor` is `x * 0`, which is NaN when `left_delta * right_delta` overflows.
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
+        UInt64 total_count = count + source.count;
 
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
@@ -399,8 +413,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return co_moment / static_cast<Float64>(count);
     }
 
@@ -452,7 +464,7 @@ public:
         this->data(place).update(*columns[0], *columns[1], row_num);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).mergeWith(this->data(rhs));
     }
@@ -512,9 +524,9 @@ void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & facto
 {
     /// varSampStable documentation
     FunctionDocumentation::Description description_varSampStable = R"(
-Calculate the sample variance of a data set. Unlike [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
+Calculate the sample variance of a data set. Unlike [`varSamp`](/reference/functions/aggregate-functions/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
 
-The sample variance is calculated using the same formula as [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp):
+The sample variance is calculated using the same formula as [`varSamp`](/reference/functions/aggregate-functions/varSamp):
 
 $$
 \frac{\Sigma{(x - \bar{x})^2}}{n-1}
@@ -574,7 +586,7 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
     /// varPopStable documentation
     FunctionDocumentation::Description description_varPopStable = R"(
 Returns the population variance.
-Unlike [`varPop`](/sql-reference/aggregate-functions/reference/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
+Unlike [`varPop`](/reference/functions/aggregate-functions/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
 It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_varPopStable = R"(
@@ -624,7 +636,7 @@ FROM test_data;
     });
 
     FunctionDocumentation::Description description_stddevSampStable = R"(
-The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md). Unlike [stddevSamp](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varSamp](/reference/functions/aggregate-functions/varSamp). Unlike [stddevSamp](/reference/functions/aggregate-functions/stddevSamp) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevSampStable = R"(
 stddevSampStable(x)
@@ -670,7 +682,7 @@ FROM test_data;
     }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
-The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varPop](/reference/functions/aggregate-functions/varPop). Unlike [stddevPop](/reference/functions/aggregate-functions/stddevPop), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevPopStable = R"(
 stddevPopStable(x)
@@ -724,7 +736,7 @@ $$
 
 <br/>
 
-It is similar to [`covarSamp`](/sql-reference/aggregate-functions/reference/covarsamp) but uses a numerically stable algorithm.
+It is similar to [`covarSamp`](/reference/functions/aggregate-functions/covarSamp) but uses a numerically stable algorithm.
 As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax covarSampStable_syntax = "covarSampStable(x, y)";
@@ -799,7 +811,7 @@ $$
 
 <br/>
 
-It is similar to the [`covarPop`](/sql-reference/aggregate-functions/reference/covarpop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+It is similar to the [`covarPop`](/reference/functions/aggregate-functions/covarPop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax covarPopStable_syntax = "covarPopStable(x, y)";
     FunctionDocumentation::Arguments covarPopStable_arguments = {
@@ -849,7 +861,7 @@ $$
 
 <br/>
 
-Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm.
+Similar to the [`corr`](/reference/functions/aggregate-functions/corr) function, but uses a numerically stable algorithm.
 As a result, `corrStable` is slower than `corr` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax corrStable_syntax = "corrStable(x, y)";

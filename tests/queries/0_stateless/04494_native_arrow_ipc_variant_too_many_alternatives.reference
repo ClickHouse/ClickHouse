@@ -1,0 +1,10 @@
+--- empty Arrow, Variant(128): rejected ---
+Native Arrow IPC writer does not support a Variant with 128 alternatives
+--- empty ArrowStream, Variant(128): rejected ---
+Native Arrow IPC writer does not support a Variant with 128 alternatives
+--- non-empty Arrow, Variant(128): rejected ---
+Native Arrow IPC writer does not support a Variant with 128 alternatives
+--- empty ArrowStream, Variant(127): accepted ---
+OK
+--- non-empty ArrowStream, Variant(127): accepted ---
+OK

@@ -7,7 +7,7 @@ import pytest
 
 from ast import literal_eval
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_s3_mock
 from helpers.s3_tools import (
@@ -139,7 +139,7 @@ def setup_minio_users(cluster):
 )
 def setup_cluster(request):
     cluster = ClickHouseCluster(__file__)
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node",
         main_configs=[
             "configs/disk_s3.xml",
@@ -484,16 +484,6 @@ def test_backup_to_s3_multipart(cluster):
         "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
-    s3_backup_events = (
-        "WriteBufferFromS3Microseconds",
-        "WriteBufferFromS3Bytes",
-        "WriteBufferFromS3RequestsErrors",
-    )
-    s3_restore_events = (
-        "ReadBufferFromS3Microseconds",
-        "ReadBufferFromS3Bytes",
-        "ReadBufferFromS3RequestsErrors",
-    )
 
     objects = node.cluster.minio_client.list_objects(
         "root", f"data/backups/multipart/{backup_name}/"
@@ -674,6 +664,160 @@ def test_backup_to_s3_copy_multipart_check_error_message(cluster, broken_s3):
         )
 
 
+def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
+    # Regression test for issue #45444: a BACKUP to S3 cancelled by KILL QUERY while an S3 upload
+    # is in flight must report QUERY_WAS_CANCELLED, not a misleading S3/network error.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_id = uuid.uuid4().hex
+
+    try:
+        # Make every S3 upload hang so the backup is reliably stuck inside an in-flight S3 request
+        # (not between backup entries) when we cancel it. KILL then interrupts the upload, and the
+        # retry loop must surface the cancellation instead of the resulting network error.
+        broken_s3.setup_slow_answers(timeout=30)
+
+        node.query(
+            f"BACKUP TABLE data TO {backup_destination} SETTINGS id='{backup_id}' ASYNC",
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{backup_id}'",
+            "CREATING_BACKUP",
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() > 0 FROM system.processes WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'",
+            "1",
+        )
+
+        node.query(
+            f"KILL QUERY WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'"
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{backup_id}'",
+            "BACKUP_CANCELLED",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = node.query(f"SELECT error FROM system.backups WHERE id='{backup_id}'")
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert "S3_ERROR" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
+def test_async_restore_from_s3_cancel_reports_cancellation(cluster, broken_s3):
+    # Regression test for issue #45444 (restore/read path): a RESTORE from S3 cancelled by KILL QUERY
+    # while an S3 read (GetObject/HeadObject) is in flight must report QUERY_WAS_CANCELLED, not S3_ERROR.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    try:
+        # Make a backup through the mock (no slowdown), then restore it with slow reads so the restore
+        # is reliably stuck inside an in-flight S3 read request when we cancel it.
+        node.query(f"BACKUP TABLE data TO {backup_destination}")
+        node.query("DROP TABLE data SYNC;")
+
+        broken_s3.setup_slow_get_answers(timeout=30)
+
+        restore_id = uuid.uuid4().hex
+        node.query(
+            f"RESTORE TABLE data FROM {backup_destination} SETTINGS id='{restore_id}' ASYNC",
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{restore_id}'",
+            "RESTORING",
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() > 0 FROM system.processes WHERE query_kind='Restore' AND query LIKE '%{restore_id}%'",
+            "1",
+        )
+
+        node.query(
+            f"KILL QUERY WHERE query_kind='Restore' AND query LIKE '%{restore_id}%'"
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{restore_id}'",
+            "RESTORE_CANCELLED",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = node.query(f"SELECT error FROM system.backups WHERE id='{restore_id}'")
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert "S3_ERROR" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
+def test_backup_to_s3_timeout_reports_timeout(cluster, broken_s3):
+    # The S3 cancellation translation must preserve the real cancellation cause. Here every S3 upload
+    # keeps failing with a retryable error, so the BACKUP stays in the S3 retry loop until
+    # max_execution_time (CancelReason::TIMEOUT) cancels it. The S3 layer then sees a failed outcome
+    # while the query is killed and must report TIMEOUT_EXCEEDED, not a generic QUERY_WAS_CANCELLED.
+    # A synchronous BACKUP is used so the query stays tracked by the max_execution_time watchdog.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    try:
+        broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+        broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+        error = node.query_and_get_error(
+            f"BACKUP TABLE data TO {backup_destination}",
+            settings={
+                "max_execution_time": 3,
+                "timeout_overflow_mode": "throw",
+                "s3_max_single_part_upload_size": 0,
+            },
+        )
+
+        assert "TIMEOUT_EXCEEDED" in error, error
+        assert "QUERY_WAS_CANCELLED" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
 def test_incremental_backup_append_table_def(cluster):
     backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
 
@@ -778,17 +922,13 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
-def test_backup_to_zip(cluster):
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
-
-
 def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
     node = cluster.instances["node"]
     backup_name = new_backup_name()
-    archive_key = f"data/backups/{backup_name}.zip"
+    # Use a tar archive here: zip backups on S3 are now rejected up front (see
+    # test_backup_to_s3_zip_not_supported), and this test only needs some archive whose
+    # exact object key must not be confused with a similarly-prefixed sibling object.
+    archive_key = f"data/backups/{backup_name}.tar"
     data = b"not a backup archive"
     cluster.minio_client.put_object(
         "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
@@ -1078,15 +1218,13 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
 
 
 def test_backup_restore_s3_plain(cluster):
-    storage_policy = "policy_s3"
-    to_disk = "disk_s3_plain"
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
 
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     instance.query(
-        f"""
+        """
     DROP TABLE IF EXISTS sample SYNC;
     CREATE TABLE sample (key Int, value String)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -1098,7 +1236,7 @@ def test_backup_restore_s3_plain(cluster):
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
+    table_data_path = instance.query("SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
     local_path = os.path.join(instance.path, "database")
     source_table_path = f"{local_path}/{table_data_path}"
@@ -1109,7 +1247,7 @@ def test_backup_restore_s3_plain(cluster):
         minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;
@@ -1212,3 +1350,53 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
+
+
+def test_backup_to_s3_zip_not_supported(cluster):
+    # Zip backups require seeking, which makes each read a separate HTTP request
+    # on object storage. They must be rejected early with a clear error (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for S3 backups" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")
+
+
+def test_restore_from_s3_zip_not_supported(cluster):
+    # RESTORE from a zip archive on S3 is the slow path reported in issue #53483: reading the
+    # central directory requires seeking, and every seek is a separate HTTP request. The rejection
+    # must fire up front, by file extension, before the archive is opened - so a non-existent
+    # `.zip` object is enough to prove the seek-heavy read path is never reached.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_source = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_source}"
+    )
+    assert "Zip archive format is not supported for S3 backups" in error, error
+
+
+def test_backup_to_object_storage_disk_zip_not_supported(cluster):
+    # A `Disk` destination backed by object storage (here the `s3`-typed `disk_s3`) has the same
+    # seek-heavy zip read path as a direct `S3(...)` destination, so it must be rejected too (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"Disk('disk_s3', '{backup_name}.zip')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for backups on disk" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")

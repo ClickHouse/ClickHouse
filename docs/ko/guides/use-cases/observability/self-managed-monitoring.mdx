@@ -1,0 +1,47 @@
+---
+slug: /use-cases/observability/oss-monitoring
+title: '자가 관리형 모니터링'
+sidebarTitle: '자가 관리형 모니터링'
+description: '자가 관리형 모니터링 가이드'
+doc_type: 'guide'
+keywords: ['관측성', '모니터링', '자가 관리형', '메트릭', '시스템 상태']
+---
+
+import ObservabilityIntegrations from '/snippets/ko/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/ko/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/ko/_community_monitoring.mdx';
+
+이 가이드는 프로덕션 배포를 위해 ClickHouse open-source를 평가하는 기업 팀에 모니터링 및 관측성 기능에 대한 포괄적인 정보를 제공합니다. 기업 고객은 기본 제공 모니터링 기능, Datadog 및 AWS CloudWatch 같은 도구를 포함한 기존 관측성 스택과의 통합, 그리고 ClickHouse의 모니터링이 자체 호스팅 배포와 비교해 어떠한지에 관해 자주 문의합니다.
+
+<div id="prometheus">
+  ### Prometheus 기반 통합 아키텍처
+</div>
+
+ClickHouse는 배포 모델에 따라 서로 다른 엔드포인트를 통해 Prometheus 호환 메트릭을 노출하며, 각 엔드포인트마다 운영 특성이 다릅니다:
+
+**자가 관리형/OSS ClickHouse**
+
+ClickHouse 서버의 표준 /metrics 엔드포인트를 통해 Prometheus 엔드포인트에 직접 접근할 수 있습니다. 이 방식은 다음과 같은 특징이 있습니다:
+
+* 전체 메트릭 노출: 기본 제공 필터링 없이 사용 가능한 ClickHouse 메트릭 전체를 노출
+* 실시간 메트릭: 스크레이프할 때 시스템 테이블(system tables)에서 직접 생성됨
+
+**시스템에 직접 접근**
+
+프로덕션 시스템 테이블을 직접 쿼리하므로 모니터링 부하가 발생하며, 비용 절감을 위한 유휴(idle) 상태를 사용할 수 없게 됩니다
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### ClickStack 배포 옵션
+</div>
+
+* [Helm](/ko/clickstack/deployment/helm): Kubernetes 기반 디버깅 환경에 권장됩니다. `values.yaml`을 통해 환경별 구성, 리소스 제한, 스케일링을 설정할 수 있습니다.
+* [Docker Compose](/ko/clickstack/deployment/docker-compose): 각 구성 요소(ClickHouse, HyperDX, OTel collector, MongoDB)를 개별적으로 배포합니다.
+* [HyperDX Only](/ko/clickstack/deployment/hyperdx-only): 독립 실행형 HyperDX 컨테이너입니다.
+
+전체 배포 옵션과 아키텍처 상세 정보는 [ClickStack 문서](/ko/clickstack/overview) 및 [데이터 수집 가이드](/ko/clickstack/ingesting-data/overview)를 참조하십시오.
+
+<DirectIntegrations />
+
+<CommunityMonitoring />

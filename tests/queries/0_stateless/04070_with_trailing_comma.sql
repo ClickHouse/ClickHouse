@@ -21,7 +21,7 @@ WITH 1 AS a, cte AS (SELECT number FROM numbers(3)), SELECT a + sum(number) FROM
 WITH cte AS MATERIALIZED (SELECT number FROM numbers(3)), SELECT * FROM cte SETTINGS enable_materialized_cte = 1;
 
 -- Trailing comma in RECURSIVE WITH
-WITH RECURSIVE recursive_cte AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM recursive_cte WHERE n < 3), SELECT * FROM recursive_cte SETTINGS enable_analyzer = 1;
+WITH RECURSIVE recursive_cte AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM recursive_cte WHERE n < 3), SELECT * FROM recursive_cte ORDER BY ALL SETTINGS enable_analyzer = 1;
 
 -- Nested subquery: trailing comma in inner WITH
 SELECT * FROM (WITH 1 AS a, SELECT a);

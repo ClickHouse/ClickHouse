@@ -35,6 +35,36 @@ SELECT (3 <> ALL([1, 2, 4])) = (NOT has([1, 2, 4], 3));
 SELECT (5 < SOME([1, 2, 6])) = arrayExists(_a -> 5 < _a, [1, 2, 6]);
 SELECT (5 > ALL([1, 2, 3])) = arrayAll(_a -> 5 > _a, [1, 2, 3]);
 
+-- Besides symbolic comparison operators, the array form also accepts the keyword
+-- comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, routed through
+-- the `arrayExists` / `arrayAll` form.
+SELECT 1 IS DISTINCT FROM ALL([2, 3]);      -- distinct from each          -> 1
+SELECT 1 IS DISTINCT FROM ALL([1, 2]);      -- not distinct from 1         -> 0
+SELECT 1 IS DISTINCT FROM SOME([1, 2]);     -- distinct from 2             -> 1
+SELECT 1 IS NOT DISTINCT FROM SOME([1, 2]); -- not distinct from 1         -> 1
+SELECT 1 IS NOT DISTINCT FROM ALL([1, 2]);  -- distinct from 2             -> 0
+SELECT (1 IS DISTINCT FROM ALL([2, 3])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, [2, 3]);
+
+-- The array form also accepts the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`,
+-- `NOT ILIKE`, and `REGEXP`, routed through the same `arrayExists` / `arrayAll` rewrite.
+-- `MatchImpl` supports a constant haystack with a non-constant needle, so the lambda
+-- variable can be the pattern (needle) argument without throwing `ILLEGAL_COLUMN`.
+SELECT 'abc' LIKE SOME(['a%', 'b%']);       -- exists: 'abc' LIKE 'a%'              -> 1
+SELECT 'abc' LIKE ALL(['a%', 'b%']);        -- not all: 'abc' NOT LIKE 'b%'         -> 0
+SELECT 'abc' ILIKE SOME(['A%']);            -- case-insensitive 'abc' LIKE 'A%'     -> 1
+SELECT 'abc' NOT LIKE SOME(['x%', 'a%']);   -- exists: 'abc' NOT LIKE 'x%'          -> 1
+SELECT 'abc' NOT LIKE ALL(['x%', 'y%']);    -- all: matches neither pattern         -> 1
+SELECT 'abc' NOT ILIKE SOME(['X%']);        -- exists: 'abc' NOT ILIKE 'X%'         -> 1
+SELECT 'abc' REGEXP SOME(['^a', 'z']);      -- exists: 'abc' matches '^a'           -> 1
+SELECT 'abc' REGEXP ALL(['^a', 'z']);       -- not all: 'abc' does not match 'z'    -> 0
+-- Equivalence to the explicit lambda form for the string-search predicates.
+SELECT ('abc' LIKE SOME(['a%', 'b%'])) = arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%']);
+SELECT ('abc' NOT LIKE ALL(['x%', 'y%'])) = arrayAll(_a -> 'abc' NOT LIKE _a, ['x%', 'y%']);
+SELECT ('abc' REGEXP SOME(['^a', 'z'])) = arrayExists(_a -> match('abc', _a), ['^a', 'z']);
+-- A `NULL` pattern folds to `0` (unknown) like the other higher-order forms above.
+SELECT 'abc' LIKE SOME(['a%', NULL]);       -- exists: 'abc' LIKE 'a%' (NULL -> 0)  -> 1
+SELECT 'abc' LIKE ALL(['a%', NULL]);        -- all: 'abc' LIKE NULL folds to 0      -> 0
+
 -- The lambda variable for the higher-order form must not collide with an
 -- identifier on the LHS, so the parser walks the LHS and suffixes `_a` until
 -- it finds a free name (`_a1`, `_a2`, ...).
@@ -70,3 +100,19 @@ SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
 SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
 SELECT NULL < SOME([1]);      -- arrayExists(_a -> NULL < _a, [1])  -> 0
 SELECT NULL > ALL([1]);       -- arrayAll(_a -> NULL > _a, [1])     -> 0
+
+-- The keyword predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` carry their own
+-- null-safe semantics through the same `arrayExists` / `arrayAll` rewrite: they treat
+-- `NULL` as an ordinary comparable value and always return `0`/`1` (never `NULL`), so the
+-- result must not fold to `0` the way the `<` / `>` forms above do. These cases pin that
+-- behaviour and would give a different answer if the rewrite were `equals` / `notEquals`.
+SELECT NULL IS DISTINCT FROM SOME([NULL, 1]);     -- exists: NULL distinct from 1               -> 1
+SELECT NULL IS DISTINCT FROM ALL([NULL, 1]);      -- all: NULL not distinct from NULL           -> 0
+SELECT NULL IS NOT DISTINCT FROM SOME([NULL, 1]); -- exists: NULL not distinct from NULL (= 0)  -> 1
+SELECT NULL IS NOT DISTINCT FROM ALL([NULL, 1]);  -- all: NULL distinct from 1                  -> 0
+SELECT 1 IS DISTINCT FROM SOME([NULL]);           -- exists: 1 distinct from NULL (!= 0)        -> 1
+SELECT 1 IS DISTINCT FROM ALL([NULL]);            -- all: 1 distinct from NULL (!= 0)           -> 1
+SELECT 1 IS NOT DISTINCT FROM SOME([NULL, 1]);    -- exists: 1 not distinct from 1              -> 1
+-- The keyword form must stay equivalent to the explicit lambda form even with `NULL`.
+SELECT (NULL IS NOT DISTINCT FROM SOME([NULL, 1])) = arrayExists(_a -> NULL IS NOT DISTINCT FROM _a, [NULL, 1]);
+SELECT (1 IS DISTINCT FROM ALL([NULL])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, [NULL]);

@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'materialized views'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse materialized views',
+  'materialized view 최적화',
+  'materialized view 스토리지 문제',
+  'materialized view 모범 사례',
+  '데이터베이스 집계 패턴',
+  'materialized view 안티패턴',
+  '스토리지 폭증 문제',
+  'materialized view 성능',
+  '데이터베이스 뷰 최적화',
+  '집계 전략',
+  'materialized view 문제 해결',
+  '뷰 스토리지 오버헤드'
+]
+title: '교훈 - materialized views'
+description: '실제 환경에서의 materialized view 예시, 문제 및 해결 방법'
+---
+
+*이 가이드는 커뮤니티 밋업에서 얻은 인사이트를 모아둔 콘텐츠의 일부입니다. 더 많은 실제 해결 방법과 인사이트는 [특정 문제별로 찾아보기](/ko/resources/support-center/tips-and-tricks/community-wisdom)에서 확인할 수 있습니다.*
+*너무 많은 파트로 인해 데이터베이스 성능이 저하되고 있습니까? [Too Many Parts](/ko/resources/support-center/tips-and-tricks/too-many-parts) 커뮤니티 인사이트 가이드를 확인하세요.*
+*[Materialized Views](/ko/concepts/features/materialized-views/index)에서 자세히 알아보세요.*
+
+<div id="storage-antipattern">
+  ## 10배 스토리지 안티패턴
+</div>
+
+**실제 프로덕션 문제:** *&quot;materialized view를 사용하고 있었습니다. 원시 로그 테이블은 약 20GB였는데, 이 로그 테이블에서 만든 뷰가 190GB까지 불어나 원시 테이블 크기의 거의 10배가 됐습니다. 이런 현상이 발생한 이유는 속성마다 행을 하나씩 생성했고, 각 로그에 속성이 10개까지 있을 수 있었기 때문입니다.&quot;*
+
+**규칙:** `GROUP BY`가 줄이는 행보다 더 많은 행을 만든다면, 그것은 materialized view가 아니라 비용이 많이 드는 인덱스를 만드는 것입니다.
+
+<div id="mv-health-validation">
+  ## 운영 환경의 materialized view 상태 검증
+</div>
+
+이 쿼리는 materialized view를 생성하기 전에 데이터가 압축될지, 아니면 폭증할지를 예측하는 데 도움이 됩니다. 실제 테이블과 컬럼에 대해 실행하여 &quot;190GB 폭증&quot; 시나리오를 방지하십시오.
+
+**표시되는 내용:**
+
+* **낮은 집계 비율** (&lt;10%) = 양호한 MV, 상당한 압축 효과
+* **높은 집계 비율** (&gt;70%) = 좋지 않은 MV, 스토리지 폭증 위험
+* **스토리지 배수** = MV 크기가 얼마나 더 커지거나 작아지는지
+
+```sql
+-- 실제 테이블과 컬럼으로 교체하십시오
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- aggregation_ratio가 70%를 초과하면 MV 설계를 재검토하십시오
+-- aggregation_ratio가 10% 미만이면 압축 효과가 좋습니다
+```
+
+<div id="mv-problems">
+  ## materialized view가 문제가 될 때
+</div>
+
+**모니터링해야 할 경고 신호:**
+
+* 삽입 지연 시간이 증가합니다(기존에 10ms가 걸리던 쿼리가 이제 100ms 이상 걸립니다)
+* &quot;Too many parts&quot; 오류가 더 자주 발생합니다
+* 삽입 작업 중 CPU 사용량이 급증합니다
+* 이전에는 발생하지 않던 삽입 timeout이 발생합니다
+
+MV를 추가하기 전과 후의 삽입 성능은 `system.query_log`를 사용해 쿼리 실행 시간 추세를 추적함으로써 비교할 수 있습니다.
+
+<div id="video-sources">
+  ## 영상 출처
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - &quot;materialized views에 과도하게 열광한다&quot; 및 &quot;20GB→190GB 폭증&quot; 사례 연구의 출처

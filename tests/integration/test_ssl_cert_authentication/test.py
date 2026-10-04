@@ -1,4 +1,3 @@
-import logging
 import os.path
 import ssl
 import urllib.parse
@@ -45,6 +44,7 @@ def started_cluster():
 
 
 config = """<clickhouse>
+    <tls-sni-override>{sslHost}</tls-sni-override>
     <openSSL>
         <client>
             <verificationMode>strict</verificationMode>
@@ -63,6 +63,7 @@ def execute_query_native(node, query, user, cert_name, password=None):
         certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
         privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
         caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
+        sslHost=SSL_HOST,
     )
 
     file = open(config_path, "w")
@@ -146,6 +147,18 @@ def test_native_fallback_to_password():
     assert "AUTHENTICATION_FAILED" in str(err.value)
 
 
+def test_native_cn_nul_byte_no_bypass():
+    # Authentication bypass: client13's CN is "client1\0.evil.com" and user 'john' is configured with
+    # <common_name>client1</common_name>. If server-side CN extraction truncated at the embedded NUL
+    # byte, the CN would collapse to "client1" and the certificate would authenticate as user 'john'.
+    # The full CN must be preserved, so the match must fail.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client13"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+
 def get_ssl_context(cert_name):
     context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
@@ -218,6 +231,14 @@ def test_https_wrong_cert():
             enable_ssl_auth=False,
             cert_name="client1",
         )
+
+
+def test_https_cn_nul_byte_no_bypass():
+    # Same bypass as test_native_cn_nul_byte_no_bypass, over the HTTPS interface: client13's CN
+    # "client1\0.evil.com" must not be truncated to "client1" and authenticate as user 'john'.
+    with pytest.raises(Exception) as err:
+        execute_query_https("SELECT currentUser()", user="john", cert_name="client13")
+    assert "403" in str(err.value)
 
 
 def test_https_non_ssl_auth():
@@ -439,6 +460,183 @@ def test_x509_san_wildcard_support():
     )
 
     instance.query("DROP USER brian")
+
+
+def test_x509_dns_san_wildcard_single_label():
+    # A '*' in a DNS SAN must match exactly one DNS label (RFC 6125 6.4.3).
+    # Positive: a single-label name under the wildcard authenticates, on both interfaces.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client7"
+        )
+        == "wildcard_dns\n"
+    )
+    assert (
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client7"
+        )
+        == "wildcard_dns\n"
+    )
+    # Negative (authentication bypass): a multi-label name must NOT match a single-label
+    # wildcard. 'evil.deep.corp.example.com' must be rejected by 'DNS:*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client8"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client8"
+        )
+    assert "403" in str(err.value)
+    # Negative (empty label): the '*' must match a NON-empty label, so the malformed name
+    # 'DNS:.corp.example.com' (empty first label) must be rejected by 'DNS:*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client10"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client10"
+        )
+    assert "403" in str(err.value)
+    # Negative (slash in span): a DNS label contains no '/', so the matched span must reject one.
+    # 'DNS:foo/bar.corp.example.com' must NOT match 'DNS:*.corp.example.com' (the old slash-count
+    # guard forbade this; the single-label rule must keep forbidding it).
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client12"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client12"
+        )
+    assert "403" in str(err.value)
+
+
+def test_x509_cn_wildcard_single_label():
+    # The same single-label rule applies to a wildcard in the certificate CN.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client7"
+        )
+        == "wildcard_cn\n"
+    )
+    assert (
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client7"
+        )
+        == "wildcard_cn\n"
+    )
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client8"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client8"
+        )
+    assert "403" in str(err.value)
+    # Negative (empty label): an empty CN label '.corp.example.com' must be rejected by the
+    # CN wildcard '*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client10"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client10"
+        )
+    assert "403" in str(err.value)
+    # Negative (slash in span): a CN label contains no '/', so 'foo/bar.corp.example.com' must NOT
+    # match the CN wildcard '*.corp.example.com' (the old slash-count guard forbade this).
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client12"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client12"
+        )
+    assert "403" in str(err.value)
+
+
+def test_x509_wildcard_nul_byte_no_bypass():
+    # Authentication bypass: client14's CN and DNS SAN are both "evil\0.corp.example.com". Users
+    # 'wildcard_cn' and 'wildcard_dns' are configured with '*.corp.example.com' and
+    # 'DNS:*.corp.example.com'. The '*' must not match the span "evil\0", so both must fail.
+    for user in ["wildcard_cn", "wildcard_dns"]:
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name="client14"
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user=user, cert_name="client14")
+        assert "403" in str(err.value)
+
+
+def test_x509_uri_san_wildcard_dot_in_segment():
+    # Non-regression: '.' separates labels for DNS/CN but is NOT a separator for URI SANs,
+    # whose separator is '/'. A wildcard URI path segment may legitimately contain dots, so
+    # 'URI:spiffe://bar.com/foo/baz.qux/far' must still match 'URI:spiffe://bar.com/foo/*/far'.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="stewie", cert_name="client9"
+        )
+        == "stewie\n"
+    )
+
+
+def test_x509_unprefixed_san_wildcard_does_not_widen_uri():
+    # A SAN wildcard configured without a recognized 'DNS:'/'URI:' prefix (here a bare 'SAN *')
+    # must NOT widen URI matching. The label separator '.' is used only for a CN or a 'DNS:' SAN;
+    # every other SAN keeps the '/' separator, whose "no '/' in the matched span" rule is identical
+    # to the original slash-count guard. So 'SAN *' must NOT match the URI certificate
+    # 'URI:spiffe://foo/bar' (client11), exactly as before this fix. Checked on both interfaces.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="wildcard_san_unprefixed",
+            cert_name="client11",
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_san_unprefixed", cert_name="client11"
+        )
+    assert "403" in str(err.value)
+
+
+def test_x509_unprefixed_san_wildcard_does_not_span_dns_labels():
+    # A SAN wildcard configured without a recognized 'DNS:'/'URI:' prefix must match nothing.
+    # Certificate SAN subjects are always stored prefixed, so a bare 'SAN *.corp.example.com'
+    # would otherwise let '*' absorb the candidate's 'DNS:' prefix and span DNS labels: against
+    # 'DNS:evil.deep.corp.example.com' (client8) the matched span 'DNS:evil.deep' has no '/'.
+    # The unprefixed SAN pattern must be rejected, so neither a single-label (client7) nor a
+    # multi-label (client8) DNS certificate authenticates. Checked on both interfaces.
+    for cert in ("client7", "client8"):
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="wildcard_san_unprefixed_dns",
+                cert_name=cert,
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="wildcard_san_unprefixed_dns",
+                cert_name=cert,
+            )
+        assert "403" in str(err.value)
 
 
 def test_session_log_certificate_success():
