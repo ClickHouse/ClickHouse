@@ -8507,8 +8507,10 @@ static Strings getPatchPartsOfAllReplicas(const zkutil::ZooKeeperPtr & zookeeper
     Strings patch_parts;
     for (const auto & replica : zookeeper->getChildren(fs::path(zookeeper_path) / "replicas"))
     {
+        /// `tryGetChildren` throws on every Keeper error except `ZNONODE`, so a replica is skipped only
+        /// when it was dropped concurrently - never because its patch parts could not be read.
         Strings replica_parts;
-        if (zookeeper->tryGetChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts", replica_parts) != Coordination::Error::ZOK)
+        if (zookeeper->tryGetChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts", replica_parts) == Coordination::Error::ZNONODE)
             continue;
 
         for (auto & part_name : replica_parts)
