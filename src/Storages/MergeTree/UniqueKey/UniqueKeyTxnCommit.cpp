@@ -158,11 +158,7 @@ protected:
         if (written.files.empty())
             return;
 
-        /// Packed storage cannot be told
         auto & storage = own_part->getDataPartStorage();
-        if (storage.getType() != MergeTreeDataPartStorageType::Full)
-            return;
-
         for (const auto & [name, checksum] : written.files)
             own_part->checksums.files[name] = checksum;
 
