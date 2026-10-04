@@ -155,7 +155,7 @@ A Column appears `num_columns` times within a Block.
 | # | Field                    | Type    | Condition                | Description |
 |---|--------------------------|---------|--------------------------|-------------|
 | 1 | name                     | String  | always                   | Column name |
-| 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1` (see note below) |
+| 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1`, except for a secondary query (see note below) |
 | 3 | has_custom_serialization | UInt8   | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = default, `1` = custom (kind_stack follows) |
 | 4 | kind_stack               | bytes   | when field 3 = `1`       | One UInt8 enum byte (see below) describing the non-default serialization (sparse, etc.). For the `COMBINATION` value, followed by a VarUInt count plus that many additional kind bytes. For a `Tuple` (and other composites with element-level serialization info) the payload is recursive — see below. |
 | 5 | data                     | bytes   | always                   | Column values for all `num_rows` rows. Layout per type — see [data types](#data-types). For sparse columns, see below. |
@@ -166,6 +166,8 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 **Binary type encoding**
 
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
+
+At revision 54493 and above (`DBMS_MIN_REVISION_WITH_TYPE_NAMES_FOR_SECONDARY_QUERY`), for a query with `query_kind = SECONDARY_QUERY` (sent by another server for `remote`, `Distributed` or parallel replicas, or by `clickhouse-client --query_kind secondary_query`), both peers ignore `output_format_native_encode_types_in_binary_format` and `input_format_native_decode_types_in_binary_format` for the blocks of that query: they carry textual type names in both directions.
 </Info>
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Decoder routing from a type description to its encoding family" width="1568" height="854" loading="lazy" />
@@ -325,6 +327,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
+| Type names for a secondary query | `DBMS_MIN_REVISION_WITH_TYPE_NAMES_FOR_SECONDARY_QUERY` | `54493` | A secondary query (`query_kind = SECONDARY_QUERY`) follows `output_format_native_encode_types_in_binary_format` and `input_format_native_decode_types_in_binary_format` like any other query, except on a server's own connection, which never applies them: between servers the shard writes or expects a binary type encoding where the initiator uses type names. At or above the threshold both peers write and read textual type names for it (see [column wire layout](#column-wire-layout)). |
 
 That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
 
