@@ -1428,9 +1428,11 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     }
     if (adaptive.session->top_k_pruning && !adaptive.count_bins)
         adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
-    adaptive.freeze();
+    const size_t keys = result.sizeWithoutOverflowRow();
+    chassert(keys);
+    adaptive.freeze(result.allocatedBytes() / keys);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
-    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
+    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
 
 /// Register each key's presence, without building any aggregate state. This is the whole of the work for a

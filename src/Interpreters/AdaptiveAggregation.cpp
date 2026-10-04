@@ -38,7 +38,7 @@ namespace
 /// 128-bit products accommodate streams of billions of records without overflow.
 bool adaptiveStagingWastes(
     const AdaptiveAggregationProducer::FrozenState & frozen,
-    size_t inline_state_bytes,
+    size_t state_bytes_per_key,
     size_t state_bytes_per_distinct_input,
     size_t state_cost_multiplier)
 {
@@ -48,8 +48,8 @@ bool adaptiveStagingWastes(
         || !distinct || frozen.staged_records <= distinct)
         return false;
 
-    const size_t state_bytes_per_key = std::max(adaptive_staging_min_state_bytes_per_key, inline_state_bytes);
-    const UInt128 state_bytes = static_cast<UInt128>(state_bytes_per_key) * distinct
+    const size_t retained_bytes_per_key = std::max(adaptive_staging_min_state_bytes_per_key, state_bytes_per_key);
+    const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
     return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
         > state_bytes * frozen.staged_records * state_cost_multiplier;
@@ -101,13 +101,19 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
 
     /// A producer that finishes frozen counts toward the verdict of the run when its whole staged stream repeated past
     /// the bound of the verdict; one that thawed was counted at its thaw.
-    if (adaptive.isFrozen() && adaptiveMayThaw(shared)
-        && adaptiveStagingWastes(
-            std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase),
-            total_size_of_aggregate_states,
-            adaptive_state_bytes_per_distinct_input,
-            /*state_cost_multiplier=*/1))
-        shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
+    if (adaptive.isFrozen() && adaptiveMayThaw(shared))
+    {
+        /// Admission compares complete executions, so its state cost includes the hash buffer and arenas
+        /// an ordinary local table would retain. The snapshot at the freeze includes hash-table capacity
+        /// and arena overhead, and remains available if the table is flushed before its producer finishes.
+        const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+        if (adaptiveStagingWastes(
+                frozen,
+                frozen.allocated_bytes_per_key,
+                adaptive_state_bytes_per_distinct_input,
+                /*state_cost_multiplier=*/1))
+            shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
+    }
 
     /// A producer that never froze staged nothing.
     if (adaptive.partitions)

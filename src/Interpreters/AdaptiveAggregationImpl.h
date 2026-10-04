@@ -103,16 +103,18 @@ constexpr size_t adaptive_thaw_state_cost_multiplier = 4;
 constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 
 /// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
-/// `Aggregator::adaptiveStagingVerdict`), weighs the whole staged stream of a thread that is still frozen at its
-/// finish as the thaw guard does, but against a lower bound. A thaw switches a thread in the middle of its stream:
-/// the records staged so far stay, and the table starts filling only then, so it pays only for heavy repeats. A
-/// verdict decides the next runs from their start, which have nothing to switch, so the stream needs to repeat only
-/// enough for the ordinary path to win. Its state cost has a floor of 75 bytes per key, which splits the
-/// cheap-state shapes measured per thread: the numeric-key streams that lose to the ordinary path when kept
-/// engaged waste ~ 84 bytes per key and more (a count, a sum or a key-only stream at repeat ~ 6-10 in a
-/// thread), and those that win waste at most ~ 34 (the same streams at
-/// repeat ~ 1.5-3). Narrow count and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound:
-/// the ordinary path of an aggregation without states wins at less waste than the bytes tell.
+/// `Aggregator::adaptiveStagingVerdict`), weighs the whole staged stream of a thread that is still frozen
+/// at its finish using the staging-cost comparison of the thaw guard. A thaw switches a thread in the
+/// middle of its stream: the records staged so far stay, and the table starts filling only then, so it
+/// pays only for heavy repeats. A verdict decides the next runs from their start, which have nothing to
+/// switch, so the stream needs to repeat only enough for the ordinary path to win. The verdict estimates
+/// the ordinary table's per-key cost from its hash buffer and arena allocations at the freeze, including
+/// capacity and allocation overhead. Its state cost has a floor of 75 bytes per key, which splits the
+/// cheap-state shapes measured per thread: the numeric-key streams that lose to the ordinary path when
+/// kept engaged waste ~ 84 bytes per key and more (a count, a sum or a key-only stream at repeat ~ 6-10
+/// in a thread), and those that win waste at most ~ 34 (the same streams at repeat ~ 1.5-3). Narrow count
+/// and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound: the ordinary path of an
+/// aggregation without states wins at less waste than the bytes tell.
 constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
 
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
@@ -275,6 +277,15 @@ struct AdaptiveAggregationProducer
     /// table absorbs nothing.
     struct FrozenState
     {
+        explicit FrozenState(size_t allocated_bytes_per_key_)
+            : allocated_bytes_per_key(allocated_bytes_per_key_)
+        {
+        }
+
+        /// Hash-table buffer and arena allocations per key when the producer froze, including capacity
+        /// and allocation overhead. This excludes staged records, other workers' memory and allocations
+        /// owned directly by aggregate states, matching `AggregatedDataVariants::allocatedBytes`.
+        size_t allocated_bytes_per_key;
         size_t sampled_rows = 0;
         size_t sampled_hits = 0;
         bool bypass_local_probe = false;
@@ -326,7 +337,10 @@ struct AdaptiveAggregationProducer
     bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
-    void freeze() { phase = FrozenState{}; }
+    void freeze(size_t allocated_bytes_per_key)
+    {
+        phase.emplace<FrozenState>(allocated_bytes_per_key);
+    }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }
 
