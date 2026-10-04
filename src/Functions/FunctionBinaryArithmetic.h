@@ -3848,10 +3848,13 @@ public:
             {
                 const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
                 const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
-                bool varying_can_be_inf = isFloat(removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type)));
+                const auto varying_type = removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type));
+                bool varying_can_be_inf = isFloat(varying_type);
                 bool varying_can_be_zero = true;
 
-                if (!left_point.isNull() && !right_point.isNull())
+                /// The endpoints are compared with a numeric `0` only for a native numeric domain: the points of an
+                /// `IPv4` or `Decimal` key do not compare with it, so such a range is assumed to hold zero.
+                if (!left_point.isNull() && !right_point.isNull() && isNativeNumber(varying_type))
                 {
                     const bool ordered = accurateLessOrEqual(left_point, right_point);
                     const Field & range_min = ordered ? left_point : right_point;
