@@ -103,6 +103,17 @@ test "$LEFTOVER_WORKDIRS" -eq 0 && echo "workdir_clean" || echo "workdir_leaked"
 test -f "$WORK_DIR/dyn/fn_bad.xml" && echo "config_leaked" || echo "config_clean"
 test -f "$WORK_DIR/user_defined/function_fn_bad.sql" && echo "sql_leaked" || echo "sql_clean"
 
+# Tuple element defaults are accepted only in column declarations. The signature is validated before
+# invoking a driver, so it must be rejected without leaving any driver side effect.
+OUTPUT_DEFAULT_ARGUMENT=$(run "CREATE FUNCTION fn_default_argument ARGUMENTS (x Tuple(a UInt8 DEFAULT 1)) RETURNS UInt8 ENGINE = fail_driver() AS 'whatever';")
+OUTPUT_DEFAULT_RETURN=$(run "CREATE FUNCTION fn_default_return ARGUMENTS (x UInt8) RETURNS Tuple(b UInt8 DEFAULT 2) ENGINE = fail_driver() AS 'whatever';")
+if echo "$OUTPUT_DEFAULT_ARGUMENT" | grep -q "Data type Tuple cannot have a DEFAULT expression" \
+    && echo "$OUTPUT_DEFAULT_RETURN" | grep -q "Data type Tuple cannot have a DEFAULT expression"; then
+    echo "tuple_default_signatures_rejected"
+else
+    echo "MISSING_TUPLE_DEFAULT_MARKER in: $OUTPUT_DEFAULT_ARGUMENT $OUTPUT_DEFAULT_RETURN"
+fi
+
 # Driver exiting zero but emitting no config is also an error - the message should mention it.
 OUTPUT2=$(run "CREATE FUNCTION fn_silent ARGUMENTS (x UInt8) RETURNS Int64 ENGINE = silent_driver() AS '';")
 if echo "$OUTPUT2" | grep -q "empty configuration"; then

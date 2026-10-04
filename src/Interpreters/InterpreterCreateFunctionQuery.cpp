@@ -205,7 +205,7 @@ namespace
                 return false;
         }
 
-        /// This keeps validation of engine arguments and driver availability before any filesystem side effects.
+        /// Keep engine validation and driver availability before any filesystem side effects.
         const auto driver = UserDefinedExecutableFunctionDriverRegistry::instance().get(query.engine_name);
         formatEngineArguments(query, *driver);
 
@@ -360,6 +360,16 @@ std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr cu
 
     if (!create_function_query->cluster.empty())
     {
+        if constexpr (std::is_same_v<ASTCreateWasmFunctionQuery, T>)
+        {
+            /// Validate the signature on the initiator before the `ON CLUSTER` dispatch below,
+            /// mirroring `tryExecuteWithDriver`. Without `ON CLUSTER` the same validation happens
+            /// in `UserDefinedWebAssemblyFunctionFactory::prepareFunction`. In particular, this
+            /// rejects tuple-element `DEFAULT` expressions, which are allowed only in column
+            /// declarations, before the query is fanned out to (possibly older) workers.
+            create_function_query->validateAndGetDefinition();
+        }
+
         if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because used-defined functions are replicated automatically");
 
@@ -386,6 +396,10 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     auto * create_function_query = updated_query_ptr->as<ASTCreateFunctionWithDriverQuery>();
     if (!create_function_query)
         return std::nullopt;
+
+    /// Validate the types on the initiator before `ON CLUSTER` dispatch. In particular, this
+    /// rejects tuple-element `DEFAULT` expressions, which are allowed only in column declarations.
+    DriverUtils::validateSignatureTypes(create_function_query->arguments_ast, create_function_query->return_type_ast);
 
     /// Read the experimental gate from the live configuration rather than from the startup-time `ServerSettings`
     /// returned by `getServerSettings` (which `SYSTEM RELOAD CONFIG` does not refresh), so that toggling

@@ -1,0 +1,4 @@
+samples	extra	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
+t	x	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
+tags	extra	Tuple(b Int64)	DEFAULT	tuple(-1)
+2	2	0
