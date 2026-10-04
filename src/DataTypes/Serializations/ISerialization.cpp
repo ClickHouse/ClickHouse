@@ -265,7 +265,18 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void ISerialization::deserializeBinaryBulkWithRowRanges(
+size_t ISerialization::getSizeOfSkippedValues(const IColumn & column, size_t limit, const RowRanges * row_ranges)
+{
+    if (!row_ranges)
+        return 0;
+
+    size_t num_skipped_values = limit;
+    for (const auto & [begin, end] : *row_ranges)
+        num_skipped_values -= end - begin;
+    return num_skipped_values * column.sizeOfValueIfFixed();
+}
+
+size_t ISerialization::deserializeBinaryBulkWithRowRanges(
     IColumn & column,
     ReadBuffer & istr,
     size_t limit,
@@ -275,7 +286,7 @@ void ISerialization::deserializeBinaryBulkWithRowRanges(
     if (!row_ranges)
     {
         deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
-        return;
+        return 0;
     }
 
     if (!column.isFixedAndContiguous())
@@ -283,13 +294,17 @@ void ISerialization::deserializeBinaryBulkWithRowRanges(
 
     const size_t value_size = column.sizeOfValueIfFixed();
     size_t pos = 0;
+    size_t num_skipped_values = 0;
     for (const auto & [begin, end] : *row_ranges)
     {
+        num_skipped_values += begin - pos;
         istr.ignore((begin - pos) * value_size);
         deserializeBinaryBulk(column, istr, end - begin, avg_value_size_hint);
         pos = end;
     }
+    num_skipped_values += limit - pos;
     istr.ignore((limit - pos) * value_size);
+    return num_skipped_values * value_size;
 }
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
@@ -304,6 +319,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
         /// Data was inserted from substreams cache.
+        settings.num_skipped_bytes += getSizeOfSkippedValues(column, limit, settings.row_ranges);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
@@ -311,7 +327,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulkWithRowRanges(column, *stream, limit, settings.row_ranges, avg_value_size_hint);
+        settings.num_skipped_bytes += deserializeBinaryBulkWithRowRanges(column, *stream, limit, settings.row_ranges, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
         if (settings.update_avg_value_size_hint_callback)

@@ -831,6 +831,7 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    bytes_skipped_by_row_filter += deserialize_settings.num_skipped_bytes;
 }
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()

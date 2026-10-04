@@ -1555,25 +1555,12 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     if (read_with_filter)
     {
         /// Count the bytes of all rows: the skipped rows were decompressed, and the limits on read bytes must not change.
-        size_t num_bytes_read = 0;
-        for (size_t pos = 0; pos < columns.size(); ++pos)
-        {
-            if (!columns[pos])
-                continue;
+        result.addNumBytesRead(getTotalBytesInColumns(columns) + merge_tree_reader->takeBytesSkippedByRowFilter());
 
-            if (merge_tree_reader->isColumnReadWithRowFilter(pos))
-            {
-                if (result.num_rows)
-                    num_bytes_read += getBytesInColumn(*columns[pos]) * num_rows / result.num_rows;
-            }
-            else
-            {
-                num_bytes_read += getBytesInColumn(*columns[pos]);
-                /// Filter the columns which were read without the filter and the virtual columns.
+        /// Filter the columns which were read without the filter and the virtual columns.
+        for (size_t pos = 0; pos < columns.size(); ++pos)
+            if (columns[pos] && !merge_tree_reader->isColumnReadWithRowFilter(pos))
                 filterColumn(columns[pos], result.final_filter);
-            }
-        }
-        result.addNumBytesRead(num_bytes_read);
         ProfileEvents::increment(ProfileEvents::RowsSkippedByFilteredDeserialization, num_rows - result.num_rows);
         num_rows = result.num_rows;
     }

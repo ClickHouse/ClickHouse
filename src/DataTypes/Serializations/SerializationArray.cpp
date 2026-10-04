@@ -485,6 +485,7 @@ void SerializationArray::deserializeElementsWithRowRanges(
 
     RowRanges nested_row_ranges;
     ColumnArray::Offsets & offset_values = column_array.getOffsets();
+    const size_t prev_num_rows = offset_values.size();
     if (has_offsets)
     {
         nested_row_ranges.reserve(row_ranges.size());
@@ -498,6 +499,7 @@ void SerializationArray::deserializeElementsWithRowRanges(
             for (size_t row = begin; row < end; ++row)
                 offset_values.push_back(offset_values.back() + all_offsets[row] - all_offsets[row - 1]);
         }
+        settings.num_skipped_bytes += (all_offsets.size() - (offset_values.size() - prev_num_rows)) * sizeof(ColumnArray::Offset);
     }
 
     size_t nested_limit = all_offsets.back();

@@ -529,6 +529,8 @@ public:
         /// are skipped. Set only for serializations with `supportsRowRanges`. The substreams cache then holds the
         /// filtered rows, except for the sizes of `Array`, which are needed for all rows to skip the elements.
         const RowRanges * row_ranges = nullptr;
+        /// Incremented by the number of bytes the values skipped because of `row_ranges` would take in a column.
+        size_t num_skipped_bytes = 0;
 
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;
@@ -659,9 +661,12 @@ public:
         size_t limit,
         double avg_value_size_hint) const;
 
+    /// Returns the size of the values of fixed size skipped because of `row_ranges` out of `limit` values, 0 if `row_ranges` is null.
+    static size_t getSizeOfSkippedValues(const IColumn & column, size_t limit, const RowRanges * row_ranges);
+
     /// Reads `limit` values with `deserializeBinaryBulk` and appends only the values inside `row_ranges` (all of them if it is null).
-    /// The values outside `row_ranges` are skipped, which requires a column of values of fixed size.
-    void deserializeBinaryBulkWithRowRanges(
+    /// The values outside `row_ranges` are skipped, which requires a column of values of fixed size. Returns the size of the skipped values.
+    size_t deserializeBinaryBulkWithRowRanges(
         IColumn & column,
         ReadBuffer & istr,
         size_t limit,

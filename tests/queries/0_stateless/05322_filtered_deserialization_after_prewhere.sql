@@ -159,6 +159,16 @@ SELECT count() FROM t_filtered_deserialization_bytes PREWHERE id % 97 = 3 WHERE 
 SELECT count() FROM t_filtered_deserialization_bytes PREWHERE id % 97 = 3 WHERE NOT ignore(arr) SETTINGS filtered_deserialization_max_ratio = 1, max_bytes_to_read = 1000000, max_threads = 1; -- { serverError TOO_MANY_BYTES }
 DROP TABLE t_filtered_deserialization_bytes;
 
+-- The sizes of the arrays in the passed and the skipped rows differ.
+CREATE TABLE t_filtered_deserialization_bytes (id UInt64, arr Array(UInt64))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO t_filtered_deserialization_bytes SELECT number, if(number % 100 = 99, [], range(100)) FROM numbers(8192);
+SELECT count() FROM t_filtered_deserialization_bytes PREWHERE id % 100 = 99 WHERE NOT ignore(arr) SETTINGS filtered_deserialization_max_ratio = 1, max_bytes_to_read = 1000000, max_threads = 1; -- { serverError TOO_MANY_BYTES }
+TRUNCATE TABLE t_filtered_deserialization_bytes;
+INSERT INTO t_filtered_deserialization_bytes SELECT number, if(number % 100 = 99, range(100), []) FROM numbers(8192);
+SELECT 'large passed arrays', count() FROM t_filtered_deserialization_bytes PREWHERE id % 100 = 99 WHERE NOT ignore(arr) SETTINGS filtered_deserialization_max_ratio = 1, max_bytes_to_read = 1000000, max_threads = 1;
+DROP TABLE t_filtered_deserialization_bytes;
+
 -- The rows filtered out by PREWHERE are not deserialized from wide parts.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RowsSkippedByFilteredDeserialization'] > 0 FROM system.query_log

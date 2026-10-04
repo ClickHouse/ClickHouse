@@ -42,6 +42,9 @@ public:
     virtual size_t readRowsWithFilter(
         size_t from_mark, bool continue_reading, size_t max_rows_to_read, MutableColumns & res_columns, const UInt8 * row_filter);
 
+    /// Returns the number of bytes the values skipped by `readRowsWithFilter` would take in columns and resets it.
+    size_t takeBytesSkippedByRowFilter() { return std::exchange(bytes_skipped_by_row_filter, 0); }
+
     bool canReadWithRowFilter() const { return std::ranges::any_of(columns_read_with_row_filter, std::identity{}); }
     bool isColumnReadWithRowFilter(size_t pos) const { return pos < columns_read_with_row_filter.size() && columns_read_with_row_filter[pos]; }
 
@@ -193,6 +196,7 @@ protected:
 
     /// Positions of columns which `readRowsWithFilter` reads filtered. Empty if the reader does not support it.
     std::vector<bool> columns_read_with_row_filter;
+    size_t bytes_skipped_by_row_filter = 0;
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
