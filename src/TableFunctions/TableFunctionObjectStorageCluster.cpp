@@ -192,6 +192,7 @@ This table function is similar to the [s3Cluster function](/reference/functions/
 
 ```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, [format, compression, structure,] extra_credentials(client_id=, tenant_id=))
 ```
 
 ## Arguments {#arguments}
@@ -207,6 +208,7 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `format`            | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `compression`       | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                                                                                                                                                      |
 | `structure`         |  Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `extra_credentials` | Authenticate with the `client_id` and `tenant_id` of a workload identity instead of `account_name` and `account_key`. The two cannot be combined.                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Returned value {#returned-value}
 
