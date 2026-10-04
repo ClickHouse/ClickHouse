@@ -103,12 +103,19 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     DefaultExpressionsInfo default_expr_info;
     default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
 
+    /// This validates already accepted metadata: `AlterCommands::validate` has rejected the
+    /// alias-lambda-capture violations the ALTER introduced and tolerates the ones already present
+    /// in the stored metadata (the rule is newer than some stored metadata, and metadata loading
+    /// skips it). Analyzing a tolerated expression here could only re-throw the tolerated capture
+    /// error and make the unrelated ALTER fail, so leave such expressions out.
+    const auto capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(columns_desc);
+
     for (const auto & ast : columns.columns->children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
         /// There might be some special columns for which `columns_desc.get` would throw, e.g. Nested column when flatten_nested is enabled.
         /// At the time of writing I am not aware of anything else, but my knowledge is limited and new types might be added, so let's be safe.
-        if (!col_decl.getDefaultExpression())
+        if (!col_decl.getDefaultExpression() || capture_violations.contains(col_decl.name))
             continue;
 
         /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
@@ -122,7 +129,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     /// virtual-column rule here: a legacy table may already have such a default and an unrelated ALTER
     /// must not fail on it. New/modified defaults are checked by AlterCommands::validate.
     if (default_expr_info.expr_list)
-        validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc, context);
 
     constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
     bool is_implicitly_created = false; /// Same

@@ -233,7 +233,8 @@ Pipe makePartPipe(
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        false);
+        false,
+        context);
 
     /// keep speed limits, the caller checks sizes
     if (auto query_limits = read_step->getQueryInfo().storage_limits)

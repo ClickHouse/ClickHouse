@@ -1473,6 +1473,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
+    auto insert_lock = table->lockForInsert(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
     /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
     /// that is why the queue route is refused below for a SELECT that may read the destination.
@@ -1592,14 +1593,17 @@ BlockIO InterpreterInsertQuery::execute()
     /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
-    /// Empty when the async insert queue transform took the lock over: it commits through a separate
-    /// flush that takes its own lock, and the route is refused when any dependent view exists.
+    /// `table_lock` is empty when the async insert queue transform took the lock over: it commits through a separate
+    /// flush that takes its own locks (including the insert lock), so the insert lock must not outlive the flush wait either.
+    if (!table_lock)
+        insert_lock.reset();
+    QueryPlanResourceHolder insert_resources;
+    if (insert_lock)
+        insert_resources.table_locks.emplace_back(std::move(insert_lock));
     if (table_lock)
-    {
-        QueryPlanResourceHolder insert_resources;
         insert_resources.table_locks.emplace_back(std::move(table_lock));
+    if (!insert_resources.table_locks.empty())
         res.pipeline.addResources(std::move(insert_resources));
-    }
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());

@@ -4,7 +4,6 @@
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <ranges>
 
@@ -56,13 +55,15 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
     const auto & source_columns_ = getSourceColumns();
 
     MaterializedDependencyNode materialized;
-    materialized.expression = columns.get(column_name).default_desc.expression->clone();
 
-    /// An ALIAS is computed on read and never stored, so a reference to one has to be replaced by what
+    /// Column matchers (`*`, `COLUMNS(...)`) in the stored default expression are expanded first, and
+    /// an ALIAS is computed on read and never stored, so a reference to one has to be replaced by what
     /// it stands for, cast to its declared type — resolving the name alone would leave the recompute
     /// stage demanding a column no part holds, and skipping the cast would recompute a value that
     /// differs from the inserted one. Before the subcolumn rewrite, so an alias to one is normalized too.
-    replaceAliasColumnsInQuery(materialized.expression, columns, {}, context);
+    materialized.expression = cloneAndExpandColumnDefaultExpressionWithAliases(
+        columns.get(column_name).default_desc, columns, context);
+    validateNoCyclicAliasesAfterExpansion(column_name, materialized.expression, columns);
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
