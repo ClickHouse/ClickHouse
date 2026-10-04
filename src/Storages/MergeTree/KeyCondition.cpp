@@ -1904,6 +1904,11 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+
+    /// A cast of a `FixedString` to another type drops its trailing zero bytes, which changes how it compares.
+    if (isFixedString(result_type) && !isFixedString(removeNullable(in_argument_type)))
+        return false;
+
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);

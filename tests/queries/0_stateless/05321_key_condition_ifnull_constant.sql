@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_enum;
 DROP TABLE IF EXISTS t_fixed;
 DROP TABLE IF EXISTS t_string;
 DROP TABLE IF EXISTS t_const_first;
+DROP TABLE IF EXISTS t_padded;
 
 CREATE TABLE t_ifnull (y Nullable(UInt32))
 ENGINE = MergeTree ORDER BY ifNull(y, 0) SETTINGS index_granularity = 2, auto_statistics_types = '';
@@ -41,6 +42,10 @@ OPTIMIZE TABLE t_string FINAL;
 CREATE TABLE t_const_first (s Nullable(String))
 ENGINE = MergeTree ORDER BY ifNull('abc', s) SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO t_const_first VALUES ('xyz'), ('xyz'), ('xyz'), ('xyz');
+
+CREATE TABLE t_padded (s Nullable(String))
+ENGINE = MergeTree ORDER BY ifNull(s, '') SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_padded SELECT 'abc\0' FROM numbers(4);
 
 -- { echo }
 
@@ -73,9 +78,13 @@ SELECT count() FROM t_fixed WHERE startsWith(y, 'a') SETTINGS use_query_conditio
 -- `ifNull('abc', s)` is not `s`.
 SELECT count() FROM t_const_first WHERE match(s, '^xyz') SETTINGS use_query_condition_cache = 0;
 
+-- Casting the `FixedString` constant to `String` would drop its trailing zero byte.
+SELECT count() FROM t_padded WHERE s <= toFixedString('abc', 4) SETTINGS use_query_condition_cache = 0;
+
 DROP TABLE t_ifnull;
 DROP TABLE t_coalesce;
 DROP TABLE t_enum;
 DROP TABLE t_fixed;
 DROP TABLE t_string;
 DROP TABLE t_const_first;
+DROP TABLE t_padded;
