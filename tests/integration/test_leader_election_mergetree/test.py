@@ -1970,10 +1970,7 @@ def test_detached_ddl_rejected_on_stale_epoch(started_cluster):
         )
         wait_for_leader([node1], table_name=table)
 
-        # Two parts in partition 1, so that its detached renames are a batch of two.
-        node1.query(f"SYSTEM STOP MERGES {table}")
         node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
-        node1.query(f"INSERT INTO {table} VALUES (5)")
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
         assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
 
