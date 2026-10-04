@@ -14,7 +14,7 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lazy (key UInt64, v Float64, s String, d DateTime) ENGINE = MergeTree ORDER BY key;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lazy_memory (x UInt64) ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_lazy_log (x UInt64) ENGINE = Log;
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -38,7 +38,7 @@ SHOW CREATE TABLE t_lazy;
 
 -- The proxy forwards the nested answer rather than a blanket `true`: a lazily loaded engine without
 -- statistics support is still rejected.
-ALTER TABLE t_lazy_memory MODIFY COLUMN x UInt64 STATISTICS(tdigest); -- { serverError NOT_IMPLEMENTED }
-ALTER TABLE t_lazy_memory ADD COLUMN y UInt64 STATISTICS(tdigest); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_lazy_log MODIFY COLUMN x UInt64 STATISTICS(tdigest); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_lazy_log ADD COLUMN y UInt64 STATISTICS(tdigest); -- { serverError NOT_IMPLEMENTED }
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

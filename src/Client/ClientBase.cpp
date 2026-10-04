@@ -212,6 +212,9 @@ namespace ProfileEvents
 {
     extern const Event UserTimeMicroseconds;
     extern const Event SystemTimeMicroseconds;
+    extern const Event ThrottlerSleepMicroseconds;
+    extern const Event SchedulerIOReadWaitMicroseconds;
+    extern const Event SchedulerIOWriteWaitMicroseconds;
 }
 
 namespace
@@ -1009,18 +1012,25 @@ try
             underlying_buf = std_out.get();
         }
 
+        /// The data written to stdout can mix with the progress only if it is displayed on the terminal,
+        /// either directly or through a pager. Otherwise (e.g., stdout is redirected to a pipe or a file),
+        /// clearing the progress on every flush only makes it flicker.
+        const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
+
         /// Use the flush callback wrapper to prevent progress flickering
         std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
             underlying_buf,
-            [this]()
+            [this, output_goes_to_terminal]()
             {
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                bool output_may_mix_with_progress = output_goes_to_terminal && (!select_into_file || select_into_file_and_stdout);
+
+                if (need_render_progress && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_indication.clearProgressOutput(*tty_buf, lock);
                 }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                if (need_render_progress_table && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
@@ -2188,6 +2198,9 @@ void ClientBase::onProfileEvents(Block & block)
 
         std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
+        std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
+        std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2208,17 +2221,31 @@ void ClientBase::onProfileEvents(Block & block)
             if (value < 0)
                 continue;
 
+            /// These are `INCREMENT` rows, and the server may coalesce several queued
+            /// snapshots of the same remote host into one packet, so sum them up:
+            /// keeping only the last delta would understate the CPU time relative to
+            /// the "waited" figure below, which covers the whole interval.
             if (event_name == user_time_name)
-                thread_times[host_name].user_ms = value;
+                thread_times[host_name].user_ms += value;
             else if (event_name == system_time_name)
-                thread_times[host_name].system_ms = value;
+                thread_times[host_name].system_ms += value;
+            /// Time the query spent blocked in throttlers or waiting for the IO scheduler
+            /// (workload resource requests), summed up into a single "waited" figure.
+            else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
+                thread_times[host_name].waited_us += value;
+            /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
+            /// from several queued snapshots of one source, or from several shards on one server.
+            /// Summing would multiply one source's usage by the number of coalesced snapshots,
+            /// and the packet carries no per-source identifier to tell the two cases apart, so
+            /// keep the gauge semantics and take the maximum. For several shards on one host this
+            /// shows the usage of the largest one.
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name].memory_usage = value;
+                thread_times[host_name].memory_usage = std::max(thread_times[host_name].memory_usage, static_cast<UInt64>(value));
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
-                thread_times[host_name].peak_memory_usage = value;
+                thread_times[host_name].peak_memory_usage = std::max(thread_times[host_name].peak_memory_usage, value);
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
-                thread_times[host_name].temp_data_on_disk_usage = value;
+                thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
