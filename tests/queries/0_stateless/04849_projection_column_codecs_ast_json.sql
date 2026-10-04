@@ -72,6 +72,15 @@ SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"Ex
 
 SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"x"}]},"projection_type":{"type":"Function","name":"basic","no_empty_args":true}}'); -- { serverError BAD_ARGUMENTS }
 
+-- The parser produces a single expression for `ORDER BY`. A raw query or declaration in that
+-- slot would format as `ORDER BY SELECT ...` or `ORDER BY ...` with a different AST on reparse.
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"order_by":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"order_by":{"type":"ColumnDeclaration","name":"y"}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p (SELECT x ORDER BY x, y)) ENGINE = MergeTree ORDER BY x'))
+     = formatQuerySingleLine('CREATE TABLE t (x UInt64, y UInt64, PROJECTION p (SELECT x ORDER BY x, y)) ENGINE = MergeTree ORDER BY x');
+
 -- ---------------------------------------------------------------------------
 -- `formatQuery` fixpoint. A projection's column list is the only caller of
 -- `ASTExpressionList::formatImplMultiline` other than `ASTCreateQuery`, so its indentation is not

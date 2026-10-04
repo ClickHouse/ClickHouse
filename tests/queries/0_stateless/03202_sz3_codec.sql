@@ -449,6 +449,32 @@ DROP TABLE IF EXISTS tab_default_codec;
 CREATE TABLE tab_default_codec (x Float64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
 
+-- A projection's `CODEC(Default)` uses the table default at write time. Even with an explicit
+-- lossless base-column codec and the suspicious-codec opt-in, reject a lossy table default
+-- before the projection definition can be published.
+SET allow_suspicious_codecs = 1;
+DROP TABLE IF EXISTS tab_projection_default_codec_fresh;
+CREATE TABLE tab_projection_default_codec_fresh
+    (k UInt64, x Float64 CODEC(NONE),
+     PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k))
+    ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_fresh';
+
+DROP TABLE IF EXISTS tab_projection_default_codec_source;
+CREATE TABLE tab_projection_default_codec_source
+    (k UInt64, x Float64 CODEC(NONE),
+     PROJECTION p (x CODEC(Default)) AS (SELECT k, x ORDER BY k))
+    ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'LZ4';
+ALTER TABLE tab_projection_default_codec_source
+    MODIFY SETTING default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_projection_default_codec_copy AS tab_projection_default_codec_source
+    ENGINE = MergeTree ORDER BY k SETTINGS default_compression_codec = 'SZ3'; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_copy';
+SELECT position(create_table_query, 'SZ3') = 0 FROM system.tables
+    WHERE database = currentDatabase() AND name = 'tab_projection_default_codec_source';
+DROP TABLE tab_projection_default_codec_source;
+SET allow_suspicious_codecs = 0;
+
 -- The same rejection fires for ALTER ... MODIFY SETTING, not only at CREATE.
 DROP TABLE IF EXISTS tab_alter_codec;
 CREATE TABLE tab_alter_codec (x Float64) ENGINE = MergeTree ORDER BY tuple();

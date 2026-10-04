@@ -1319,6 +1319,18 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert declarations_on_disk("t6_local_copy") == 1
     assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
 
+    # The source declaration was admitted with the codec opt-in before it became unavailable.
+    # The same fresh declaration is rejected by this session's codec policy, while the accepted
+    # source copy above retains its declaration for reanalysis at startup.
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_fresh_rejected "
+        "(a UInt64, b UInt64, PROJECTION pp (b CODEC(Delta, Delta)) "
+        "AS (SELECT b, a GROUP BY 1, 2)) ENGINE = MergeTree ORDER BY a",
+        settings=POSITIONAL,
+    )
+    assert "suspicious" in error.lower(), error
+    assert node.query("EXISTS TABLE dl.t6_fresh_rejected").strip() == "0"
+
     # Each clickhouse-client call has its own temporary-table session. Compare both creation
     # paths in one session, using the source whose projection became unavailable at startup.
     temporary_creates = node.exec_in_container(

@@ -51,6 +51,9 @@ Test multi-element tuple
 -- compact: every element is lossily compressed and within the error bound
 1	1	1	1
 SZ3 is lossy and cannot be used where the column data type is unknown
+0
+0
+1
 A lossy TTL recompression codec is accepted with allow_suspicious_ttl_expressions and the table still loads on ATTACH
 0
 Legacy error-bound-mode aliases (ABS_OR_REL, NORM) stay loadable for backward compatibility
