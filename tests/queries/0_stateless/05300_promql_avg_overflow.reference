@@ -1,0 +1,37 @@
+-- timeSeriesAvgOverGroup
+inf	1e308
+-inf	-1e308
+inf	0
+0	0.5
+inf
+inf
+nan
+nan
+nan
+4.5	-15.5
+nan
+4
+[1e308,2,NULL]
+-- merge of states
+1e308
+5e307
+0.5
+inf
+1
+8e307
+-- PromQL avg
+[('test','-big')]	-9.98846567431158e307
+[('test','big')]	9.98846567431158e307
+[('test','bigzero')]	0
+[('test','inf')]	inf
+[('test','kahan')]	2.5
+[('test','nan')]	nan
+[('test','ten')]	10
+[('test','-big')]	0
+[('test','big')]	0
+[('test','bigzero')]	-9.98846567431158e307
+[('test','inf')]	nan
+[('test','kahan')]	-1e100
+[('test','nan')]	nan
+[('test','ten')]	-2
+[]	[('1970-01-01 00:01:40.000',2),('1970-01-01 00:01:50.000',1e308),('1970-01-01 00:02:00.000',1.25e308),('1970-01-01 00:02:10.000',-5e307)]

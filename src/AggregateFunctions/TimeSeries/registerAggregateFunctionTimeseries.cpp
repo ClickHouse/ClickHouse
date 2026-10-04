@@ -21,6 +21,7 @@ void registerAggregateFunctionTimeseriesVariance(AggregateFunctionFactory & fact
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeSeriesAvgOverGroup(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
@@ -42,6 +43,7 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     registerAggregateFunctionLast2Samples(factory);
     registerAggregateFunctionTimeseriesGroupArray(factory);
     registerAggregateFunctionTimeSeriesTopKMasks(factory);
+    registerAggregateFunctionTimeSeriesAvgOverGroup(factory);
 }
 
 }
