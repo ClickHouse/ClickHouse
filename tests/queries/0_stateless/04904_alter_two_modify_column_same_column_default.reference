@@ -21,5 +21,7 @@
 8set	UInt64	MATERIALIZED	JSONExtractUInt(event, \'x\')
 8remove	UInt64	
 8remove	7
+10	UInt64	MATERIALIZED	JSONExtractUInt(event, \'x\')	z	CODEC(T64, LZ4)
+10	42
 11	Int8	
 12	MATERIALIZED	k + 1
