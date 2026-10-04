@@ -1008,23 +1008,36 @@ template <typename T, typename Container, size_t SIMD_ELEMENTS>
 void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     size_t current_offset = res_data.size();
-    size_t reserve_size = res_data.size();
+    /// Use the capacity reserved from `result_size_hint` without reallocating.
+    size_t reserve_size = res_data.capacity();
+    res_data.resize(reserve_size);
     size_t alloc_size = SIMD_ELEMENTS * 2;
     /// A local copy: the compiler cannot keep `res_data.data()` in a register across byte stores that may alias it.
     T * res = res_data.data();
 
     while (filt_pos < filt_end_aligned)
     {
+        const UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
         /// `compressBlock` writes up to `SIMD_ELEMENTS` elements from `current_offset`.
-        if (reserve_size - current_offset < SIMD_ELEMENTS)
+        if (reserve_size - current_offset >= SIMD_ELEMENTS)
         {
-            reserve_size += alloc_size;
-            res_data.resize(reserve_size);
-            res = res_data.data();
-            alloc_size *= 2;
+            current_offset += compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, res + current_offset);
         }
-
-        current_offset += compressBlock<T, SIMD_ELEMENTS>(bytes64MaskToBits64Mask(filt_pos), data_pos, res + current_offset);
+        else
+        {
+            /// Compress into a local buffer so an exact `result_size_hint` is not exceeded by the slack of the last blocks.
+            T block[SIMD_ELEMENTS];
+            const size_t count = compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, block);
+            if (reserve_size - current_offset < count)
+            {
+                reserve_size += alloc_size;
+                res_data.resize(reserve_size);
+                res = res_data.data();
+                alloc_size *= 2;
+            }
+            memcpy(res + current_offset, block, count * sizeof(T));
+            current_offset += count;
+        }
 
         filt_pos += SIMD_ELEMENTS;
         data_pos += SIMD_ELEMENTS;
