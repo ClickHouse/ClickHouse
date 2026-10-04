@@ -1,0 +1,23 @@
+-- accurateCastOrNull, constant
+\N
+\N
+\N
+\N
+\N
+-- accurateCastOrNull, in range
+1970-01-01 00:00:01.500
+00:59:59.500
+2025-01-01 00:00:00.000000
+-- accurateCastOrNull, materialized column
+1970-01-01 00:00:00.000000000
+\N
+\N
+-- accurateCastOrNull, DateTime64 source that does not fit a higher scale
+\N
+\N
+-- accurateCast throws
+1970-01-01 00:00:01.500
+-- the setting does not change the accurate-cast contract
+\N
+\N
+\N
