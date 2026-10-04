@@ -96,6 +96,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsUInt64 text_index_like_max_matched_tokens;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
     extern const SettingsBool use_text_index_pattern_bypass_cache;
@@ -744,9 +745,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     if (sparse_index.empty())
         return;
 
-    const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
+    const size_t max_matched_tokens = settings[Setting::text_index_like_max_matched_tokens];
+    /// The cache key does not hold `text_index_like_max_matched_tokens`, so the patterns it caps skip the cache.
     const bool use_pattern_bypass_cache
-        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_pattern_bypass_cache];
+        = settings[Setting::use_text_index_pattern_bypass_cache] && !analyzer->hasPerTokenPatterns();
     auto tokens_cache = condition_text.tokensCache();
     auto cache_key = TextIndexTokensCache::hashPatternBypass(
         index_id_for_caches, condition_text.getSearchPatternsHash(), max_postings_to_read);
@@ -807,9 +811,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 analyzer->addTokenInfo(token, infos[i]);
             }
 
-            if (postings_to_read > max_postings_to_read)
+            /// Reading postings for very many tokens is slower than checking the column.
+            /// Only hasTokenPrefix/Like/Match are capped, not `LIKE`.
+            if (postings_to_read > max_postings_to_read
+                || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {
-                /// Too many large-posting tokens matched.
+                /// Too many tokens matched.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
                 analyzer->bypassPatternQueries();
                 if (use_pattern_bypass_cache)
