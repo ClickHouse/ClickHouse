@@ -190,7 +190,7 @@ all of them.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Force read-through filesystem cache for merges
+Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 
 ## initialization_retry_period {#initialization_retry_period}
 <SettingsInfoBlock type="Seconds" default_value="60" />

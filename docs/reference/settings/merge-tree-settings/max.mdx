@@ -46,6 +46,8 @@ to a table. You can also specify this setting in the global settings
 setting). The value specified when the table is created overrides the global
 value for this setting.
 
+For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
