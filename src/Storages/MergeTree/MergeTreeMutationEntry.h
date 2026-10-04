@@ -10,6 +10,7 @@
 namespace DB
 {
 class IBackupEntry;
+class WriteBuffer;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -84,6 +85,10 @@ struct MergeTreeMutationEntry
     MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
 
     ~MergeTreeMutationEntry();
+
+private:
+    /// Serializes everything except the `csn:` line, in the format the loading constructor reads.
+    void writeRecord(WriteBuffer & out) const;
 };
 
 }

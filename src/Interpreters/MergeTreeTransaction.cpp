@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -18,11 +19,13 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 
 #include <base/sleep.h>
@@ -48,6 +51,80 @@ namespace FailPoints
     extern const char transaction_after_commit_pause[];
     extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
+}
+
+namespace
+{
+
+/// A metadata write made after the commit point, or during rollback, has no one to report
+/// an error to: the caller is a noexcept callback and the transaction's fate is already
+/// decided in the transaction log. Instead of letting the exception terminate the server,
+/// the write is retried for a bounded time. `LOGICAL_ERROR` and `NOT_IMPLEMENTED` are invariant
+/// violations and are rethrown at once. When the budget is exhausted, or the server is
+/// shutting down, the error is rethrown too, so a write that did not happen is not hidden.
+/// One budget covers the whole callback, so a commit of many parts cannot wait for a
+/// multiple of it; a write that hangs inside the storage is not interrupted.
+constexpr UInt64 TRANSACTION_METADATA_STORE_RETRY_TIMEOUT_SECONDS = 60;
+constexpr UInt64 TRANSACTION_METADATA_STORE_RETRY_BACKOFF_MS = 100;
+constexpr UInt64 TRANSACTION_METADATA_STORE_RETRY_MAX_BACKOFF_MS = 2000;
+
+/// `watch` runs from the start of the callback and is shared by all its writes.
+/// `describe` is called only when a log line is written, so a callback that never fails
+/// formats nothing. Errors with a code in `not_retried` are rethrown at once, like the
+/// invariant violations.
+template <typename Describe, typename F>
+void retryMetadataStore(
+    LoggerPtr log, const Stopwatch & watch, Describe && describe, F && store, std::initializer_list<int> not_retried = {})
+{
+    UInt64 backoff_ms = TRANSACTION_METADATA_STORE_RETRY_BACKOFF_MS;
+    size_t attempts = 0;
+    while (true)
+    {
+        ++attempts;
+        try
+        {
+            store();
+            if (attempts > 1)
+                LOG_INFO(log, "Stored transaction metadata for {} after {} attempts", describe(), attempts);
+            return;
+        }
+        catch (...)
+        {
+            int code = getCurrentExceptionCode();
+            if (code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::NOT_IMPLEMENTED
+                || std::find(not_retried.begin(), not_retried.end(), code) != not_retried.end())
+                throw;
+
+            bool give_up = watch.elapsedSeconds() >= TRANSACTION_METADATA_STORE_RETRY_TIMEOUT_SECONDS
+                || TransactionManager::instance().isShuttingDown();
+            if (give_up)
+            {
+                LOG_ERROR(log, "Cannot store transaction metadata for {} after {} attempts in {:.1f} s, giving up: {}",
+                    describe(), attempts, watch.elapsedSeconds(), getCurrentExceptionMessage(false));
+                throw;
+            }
+
+            if (attempts == 1)
+                LOG_WARNING(log, "Cannot store transaction metadata for {}, will retry: {}", describe(), getCurrentExceptionMessage(false));
+            else
+                LOG_DEBUG(log, "Cannot store transaction metadata for {}, attempt {}: {}", describe(), attempts, getCurrentExceptionMessage(false));
+        }
+
+        sleepForMilliseconds(backoff_ms);
+        backoff_ms = std::min(backoff_ms * 2, TRANSACTION_METADATA_STORE_RETRY_MAX_BACKOFF_MS);
+    }
+}
+
+String partDescription(const IMergeTreeDataPart & part)
+{
+    return fmt::format("part {} of {}", part.name, part.storage.getStorageID().getNameForLogs());
+}
+
+String mutationDescription(const IStorage & storage, const String & mutation_id)
+{
+    return fmt::format("mutation {} of {}", mutation_id, storage.getStorageID().getNameForLogs());
+}
+
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -481,6 +558,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         affected_storages = storages;
     }
 
+    auto log = getLogger("MergeTreeTransaction");
+    Stopwatch retry_watch;
+
     /// Persist per-part version metadata BEFORE flipping `csn` below.
     /// `csn.exchange(assigned_csn)` is the signal that `MergeTreeTransaction::waitStateChange`
     /// blocks on; doing the disk-backed `setAndStore...CSN` calls first ensures that once a
@@ -494,20 +574,19 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     /// `setAndStore...CSN` did not complete; `TransactionManager::getCSN(tid)` returns the right
     /// answer after restart.
     for (const auto & part : created_parts)
-    {
-        part->version->setAndStoreCreationCSN(assigned_csn);
-    }
+        retryMetadataStore(log, retry_watch, [&] { return partDescription(*part); }, [&] { part->version->setAndStoreCreationCSN(assigned_csn); });
 
     for (const auto & removed : removed_parts)
     {
         /// The removal lock was already committed in the commit Multi (kept parts) or removed by
         /// the merge commit (merge sources), so there is no lock to release here — just stamp
         /// the committed CSN onto the part.
-        removed.part->version->setAndStoreRemovalCSN(assigned_csn);
+        retryMetadataStore(log, retry_watch, [&] { return partDescription(*removed.part); }, [&] { removed.part->version->setAndStoreRemovalCSN(assigned_csn); });
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
-        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
+        retryMetadataStore(log, retry_watch, [&] { return mutationDescription(*storage_and_mutation.first, storage_and_mutation.second); },
+            [&] { storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn); });
 
 #if CLICKHOUSE_CLOUD
     StorageSharedMergeTree::bumpVirtualPartsForStorages(
@@ -518,9 +597,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     /// Test-only pause point. With this failpoint enabled, a regression test can verify that
     /// `waitStateChange` does not return until every part has its new CSN persisted (above).
-    /// Not wrapped in try/catch: `pauseFailPoint` only takes a mutex and a condvar, and the
-    /// surrounding `setAndStore...CSN` calls already trust their callees not to throw under
-    /// the same `noexcept` contract.
+    /// Not wrapped in try/catch: `pauseFailPoint` only takes a mutex and a condvar. The writes
+    /// above go through retryMetadataStore, which absorbs recoverable storage errors within its
+    /// retry budget.
     FailPointInjection::pauseFailPoint(FailPoints::transaction_after_commit_pause);
 
     /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
@@ -574,6 +653,9 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
         locks_to_release = locked_parts;
     }
 
+    auto log = getLogger("MergeTreeTransaction");
+    Stopwatch retry_watch;
+
     /// Forcefully stop related mutations if any
     for (const auto & table_and_mutation : mutations_to_kill)
     {
@@ -600,7 +682,7 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
     {
         try
         {
-            part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
+            retryMetadataStore(log, retry_watch, [&] { return partDescription(*part); }, [&] { part->version->setAndStoreCreationCSN(Tx::RolledBackCSN); });
         }
         catch (...)
         {
@@ -657,7 +739,11 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
             {
                 throw Exception(ErrorCodes::ABORTED, "Injected failure of resetRemovalTID during rollback");
             });
-            part->version->resetRemovalTID(entry.acquired);
+            /// `ABORTED` (the fingerprint no longer matches) and `NO_SUCH_DATA_PART` (a peer removed the
+            /// part) are outcomes, not storage errors: the handler below acts on them.
+            retryMetadataStore(log, retry_watch, [&] { return partDescription(*part); },
+                [&] { part->version->resetRemovalTID(entry.acquired); },
+                {ErrorCodes::ABORTED, ErrorCodes::NO_SUCH_DATA_PART});
         }
         catch (const Exception & e)
         {
