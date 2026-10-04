@@ -18,6 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -493,6 +494,9 @@ void MergeTreeTemporaryPart::prewarmCaches()
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
+
+    if (prewarm_caches.statistics_cache)
+        part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(

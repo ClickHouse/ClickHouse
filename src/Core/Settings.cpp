@@ -10108,9 +10108,6 @@ Allows defining columns with [statistics](/reference/engines/table-engines/merge
 )", 0, allow_experimental_statistics, \
         {"26.3", false, true, "Column statistics are now GA. This also applies to the alias `allow_experimental_statistics`."}, \
         {"24.6", false, false, "The setting was renamed. The previous name is `allow_experimental_statistic`. At the time the setting was named `allow_experimental_statistics`, which is now an alias of it."}) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0, \
-        {"26.2", false, true, "Enable statistics cache"}, \
-        {"25.11", 0, 0, "New setting"}) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
@@ -10658,6 +10655,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false, \
         {"26.9", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."}, \
         {"26.6", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."}) \
+    MAKE_OBSOLETE(M, Bool, use_statistics_cache, true, \
+        {"26.2", false, true, "Enable statistics cache"}, \
+        {"25.11", 0, 0, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false, \
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \

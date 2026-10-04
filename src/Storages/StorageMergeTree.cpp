@@ -282,11 +282,10 @@ void StorageMergeTree::startup()
             enableBackgroundWorkers();
             startBackgroundWorkers();
         }
-        /// Statistics refresh and the streaming subscription enrichment only read parts and must also
+        /// The streaming subscription enrichment only reads parts and must also
         /// run for read-only tables: without the streaming assignee, `triggerStreamingSubscriptionEnrichment`
         /// is a no-op and a `STREAM BOUNDED` read on the table never receives its first snapshot.
         background_streaming_assignee.start();
-        startStatisticsCache();
     }
     catch (...)
     {
@@ -333,9 +332,6 @@ void StorageMergeTree::shutdown(bool)
 
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
