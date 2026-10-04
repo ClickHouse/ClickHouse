@@ -1453,6 +1453,48 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
+namespace
+{
+
+/// A layout stored as constant granularity hashes the same as the identical layout stored as adaptive one.
+void hashMarkLayout(const MergeTreeIndexGranularity & granularity, SipHash & hash)
+{
+    const size_t marks = granularity.getMarksCountWithoutFinal();
+    hash.update(marks);
+    if (marks == 0)
+        return;
+
+    const size_t first_mark_rows = granularity.getMarkRows(0);
+    hash.update(first_mark_rows);
+    hash.update(granularity.getMarkRows(marks - 1));
+    if (granularity.getConstantGranularity())
+        return;
+
+    for (size_t mark = 1; mark + 1 < marks; ++mark)
+    {
+        if (const size_t rows = granularity.getMarkRows(mark); rows != first_mark_rows)
+        {
+            hash.update(mark);
+            hash.update(rows);
+        }
+    }
+}
+
+}
+
+UInt128 IMergeTreeDataPart::getContentFingerprint() const
+{
+    std::lock_guard lock(content_fingerprint_mutex);
+    if (content_fingerprint == 0 && !checksums.empty())
+    {
+        SipHash hash;
+        checksums.computeTotalChecksumDataOnly(hash);
+        hashMarkLayout(*index_granularity, hash);
+        content_fingerprint = hash.get128();
+    }
+    return content_fingerprint;
+}
+
 Estimates IMergeTreeDataPart::getEstimates() const
 {
     std::lock_guard lock(estimates_mutex);

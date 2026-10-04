@@ -16,5 +16,18 @@
                 </replica>
             </shard>
         </parallel_replicas>
+        <!-- split_node2 is omitted on purpose: its announcements carry the current protocol version, which would reject a divergent-part query on its own and hide what this test observes. -->
+        <parallel_replicas_old_followers>
+            <shard>
+                <replica>
+                    <host>split_node0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>split_node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </parallel_replicas_old_followers>
     </remote_servers>
 </clickhouse>

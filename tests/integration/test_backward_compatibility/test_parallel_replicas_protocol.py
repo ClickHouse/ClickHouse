@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
@@ -253,3 +255,114 @@ def test_split_topology_rolling_upgrade(start_cluster):
 
     for node in split_topology_nodes:
         node.query("drop table ts sync")
+
+
+def test_pre_v10_follower_part_identity(start_cluster):
+    """Two parallel-replicas entrypoints over a cluster of 26.5 nodes only: `INSERT SELECT` with
+    `parallel_distributed_insert_select = 2`, and a plain `SELECT`.
+
+    Their announcements predate the part fingerprint, so only the initiator's own classification of
+    the source table can reject two independently minted `all_1_1_0` parts that hold different rows.
+    """
+    initiator = split_topology_nodes[2]
+    followers = split_topology_nodes[:2]
+
+    # An inequality rather than a version literal, so the tag pin no longer taking effect is loud.
+    assert followers[0].query("select version()") != initiator.query("select version()")
+
+    insert_select_settings = {
+        "enable_analyzer": 1,
+        "parallel_distributed_insert_select": 2,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "parallel_replicas_old_followers",
+        "max_parallel_replicas": 2,
+        "parallel_replicas_for_non_replicated_merge_tree": 1,
+        # The initiator is not a member of that cluster, so a local plan would raise
+        # INCONSISTENT_CLUSTER_DEFINITION in `findLocalReplicaIndexAndUpdatePools`.
+        "parallel_replicas_local_plan": 0,
+        "parallel_replicas_insert_select_local_pipeline": 0,
+        "merge_tree_min_rows_for_concurrent_read": 0,
+        "merge_tree_min_bytes_for_concurrent_read": 0,
+        "merge_tree_min_read_task_size": 1,
+    }
+
+    for node in split_topology_nodes:
+        for table in ("pr_nl_same", "pr_nl_disjoint", "pr_nl_sink"):
+            node.query(f"drop table if exists {table} sync")
+        node.query(
+            "create table pr_nl_same(a UInt64, s String) engine = MergeTree order by a"
+        )
+        node.query(
+            "create table pr_nl_disjoint(a UInt64, s String) engine = MergeTree partition by a % 2 order by a"
+        )
+        node.query("create table pr_nl_sink(a UInt64, s String) engine = Null")
+
+    # Equal row counts, different values: both followers mint `all_1_1_0` with the same mark count, so
+    # their parts differ only in content. The initiator's own rows are never read (it is not a cluster
+    # member), but its copy must not be empty: the SELECT is planned against it, and an empty table is
+    # read by a null source, leaving the suitability probe no parallel-replicas step to find.
+    for num, node in enumerate(split_topology_nodes):
+        node.query(f"insert into pr_nl_same select number, '{'abc'[num]}' from numbers(100000)")
+
+    error = initiator.query_and_get_error(
+        "insert into pr_nl_sink select * from pr_nl_same",
+        settings=insert_select_settings,
+    )
+    assert "Code: 36" in error, error
+    assert (
+        "the content fingerprint needed to verify that it matches the same-named part" in error
+    ), error
+
+    # A plain `SELECT` reaches the coordinator through a second entrypoint, which seeds the source
+    # table by `StorageID` instead of from the analyzed `INSERT SELECT` query tree.
+    select_settings = {
+        "enable_analyzer": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "parallel_replicas_old_followers",
+        "max_parallel_replicas": 2,
+        "parallel_replicas_for_non_replicated_merge_tree": 1,
+        "parallel_replicas_local_plan": 0,
+        "merge_tree_min_rows_for_concurrent_read": 0,
+        "merge_tree_min_bytes_for_concurrent_read": 0,
+        "merge_tree_min_read_task_size": 1,
+    }
+
+    error = initiator.query_and_get_error(
+        "select sum(a) from pr_nl_same", settings=select_settings
+    )
+    assert "Code: 36" in error, error
+    assert (
+        "the content fingerprint needed to verify that it matches the same-named part" in error
+    ), error
+
+    # In-range control: the same old followers, but no two announcements name the same part. The
+    # `query_log` check below proves only that the insert really executed on both of them.
+    for num, node in enumerate(split_topology_nodes):
+        node.query(
+            f"insert into pr_nl_disjoint select number * 2 + {num % 2}, '{'abc'[num]}' from numbers(50000)"
+        )
+
+    query_id = str(uuid.uuid4())
+    initiator.query(
+        "insert into pr_nl_sink select * from pr_nl_disjoint",
+        settings=insert_select_settings,
+        query_id=query_id,
+    )
+
+    for node in followers:
+        node.query("system flush logs")
+    for node in followers:
+        executed = int(
+            node.query(
+                f"select count() from system.query_log where initial_query_id = '{query_id}'"
+                " and type = 'QueryFinish' and query_kind = 'Insert'"
+            )
+        )
+        assert executed == 1, (
+            f"the in-range arm did not run on {node.name}, so the rejection above is not evidence "
+            f"that this cluster can execute the query at all: {executed}"
+        )
+
+    for node in split_topology_nodes:
+        for table in ("pr_nl_same", "pr_nl_disjoint", "pr_nl_sink"):
+            node.query(f"drop table {table} sync")
