@@ -29,7 +29,7 @@ FutureSetSettings::FutureSetSettings(const Settings & settings)
     , temporary_files_codec(settings[Setting::temporary_files_codec])
     , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
 {
-    /// The sets of a distributed plan do not move to disk yet. The plan ships the values of each set to
+    /// The sets of a distributed plan do not spill to disk yet. The plan ships the values of each set to
     /// its worker tasks, and a set on disk does not keep its values. For the same reason,
     /// `use_index_for_in_with_subqueries_max_values` does not limit the values that these sets keep.
     if (settings[Setting::make_distributed_plan])
