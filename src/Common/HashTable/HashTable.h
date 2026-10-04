@@ -327,6 +327,18 @@ public:
         size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
         increaseSizeDegree(0);
     }
+
+    /// Whether a buffer reserved for `num_elems` elements is smaller than the one grown to hold them:
+    /// small tables grow by 4x, so a grown table may have up to 4 times the cells it needs.
+    static bool reservingSavesSpace(size_t num_elems)
+    {
+        HashTableGrowerWithPrecalculation grown;
+        while (grown.overflow(num_elems))
+            grown.increaseSize();
+        HashTableGrowerWithPrecalculation reserved;
+        reserved.set(num_elems);
+        return reserved.bufSize() < grown.bufSize();
+    }
 };
 
 static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);

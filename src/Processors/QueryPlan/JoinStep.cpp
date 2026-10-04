@@ -169,7 +169,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// sides are paired positionally. Every step that can feed a sharded join keeps one output port per
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
-    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+    bool use_sharding = !sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
 
     QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
 
@@ -212,6 +212,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                sharding.build_all_shards_before_probing,
                 this,
                 &processors);
         }
@@ -437,11 +438,11 @@ void JoinStep::describeActions(FormatSettings & settings) const
     }
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
-    if (!primary_key_sharding.empty())
+    if (!sharding.empty())
     {
-        settings.out << prefix << "Sharding: [";
+        settings.out << prefix << (sharding.kind == JoinSharding::Kind::Partitions ? "Sharding by partitions: [" : "Sharding: [");
         bool first = true;
-        for (const auto & [lhs, rhs] : primary_key_sharding)
+        for (const auto & [lhs, rhs] : sharding)
         {
             if (!first)
                 settings.out << ", ";
@@ -466,17 +467,17 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
-    if (!primary_key_sharding.empty())
+    if (!sharding.empty())
     {
         auto array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & [lhs, rhs] : primary_key_sharding)
+        for (const auto & [lhs, rhs] : sharding)
         {
             auto item = std::make_unique<JSONBuilder::JSONArray>();
             item->add(lhs);
             item->add(rhs);
             array->add(std::move(item));
         }
-        map.add("Sharding", std::move(array));
+        map.add(sharding.kind == JoinSharding::Kind::Partitions ? "Sharding by partitions" : "Sharding", std::move(array));
     }
 }
 
