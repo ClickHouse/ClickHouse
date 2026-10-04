@@ -664,6 +664,11 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         }
         modified_client_info.current_roles = std::move(current_role_names);
     }
+    /// Relay the received roles only if this node applies them too: the server setting decides, not the query one.
+    else if (modified_client_info.initial_user != modified_client_info.current_user
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getGlobalContext()->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+        modified_client_info.current_roles = context->getClientInfo().current_roles;
 
     /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
     modified_client_info.collaborate_with_initiator = extension.has_value();
