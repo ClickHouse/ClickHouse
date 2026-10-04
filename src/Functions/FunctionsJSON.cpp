@@ -483,15 +483,16 @@ public:
             auto read_merged_for_path = [&](const String & p)
             {
                 String combined_name = DataTypeObject::getCombinedSubcolumnName(p);
-                auto merged_type = data_type_object.getSubcolumnType(combined_name);
 
-                /// When `skip_null_typed_paths` is enabled for a non-typed parent path (e.g. `a` when `a.b`
-                /// is typed), use `extractCombinedSubcolumn` which propagates the setting into sub-object
-                /// emptiness checks. Otherwise the sub-object with all-NULL typed descendants would be
-                /// considered non-empty.
-                auto merged = (skip_null_typed_paths && !data_type_object.getTypedPaths().contains(p))
+                /// When `type_json_skip_null_typed_paths` is enabled, use `extractCombinedSubcolumn` for every
+                /// path (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object,
+                /// and a parent whose typed descendants are all NULL is treated as absent.
+                auto merged = skip_null_typed_paths
                     ? data_type_object.extractCombinedSubcolumn(p, object_column, true)
                     : data_type_object.getSubcolumn(combined_name, object_column);
+                auto merged_type = skip_null_typed_paths
+                    ? data_type_object.getDynamicType()
+                    : data_type_object.getSubcolumnType(combined_name);
                 return std::make_pair(std::move(merged), std::move(merged_type));
             };
 
@@ -536,9 +537,17 @@ public:
                     /// `type_json_skip_null_typed_paths`: a non-nullable typed path is never NULL, so
                     /// `isNullAt` would call its default a real value and let it shadow a differently-cased
                     /// key with an actual value. For non-typed paths a non-null Dynamic value proves presence.
+                    /// With `type_json_skip_null_typed_paths` the merged column of a typed path is `Dynamic`,
+                    /// where only NULL is the default, so the typed literal is read separately for this check.
+                    VectorWithMemoryTracking<ColumnPtr> per_path_typed_literal(num_paths);
+                    for (size_t k = 0; k < num_paths; ++k)
+                        if (path_is_typed[k])
+                            per_path_typed_literal[k] = skip_null_typed_paths
+                                ? data_type_object.getSubcolumn(DataTypeObject::getCombinedSubcolumnName(case_insensitive_matches[k]), object_column)
+                                : per_path_merged[k];
                     auto path_has_real_value_at = [&](size_t k, size_t i)
                     {
-                        return path_is_typed[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
+                        return path_is_typed[k] ? !per_path_typed_literal[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
                     };
 
                     /// Pick the stored path to use for this row. Prefer a candidate carrying a real value so

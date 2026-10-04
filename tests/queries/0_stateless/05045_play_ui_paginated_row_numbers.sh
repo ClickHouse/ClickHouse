@@ -15,7 +15,7 @@ URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 page="$(${CLICKHOUSE_CURL} -sS "${URL}/play")"
 
 echo '--- the row number of a rendered row is the offset of its page plus its index within the page'
-echo "$page" | grep -oF "createTextNode(this._rowNumberOffset() + this._row_idx)" | head -n1
+echo "$page" | grep -oF "String(this._rowNumberOffset() + this._row_idx)" | head -n1
 
 echo '--- the offset is the number of rows the server skipped for the page: size * (page - 1)'
 echo "$page" | grep -oE '^ *return size \* \(page - 1\);$' | head -n1
