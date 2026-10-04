@@ -9494,6 +9494,7 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 - 'auto' - Postfiltering (the exact semantics may change in future).
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
+- 'in_traversal' - Use exact row_bitmap filters built from scalar index analysis inside the vector similarity index. Queries without an exact row_bitmap filter keep the existing postfilter behavior.
 )", 0, \
         {"25.5", "auto", "auto", "New setting"}) \
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
