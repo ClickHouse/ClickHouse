@@ -1700,13 +1700,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 row_level_outputs.push_back(row_level_filter_node);
 
             row_level_outputs.insert(row_level_outputs.end(), row_level_dag.getInputs().begin(), row_level_dag.getInputs().end());
+            const String row_level_filter_column_name = row_level_filter_node->result_name;
 
-            auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag));
+            ExpressionActionsSettings actions_settings(context_);
+            const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
+            auto row_level_actions = ExpressionActions::create(row_level_dag.clone(), actions_settings);
+            bool is_first_stream = true;
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
+                auto stream_actions = row_level_actions;
+                if (expression_per_stream && !std::exchange(is_first_stream, false))
+                    stream_actions = ExpressionActions::create(row_level_dag.clone(), actions_settings);
+
                 return std::make_shared<FilterTransform>(
-                    header, row_level_actions,
-                    row_level_filter_node->result_name,
+                    header, std::move(stream_actions),
+                    row_level_filter_column_name,
                     remove_row_level_filter_column,
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
@@ -1715,11 +1723,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (stripped_prewhere_info)
         {
-            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            ExpressionActionsSettings actions_settings(context_);
+            const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
+            auto prewhere_actions = ExpressionActions::create(stripped_prewhere_info->prewhere_actions.clone(), actions_settings);
+            bool is_first_stream = true;
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
+                auto stream_actions = prewhere_actions;
+                if (expression_per_stream && !std::exchange(is_first_stream, false))
+                    stream_actions = ExpressionActions::create(stripped_prewhere_info->prewhere_actions.clone(), actions_settings);
+
                 return std::make_shared<FilterTransform>(
-                    header, prewhere_actions,
+                    header, std::move(stream_actions),
                     stripped_prewhere_info->prewhere_column_name,
                     stripped_prewhere_info->remove_prewhere_column,
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
