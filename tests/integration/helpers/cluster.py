@@ -246,6 +246,14 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 # compatibility checks for features that are affected by this experimental feature.
 CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
 
+# Since 26.10 `arrayCount` returns `UInt64` (`UInt32` before, see the
+# `array_count_legacy_uint32_result` compatibility setting). This pre-change
+# version is the baseline for compatibility checks of the `arrayCount` result
+# type (any released pre-`26.10` server works); unlike
+# `CLICKHOUSE_CI_MIN_TESTED_VERSION` it must not advance past the `26.10`
+# boundary, or the checks stop exercising the pre-change coordinator.
+CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION = "26.7"
+
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
 NET_LOCK_PATH = "/tmp/docker_net.lock"
@@ -4451,7 +4459,9 @@ class ClickHouseCluster:
             )
             self.up_called = True
 
-            run_and_check(clickhouse_start_cmd)
+            retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                run_and_check, clickhouse_start_cmd
+            )
             logging.debug("ClickHouse instance created")
 
             if self.with_dolor:
@@ -4585,7 +4595,18 @@ class ClickHouseCluster:
                         "Kill command failed during shutdown. {}".format(repr(e))
                     )
                     logging.debug("Trying to kill forcefully")
-                    run_and_check(self.base_cmd + ["kill"])
+
+                    def logging_compose_kill(**kwargs):
+                        if "exception" in kwargs:
+                            logging.info(
+                                "Got exception in docker compose kill: %s", kwargs["exception"]
+                            )
+
+                    # `kill` fails on a container that exits after it is listed as running; a retry lists
+                    # only the containers that are still running.
+                    retry(log_function=logging_compose_kill, retries=3, delay=3, jitter=2)(
+                        run_and_check, self.base_cmd + ["kill"]
+                    )
 
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.

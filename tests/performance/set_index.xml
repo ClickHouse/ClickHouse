@@ -1,16 +1,22 @@
 <test>
     <create_query>CREATE TABLE test_in (`a` UInt32) ENGINE = MergeTree() ORDER BY a</create_query>
     <fill_query>INSERT INTO test_in SELECT number FROM numbers(500000000)</fill_query>
+    <!-- Merge to one part, so that both compared servers analyze the same index whatever the timing of the
+         background merges (the measured runs stop merges). -->
+    <fill_query>OPTIMIZE TABLE test_in FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>SELECT throwIf(count() != 1, 'set_index: expected 1 active part') FROM system.parts WHERE database = currentDatabase() AND table = 'test_in' AND active</fill_query>
 
-    <!-- IN is used at index analysis -->
-    <query>SELECT count() FROM test_in WHERE a IN (SELECT rand(1) FROM numbers(200000)) SETTINGS max_rows_to_read = 200001, read_overflow_mode = 'break'</query>
+    <!-- IN is used at index analysis. The set is a fixed pseudo-random sample, not `rand`: a different set in
+         every run selects different ranges and reads a different number of rows before the break, which made
+         the query time vary by tens of percent between runs of the same binary. -->
+    <query>SELECT count() FROM test_in WHERE a IN (SELECT toUInt32(cityHash64(number)) FROM numbers(200000)) SETTINGS max_rows_to_read = 200001, read_overflow_mode = 'break'</query>
 
-    <query>SELECT count() FROM test_in WHERE toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
+    <query>SELECT count() FROM test_in WHERE toInt64(a) IN (SELECT toInt64(toUInt32(cityHash64(number))) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
 
      <!-- Analyze only one range. The query is short because nothing is selected. -->
-    <query>SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
+    <query>SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(toUInt32(cityHash64(number))) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
     <!-- Analyze all ranges. The query is short because nothing is selected. -->
-    <query>SELECT count() FROM test_in WHERE -toInt64(a) NOT IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
+    <query>SELECT count() FROM test_in WHERE -toInt64(a) NOT IN (SELECT toInt64(toUInt32(cityHash64(number))) FROM numbers(200000)) settings max_rows_to_read=200001, read_overflow_mode='break'</query>
 
     <!--
         Test with explicitly defined large set (10000 elements).
