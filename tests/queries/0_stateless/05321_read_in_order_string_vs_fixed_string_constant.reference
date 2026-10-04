@@ -1,0 +1,21 @@
+String
+1	56300000
+1	563000
+1	5630
+56300000
+563000
+5630
+56300000
+Prefix sort description: k ASC
+Prefix sort description: k ASC, s DESC
+Nullable(String)
+1	56300000
+1	563000
+1	5630
+LowCardinality(String)
+1	56300000
+1	563000
+1	5630
+FixedString
+1	563000
+Prefix sort description: k ASC, s DESC
