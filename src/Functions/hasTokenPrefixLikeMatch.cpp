@@ -44,7 +44,7 @@ struct TokenLikeMatcher
 {
     static constexpr auto name = "hasTokenLike";
 
-    explicit TokenLikeMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
+    explicit TokenLikeMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ true, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
     bool operator()(std::string_view token) const { return regexp.match(token.data(), token.size()); }
 
     OptimizedRegularExpression regexp;
@@ -54,7 +54,7 @@ struct TokenMatchMatcher
 {
     static constexpr auto name = "hasTokenMatch";
 
-    explicit TokenMatchMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
+    explicit TokenMatchMatcher(const String & pattern) : regexp(Regexps::createRegexp</*like*/ false, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(pattern)) {}
     bool operator()(std::string_view token) const { return regexp.match(token.data(), token.size()); }
 
     OptimizedRegularExpression regexp;
