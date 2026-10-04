@@ -83,6 +83,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/moveNonAggregateHavingConjunctsToWhere.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -2735,6 +2736,13 @@ void Planner::buildPlanForQueryNode()
 
         query_node.getHaving() = {};
     }
+
+    /// When the query is processed only up to `WithMergeableState` (for example, on a shard of a `Distributed` table),
+    /// `HAVING` is not executed here: it is applied by the initiator after merging the aggregation states.
+    /// Conjuncts that depend only on the aggregation keys can be applied before aggregation instead,
+    /// so they can be used for partition pruning and the primary key analysis.
+    if (select_query_info.need_aggregate && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
+        moveNonAggregateHavingConjunctsToWhere(query_node, query_context);
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);

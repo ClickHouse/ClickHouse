@@ -1,29 +1,33 @@
---- result (enable_optimize_predicate_expression = 1)
+--- outer filter on aggregating view
 2024-01-05	60002
---- result (enable_optimize_predicate_expression = 0)
-2024-01-05	60002
---- shard pruning (enable_optimize_predicate_expression = 1)
 1	0
---- shard pruning (enable_optimize_predicate_expression = 0)
-0	1
---- inner-HAVING result (enable_optimize_predicate_expression = 1)
+--- HAVING inside aggregating view
 2024-01-05	60002
---- inner-HAVING result (enable_optimize_predicate_expression = 0)
-2024-01-05	60002
---- inner-HAVING shard pruning (enable_optimize_predicate_expression = 1)
 1	0
---- inner-HAVING shard pruning (enable_optimize_predicate_expression = 0)
-0	1
---- complete-stage remote() outer filter on aggregate alias (must stay HAVING)
+--- HAVING on Distributed table
+2024-01-05	60002
+1	0
+--- HAVING with grouping key and aggregate conjuncts
+2024-01-05	4	602
+2024-01-05	14	600
+2024-01-05	24	598
+1	0
+--- HAVING with grouping and arrayJoin
+2024-01-05	60002
+2024-01-05	60002
+2024-01-05	60002
+--- WITH ROLLUP
+2024-01-05	60002
+--- WITH TOTALS
+2024-01-05	60002
+
+1970-01-01	60002
+--- complete-stage remote() with outer filter on aggregate alias
 2024-01-04	30004
 2024-01-05	30001
 2024-01-07	30002
---- complete-stage remote() outer filter on grouping key
+--- complete-stage remote() with outer filter on grouping key
 2024-01-05	30001
---- after-aggregation result (distributed_group_by_no_merge = 2)
+--- distributed_group_by_no_merge = 2
 2024-01-05	60002
-2024-01-05	60002
---- after-aggregation shard pruning (enable_optimize_predicate_expression = 1)
-1	0
---- after-aggregation shard pruning (enable_optimize_predicate_expression = 0)
 1	0
