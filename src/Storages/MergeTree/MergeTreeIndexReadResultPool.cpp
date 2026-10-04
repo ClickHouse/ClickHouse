@@ -79,7 +79,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const SkipIndexReadInput & input,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const NameSet & all_updated_columns,
+    const NameSet & stale_indices)
 {
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
@@ -101,7 +102,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns, stale_indices); !result)
         {
             LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", part_info->getPartName(), result.error().text);
             continue;
@@ -187,7 +188,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     break;
                 if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
                     continue;
-                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
+                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, stale_indices); !can_use)
                     continue;
 
                 auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
@@ -239,7 +240,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns, stale_indices))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
@@ -637,7 +639,8 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
     const SkipIndexReadInput & input,
     const RangesInDataParts & projection_parts,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const NameSet & all_updated_columns,
+    const NameSet & stale_indices)
 {
     std::unique_lock lock(index_read_result_registry_mutex);
     auto it = index_read_result_registry.find(part_index);
@@ -651,7 +654,7 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
             MergeTreeIndexReadResultPtr res;
             if (skip_index_reader)
             {
-                auto skip_index_res = skip_index_reader->read(part_info, input, metadata_snapshot, all_updated_columns);
+                auto skip_index_res = skip_index_reader->read(part_info, input, metadata_snapshot, all_updated_columns, stale_indices);
                 if (skip_index_res)
                 {
                     res = std::make_shared<MergeTreeIndexReadResult>();

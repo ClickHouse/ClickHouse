@@ -2736,14 +2736,17 @@ static bool isMaterializedByMerge(
         /// pending, but the command keeps the column in the metadata, so re-running it later is a
         /// no-op rather than a loss. There is nothing to gain from recording it in the merged part,
         /// and the equivalence is subtle enough that it is not worth relying on: leave it pending.
+        /// `CLEAR INDEX` is a `DROP_INDEX` with `clear`, and a merge does the opposite of it: the
+        /// index stays in the metadata, so the merged part is written with its granules rebuilt.
+        /// It has to stay pending for the mutation to clear them.
         if (command.clear)
             return false;
 
         /// A metadata mutation scoped to this very partition stays pending too. `AlterConversions`
         /// does not honour the scope, so whether the merge materializes such a command for the
         /// merged part alone is not something to rely on. No command reaches this today: `RENAME
-        /// COLUMN` has no `IN PARTITION` form, and the only partition-scoped `DROP_COLUMN` is
-        /// `CLEAR COLUMN`, excluded above.
+        /// COLUMN` and `DROP INDEX` have no `IN PARTITION` form, and the only partition-scoped
+        /// `DROP_COLUMN` / `DROP_INDEX` are `CLEAR COLUMN` and `CLEAR INDEX`, excluded above.
         if (scope == PartitionScope::ThisPartition)
             return false;
 
@@ -2796,12 +2799,13 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     /// combines a rename with an `UPDATE` puts both into one entry, and a merge does not materialize
     /// that entry.
     ///
-    /// Only `RENAME COLUMN` needs this barrier. The other metadata mutation a merge materializes is
-    /// `DROP COLUMN` - including its `CLEAR COLUMN` form - and applying it a second time to the
-    /// merged part is a no-op rather than a loss, so the merged part not recording it costs nothing.
-    /// A `CLEAR COLUMN` pending in front of a mutation that still has to run does spoil the values
-    /// that mutation reads, but through `AlterConversions` alone: it happens with no merge involved
-    /// at all, and refusing the merge does not prevent it.
+    /// Only `RENAME COLUMN` needs this barrier. The other metadata mutations a merge materializes
+    /// are `DROP COLUMN` - including its `CLEAR COLUMN` form - and `DROP INDEX`, and applying either
+    /// a second time to the merged part costs no data: the column drop is a no-op, and the index
+    /// drop only removes granules that a `MATERIALIZE INDEX` rebuilds. So the merged part not
+    /// recording them costs nothing. A `CLEAR COLUMN` pending in front of a mutation that still has
+    /// to run does spoil the values that mutation reads, but through `AlterConversions` alone: it
+    /// happens with no merge involved at all, and refusing the merge does not prevent it.
     for (; it != current_mutations_by_version.end(); ++it)
     {
         for (const auto & command : *it->second.commands)

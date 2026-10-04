@@ -178,7 +178,8 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
     return type == MutationCommand::RENAME_COLUMN
-        || type == MutationCommand::DROP_COLUMN;
+        || type == MutationCommand::DROP_COLUMN
+        || type == MutationCommand::DROP_INDEX;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
@@ -215,6 +216,15 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         }
 
         dropped_columns.emplace(std::move(dropped_column_name));
+    }
+    else if (command.type == DROP_INDEX)
+    {
+        /// `CLEAR INDEX` arrives as a `DROP_INDEX` with `clear`, but it keeps the index in the
+        /// metadata, so its name cannot be taken by another definition and the files in the part
+        /// still belong to this very index. Only a real drop makes them stale.
+        /// The name of the index of a `DROP_INDEX` command is in `column_name`, not `index_name`.
+        if (!command.clear)
+            stale_indices.emplace(command.column_name);
     }
     else if (command.type == READ_COLUMN)
     {

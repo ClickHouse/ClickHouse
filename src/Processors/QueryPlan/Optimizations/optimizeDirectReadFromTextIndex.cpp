@@ -217,6 +217,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
     /// the queried parts have no on-the-fly updates for the index columns.
     NameSet all_updated_columns;
+    NameSet stale_indices;
     bool has_patched_parts = false;
     for (const auto & part : unique_parts)
     {
@@ -227,6 +228,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         );
         const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
         all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+        const auto & part_stale_indices = alter_conversions->getStaleIndices();
+        stale_indices.insert(part_stale_indices.begin(), part_stale_indices.end());
         has_patched_parts |= alter_conversions->hasPatches();
     }
 
@@ -238,7 +241,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns, stale_indices); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
