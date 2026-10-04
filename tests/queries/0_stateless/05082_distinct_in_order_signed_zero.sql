@@ -58,8 +58,7 @@ TRUNCATE TABLE t_signed_zero_out;
 SELECT 'the same, with the sorted-stream transform kept out of the plan';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT f FROM t_signed_zero_float_key) WHERE explain LIKE '%DistinctSorted%';
 
--- A float nested in `LowCardinality` counts as a float key. Its dictionary collapses `-0.0` onto the
--- `0.0` entry today, so there is nothing to count here - the plan is what the screen has to get right.
+-- A float nested in `LowCardinality` counts as a float key; the plan is what the screen has to get right.
 SELECT 'a LowCardinality float key stops the sort prefix as well';
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE t_signed_zero_lc (lc LowCardinality(Float64)) ENGINE = MergeTree ORDER BY lc;
