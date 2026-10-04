@@ -399,6 +399,9 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     const std::string & parent_physical_name,
     const NameToNameMap & physical_names_map)
 {
+    if (physical_names_map.empty())
+        return type;
+
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type || !tuple_type->hasExplicitNames())
         return type;
@@ -414,7 +417,7 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     for (size_t i = 0; i < element_names.size(); ++i)
     {
         const auto & element_name = element_names[i];
-        const auto full_element_name = parent_logical_name.empty() ? element_name : parent_logical_name + "." + element_name;
+        const auto full_element_name = DeltaLake::appendToLogicalPath(parent_logical_name, element_name);
 
         auto physical_name = DeltaLake::tryGetPhysicalName(full_element_name, physical_names_map);
         /// full_child_physical_path: the complete "parent.child" physical path as stored in the
@@ -450,6 +453,61 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
+/// Finds the field named by `name` (field names joined with dots) among `names`, `types` and the tuple elements below them,
+/// and returns its logical path. With dotted names several fields can match: the first one in schema order wins.
+static std::optional<String> findLogicalPath(
+    const Names & names, const DataTypes & types, std::string_view name, const String & parent_logical_path)
+{
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (!name.starts_with(names[i]))
+            continue;
+
+        auto logical_path = DeltaLake::appendToLogicalPath(parent_logical_path, names[i]);
+        if (name.size() == names[i].size())
+            return logical_path;
+
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(types[i].get());
+        if (tuple_type && name[names[i].size()] == '.')
+        {
+            if (auto found = findLogicalPath(
+                    tuple_type->getElementNames(), tuple_type->getElements(), name.substr(names[i].size() + 1), logical_path))
+                return found;
+        }
+    }
+    return {};
+}
+
+/// Returns the key of `physical_names_map` for a name in storage: a table column, or a tuple element of one named by joining
+/// element names with dots. A table column is that column even if a nested field has the same joined name. A tuple element
+/// is looked up in the type of its table column, whose field order can differ from the Delta schema when the schema is declared.
+static String getLogicalPath(
+    const String & name_in_storage,
+    const ColumnsDescription & table_columns,
+    const NamesAndTypesList & delta_schema,
+    const NameToNameMap & physical_names_map)
+{
+    if (physical_names_map.empty())
+        return name_in_storage;
+
+    auto column_path = DeltaLake::appendToLogicalPath({}, name_in_storage);
+    if (table_columns.has(name_in_storage) && physical_names_map.contains(column_path))
+        return column_path;
+
+    if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_storage); column && column->isSubcolumn())
+    {
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column->getTypeInStorage().get()))
+        {
+            auto parent_logical_path = getLogicalPath(column->getNameInStorage(), table_columns, delta_schema, physical_names_map);
+            if (auto found = findLogicalPath(
+                    tuple_type->getElementNames(), tuple_type->getElements(), column->getSubcolumnName(), parent_logical_path))
+                return *found;
+        }
+    }
+
+    return findLogicalPath(delta_schema.getNames(), delta_schema.getTypes(), name_in_storage, {}).value_or(name_in_storage);
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
@@ -457,10 +515,13 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
+    const ColumnsDescription & table_columns,
+    const NamesAndTypesList & delta_schema,
     LoggerPtr log)
 {
-    auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
-    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_name_in_storage, physical_names_map);
+    const auto logical_path = getLogicalPath(column.getNameInStorage(), table_columns, delta_schema, physical_names_map);
+    auto physical_name_in_storage = DeltaLake::getPhysicalName(logical_path, physical_names_map);
+    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
 
     /// Take column from read_schema, but only use it to check if column is readable,
     /// because read_schema_column.type can be different from physical_type_in_storage,
@@ -529,6 +590,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
     const auto physical_names_map = snapshot->getPhysicalNamesMap();
+    const auto & delta_schema = snapshot->getTableSchema();
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto read_columns_desc = ColumnsDescription(snapshot->getReadSchema());
     std::unordered_set<std::string> partition_columns;
     {
@@ -570,6 +633,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            storage_columns,
+            delta_schema,
             log);
         name_and_type = result_name_and_type;
     }
@@ -606,6 +671,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            storage_columns,
+            delta_schema,
             log);
 
         if (readable)
@@ -615,7 +682,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     for (const auto & name_and_type : info.columns_description)
         info.columns_description.rename(
             name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+            DeltaLake::getPhysicalName(getLogicalPath(name_and_type.name, storage_columns, delta_schema, physical_names_map), physical_names_map));
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

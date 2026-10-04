@@ -41,6 +41,7 @@ public:
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
+        CLEAR_COLUMNS_CACHE,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_ENCRYPTION_HEADERS_CACHE,
@@ -158,6 +159,7 @@ public:
         RESET_DDL_WORKER,
         /// Same execution as `CLEAR_AGGREGATE_CACHE`; separate enum so parsing does not go through `system_aliases` (deprecated DROP/CLEAR spellings).
         CLEAR_PARTIAL_AGGREGATE_CACHE,
+        RESET_FILELOG,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -194,6 +196,12 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    bool filelog_to_end = false;
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+
     String storage_policy;
     String volume;
     String disk;

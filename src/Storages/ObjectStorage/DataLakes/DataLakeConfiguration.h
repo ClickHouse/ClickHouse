@@ -340,6 +340,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 

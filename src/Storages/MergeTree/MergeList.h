@@ -8,11 +8,13 @@
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <utility>
 
 
 namespace CurrentMetrics
@@ -166,12 +168,6 @@ public:
         : Parent(CurrentMetrics::Merge)
     {}
 
-    void onEntryDestroy(const Parent::Entry & entry) override
-    {
-        if (isTTLMergeType(entry->merge_type))
-            --merges_with_ttl_counter;
-    }
-
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
@@ -219,23 +215,59 @@ public:
         }
     }
 
-    /// Merge consists of two parts: assignment and execution. We add merge to
-    /// merge list on execution, but checking merge list during merge
-    /// assignment. This lead to the logical race condition (we can assign more
-    /// merges with TTL than allowed). So we "book" merge with ttl during
-    /// assignment, and remove from list after merge execution.
+    /// A merge consists of two parts: assignment and execution, and only the execution puts an entry
+    /// into this list. Counting the entries at assignment time would therefore let more merges with
+    /// TTL be assigned than `max_number_of_merges_with_ttl_in_pool` allows, so a slot is taken as
+    /// soon as the merge is selected, by this token.
     ///
-    /// NOTE: Not important for replicated merge tree, we check count of merges twice:
-    /// in assignment and in queue before execution.
-    void bookMergeWithTTL()
+    /// The token owns the slot for the whole life of the selected merge, which is what makes the
+    /// count exact: the slot comes back however that merge ends, including when it is dropped
+    /// without ever being executed - the background pool discards a queued task when its table goes
+    /// away, and then no entry is ever inserted here to account for it.
+    class TTLMergeSlot
     {
-        ++merges_with_ttl_counter;
-    }
+    public:
+        TTLMergeSlot() = default;
 
-    void cancelMergeWithTTL()
-    {
-        --merges_with_ttl_counter;
-    }
+        explicit TTLMergeSlot(MergeList & merge_list_)
+            : merge_list(&merge_list_)
+        {
+            ++merge_list->merges_with_ttl_counter;
+        }
+
+        TTLMergeSlot(TTLMergeSlot && other) noexcept
+            : merge_list(std::exchange(other.merge_list, nullptr))
+        {
+        }
+
+        TTLMergeSlot & operator=(TTLMergeSlot && other) noexcept
+        {
+            if (this != &other)
+            {
+                release();
+                merge_list = std::exchange(other.merge_list, nullptr);
+            }
+            return *this;
+        }
+
+        TTLMergeSlot(const TTLMergeSlot &) = delete;
+        TTLMergeSlot & operator=(const TTLMergeSlot &) = delete;
+
+        ~TTLMergeSlot()
+        {
+            release();
+        }
+
+    private:
+        void release() noexcept
+        {
+            if (merge_list)
+                --merge_list->merges_with_ttl_counter;
+            merge_list = nullptr;
+        }
+
+        MergeList * merge_list = nullptr;
+    };
 
     size_t getMergesWithTTLCount() const
     {

@@ -32,6 +32,7 @@ extern const SettingsNonZeroUInt64 max_block_size;
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 }
 
@@ -102,6 +103,14 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             }
             initial_header = Block(initial_header_data);
         }
+
+        for (const char * column_name : {data_file_path_column_name, positions_column_name})
+            if (!initial_header.has(column_name))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Position delete file {} has no column '{}'",
+                    position_deletes_object.file_path,
+                    column_name);
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 

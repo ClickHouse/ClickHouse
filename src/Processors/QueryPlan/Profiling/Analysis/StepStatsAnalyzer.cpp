@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
-#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
@@ -136,8 +135,7 @@ AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalys
 
 StepStatsAnalyzer getStepStatsAnalyzer(const IQueryPlanStep * step)
 {
-    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step)
-        || typeid_cast<const BlockNestedLoopJoinStep *>(step))
+    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
         return &analyzeJoinStep;
     return &analyzeDefaultStep;
 }

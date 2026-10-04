@@ -251,12 +251,18 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 
 void PipelineExecutor::finalizeExecution()
 {
-    single_thread_cpu_slot.reset();
-    tasks.freeCPU();
-    {
-        std::lock_guard lock(spawn_mutex);
-        cpu_slots.reset();
-    }
+    /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
+    /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
+    /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
+    /// are released only after the hooks have run, on every exit path.
+    SCOPE_EXIT({
+        single_thread_cpu_slot.reset();
+        tasks.freeCPU();
+        {
+            std::lock_guard lock(spawn_mutex);
+            cpu_slots.reset();
+        }
+    });
 
     for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
         tasks.getThreadContext(thread_num).flushWorkIntervals();
@@ -264,31 +270,59 @@ void PipelineExecutor::finalizeExecution()
     if (process_list_element)
         process_list_element->checkTimeLimit();
 
-    if (cancel_reason.load() != IProcessor::CancelReason::NotCancelled)
+    const auto reason = cancel_reason.load();
+    if (reason != IProcessor::CancelReason::NotCancelled && reason != IProcessor::CancelReason::CancelledByTimeout)
         return;
 
-    if (!graph->isAllFinished())
+    /// `checkTimeLimit` above has not thrown, so with `timeout_overflow_mode = 'break'` the partial result
+    /// is returned to the client as a success, and the pipeline has to be finalized as usual - in particular,
+    /// the output format has to write its epilogue, otherwise the response would be truncated. The only
+    /// difference is that the processors were stopped in the middle of the execution, so not all of them are
+    /// finished, and the "pipeline stuck" check does not apply.
+    const bool stopped_in_the_middle = reason == IProcessor::CancelReason::CancelledByTimeout;
+
+    if (!stopped_in_the_middle && !graph->isAllFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", graph->dump(), tasks.dump());
-
-    if (!read_progress_callback)
-        return;
 
     for (const auto & processor : graph->getProcessors())
     {
         /// Some executors might have reported progress as part of their finish() call
-        if (auto read_progress = processor->getReadProgress())
+        /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
+        /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
+        /// connection is cancelled and all packets drained
+        /// To cover these cases we check if there is any pending progress in the processors to report
+        if (read_progress_callback)
         {
-            if (read_progress->counters.total_rows_approx)
-                read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+            if (auto read_progress = processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
-            if (read_progress->counters.total_bytes)
-                read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
-            /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-            if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
+                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                    read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+            }
         }
     }
+
+    /// Everything that can still fail the query is checked before the output formats write their epilogue:
+    /// once a format has committed its footer, a late exception could not be reported through the format
+    /// any more (it is already finalized), and the client would get a complete-looking successful response
+    /// for a failed query. The memory reservation is synced with the memory tracker one last time here, as
+    /// the executor threads do after every processor, so that `MEMORY_RESERVATION_KILLED` is still reported
+    /// as a failure; the time limit was checked above. The allocations of the epilogues themselves are still
+    /// limited by the memory tracker of the query, which throws from within the format, before it is marked
+    /// as finalized.
+    WorkloadResources resources(nullptr, process_list_element);
+    if (resources.isMemorySyncNeeded())
+        resources.syncMemory();
+
+    /// The whole progress of the query is known at this point, so the output formats can write their epilogue.
+    for (const auto & processor : graph->getProcessors())
+        processor->onPipelineFinished();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)

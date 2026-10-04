@@ -1004,18 +1004,25 @@ try
             underlying_buf = std_out.get();
         }
 
+        /// The data written to stdout can mix with the progress only if it is displayed on the terminal,
+        /// either directly or through a pager. Otherwise (e.g., stdout is redirected to a pipe or a file),
+        /// clearing the progress on every flush only makes it flicker.
+        const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
+
         /// Use the flush callback wrapper to prevent progress flickering
         std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
             underlying_buf,
-            [this]()
+            [this, output_goes_to_terminal]()
             {
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                bool output_may_mix_with_progress = output_goes_to_terminal && (!select_into_file || select_into_file_and_stdout);
+
+                if (need_render_progress && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_indication.clearProgressOutput(*tty_buf, lock);
                 }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                if (need_render_progress_table && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
