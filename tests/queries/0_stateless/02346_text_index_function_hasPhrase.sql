@@ -134,6 +134,136 @@ SELECT groupArray(id) FROM tab WHERE hasPhrase(text, 'quick fox');
 
 DROP TABLE tab;
 
+SELECT '-- Array(String) input columns';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+SELECT '-- index tokens are [quick, brown, fox]';
+INSERT INTO tab VALUES
+    (1, ['quick brown', 'fox']),
+    (2, ['brown quick', 'fox']),
+    (3, ['quick', 'fox']);
+
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown');
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown') SETTINGS use_skip_indexes = 0;
+SELECT '-- adjacent across elements';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox');
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick fox');
+
+DROP TABLE tab;
+
+SELECT '-- Array(Nullable(String)) input columns';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(Nullable(String)),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+-- A NULL element yields no token, so it leaves no position.
+INSERT INTO tab VALUES (1, ['quick brown', NULL, 'fox']), (2, ['brown quick', NULL, 'fox']);
+
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'brown fox') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'brown fox') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- Array(String) input columns with positions';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree()
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['zz']);
+
+-- Positions restart for every element, so the index must not answer a phrase spanning two of them.
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- the array tokenizer makes each element one token';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['quick', 'brown']);
+
+SELECT '-- an element matches as a whole token, and the index answers it';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']) SETTINGS force_data_skipping_indices = 'idx_tags';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown']) SETTINGS use_skip_indexes = 0;
+SELECT '-- adjacent elements';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS force_data_skipping_indices = 'idx_tags';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS use_skip_indexes = 0;
+SELECT '-- a token that no element holds';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- the array tokenizer with support_phrase_search';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = array, support_phrase_search = 1)
+)
+ENGINE = MergeTree()
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['quick', 'brown']);
+
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']);
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, ['quick brown', 'fox']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- Array phrase';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx_message(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES (1, 'the quick brown fox'), (2, 'the brown quick fox');
+
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'fox']) ORDER BY id);
+
+DROP TABLE tab;
+
 SELECT '-- asciiCJK tokenizer';
 
 CREATE TABLE tab
