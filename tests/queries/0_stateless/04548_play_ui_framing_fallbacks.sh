@@ -299,6 +299,10 @@ echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : 
 # cell that already holds the editor, one after handing it the editor first.
 [ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 5 ] && echo 'a cell run ends the tab run first: OK'
 echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
+# Only decoded result payloads feed the browser-side network leg; both live and replay keep them.
+echo "$page" | grep -q -F 'if (options.payloadMeter) options.payloadMeter(payload_bytes.length);' && echo 'result payload bytes feed the IO meter: OK'
+echo "$page" | grep -q -F 'payloadMeter: (bytes) => { cell.resources.io_bytes += bytes; },' && echo 'live result payload bytes accumulate: OK'
+echo "$page" | grep -q -F 'payloadMeter: cell ? (bytes) => { cell.resources.io_bytes += bytes; } : undefined,' && echo 'replayed result payload bytes accumulate: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.

@@ -214,6 +214,18 @@ namespace ProfileEvents
     extern const Event ThrottlerSleepMicroseconds;
     extern const Event SchedulerIOReadWaitMicroseconds;
     extern const Event SchedulerIOWriteWaitMicroseconds;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event ReadBufferFromAzureBytes;
+    extern const Event WriteBufferFromAzureBytes;
+    extern const Event ReadWriteBufferFromHTTPBytes;
+    extern const Event WriteBufferFromHTTPBytes;
+    extern const Event NetworkReceiveBytes;
+    extern const Event NativeProtocolDataBytes;
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangeReceiveBytes;
 }
 
 namespace
@@ -2167,6 +2179,19 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
         std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
         std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
+        std::string_view os_read_bytes_name = ProfileEvents::getName(ProfileEvents::OSReadBytes);
+        std::string_view os_write_bytes_name = ProfileEvents::getName(ProfileEvents::OSWriteBytes);
+        std::string_view s3_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromS3Bytes);
+        std::string_view s3_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromS3Bytes);
+        std::string_view azure_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromAzureBytes);
+        std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
+        std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
+        std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
+        std::string_view net_read_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
+        std::string_view native_data_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolDataBytes);
+        /// `NetworkSendBytes` and `NetworkReceiveBytes` do not count the sockets of streaming exchanges.
+        std::string_view exchange_send_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeSendBytes);
+        std::string_view exchange_receive_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeReceiveBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2199,6 +2224,13 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
+            else if (
+                event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
+                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name || event_name == net_read_bytes_name
+                || event_name == native_data_bytes_name || event_name == exchange_send_bytes_name
+                || event_name == exchange_receive_bytes_name)
+                thread_times[host_name].io_bytes += value;
             /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
             /// from several queued snapshots of one source, or from several shards on one server.
             /// Summing would multiply one source's usage by the number of coalesced snapshots,

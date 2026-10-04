@@ -67,6 +67,9 @@ meter state re-adopted on tab open: OK
 shared chrome follows the running cell: OK
 a cell run ends the tab run first: OK
 Stop goes through the same path: OK
+result payload bytes feed the IO meter: OK
+live result payload bytes accumulate: OK
+replayed result payload bytes accumulate: OK
 partial exception line is a truncation: OK
 meter aggregate is per run: OK
 peak gauge keeps the maximum: OK

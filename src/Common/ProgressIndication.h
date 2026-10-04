@@ -27,6 +27,9 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
+    /// Per-packet IO byte deltas, including explicit native result bytes when supported.
+    UInt64 io_bytes = 0;
+
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
 };
@@ -108,6 +111,9 @@ private:
         double cpu_usage = 0;
         /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
         double waited = 0;
+        /// IO (disk + object storage + network) rate in bytes per second, without the native
+        /// protocol's own service packets (0 when the server does not report the underlying counters).
+        double io_rate = 0;
         MemoryUsage memory;
         TempDataOnDiskUsage temp_data_on_disk;
     };
@@ -147,6 +153,7 @@ private:
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
     EventRateMeter waited_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
+    EventRateMeter io_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average IO (disk + object storage + network) rate last 2 seconds
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local
@@ -155,7 +162,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - hosts_data/cpu_usage_meter/waited_meter (guarded with profile_events_mutex)
+    /// - hosts_data and the rate meters (guarded with profile_events_mutex)
     ///
     /// It is also possible to have more races if query is cancelled, so that clearProgressOutput() is called concurrently
     mutable std::mutex profile_events_mutex;
