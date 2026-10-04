@@ -1162,7 +1162,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 When the file name in `path_to_logs` has globs, the table reads the files of that directory whose names match, including the ones that appear later. Globs are not supported in the directory part of the path.
 
-A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. A file that is created and renamed to a name that does not match while the table is detached or the server is stopped is not read. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
+A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. A file that is created and renamed to a name that does not match while the table is detached or the server is stopped is not read. On macOS, where the directory is watched by comparing its listings, the same holds for a file that is created and renamed to a name that does not match before the table lists it. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
 
 ```text
 app.log         the file the application writes

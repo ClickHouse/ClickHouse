@@ -236,6 +236,9 @@ void DirectoryWatcherBase::watchFunc()
     /// the globs of the path, and the files watched (or, on the first scan, read) before under any name, e.g. a log
     /// renamed by rotation to a name the globs exclude, which is read until it is removed. Archives that the globs
     /// exclude, such as the compressed files of `logrotate`, are new files and are not watched.
+    /// A file created and renamed to a name the globs exclude between two scans is never listed under the matching
+    /// name, so it is not read; this is inherent to comparing listings (the rename is indistinguishable from a new
+    /// excluded file) and is documented for the engine.
     std::unordered_set<UInt64> followed_inodes = owner.read_inodes;
 
     auto scan = [this, &followed_inodes](std::map<std::string, FileState> & out)
