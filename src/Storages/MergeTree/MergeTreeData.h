@@ -513,8 +513,10 @@ public:
         /// Adds part to rename. Both names are relative to relative_data_path.
         void addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk);
 
-        /// Renames part from old_name to new_name
-        void tryRenameAll();
+        /// Renames part from old_name to new_name.
+        /// `before_each_rename`, when set, is called immediately before each rename; an exception
+        /// thrown from it stops the batch, and only the directories renamed so far are rolled back.
+        void tryRenameAll(const std::function<void(size_t index, const String & old_dir)> & before_each_rename = {});
 
         void rollBackAll();
 

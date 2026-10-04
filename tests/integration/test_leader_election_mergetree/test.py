@@ -1763,9 +1763,12 @@ def test_detached_ddl_rejected_on_stale_lease(started_cluster):
 
     The `merge_tree_leader_election_stale_lease_detached_ddl` failpoint makes the per-operation
     lease check report a stale lease, so both commands must fail leaving the detached set intact.
+    The `merge_tree_leader_election_stale_lease_mid_detached_rename` failpoint does the same after
+    the first directory of the batch was already renamed.
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_leader_election_stale_lease_detached_ddl"
+    mid_rename_failpoint = "merge_tree_leader_election_stale_lease_mid_detached_rename"
     table = "test_detached_ddl_fence"
     try:
         node1.query(
@@ -1777,7 +1780,10 @@ def test_detached_ddl_rejected_on_stale_lease(started_cluster):
         )
         wait_for_leader([node1], table_name=table)
 
+        # Two parts in partition 1, so that its detached renames are a batch of two.
+        node1.query(f"SYSTEM STOP MERGES {table}")
         node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        node1.query(f"INSERT INTO {table} VALUES (5)")
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
         assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
 
@@ -1816,9 +1822,27 @@ def test_detached_ddl_rejected_on_stale_lease(started_cluster):
         finally:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-        # With the failpoint cleared the same commands succeed.
+        # The lease goes stale after the first directory of the batch was renamed: the fence
+        # before each rename stops the batch, and the rename already done is rolled back.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {mid_rename_failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of renaming detached part directories"):
+                node1.query(
+                    f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
+                    settings={"allow_drop_detached": 1},
+                )
+            assert detached_names() == detached_before
+
+            with pytest.raises(Exception, match="middle of renaming detached part directories"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            assert detached_names() == detached_before
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {mid_rename_failpoint}")
+
+        # With the failpoints cleared the same commands succeed.
         node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
-        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 5
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
         node1.query(
             f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
@@ -1826,10 +1850,11 @@ def test_detached_ddl_rejected_on_stale_lease(started_cluster):
         )
         assert detached_names() == []
     finally:
-        try:
-            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        except Exception:
-            pass
+        for fp in (failpoint, mid_rename_failpoint):
+            try:
+                node1.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            except Exception:
+                pass
         try:
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
@@ -1945,7 +1970,10 @@ def test_detached_ddl_rejected_on_stale_epoch(started_cluster):
         )
         wait_for_leader([node1], table_name=table)
 
+        # Two parts in partition 1, so that its detached renames are a batch of two.
+        node1.query(f"SYSTEM STOP MERGES {table}")
         node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        node1.query(f"INSERT INTO {table} VALUES (5)")
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
         assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
 

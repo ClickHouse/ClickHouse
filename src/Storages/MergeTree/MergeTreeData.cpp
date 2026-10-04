@@ -529,6 +529,7 @@ namespace FailPoints
     /// change succeeds and the next fence rejects the command, so the rollback journal is
     /// exercised.
     extern const char merge_tree_leader_election_stale_lease_mid_detached_mutation[];
+    extern const char merge_tree_leader_election_stale_lease_mid_detached_rename[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -7675,7 +7676,7 @@ void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, cons
     old_and_new_names.push_back({part_name, old_dir, new_dir, disk});
 }
 
-void MergeTreeData::PartsTemporaryRename::tryRenameAll()
+void MergeTreeData::PartsTemporaryRename::tryRenameAll(const std::function<void(size_t index, const String & old_dir)> & before_each_rename)
 {
     renamed = true;
     for (size_t i = 0; i < old_and_new_names.size(); ++i)
@@ -7685,6 +7686,8 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             const auto & [_, old_dir, new_dir, disk] = old_and_new_names[i];
             if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
+            if (before_each_rename)
+                before_each_rename(i, old_dir);
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
             disk->moveDirectory(fs::path(full_path) / old_dir, fs::path(full_path) / new_dir);
         }
@@ -12094,14 +12097,23 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
-    /// Re-fence right before the first shared-storage side effect: the admission-level check in
+    /// Re-fence right before each shared-storage side effect: the admission-level check in
     /// `alterPartition` may have passed long ago (partition resolution and the detached-parts scan
-    /// above take arbitrary time). A failure here (or below) leaves the temporary `deleting_`
-    /// renames to be rolled back by the `PartsTemporaryRename` destructor.
-    if (!renamed_parts.old_and_new_names.empty())
-        assertLeaseFreshForDetachedOperation("rename for deletion", renamed_parts.old_and_new_names.front().old_dir, admission_epoch);
-
-    renamed_parts.tryRenameAll();
+    /// above take arbitrary time), and the lease can go stale in the middle of the batch. A stale
+    /// leader must not keep moving shared `detached/` directories under the `deleting_` prefix,
+    /// which the detached-part scans skip. A failure here (or below) leaves the temporary
+    /// `deleting_` renames done so far to be rolled back by the `PartsTemporaryRename` destructor.
+    renamed_parts.tryRenameAll([&](size_t index, const String & old_dir)
+    {
+        /// Test hook: the lease goes stale after the batch already renamed a directory.
+        if (index > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_detached_rename,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss in the middle of renaming detached part directories (leader_election)");
+            });
+        assertLeaseFreshForDetachedOperation("rename for deletion", old_dir, admission_epoch);
+    });
 
     Names dropped_so_far;
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
@@ -12420,13 +12432,21 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
     }
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
-    /// Re-fence first: a stale leader must not take `attaching_` ownership of directories the new
-    /// leader may be operating on. A failure here or below rolls the temporary renames back via
-    /// the caller's `PartsTemporaryRename` destructor.
-    if (!renamed_parts.old_and_new_names.empty())
-        assertLeaseFreshForDetachedOperation(
-            "rename to attaching_", renamed_parts.old_and_new_names.front().old_dir, admission_epoch, detached_rollback);
-    renamed_parts.tryRenameAll();
+    /// Re-fence before each rename: a stale leader must not take `attaching_` ownership of
+    /// directories the new leader may be operating on, also when the lease goes stale in the middle
+    /// of the batch. A failure here or below rolls the temporary renames done so far back via the
+    /// caller's `PartsTemporaryRename` destructor.
+    renamed_parts.tryRenameAll([&](size_t index, const String & old_dir)
+    {
+        /// Test hook: the lease goes stale after the batch already renamed a directory.
+        if (index > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_detached_rename,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss in the middle of renaming detached part directories (leader_election)");
+            });
+        assertLeaseFreshForDetachedOperation("rename to attaching_", old_dir, admission_epoch, detached_rollback);
+    });
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
     LOG_DEBUG(log, "Checking {} parts", renamed_parts.old_and_new_names.size());
