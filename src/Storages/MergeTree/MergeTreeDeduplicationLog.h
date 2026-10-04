@@ -253,7 +253,7 @@ private:
     {
         /// Nothing has been written by the current call yet.
         FirstRecordOfBatch,
-        /// Appending another record of a batch whose earlier records are already written.
+        /// Appending another record of a `dropPart` batch whose earlier records are already written.
         NextRecordOfBatch,
         /// Rotating / dropping whole log files after a record of this batch was written. On
         /// object storage without append support this finalizes the current numbered log file
@@ -264,9 +264,10 @@ private:
 
     /// Throw `TABLE_IS_READ_ONLY` if `may_write_shared_state` is set and reports the lease as
     /// no longer fresh. Called immediately before every mutation of the shared on-disk state —
-    /// per record inside `addPart`/`dropPart` and again before every rotation, not only once per
-    /// batch, because each record can rotate whole shared log files on object storage without
-    /// append support.
+    /// per record inside `dropPart` and again before every rotation, because each of its records
+    /// can rotate whole shared log files on object storage without append support. The `ADD`
+    /// records of one `addPart` call are fenced once before and once after the batch, so that
+    /// they become durable all together or not at all (see `addPart`).
     void assertMayWriteSharedState(WriteStage stage = WriteStage::FirstRecordOfBatch) const;
 };
 

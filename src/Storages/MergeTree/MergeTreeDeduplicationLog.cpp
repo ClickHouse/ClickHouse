@@ -330,7 +330,7 @@ void MergeTreeDeduplicationLog::assertMayWriteSharedState(WriteStage stage) cons
     fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_write, { lease_went_stale = true; });
 
     /// Test hook: simulate the lease going stale in the middle of a multi-record batch, after
-    /// at least one record of this `addPart`/`dropPart` call has already been written — the
+    /// at least one record of this `dropPart` call has already been written — the
     /// per-record re-check must stop the batch instead of letting the stale leader keep
     /// rotating and rewriting shared log files.
     if (stage != WriteStage::FirstRecordOfBatch)
@@ -399,20 +399,20 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    prepareToWrite();
+    /// Under `leader_election`, check the lease immediately before the first mutation of the shared
+    /// log (`prepareToWrite` can rotate), but not between the records of the batch: one part can
+    /// carry several block ids, and the next leader cannot rebuild missing `ADD` records from the
+    /// part set, so a batch stopped in the middle would leave a prefix of the part's block ids, and
+    /// a retry of the insert would be partially deduplicated. The records are buffered in the
+    /// writer, and on object storage without append support they become durable together, when
+    /// the rotation below finalizes the log file, which has a fence of its own. When the lease is
+    /// lost before that, `discard` cancels the writer, and none of the records becomes durable.
+    assertMayWriteSharedState();
 
-    /// Under `leader_election`, re-check the lease immediately before every durable mutation of
-    /// the shared log, not only once per batch: the caller checked it at its entry point, but the
-    /// heartbeat can stall at any time, and on object storage without append support the rotation
-    /// finalizes and rewrites whole log files, so a batch can run past the session timeout. Each
-    /// record written so far matches the in-memory map, so stopping mid-batch keeps them
-    /// consistent, and the next leader reconciles the log against the part set after `load`.
-    size_t records_written_in_batch = 0;
+    prepareToWrite();
 
     for (const auto & block_id : block_ids)
     {
-        assertMayWriteSharedState(records_written_in_batch > 0 ? WriteStage::NextRecordOfBatch : WriteStage::FirstRecordOfBatch);
-
         /// Create new record
         MergeTreeDeduplicationLogRecord record;
         record.operation = MergeTreeDeduplicationOp::ADD;
@@ -420,14 +420,13 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         record.block_id = block_id;
         /// Write it to disk
         writeRecord(record, *current_writer);
-        ++records_written_in_batch;
         /// We have one more record in current log
         existing_logs[current_log_number].entries_count++;
         /// Add to deduplication map
         deduplication_map.insert(record.block_id, part_info);
     }
     /// The rotation below also finalizes and rewrites shared log files.
-    assertMayWriteSharedState(records_written_in_batch > 0 ? WriteStage::RotationAfterRecord : WriteStage::FirstRecordOfBatch);
+    assertMayWriteSharedState(block_ids.empty() ? WriteStage::FirstRecordOfBatch : WriteStage::RotationAfterRecord);
     /// Rotate and drop old logs if needed. The fence above rejects a stale leader before the
     /// rotation touches the shared files, while a rotation that fails on its own is housekeeping
     /// and must not fail the records already written (see `rotateAndDropIfNeededAfterWrite`).
