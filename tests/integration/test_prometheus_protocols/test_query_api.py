@@ -65,6 +65,10 @@ def send_test_data():
             for i in range(STREAM_ERROR_SERIES_COUNT)
         ]
     )
+    # `rfc3339_metric` is used by the tests of RFC3339 times.
+    send_to_clickhouse(
+        [({"__name__": "rfc3339_metric", "job": "vmalert"}, {1700000000: 1.0, 1700000030: 2.0, 1700000060: 3.0})]
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -394,3 +398,42 @@ def test_generated_sql_always_runs_with_materialized_cte():
             retry_count=30,
             sleep_time=1,
         )
+
+
+# vmalert and other Go clients send times in RFC3339 format; they must give the same result as Unix times.
+@pytest.mark.parametrize(
+    "path, unix_params, rfc3339_params",
+    [
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14T22:14:20Z"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-15T00:14:20+02:00"}),
+        ("/api/v1/query", {"time": "1700000045.123"}, {"time": "2023-11-14T17:14:05.123456789-05:00"}),
+        (
+            "/api/v1/query_range",
+            {"start": "1700000000", "end": "1700000060", "step": "15s"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T22:14:20Z", "step": "15s"},
+        ),
+        (
+            "/api/v1/series",
+            {"start": "1700000000", "end": "1700000060"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T17:14:20-05:00"},
+        ),
+    ],
+)
+def test_rfc3339_times(path, unix_params, rfc3339_params):
+    selector = {"match[]": "rfc3339_metric"} if path == "/api/v1/series" else {"query": "rfc3339_metric"}
+    url = f"http://{node.ip_address}:9093{path}"
+    unix_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **unix_params}))
+    rfc3339_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **rfc3339_params}))
+    assert "rfc3339_metric" in unix_data
+    assert rfc3339_data == unix_data
+
+
+@pytest.mark.parametrize(
+    "time",
+    ["2023-11-14T22:14:20+24:00", "2023-11-14T22:14:20+0200", "2023-11-14T22:14:20z", "2023-11-14T22:14:20Z "],
+)
+def test_rfc3339_times_invalid(time):
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
+    )
+    assert "Cannot parse a timestamp" in error
