@@ -22,6 +22,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
@@ -3307,6 +3308,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// Recalculate function projection name after lambda resolution
         result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
     }
+
+    CurrentThread::checkIfNotCancelled();
 
     /** Create SET column for special function IN to allow constant folding
       * if left and right arguments are constants.

@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <base/defines.h>
+#include <Common/CurrentThread.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -226,6 +227,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
+        CurrentThread::checkIfNotCancelled();
         return generateUnsubstituted();
     }
 }
