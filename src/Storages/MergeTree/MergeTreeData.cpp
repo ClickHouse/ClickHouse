@@ -5664,7 +5664,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         checkUniqueKeyMutationCommands(
             commands.getMutationCommands(
                 old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
-                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]));
+                /*with_alters*/ false,
+                (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode],
+                (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]));
     }
 
     /// Must be collected before the commands are applied below: dropping a column used in a key has to
