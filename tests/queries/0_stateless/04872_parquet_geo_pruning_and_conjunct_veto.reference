@@ -1,0 +1,5 @@
+=== south texas rows (correct regardless of pruning) ===
+1
+2
+=== pruned_row_groups (expect no pruning) ===
+no pruning
