@@ -1205,6 +1205,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
+    if (isFreshTableDefinition(mode, create.attach_short_syntax) && !isReplayOfJudgedDefinition(getContext())
+        && create.columns_list->columns)
+    {
+        for (const auto & ast : create.columns_list->columns->children)
+        {
+            const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+            if (auto settings = col_decl.getSettings())
+                MergeTreeColumnSettings::validateNames(settings->as<ASTSetQuery &>());
+        }
+    }
+
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
     /// checks a row against another row's value, or reads past the end of a shorter column. And a second
     /// declaration of a name is reachable only once the first one has been dropped. Screened for

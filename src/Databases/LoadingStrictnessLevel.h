@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+
 #include <cstdint>
 
 
@@ -40,5 +42,10 @@ inline bool isFreshTableDefinition(LoadingStrictnessLevel level, bool attach_sho
     return level <= LoadingStrictnessLevel::CREATE
         || (level == LoadingStrictnessLevel::ATTACH && !attach_short_syntax);
 }
+
+/// Whether this server is re-executing a definition another server already judged: a `DatabaseReplicated`
+/// or Shared Catalog secondary, or a recovery from stored metadata. Such a server must not refuse one:
+/// it would retry its queue entry forever.
+bool isReplayOfJudgedDefinition(const ContextPtr & context);
 
 }
