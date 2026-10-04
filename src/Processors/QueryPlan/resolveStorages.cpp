@@ -28,6 +28,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Planner/Utils.h>
 #include <Core/Settings.h>
 
@@ -213,7 +214,26 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
 
     ASTPtr query;
-    if (read_via_interpreter)
+    /// A policy that no step of the shipped plan applies is applied by planning the read again here.
+    bool needs_row_policy = false;
+    /// A read that needs an analyzed query is planned again below with its own options, which apply the policy.
+    if (reading_from_table && !read_via_interpreter && getEffectiveRowPolicyFilter(*storage, context))
+    {
+        switch (reading_from_table->getRowPolicyPlacement())
+        {
+            case ReadFromTableStep::RowPolicyPlacement::NotInPlan:
+                needs_row_policy = true;
+                break;
+            case ReadFromTableStep::RowPolicyPlacement::FilterStep:
+                break;
+            /// A sender that does not record the placement pushes the policy for sure only under a nullopt contract.
+            case ReadFromTableStep::RowPolicyPlacement::Unknown:
+                needs_row_policy = storage->supportsPrewhere() && !storage->supportedPrewhereColumns().has_value();
+                break;
+        }
+    }
+    bool replan_through_interpreter = read_via_interpreter || needs_row_policy;
+    if (replan_through_interpreter)
     {
         auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
@@ -255,13 +275,33 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     QueryPlan reading_plan;
-    if (read_via_interpreter)
+    if (replan_through_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+
+        auto interpreter_context = context;
+        if (needs_row_policy)
+        {
+            /// `column_names` is the shipped read list widened by the policy's columns. Only the selected
+            /// columns are the user's own, and those were authorized where the plan was built.
+            options.ignore_table_access_check = true;
+            /// This table's entry arrived as a filter step of the shipped plan, so resolving it here would filter twice.
+            options.skip_additional_table_filters = true;
+            /// The limit was applied to the selected columns where the read was planned; `column_names` is wider.
+            options.ignore_max_columns_to_read = true;
+
+            auto row_policy_context = Context::createCopy(context);
+            /// Parallelism of the read is decided by the step, not by this node's setting.
+            row_policy_context->setSetting(
+                "allow_experimental_parallel_reading_from_replicas",
+                reading_from_table && reading_from_table->useParallelReplicas());
+            interpreter_context = std::move(row_policy_context);
+        }
+
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), interpreter_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
+        reading_plan.addInterpreterContext(std::move(interpreter_context));
     }
     else
     {

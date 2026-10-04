@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
@@ -16,11 +17,13 @@ ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
-    bool use_parallel_replicas_)
+    bool use_parallel_replicas_,
+    RowPolicyPlacement row_policy_placement_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
     , use_parallel_replicas(use_parallel_replicas_)
+    , row_policy_placement(row_policy_placement_)
 {
 }
 
@@ -42,6 +45,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (ctx.step_version >= 1 && row_policy_placement == RowPolicyPlacement::FilterStep)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -79,19 +84,28 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    auto row_policy_placement = RowPolicyPlacement::Unknown;
+    if (ctx.step_version >= 1)
+        row_policy_placement = (flags & 16) ? RowPolicyPlacement::FilterStep : RowPolicyPlacement::NotInPlan;
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);
+    registry.registerStep(
+        "ReadFromTable",
+        &ReadFromTableStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_POLICY_PLACEMENT}});
 }
 
 }

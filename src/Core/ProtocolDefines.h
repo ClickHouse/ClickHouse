@@ -200,6 +200,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First global query-plan version that writes version 1 of `ReadFromTable`, which records whether a
+/// filter step of the plan applies the row policy of the table it reads.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_POLICY_PLACEMENT = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

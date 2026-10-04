@@ -807,7 +807,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
     NameSet columns_names_allowed_to_select;
-    if (table_node)
+    if (table_node && !select_query_options.ignore_table_access_check)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
@@ -878,7 +878,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
 
     /// Limitation on the number of columns to read
-    if (settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
+    if (!select_query_options.ignore_max_columns_to_read
+        && settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
         throw Exception(
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
@@ -1799,8 +1800,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
         {
-            parseAdditionalFilterAstIfNeeded(
-                storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+            if (!select_query_options.skip_additional_table_filters)
+                parseAdditionalFilterAstIfNeeded(
+                    storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
             /// above, so it must run inside the same `!only_analyze` branch — otherwise
@@ -2588,8 +2590,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                             "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                             "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
-                            "tables instead; note that such a policy is not applied to reads shipped with "
-                            "`serialize_query_plan = 1`",
+                            "tables instead",
                             storage->getStorageID().getNameForLogs());
                 }
 
@@ -2605,10 +2606,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         else
                             table_name = table_node->getStorageID().getFullTableName();
 
+                        /// A policy built for this read is a filter step of the plan unless it was pushed into the read.
+                        const bool row_policy_in_plan = table_expression_data.getRowLevelFilterActions() && !row_level_filter;
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
+                            /*use_parallel_replicas_=*/ false,
+                            row_policy_in_plan ? ReadFromTableStep::RowPolicyPlacement::FilterStep
+                                               : ReadFromTableStep::RowPolicyPlacement::NotInPlan);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
