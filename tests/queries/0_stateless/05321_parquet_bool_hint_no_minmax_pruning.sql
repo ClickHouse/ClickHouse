@@ -47,7 +47,11 @@ select count() from file(currentDatabase() || '_05321_tp.parquet', Parquet, 'x T
 
 -- Page statistics only.
 select count() from file(currentDatabase() || '_05321_pg.parquet', Parquet, 'x LowCardinality(Bool)') where x = true
-    settings input_format_parquet_filter_push_down = 0,
+    settings log_comment = '05321page_bool', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
+-- Control: the same file read as UInt8 prunes pages.
+select count() from file(currentDatabase() || '_05321_pg.parquet', Parquet, 'x UInt8') where x = 2
+    settings log_comment = '05321page_u8', input_format_parquet_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0;
 
 -- Controls: pruning stays for a BOOLEAN column read as `LowCardinality(Bool)`, and for the integer column
@@ -63,4 +67,8 @@ system flush logs query_log;
 select distinct log_comment, ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
     from system.query_log
     where current_database = currentDatabase() and type = 'QueryFinish' and log_comment like '05321prune%'
+    order by log_comment;
+select distinct log_comment, ProfileEvents['ParquetReadPages'] > 0, ProfileEvents['ParquetPrunedPages'] > 0
+    from system.query_log
+    where current_database = currentDatabase() and type = 'QueryFinish' and log_comment like '05321page%'
     order by log_comment;
