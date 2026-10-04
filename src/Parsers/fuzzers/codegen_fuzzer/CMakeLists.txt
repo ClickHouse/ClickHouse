@@ -33,9 +33,9 @@ file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
     "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*"
     "${ClickHouse_SOURCE_DIR}/src/DataTypes/*"
     "${ClickHouse_SOURCE_DIR}/src/Formats/*"
+    "${ClickHouse_SOURCE_DIR}/src/WindowFunctions/*"
 )
 list(APPEND CODEGEN_DICT_SCANNED_SOURCES
-    "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"
     "${ClickHouse_SOURCE_DIR}/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
 )
 
