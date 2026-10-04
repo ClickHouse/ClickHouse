@@ -1,0 +1,12 @@
+source	1000	9315939815290621182
+hashed	1000	9315939815290621182
+sparse_hashed	1000	9315939815290621182
+sharded_hashed	1000	9315939815290621182
+hashed_array	1000	9315939815290621182
+source with ranges	1000	276021418794033120
+range_hashed	1000	276021418794033120
+hashed limit	10
+sparse_hashed limit	10
+sharded_hashed limit	10
+hashed_array limit	10
+range_hashed limit	10
