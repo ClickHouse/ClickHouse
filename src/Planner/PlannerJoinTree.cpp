@@ -1026,6 +1026,11 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     const ContextPtr & query_context)
 {
+    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
+    /// so the filters keyed by that name must not be applied to it.
+    if (storage->isSyntheticDataSource())
+        return;
+
     const auto & settings = query_context->getSettingsRef();
 
     auto const & additional_filters = settings[Setting::additional_table_filters].value;

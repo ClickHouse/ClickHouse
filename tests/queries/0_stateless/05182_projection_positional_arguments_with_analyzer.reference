@@ -1,0 +1,12 @@
+columns of the projection parts written on insert
+['b','count()','sum(a)']
+columns of the projection part written on merge
+['b','count()','sum(a)']
+without the projection
+0	37	12
+1	29	11
+2	27	10
+from the projection
+0	37	12
+1	29	11
+2	27	10
