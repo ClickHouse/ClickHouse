@@ -1,0 +1,4 @@
+absent column
+0	nan
+control: a present column still builds the state
+10
