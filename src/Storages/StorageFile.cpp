@@ -12,7 +12,14 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/IBackup.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -118,6 +125,7 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -372,6 +380,19 @@ std::vector<std::string> listFilesWithRegexpMatching(
 std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
     return table_dir_path + "/data." + escapeForFileName(format_name);
+}
+
+/// The first `<name>.<index>.<extension>` from `first_index` on that does not exist next to `path`:
+/// the extra files of `engine_file_allow_create_multiple_files`.
+std::string getPathForNewFile(const std::string & path, size_t first_index)
+{
+    auto pos = path.find_first_of('.', path.find_last_of('/'));
+    for (size_t index = first_index;; ++index)
+    {
+        std::string new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+        if (!fs::exists(new_path))
+            return new_path;
+    }
 }
 
 /// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
@@ -3162,17 +3183,8 @@ SinkToStoragePtr StorageFile::write(
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                auto pos = path.find_first_of('.', path.find_last_of('/'));
-                size_t index = paths.size();
-                String new_path;
-                do
-                {
-                    new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
-                    ++index;
-                }
-                while (fs::exists(new_path));
-                path = new_path;
-                path_to_publish = std::move(new_path);
+                path = getPathForNewFile(path, paths.size());
+                path_to_publish = path;
             }
             else
                 throw Exception(
@@ -3271,6 +3283,102 @@ void StorageFile::truncate(
 
             if (0 != ::truncate(path.c_str(), 0))
                 ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
+        }
+    }
+}
+
+void StorageFile::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    /// A user file or a file descriptor is not the table's data; only the files in the table's data path are.
+    if (!is_db_table)
+        return;
+
+    auto context = backup_entries_collector.getContext();
+    auto lock = std::shared_lock{rwlock, getLockTimeout(context)};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    TemporaryDataOnDiskSettings tmp_data_settings;
+    tmp_data_settings.buffer_size = context->getSettingsRef()[Setting::temporary_files_buffer_size];
+    auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(context->getTempDataOnDisk(), tmp_data_settings);
+
+    /// Copy the files now: an INSERT with `engine_file_truncate_on_insert` or a TRUNCATE rewrites them in place,
+    /// so neither a hardlink nor a size limit would keep the bytes until the backup reads them.
+    for (const auto & path : getPathsSnapshot())
+    {
+        /// The data file exists only after the first insert.
+        if (!fs::exists(path))
+            continue;
+
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
+        ReadBufferFromFile in(path);
+        copyData(in, *data_out);
+        data_out->finishWriting();
+        backup_entries_collector.addBackupEntry(
+            fs::path(data_path_in_backup) / fs::path(path).filename(), std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out)));
+    }
+}
+
+void StorageFile::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (!is_db_table)
+    {
+        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+        return;
+    }
+
+    auto backup = restorer.getBackup();
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed())
+    {
+        for (const auto & path : getPathsSnapshot())
+        {
+            std::error_code error;
+            if (fs::file_size(path, error) > 0 && !error)
+                RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+        }
+    }
+
+    auto lock_timeout = getLockTimeout(restorer.getContext());
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageFile>(shared_from_this()), backup, data_path_in_backup, lock_timeout]
+        { storage->restoreDataImpl(backup, data_path_in_backup, lock_timeout); });
+}
+
+void StorageFile::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout)
+{
+    auto lock = std::unique_lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// Each file goes to the table's data file while it is empty, then to a new file next to it, the way
+    /// `engine_file_allow_create_multiple_files` adds one, so that data already in the table stays.
+    const String table_file_path = getPathsSnapshot().front();
+    const String table_file_name = fs::path(table_file_path).filename();
+
+    /// The table's own file first, then `data.1`, `data.2`, ... in the order they were created.
+    auto names = backup->listFiles(data_path_in_backup, /* recursive= */ false);
+    std::ranges::sort(names, {}, [&](const String & name) { return std::tuple{name != table_file_name, name.size(), name}; });
+
+    for (const auto & name : names)
+    {
+        String path = table_file_path;
+        std::error_code error;
+        if (fs::file_size(path, error) > 0 && !error)
+            path = getPathForNewFile(table_file_path, getPathsSnapshot().size());
+
+        auto in = backup->readFile(fs::path(data_path_in_backup) / name);
+        CompressedReadBuffer compressed_in(*in);
+        WriteBufferFromFile out(path);
+        copyData(compressed_in, out);
+        out.finalize();
+
+        if (path != table_file_path)
+        {
+            std::lock_guard paths_lock{paths_mutex};
+            paths.push_back(path);
         }
     }
 }

@@ -29,6 +29,9 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
 
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
+
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
@@ -116,6 +119,9 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
@@ -194,6 +200,8 @@ private:
     void setStorageMetadata(CommonArguments args);
 
     Strings getPathsSnapshot() const;
+
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
