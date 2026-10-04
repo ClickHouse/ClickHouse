@@ -16,6 +16,7 @@ both the live tab state and what gets persisted back.
 import io
 import os
 import tarfile
+import urllib.parse
 
 import docker
 import pytest
@@ -98,7 +99,97 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "shape-not-stamped-before-run",
         "dirty-startup-format",
         "format-connection-change",
+        "auth-header-cases",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
         )
+
+
+def test_play_auth_headers_preserve_credentials_with_database_path(started_cluster):
+    user = "play:юзер"
+    password = "  päss 密码  "
+    encoded_prefix = "ClickHouse-Play-Percent:"
+
+    def quote(value):
+        return urllib.parse.quote(value, safe="-_.!~*'()")
+
+    node.query("DROP USER IF EXISTS '{}'".format(user))
+    try:
+        node.query(
+            "CREATE USER '{}' IDENTIFIED WITH sha256_password BY '{}'".format(
+                user, password
+            )
+        )
+
+        encoded_headers = {
+            "X-ClickHouse-User": encoded_prefix + quote(user),
+            "X-ClickHouse-Key": encoded_prefix + quote(password),
+        }
+
+        # A scripted /play server_address may include a database path. The X-ClickHouse
+        # credential values carry their own encoding marker, so an intermediary may strip or
+        # rewrite Authorization without corrupting UTF-8 or surrounding-space credentials.
+        for authorization in (
+            "never",
+            None,
+            "Basic Zm9vOmJhcg==",
+            "AWS4-HMAC-SHA256 Credential=proxy",
+        ):
+            headers = dict(encoded_headers)
+            if authorization is not None:
+                headers["Authorization"] = authorization
+
+            response = node.http_request(
+                "default",
+                method="POST",
+                params={
+                    "add_http_cors_header": "1",
+                    "http_allow_database_as_path": "1",
+                    "http_allow_table_as_file": "0",
+                },
+                data="SELECT currentUser()",
+                headers=headers,
+            )
+            assert response.status_code == 200, response.text
+            assert response.content.decode("utf-8") == user + "\n"
+            assert response.headers["X-ClickHouse-Auth-Encoding"] == "percent"
+            assert "x-clickhouse-auth-encoding" in response.headers[
+                "Access-Control-Expose-Headers"
+            ].lower()
+    finally:
+        node.query("DROP USER IF EXISTS '{}'".format(user))
+
+
+def test_play_raw_auth_headers_survive_proxy_authorization_rewrite(started_cluster):
+    user = "play_raw_proxy_user"
+    password = "secret"
+
+    node.query("DROP USER IF EXISTS '{}'".format(user))
+    try:
+        node.query(
+            "CREATE USER '{}' IDENTIFIED WITH sha256_password BY '{}'".format(
+                user, password
+            )
+        )
+
+        response = node.http_request(
+            "default",
+            method="POST",
+            params={
+                "add_http_cors_header": "1",
+                "http_allow_database_as_path": "1",
+                "http_allow_table_as_file": "0",
+            },
+            data="SELECT currentUser()",
+            headers={
+                "Authorization": "Bearer proxy-token",
+                "X-Requested-With": "ClickHouse-Play",
+                "X-ClickHouse-User": user,
+                "X-ClickHouse-Key": password,
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.content.decode("utf-8") == user + "\n"
+    finally:
+        node.query("DROP USER IF EXISTS '{}'".format(user))
