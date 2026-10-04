@@ -35,6 +35,7 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool azure_validate_etag_on_read;
 }
 
 
@@ -216,8 +217,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
         return false;
 
     /// Even when the two generations are comparable, on most backends the second pass opens an
-    /// unconditional read: `AzureObjectStorage`, `HDFSObjectStorage` and the local disk ignore
-    /// `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
+    /// unconditional read: `HDFSObjectStorage` and the local disk ignore `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
     /// read could still stitch together rows of two versions of the file. The reread is only
     /// generation-safe when either:
     ///   - the data files are immutable by the format's contract — a data lake never overwrites a
@@ -225,7 +225,8 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     ///   - the backend pins the actual read to the captured generation — S3 with
     ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
     ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
-    ///     with respect to an overwrite.
+    ///     with respect to an overwrite; Azure with `azure_validate_etag_on_read` does the same
+    ///     (see `ReadBufferFromAzureBlobStorage`).
     /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
     /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
     /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
@@ -241,6 +242,9 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
         reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
     }
 #endif
+    if (object_storage->getType() == ObjectStorageType::Azure
+        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
+        reread_is_generation_pinned = true;
     if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
         return false;
 
