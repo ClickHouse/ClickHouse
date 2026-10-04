@@ -451,6 +451,5 @@ def test_replicated_database_lagging_replica_structure_only(start_cluster):
         )
         assert replica1.query(version_query).strip() == "1"
     finally:
-        replica2.query("SYSTEM START REPLICATION QUEUES repl_db3.t")
         replica1.query("DROP DATABASE IF EXISTS repl_db3 SYNC")
         replica2.query("DROP DATABASE IF EXISTS repl_db3 SYNC")
