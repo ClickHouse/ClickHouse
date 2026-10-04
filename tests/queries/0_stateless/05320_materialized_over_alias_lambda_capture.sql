@@ -295,7 +295,7 @@ CREATE TABLE t_alias_capture_alias_names
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO t_alias_capture_alias_names (k, arr) VALUES (5, [1]);
+INSERT INTO t_alias_capture_alias_names (k, arr) SELECT 5, [1];
 ALTER TABLE t_alias_capture_alias_names ADD COLUMN m_dotted Array(Array(String)) MATERIALIZED arrayMap(p -> tupleNames(tuple(p, e)), arr);
 ALTER TABLE t_alias_capture_alias_names UPDATE arr = [2] WHERE 1 SETTINGS mutations_sync = 2;
 SYSTEM STOP MERGES t_alias_capture_alias_names;
