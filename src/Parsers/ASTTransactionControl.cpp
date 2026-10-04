@@ -56,7 +56,7 @@ void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state, bool /*igno
 void ASTTransactionControl::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TransactionControl");
-    w.writeString("action", std::string(magic_enum::enum_name(action)));
+    w.writeString("action", magic_enum::enum_name(action));
     if (action == SET_SNAPSHOT)
         w.writeUInt("snapshot", snapshot);
 }
