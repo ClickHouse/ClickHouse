@@ -5,7 +5,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/CurrentThread.h>
@@ -90,11 +92,36 @@ ObjectStorageQueueSettings::ObjectStorageQueueSettings(const ObjectStorageQueueS
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept = default;
 
+namespace
+{
+
+/// A masking rule renders the masked value as an SQL string literal; this table prints raw text.
+void maskSecretSettingValue(const String & name, const Field & field, String & value)
+{
+    for (const auto * settings_to_hide : {&S3Queue::SETTINGS_TO_HIDE, &AzureQueue::SETTINGS_TO_HIDE})
+    {
+        auto it = settings_to_hide->find(name);
+        if (it == settings_to_hide->end())
+            continue;
+        if (auto masked = it->second(field))
+        {
+            std::string_view literal = *masked;
+            if (literal.size() >= 2 && literal.front() == '\'' && literal.back() == '\'')
+                literal = literal.substr(1, literal.size() - 2);
+            value = literal;
+        }
+        return;
+    }
+}
+
+}
+
 void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
     const std::string & database_name,
-    const StorageObjectStorageQueue & storage) const
+    const StorageObjectStorageQueue & storage,
+    bool show_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
@@ -123,7 +150,10 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        String value = convertFieldToString(change.getValue());
+        if (!show_secrets)
+            maskSecretSettingValue(name, change.getValue(), value);
+        res_columns[i++]->insert(value);
         res_columns[i++]->insert(change.getTypeName());
         res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
