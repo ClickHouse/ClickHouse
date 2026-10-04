@@ -26,6 +26,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
@@ -55,9 +56,9 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/StepWallClockRegistry.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
@@ -383,9 +384,9 @@ namespace
     }
 
     /// Replace an argument with the partially masked SQL the formatter prints for it: a URL with its
-    /// credentials removed, or the reconstructed `S3(...)` destination of a `Backup` database. The
-    /// finder builds the text from literals it read, so it parses. If it does not, the original node
-    /// must not stay in the tree; the argument is hidden whole (fail closed).
+    /// credentials removed, or the masked locator of a `Backup` database. The original node must not
+    /// stay in the tree, so text that does not parse, or parses into a node that cannot take the
+    /// argument's place (a `COLUMNS(...)` matcher has no alias), hides the argument whole.
     void replaceWithMaskedText(ASTPtr & node, const String & text)
     {
         ParserExpression parser;
@@ -403,7 +404,7 @@ namespace
             DBMS_DEFAULT_MAX_PARSER_DEPTH,
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
             /* skip_insignificant= */ true);
-        if (!parsed)
+        if (!parsed || !dynamic_cast<ASTWithAlias *>(parsed.get()))
         {
             hideWholeNode(node);
             return;
@@ -1443,11 +1444,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
-            auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
-            step_wall_clock_registry->populateFromPlan(plan);
-            pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
-
-            pipeline.setCollectWorkIntervals(analyzed.time);
+            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+            pipeline.setStepProfiler(step_profiler);
 
             CompletedPipelineExecutor executor(pipeline);
 
@@ -1476,7 +1474,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, watch.getStart(), execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

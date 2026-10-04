@@ -11,6 +11,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <base/scope_guard.h>
@@ -901,6 +902,14 @@ private:
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
+        /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
+        /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
+        /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
+        /// rather than at the target - an `https` proxy, or an `http` proxy with tunneling turned
+        /// off - Poco also uses `ProxyConfig::host` as the TLS peer name
+        /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
+        /// there would break certificate verification. Routing it through the cache needs a
+        /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
@@ -1386,7 +1395,12 @@ protected:
             return false;
 
         if (uri.getScheme() != "https")
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
+        {
+            std::string masked_uri = uri.toString();
+            maskURIUserinfo(masked_uri);
+            maskPresignedURLParameters(masked_uri);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", masked_uri);
+        }
 
         if (!proxy_configuration.isEmpty())
         {
