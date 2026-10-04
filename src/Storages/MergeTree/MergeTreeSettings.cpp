@@ -2855,7 +2855,6 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
-    void validatePartCodecSettings() const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -3152,22 +3151,19 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
-    validatePartCodecSettings();
-}
-
-void MergeTreeSettingsImpl::validatePartCodecSettings() const
-{
-    /// Marks, primary key and part statistics may use these codecs without a column data type.
-    /// A codec that interprets typed values, such as T64, can therefore be accepted by its
-    /// constructor but fail when a part is written. Require codecs that work on arbitrary bytes
-    /// before new metadata is published. Stored ATTACH and secondary replay retain their policy.
-    const auto codec_validation = CodecValidationSettings::forUntypedByteStreams();
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
     if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().validateCodecString(codec, codec_validation);
+        CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().validateCodecString(codec, codec_validation);
+        CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().validateCodecString(codec, codec_validation);
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -3442,11 +3438,6 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
-}
-
-void MergeTreeSettings::validatePartCodecSettings() const
-{
-    impl->validatePartCodecSettings();
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

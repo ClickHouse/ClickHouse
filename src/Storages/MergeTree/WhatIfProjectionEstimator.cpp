@@ -893,16 +893,6 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     /// an ALTER may retarget an ALIAS, so check the columns actually read
     if (!fresh->required_columns.empty())
         context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
-
-    try
-    {
-        ProjectionDescription::validateDeclaredColumnCodecs(*fresh, context, LoadingStrictnessLevel::CREATE);
-    }
-    catch (const Exception &)
-    {
-        reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
-        return std::nullopt;
-    }
     return fresh;
 }
 

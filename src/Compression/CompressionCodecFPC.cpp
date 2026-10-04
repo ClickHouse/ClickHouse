@@ -23,7 +23,7 @@ namespace DB
 class CompressionCodecFPC : public ICompressionCodec
 {
 public:
-    CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_, bool explicit_float_width_);
+    CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
@@ -51,7 +51,6 @@ private:
     // below members are used by compression, decompression ignores them:
     const UInt8 float_width; // size of uncompressed float in bytes
     const UInt8 compression_level; // compression level, 2^level * float_width is the size of predictors table in bytes
-    const bool explicit_float_width; // retain a user-pinned width in the codec description
 };
 
 
@@ -71,25 +70,18 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    /// Explicit and inferred widths with the same value use the same codec on disk.
-    makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))})
-        ->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(float_width);
 }
 
-CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_, bool explicit_float_width_)
+CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_)
     : float_width(float_width_)
     , compression_level(compression_level_)
-    , explicit_float_width(explicit_float_width_)
 {
 }
 
 ASTPtr CompressionCodecFPC::getCodecDescription() const
 {
-    if (explicit_float_width)
-        return makeCodecDescription("FPC", {
-            make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level)),
-            make_intrusive<ASTLiteral>(static_cast<UInt64>(float_width))});
     return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
@@ -123,7 +115,6 @@ void registerCodecFPC(CompressionCodecFactory & factory)
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         UInt8 float_width = 4;
-        bool explicit_float_width = false;
         if (column_type)
             float_width = getFloatByteWidth(*column_type);
 
@@ -145,7 +136,6 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
             if (arguments->children.size() == 2)
             {
-                explicit_float_width = true;
                 literal = arguments->children[1]->as<ASTLiteral>();
                 if (!literal || !isInt64OrUInt64FieldType(literal->value.getType()))
                     throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "2nd argument of codec 'FPC' must be unsigned integer");
@@ -157,11 +147,9 @@ void registerCodecFPC(CompressionCodecFactory & factory)
             }
         }
 
-        return std::make_shared<CompressionCodecFPC>(float_width, level, explicit_float_width);
+        return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    /// The optional second argument pins the float width. Keep it if supplied, but normalize
-    /// the type-independent compression level when that width is omitted.
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, [](size_t argument_count) { return argument_count <= 1; });
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
 }
 
 namespace

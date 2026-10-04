@@ -96,7 +96,6 @@ struct ReplicatedMergeTreeTableMetadata
         const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
-        const ProjectionsDescription & local_projections,
         bool check_index_granularity = true,
         bool strict_check = true,
         LoggerPtr logger = nullptr) const;

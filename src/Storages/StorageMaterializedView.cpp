@@ -450,7 +450,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
-        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup);
         create_interpreter.execute();
 
         if (fixed_uuid)

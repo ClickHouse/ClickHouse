@@ -256,7 +256,6 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     const String & family_name,
     std::optional<uint8_t> byte_code,
     CreatorWithType creator,
-    CanCanonicalizeUntyped can_canonicalize_untyped,
     std::source_location source)
 {
     if (creator == nullptr)
@@ -268,9 +267,6 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
 
     family_name_with_source.emplace(family_name, source.file_name());
 
-    if (can_canonicalize_untyped)
-        untyped_canonicalizers.emplace(family_name, std::move(can_canonicalize_untyped));
-
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -278,51 +274,12 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
                             std::to_string(*byte_code));
 }
 
-void CompressionCodecFactory::registerCompressionCodec(
-    const String & family_name,
-    std::optional<uint8_t> byte_code,
-    Creator creator,
-    CanCanonicalizeUntyped can_canonicalize_untyped,
-    std::source_location source)
+void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source)
 {
-    registerCompressionCodecWithType(
-        family_name,
-        byte_code,
-        [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */) { return creator(ast); },
-        std::move(can_canonicalize_untyped),
-        source);
-}
-
-ASTPtr CompressionCodecFactory::normalizeCodecForUntypedColumn(const ASTPtr & ast) const
-{
-    const auto & codec = ast->as<const ASTFunction &>();
-    ASTs normalized;
-    normalized.reserve(codec.arguments->children.size());
-
-    for (const auto & child : codec.arguments->children)
+    registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */)
     {
-        String family_name;
-        ASTPtr arguments;
-        if (const auto * identifier = child->as<ASTIdentifier>())
-            family_name = identifier->name();
-        else if (const auto * function = child->as<ASTFunction>())
-        {
-            family_name = function->name;
-            arguments = function->arguments;
-        }
-        else
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
-
-        const auto canonicalizer = untyped_canonicalizers.find(family_name);
-        if (canonicalizer != untyped_canonicalizers.end() && canonicalizer->second(arguments ? arguments->children.size() : 0))
-            normalized.push_back(getImpl(family_name, arguments, nullptr)->getCodecDescriptionForUntypedColumn());
-        else
-            normalized.push_back(child->clone());
-    }
-
-    auto result = makeASTFunction("CODEC");
-    result->arguments->children = std::move(normalized);
-    return result;
+        return creator(ast);
+    }, source);
 }
 
 void CompressionCodecFactory::registerSimpleCompressionCodec(
@@ -331,17 +288,12 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
     SimpleCreator creator,
     std::source_location source)
 {
-    registerCompressionCodec(
-        family_name,
-        byte_code,
-        [family_name, creator](const ASTPtr & ast)
-        {
-            if (ast)
-                throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
-            return creator();
-        },
-        [](size_t) { return true; },
-        source);
+    registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
+    {
+        if (ast)
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
+        return creator();
+    }, source);
 }
 
 

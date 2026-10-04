@@ -25,9 +25,7 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 
 struct KeyDescription;
 
-class ASTProjectionDeclaration;
 class ASTProjectionSelectQuery;
-struct CodecValidationSettings;
 
 struct MergeTreeSettings;
 
@@ -107,41 +105,6 @@ struct ProjectionDescription
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
         bool attach_short_syntax = true);
 
-    /// Validate the settings of a settings-only ALTER when a stored projection body cannot be analyzed.
-    static void validateSettingsForUnavailable(const ASTProjectionDeclaration & declaration, const ContextPtr & query_context);
-
-    /// Validate both the codec policy for this provenance and the lossless projection invariant.
-    /// The type may be absent while admitting an unavailable definition from a backup. In that
-    /// case new declarations can use only codecs that are safe without a proven output type.
-    static ASTPtr validateDeclaredColumnCodec(
-        const ASTPtr & codec_ast,
-        const DataTypePtr & column_type,
-        const CodecValidationSettings & validation_settings,
-        const String & column_name,
-        const String & projection_name);
-
-    /// A projection codec chain must remain valid when a part's default codec changes.
-    /// A lone Default is equivalent to an omitted codec; a mixed chain cannot be checked
-    /// against every table, config, and TTL recompression default at admission time.
-    static void validateDynamicDefaultCodec(const ASTProjectionDeclaration & declaration);
-
-    /// Check declared codecs against the session's settings and the lossless projection rule. Must be called from a query's
-    /// validation phase: `getProjectionFromAST` runs on stored metadata too, and on the `CREATE` path it
-    /// is reached with the global context, so a check placed there would both miss the user's settings
-    /// and make a table using a suspicious codec impossible to attach. Takes the built projection
-    /// because a declaration need not spell out the type, and the type-sensitive checks need it.
-    static void validateDeclaredColumnCodecs(
-        const ProjectionDescription & projection,
-        const ContextPtr & query_context,
-        LoadingStrictnessLevel mode,
-        bool attach_short_syntax = true,
-        bool is_restore_from_backup = false);
-
-    /// Apply the session codec policy after a caller has identified a new definition.
-    /// Copied projections may have been analyzed in trusted mode to recover their output types.
-    static void validateDeclaredColumnCodecsAgainstSettings(
-        const ProjectionDescription & projection, const ContextPtr & query_context);
-
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
@@ -201,9 +164,6 @@ struct ProjectionDescription
     String getDirectoryName() const { return name + ".proj"; }
 };
 
-/// Whether the explicit column list carries a CODEC that may need session-dependent validation.
-bool hasDeclaredProjectionColumnCodec(const ASTProjectionDeclaration & declaration);
-
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
@@ -217,20 +177,12 @@ struct ProjectionsDescription : public IHints<>
 
     /// Convert description to string
     String toString() const;
-    ASTs getDefinitionsInDeclarationOrder() const;
-    enum class UnavailablePolicy
-    {
-        PreservePreviouslyLoaded,
-        TrustReplicatedMetadata,
-    };
     /// Parse description from string
     static ProjectionsDescription parse(
         const String & str,
         const ColumnsDescription & columns,
         const KeyDescription * parent_partition_key,
-        const ContextPtr & query_context,
-        const ProjectionsDescription * known_unavailable = nullptr,
-        UnavailablePolicy unavailable_policy = UnavailablePolicy::PreservePreviouslyLoaded);
+        const ContextPtr & query_context);
 
     /// Return common expression for all stored projections
     ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
@@ -247,9 +199,6 @@ struct ProjectionsDescription : public IHints<>
     bool has(const String & projection_name) const;
     const ProjectionDescription & get(const String & projection_name) const;
 
-    /// Check the name before analyzing a new declaration. Return false for a duplicate
-    /// `IF NOT EXISTS`; otherwise throw the same conflict error as `add`.
-    bool checkCanAdd(const String & projection_name, bool if_not_exists) const;
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
@@ -257,23 +206,15 @@ struct ProjectionsDescription : public IHints<>
     /// Replace an existing projection in place, keeping its position (for `ALTER TABLE ... MODIFY PROJECTION`).
     void replace(ProjectionDescription && projection);
 
-    /// Apply a committed settings-only change while retaining the stored declaration body and position.
-    void replaceUnavailableSettings(const String & projection_name, const ASTPtr & with_settings);
-
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Declarations that could not be analyzed when the table was loaded at server startup. They are kept
     /// verbatim so that a rewrite of the CREATE query still contains them, and are deliberately absent from the
     /// accessors above: a consumer that needs an analyzed `ProjectionDescription` cannot reach one.
-    void addUnavailable(ASTPtr definition_ast, const String & after_projection = String(), bool first = false);
+    void addUnavailable(ASTPtr definition_ast);
     const ASTs & getUnavailableDefinitions() const { return unavailable; }
     Names getUnavailableNames() const;
     bool hasUnavailable() const { return !unavailable.empty(); }
-    bool isUnavailable(const String & projection_name) const;
-
-    /// Preserve the interleaving of analyzed and unavailable declarations after rebuilding the
-    /// analyzed descriptions for an ALTER.
-    void preserveDeclarationOrder(const ProjectionsDescription & source);
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.
@@ -283,16 +224,6 @@ private:
     Container projections;
     Map map;
     ASTs unavailable;
-    Names declaration_order;
-
-    void insertDeclarationOrder(const String & name, const String & after_projection, bool first);
 };
-
-/// A declaration that cannot be analyzed may only be carried across a metadata transition
-/// when its body is unchanged or an accepted secondary `ADD PROJECTION` introduced that exact body.
-/// Projection settings may change independently.
-bool hasSameUnavailableProjectionBody(const ASTProjectionDeclaration & old_declaration, const ASTProjectionDeclaration & new_declaration);
-void validatePreservedUnavailableProjections(
-    const ProjectionsDescription & old_projections, const ProjectionsDescription & new_projections, const ASTs & accepted_new_definitions);
 
 }

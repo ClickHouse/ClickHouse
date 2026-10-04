@@ -185,19 +185,15 @@ std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr 
 void registerCodecQuantized(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Quantized);
-    factory.registerCompressionCodec(
-        "Quantized",
-        method_code,
-        [](const ASTPtr & arguments) -> CompressionCodecPtr
-        {
-            /// On the read path the codec is instantiated from its method byte alone (with no arguments) just to
-            /// memcpy-decompress the verbatim full-precision stream; the parameters are not needed there. The semantic
-            /// validation of the parameters happens when the codec is attached to a column (tryExtractQuantizedCodecParams).
-            if (!arguments)
-                return std::make_shared<CompressionCodecQuantized>(QuantizedCodecParams{});
-            return std::make_shared<CompressionCodecQuantized>(parseQuantizeCodecArguments(arguments));
-        },
-        [](size_t argument_count) { return argument_count >= 2; });
+    factory.registerCompressionCodec("Quantized", method_code, [](const ASTPtr & arguments) -> CompressionCodecPtr
+    {
+        /// On the read path the codec is instantiated from its method byte alone (with no arguments) just to
+        /// memcpy-decompress the verbatim full-precision stream; the parameters are not needed there. The semantic
+        /// validation of the parameters happens when the codec is attached to a column (tryExtractQuantizedCodecParams).
+        if (!arguments)
+            return std::make_shared<CompressionCodecQuantized>(QuantizedCodecParams{});
+        return std::make_shared<CompressionCodecQuantized>(parseQuantizeCodecArguments(arguments));
+    });
 }
 
 }

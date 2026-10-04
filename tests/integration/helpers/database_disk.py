@@ -15,9 +15,7 @@ def get_database_disk_name(node):
 
 def read_file(node, disk_name: str, file_path: str) -> str:
     disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {disk_name} --save-logs --query "
-    content = node.exec_in_container(["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {file_path}'"])
-    # `clickhouse disks read` adds a newline after the file contents for terminal output.
-    return content.removesuffix("\n")
+    return node.exec_in_container(["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {file_path}'"])
 
 
 def replace_text_in_file(node, disk_name: str, file_path: str, old_value: str, new_value: str):

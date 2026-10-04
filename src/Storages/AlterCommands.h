@@ -12,7 +12,6 @@ namespace DB
 {
 
 class ASTAlterCommand;
-class ASTProjectionDeclaration;
 class IDatabase;
 struct MergeTreeSettings;
 using DatabasePtr = std::shared_ptr<IDatabase>;
@@ -290,10 +289,5 @@ public:
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
-
-/// Resolve a raw projection's source-column references, including projection and table aliases.
-/// Used when an unavailable declaration cannot be analyzed against its current dependencies.
-bool projectionDeclarationReferencesColumn(
-    const ASTProjectionDeclaration & declaration, const String & column_name, const ColumnsDescription & columns);
 
 }

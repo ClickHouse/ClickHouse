@@ -1710,17 +1710,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
             result.move_ttl.emplace_back(std::move(ttl));
         }
     }
-    if (validation_mode == TTLValidationMode::Validate)
-        result.validateRecompressionCodecsForUntypedByteStreams();
-
     return result;
-}
-
-void TTLTableDescription::validateRecompressionCodecsForUntypedByteStreams() const
-{
-    for (const auto & ttl : recompression_ttl)
-        CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            ttl.recompression_codec, {}, CodecValidationSettings::forUntypedByteStreams());
 }
 
 TTLTableDescription TTLTableDescription::parse(

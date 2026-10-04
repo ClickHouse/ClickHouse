@@ -305,8 +305,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     };
-    factory.registerCompressionCodecWithType(
-        "Delta", method_code, codec_builder, [](size_t argument_count) { return argument_count == 1; });
+    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)

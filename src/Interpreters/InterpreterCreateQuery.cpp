@@ -1,12 +1,9 @@
-#include <algorithm>
 #include <array>
 #include <memory>
-#include <optional>
 
 #include <filesystem>
 
 #include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -29,8 +26,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
-#include <Compression/CompressionFactory.h>
-
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
@@ -42,14 +37,12 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTProjectionDeclaration.h>
-#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -57,16 +50,12 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -81,7 +70,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -89,10 +77,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
-
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -114,6 +98,8 @@
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+
+#include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -218,7 +204,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int FAULT_INJECTED;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace fs = std::filesystem;
@@ -911,46 +896,11 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// Full projection analysis may fail on a missing dictionary even when a declared output is
-/// simply a parent column. Prove that output's type from the syntax alone; reject ambiguous
-/// aliases and computed expressions instead of guessing their type.
-DataTypePtr tryGetDirectProjectionOutputType(
-    const ASTProjectionDeclaration & declaration, const String & output_name, const ColumnsDescription & parent_columns)
-{
-    const auto * query = declaration.query ? declaration.query->as<ASTProjectionSelectQuery>() : nullptr;
-    if (!query || query->with())
-        return {};
-
-    const auto * select = query->select() ? query->select()->as<ASTExpressionList>() : nullptr;
-    if (!select)
-        return {};
-
-    const ASTIdentifier * direct_output = nullptr;
-    size_t matching_outputs = 0;
-    for (const auto & output : select->children)
-    {
-        if (output->getAliasOrColumnName() != output_name)
-            continue;
-        ++matching_outputs;
-        direct_output = output->as<ASTIdentifier>();
-    }
-
-    if (matching_outputs != 1 || !direct_output)
-        return {};
-    const auto * parent_column = parent_columns.tryGet(direct_output->name());
-    return parent_column ? parent_column->type : DataTypePtr{};
-}
-
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
-    const bool copies_source_projections = !create.columns_list && !create.as_table.empty();
-    const auto projection_source = getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup);
-    const bool validate_codec_policy = shouldValidateTableCodecPolicyOnCreate(
-        getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
-
     /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
     /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
@@ -975,7 +925,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
-    TableProperties properties(projection_source, copies_source_projections);
+    TableProperties properties;
     TableLockHolder as_storage_lock;
 
     if (create.columns_list)
@@ -1016,88 +966,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        /// A full-definition `ATTACH` and a RESTORE supply definitions to validate against the
-        /// initiating session's codec settings. RESTORE uses SECONDARY_CREATE for other checks,
-        /// so include it explicitly. Format 3+ distributed DDL was normalized on the initiator.
-        /// Format 2 ships the original query and codec settings, so validate it on the worker.
-        /// Format 1 cannot ship codec settings and rejects fresh codec declarations before enqueue.
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                std::optional<ProjectionDescription> projection;
-                try
-                {
-                    projection.emplace(
-                        ProjectionDescription::getProjectionFromAST(
-                            projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax));
-                }
-                catch (...)
-                {
-                    if (!is_restore_from_backup)
-                        throw;
-                    /// A backup can contain a projection preserved as unavailable on the source.
-                    /// Analyze codec declarations in a temporary context so `RESTORE` checks their
-                    /// output types even when positional arguments are currently disabled.
-                    const auto & declaration = projection_ast->as<const ASTProjectionDeclaration &>();
-                    if (validate_codec_policy && hasDeclaredProjectionColumnCodec(declaration))
-                    {
-                        auto analysis_context = Context::createCopy(getContext());
-                        analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
-                        std::optional<ProjectionDescription> checked_projection;
-                        try
-                        {
-                            checked_projection.emplace(ProjectionDescription::getProjectionFromAST(
-                                projection_ast, properties.columns, nullptr, analysis_context, mode, create.attach_short_syntax));
-                        }
-                        catch (const Exception &)
-                        {
-                            /// A missing dependency can still prevent analysis. Validate against
-                            /// declared types where possible and reject codecs needing an unknown type.
-                            for (const auto & child : declaration.columns->children)
-                            {
-                                if (const auto * column = child ? child->as<const ASTColumnDeclaration>() : nullptr;
-                                    column && column->getCodec())
-                                {
-                                    const auto type_ast = column->getType();
-                                    const auto declared_type = type_ast ? DataTypeFactory::instance().get(type_ast) : DataTypePtr{};
-                                    const auto direct_type = tryGetDirectProjectionOutputType(
-                                        declaration, column->name, properties.columns);
-                                    if (declared_type && !direct_type)
-                                        throw Exception(
-                                            ErrorCodes::BAD_ARGUMENTS,
-                                            "Cannot verify declared type {} of column {} in unavailable projection {} "
-                                            "without analyzing its SELECT output",
-                                            declared_type->getName(), backQuote(column->name), backQuote(declaration.name));
-                                    if (declared_type && direct_type && declared_type->getName() != direct_type->getName())
-                                        throw Exception(
-                                            ErrorCodes::TYPE_MISMATCH,
-                                            "Column {} in projection {} is declared with type {}, but its direct SELECT output has type {}",
-                                            backQuote(column->name), backQuote(declaration.name),
-                                            declared_type->getName(), direct_type->getName());
-                                    ProjectionDescription::validateDeclaredColumnCodec(
-                                        column->getCodec(), direct_type, CodecValidationSettings(getContext()->getSettingsRef()),
-                                        column->name, declaration.name);
-                                }
-                            }
-                        }
-                        if (checked_projection)
-                            ProjectionDescription::validateDeclaredColumnCodecs(
-                                *checked_projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
-                    }
-                    /// Keep the declaration so it can be analyzed after the missing setting or
-                    /// dependency is restored.
-                    properties.projections.addUnavailable(projection_ast->clone());
-                    tryLogCurrentException(
-                        __PRETTY_FUNCTION__,
-                        fmt::format(
-                            "Cannot analyze projection {} during RESTORE; preserving its declaration",
-                            projection_ast->formatForErrorMessage()));
-                    continue;
-                }
-                if (validate_codec_policy)
-                    ProjectionDescription::validateDeclaredColumnCodecs(
-                        *projection, getContext(), mode, create.attach_short_syntax, is_restore_from_backup);
-                properties.projections.add(std::move(*projection));
+                auto projection = ProjectionDescription::getProjectionFromAST(
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
+                properties.projections.add(std::move(projection));
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
@@ -1111,22 +985,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         StoragePtr as_storage = resolveStorageProxyLoading(
             DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
-        /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        /// A lazy table's proxy only caches columns. Its projections and keys are available after
-        /// materializing the nested storage, and admission checks must inspect those declarations.
-        StoragePtr metadata_storage = as_storage;
-        if (const auto * lazy_source = as_storage->as<StorageTableProxy>())
-            metadata_storage = lazy_source->getNested();
-
-        /// An `Alias` reports its target's metadata. Check the resolved source, including a
-        /// possible lazy proxy's nested storage, before copying any of that metadata.
-        if (const auto * alias = metadata_storage->as<StorageAlias>();
+        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
+        /// target that describing the target requires.
+        if (const auto * alias = as_storage->as<StorageAlias>();
             alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
             throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
                             StorageID{as_database_name, create.as_table}.getNameForLogs());
 
-        auto as_storage_metadata = metadata_storage->getInMemoryMetadataPtr(getContext(), false);
+        /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
+        as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
         if (!create.comment && !as_storage_metadata->comment.empty())
@@ -1136,6 +1004,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
         {
+            /// CREATE AS copies only analyzed projections. Refuse a codec declaration that would
+            /// otherwise disappear because its source projection is temporarily unavailable.
+            for (const auto & definition : as_storage_metadata->getProjections().getUnavailableDefinitions())
+                if (definition->as<const ASTProjectionDeclaration &>().columns)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Cannot copy a projection with column codecs while that projection is unavailable");
+
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
@@ -1148,7 +1023,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = castStorage<MergeTreeData>(metadata_storage, DeferredTable::Load).get())
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, DeferredTable::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -1176,7 +1051,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.is_clone_as)
         {
-            if (!endsWith(metadata_storage->getName(), "MergeTree"))
+            if (!endsWith(as_storage->getName(), "MergeTree"))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS from tables of the MergeTree family");
 
             if (create.storage)
@@ -1318,14 +1193,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.is_dictionary)
     {
         if (!create.dictionary || !create.dictionary->source)
-            return properties;
+            return {};
 
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
         visitor.visit(create.dictionary->source->ptr());
 
-        return properties;
+        return {};
     }
     else if (!create.storage || !create.storage->engine)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
@@ -1333,28 +1208,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
-
-    /// Direct CREATE checked its ordinary columns while building them. Source copies bypass that
-    /// path, and full-definition ATTACH and RESTORE built their columns with trusted settings.
-    /// Every newly supplied destination definition must satisfy the initiating session's codec
-    /// policy, regardless of where its columns came from.
-    if (validate_codec_policy)
-    {
-        if (copies_source_projections || mode != LoadingStrictnessLevel::CREATE)
-        {
-            const CodecValidationSettings validation_settings(getContext()->getSettingsRef());
-            for (const auto & column : properties.columns)
-                if (column.codec)
-                    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                        column.codec, column.type, validation_settings);
-        }
-
-        /// Analyzable copied projections have already been built, so check their resolved output
-        /// types now. The unavailable copies are checked after temporary analysis in the finalizer.
-        if (copies_source_projections)
-            for (const auto & projection : properties.projections)
-                ProjectionDescription::validateDeclaredColumnCodecsAgainstSettings(projection, getContext());
-    }
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
@@ -1382,11 +1235,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
-
-    /// The inner table is created by the materialized view's constructor. Give that nested
-    /// CREATE the complete declaration set before it persists the inner table's metadata.
-    if (create.is_materialized_view_with_inner_table() && properties.projections.hasUnavailable())
-        create.columns_list->projections->children = properties.projections.getDefinitionsInDeclarationOrder();
 
     validateTableStructure(create, properties);
 
@@ -1945,6 +1793,13 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
+bool isReplicated(const ASTStorage & storage)
+{
+    if (!storage.engine)
+        return false;
+    const auto & storage_name = storage.engine->name;
+    return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
 
 /// The drop privilege matching the kind of an existing table.
 AccessType getDropAccessType(const IStorage & table)
@@ -2045,15 +1900,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
-            /// The short ATTACH text contains no projection definition, but a Replicated database
-            /// publishes its stored definition while executing the queued entry. Check that
-            /// definition on the initiator before the entry can reach another replica.
-            auto stored_query = database->getCreateTableQuery(create.getTable(), getContext());
-            validateProjectionMetadataAdmission(
-                stored_query->as<ASTCreateQuery &>(), getContext(), database,
-                ProjectionDefinitionSource::PreviouslyAccepted,
-                /*copies_source_projections=*/false, nullptr,
-                ProjectionMetadataPublication::StoredDefinition);
             create.setDatabase(database_name);
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
@@ -2283,30 +2129,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
 
-    const bool is_storage_replicated = isProjectionStorageReplicated(create);
+    bool is_storage_replicated = false;
+    if (create.storage && isReplicated(*create.storage))
+        is_storage_replicated = true;
 
-    /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
-    /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
-    /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
-    /// A secondary replay or stored ATTACH must keep accepting metadata already written.
-    validateProjectionMetadataAdmission(
-        create,
-        getContext(),
-        database,
-        properties.projection_source,
-        properties.copies_source_projections,
-        &properties.projections);
-
-    /// A normalized distributed CREATE sends its column list rather than the original `AS src` query.
-    /// Workers would analyze an appended unavailable declaration as fresh SQL and reject it, while omitting
-    /// it would silently publish a different schema. Local copies preserve it after storage construction.
-    const bool is_copy_replay = is_restore_from_backup || !isInitialProjectionMetadataQuery(getContext());
-    if (!is_copy_replay && properties.projections.hasUnavailable()
-        && (is_storage_replicated || !create.cluster.empty()
-            || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared"))))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot copy unavailable projection declarations into replicated or distributed CREATE metadata. "
-            "Restore projection analysis on the source table or drop the unavailable declaration before copying it");
+    if (create.targets)
+    {
+        for (const auto & inner_table_engine : create.targets->getInnerEngines())
+        {
+            if (isReplicated(*inner_table_engine))
+                is_storage_replicated = true;
+        }
+    }
 
     bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
     if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
@@ -2559,96 +2393,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-/// Storage constructors analyze the declarations they can use. A copied declaration may have been
-/// accepted on the source but be unavailable under this session's settings, so install the entire
-/// candidate before validating or publishing the table. Every CREATE path must use this boundary.
-void finalizeCreatedStorage(
-    const StoragePtr & storage,
-    ASTCreateQuery & create,
-    const ProjectionsDescription & candidate_projections,
-    ProjectionDefinitionSource projection_source,
-    LoadingStrictnessLevel mode,
-    ContextPtr context,
-    bool is_temporary)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
-    /// A materialized view's projections belong to its inner table. Its constructor creates
-    /// that table through this same finalizer, so inspect the already-published inner metadata
-    /// without installing declarations on the view or rewriting the inner table after publication.
-    const bool has_candidate_projections = !candidate_projections.empty() || candidate_projections.hasUnavailable();
-    if (has_candidate_projections
-        && projection_source != ProjectionDefinitionSource::PreviouslyAccepted
-        && !context->getClientInfo().is_replicated_database_internal
-        && !isSecondaryProjectionMetadataReplay(context))
-        for (const auto & definition : candidate_projections.getDefinitionsInDeclarationOrder())
-            ProjectionDescription::validateDynamicDefaultCodec(definition->as<const ASTProjectionDeclaration &>());
-
-    StoragePtr projection_storage = storage;
-    bool projections_belong_to_inner_table = false;
-    if (has_candidate_projections)
-        if (const auto * view = storage->as<StorageMaterializedView>(); view && view->hasInnerTable())
-        {
-            projection_storage = view->getTargetTable();
-            projections_belong_to_inner_table = true;
-        }
-
-    if (candidate_projections.hasUnavailable() && !projections_belong_to_inner_table)
-    {
-        if (!create.columns_list || !create.columns_list->projections)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE query is missing copied projection declarations");
-        auto metadata_handle = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-        auto metadata = *metadata_handle;
-        for (const auto & definition : candidate_projections.getUnavailableDefinitions())
-        {
-            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
-            if (!metadata.projections.has(name) && !metadata.projections.isUnavailable(name))
-                metadata.projections.addUnavailable(definition->clone());
-        }
-        metadata.projections.preserveDeclarationOrder(candidate_projections);
-        storage->setInMemoryMetadata(metadata);
-        if (auto metadata_cache = context->getQueryMetadataCache())
-        {
-            auto [cache, lock] = metadata_cache->getStorageMetadataCache();
-            cache->erase(storage.get());
-        }
-
-        /// Persist the same ordered declarations that were installed in the storage metadata.
-        create.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
-    }
-
-    /// Check the complete prepared candidate, including analyzed definitions. A new creator
-    /// must not publish a storage that silently omitted one of its prepared projections.
-    StorageMetadataHandle metadata;
-    if (has_candidate_projections)
-    {
-        /// A lazy table function may resolve an external source when its metadata is read.
-        /// With no projection candidate there is nothing to compare, so leave it lazy.
-        metadata = projection_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-        for (const auto & projection : candidate_projections)
-            if (!metadata->projections.has(projection.name))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(projection.name));
-        for (const auto & definition : candidate_projections.getUnavailableDefinitions())
-        {
-            const auto & name = definition->as<const ASTProjectionDeclaration &>().name;
-            if (!metadata->projections.has(name) && !metadata->projections.isUnavailable(name))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage omitted prepared projection {}", backQuote(name));
-        }
-    }
-
-    validateVirtualColumns(*storage, context);
-    checkForUnsupportedColumns(*storage, mode, context, is_temporary);
-    if (has_candidate_projections
-        && projection_source != ProjectionDefinitionSource::PreviouslyAccepted && !projections_belong_to_inner_table
-        && !context->getClientInfo().is_replicated_database_internal
-        && !isSecondaryProjectionMetadataReplay(context))
-        if (const auto * merge_tree = castStorage<MergeTreeData>(projection_storage, DeferredTable::Load).get())
-        {
-            if (metadata->projections.hasUnavailable())
-                merge_tree->checkCopiedUnavailableProjections(
-                    *metadata, context, projection_source == ProjectionDefinitionSource::Backup,
-                    shouldValidateTableCodecPolicyOnCreate(
-                        context, mode, create.attach_short_syntax, projection_source == ProjectionDefinitionSource::Backup));
-        }
+    validateVirtualColumns(storage, context);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary);
 }
 catch (...)
 {
@@ -2656,11 +2405,11 @@ catch (...)
     {
         try
         {
-            storage->drop();
+            storage.drop();
         }
         catch (...)
         {
-            tryLogCurrentException("finalizeCreatedStorage");
+            tryLogCurrentException("validateStorage");
         }
     }
     throw;
@@ -2690,8 +2439,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
-                mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2919,8 +2667,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
-        mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3435,8 +3182,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        finalizeCreatedStorage(res, create, properties.projections, properties.projection_source,
-            mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 
@@ -3963,43 +3709,8 @@ BlockIO InterpreterCreateQuery::execute()
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
-        bool normalize_legacy_source_copy = false;
-        if (!is_create_database && on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION
-            && !create.attach && !create.columns_list && !create.as_table.empty())
+        if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
-            const auto cluster_name = getContext()->getMacros()->expand(create.cluster);
-            const auto cluster = getContext()->getCluster(cluster_name);
-            if (cluster->filterAddressesByShardOrReplica(0, 0).size() > 1)
-            {
-                /// A legacy entry leaves `AS source` for each worker to resolve locally. With more
-                /// than one host, one worker could publish a copied projection while another rejects
-                /// an unavailable copy. Normalize the source on the initiator before enqueueing.
-                /// `CLONE AS` still needs the worker's source parts, so it cannot use that rewrite.
-                if (create.is_clone_as)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "CREATE TABLE ... CLONE AS ... ON CLUSTER with distributed_ddl_entry_format_version < {} "
-                        "is not supported on a multi-host cluster; use a newer DDL entry format",
-                        DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION);
-                normalize_legacy_source_copy = true;
-            }
-        }
-        const bool legacy_without_normalization
-            = on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION && !normalize_legacy_source_copy;
-        if (is_create_database || legacy_without_normalization)
-        {
-            if (!is_create_database)
-            {
-                /// Old DDL entry formats return from execute() without reaching createTable().
-                auto mode = getLoadingStrictnessLevel(
-                    create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
-                validateProjectionMetadataAdmission(
-                    create,
-                    getContext(),
-                    nullptr,
-                    getProjectionDefinitionSource(mode, create.attach_short_syntax, is_restore_from_backup),
-                    !create.columns_list && !create.as_table.empty());
-            }
-
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine
@@ -4257,15 +3968,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
-
-    /// The conversion rewrites detached metadata and removes transaction files below, so check
-    /// the compatibility of the published destination before any irreversible local change.
-    if (to_replicated)
-        validateProjectionMetadataAdmission(
-            create, getContext(), database,
-            ProjectionDefinitionSource::PreviouslyAccepted,
-            /*copies_source_projections=*/false, nullptr,
-            ProjectionMetadataPublication::ReplicatedStorage);
 
     const bool ordinary_database = database->getEngineName() == "Ordinary";
     const bool temporary_uuid = to_replicated && ordinary_database;

@@ -63,52 +63,51 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/QueryMetadataCache.h>
-#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Planner/TableExpressionData.h>
+#include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTHelpers.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTPartition.h>
-#include <Parsers/ASTProjectionDeclaration.h>
-#include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
+#include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTHelpers.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
@@ -119,6 +118,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -129,29 +130,26 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <base/sleep.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
+#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/LocalDate.h>
@@ -164,13 +162,13 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -468,6 +466,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
+    extern const int ILLEGAL_PROJECTION;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
@@ -1122,8 +1121,7 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings,
-    bool validate_unavailable_as_new) const
+    const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1165,7 +1163,19 @@ void MergeTreeData::checkProperties(
             if (!column || !column->codec)
                 continue;
 
-            if (isLossyCodecForType(column->codec, column->type))
+            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+            /// so lossiness is resolved per substream the way the part writer resolves it.
+            bool is_lossy = false;
+            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            {
+                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                    return;
+                is_lossy = CompressionCodecFactory::instance()
+                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+            };
+            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+
+            if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",
@@ -1346,8 +1356,7 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
 
-    const auto & unavailable_projections = new_metadata.projections.getUnavailableDefinitions();
-    if (!new_metadata.projections.empty() || (!attach && !unavailable_projections.empty()))
+    if (!new_metadata.projections.empty())
     {
         /// TODO(unique-key): support projections; ATTACH must still load.
         if (new_metadata.hasUniqueKey() && !attach)
@@ -1355,19 +1364,15 @@ void MergeTreeData::checkProperties(
                 "Projections are not supported on tables with UNIQUE KEY");
 
         std::unordered_set<String> projections_names;
-        const auto settings = getSettings();
-        auto check_projection_name = [&](const String & name)
-        {
-            if (!projections_names.insert(name).second)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(name));
-
-            if (projections_names.size() > (*settings)[MergeTreeSetting::max_projections])
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
-        };
 
         for (const auto & projection : new_metadata.projections)
         {
-            check_projection_name(projection.name);
+            if (projections_names.contains(projection.name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
+
+            const auto settings = getSettings();
+            if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
             /// A projection body cannot be altered (`MODIFY PROJECTION` replaces settings only and is
             /// re-validated here as part of the new metadata), so we do not look it up in the old metadata.
@@ -1379,13 +1384,9 @@ void MergeTreeData::checkProperties(
                 is_aggregate,
                 true /* allow_nullable_key */,
                 local_context);
-        }
 
-        /// ATTACH must still load old metadata. New definitions count unavailable declarations
-        /// toward the same duplicate-name and max_projections checks as analyzed projections.
-        if (!attach)
-            for (const auto & definition : unavailable_projections)
-                check_projection_name(definition->as<const ASTProjectionDeclaration &>().name);
+            projections_names.insert(projection.name);
+        }
     }
 
     /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
@@ -1506,105 +1507,6 @@ void MergeTreeData::checkProperties(
                 projection.name);
     }
 
-    /// An unavailable declaration has no `ProjectionDescription` flags. Inspect its source-column
-    /// references and settings before an `ALTER` disables a gate or adds a column that would change
-    /// the meaning of a virtual input when the declaration can be analyzed again. Do not reject
-    /// an unrelated `ALTER` merely because an existing, unavailable declaration was loaded with a
-    /// disabled gate.
-    if (!attach)
-    {
-        const auto newly_added_column
-            = [&](const String & name) { return !old_metadata.columns.has(name) && new_metadata.columns.has(name); };
-
-        for (const auto & definition : unavailable_projections)
-        {
-            const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
-            bool with_parent_part_offset = false;
-            bool with_block_number = false;
-            bool with_block_offset = false;
-            /// Projection indexes synthesize these outputs, so their raw declarations have no
-            /// SELECT list to inspect while they are unavailable.
-            if (declaration.index && declaration.type)
-            {
-                with_parent_part_offset = declaration.type->name == "basic";
-                with_block_number = declaration.type->name == "commit_order";
-                with_block_offset = with_block_number;
-            }
-            if (declaration.query)
-            {
-                with_parent_part_offset |= projectionDeclarationReferencesColumn(
-                    declaration, "_part_offset", old_metadata.columns);
-                with_block_number |= projectionDeclarationReferencesColumn(
-                    declaration, "_block_number", old_metadata.columns);
-                with_block_offset |= projectionDeclarationReferencesColumn(
-                    declaration, "_block_offset", old_metadata.columns);
-            }
-
-            with_parent_part_offset &= !old_metadata.columns.has("_part_index") && !old_metadata.columns.has("_part_offset")
-                && !old_metadata.columns.has("_parent_part_offset");
-
-            const auto gate_turned_off_or_newly_invalid = [&](const auto & setting)
-            {
-                return !effective_settings[setting] && (validate_unavailable_as_new || live_settings[setting]);
-            };
-
-            if (with_parent_part_offset)
-            {
-                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_part_offset_column_in_projections))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot disable allow_part_offset_column_in_projections while unavailable projection {} uses `_part_offset`",
-                        declaration.name);
-
-                if (newly_added_column("_part_offset") || newly_added_column("_part_index") || newly_added_column("_parent_part_offset"))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot add `_part_offset`, `_part_index`, or `_parent_part_offset` while unavailable projection {} "
-                        "stores the parent `_part_offset`",
-                        declaration.name);
-            }
-
-            if (with_block_number)
-            {
-                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_commit_order_projection)
-                    || gate_turned_off_or_newly_invalid(MergeTreeSetting::enable_block_number_column))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot disable allow_commit_order_projection or enable_block_number_column while unavailable projection {} "
-                        "uses `_block_number`",
-                        declaration.name);
-            }
-
-            if (with_block_offset)
-            {
-                if (gate_turned_off_or_newly_invalid(MergeTreeSetting::allow_commit_order_projection)
-                    || gate_turned_off_or_newly_invalid(MergeTreeSetting::enable_block_offset_column))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot disable allow_commit_order_projection or enable_block_offset_column while unavailable projection {} "
-                        "uses `_block_offset`",
-                        declaration.name);
-            }
-
-            bool has_granularity_override = false;
-            if (declaration.with_settings)
-                for (const auto & change : declaration.with_settings->changes)
-                    has_granularity_override |= change.name == "index_granularity" || change.name == "index_granularity_bytes";
-
-            const auto can_use_adaptive_granularity = [&](const MergeTreeSettings & settings)
-            {
-                return settings[MergeTreeSetting::index_granularity_bytes] != 0
-                    && (settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
-            };
-            if (has_granularity_override && (validate_unavailable_as_new || can_use_adaptive_granularity(live_settings))
-                && !can_use_adaptive_granularity(effective_settings))
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Cannot disable adaptive granularity while unavailable projection {} has index_granularity-related overrides",
-                    declaration.name);
-        }
-    }
-
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)
     {
         for (const auto & forbid : forbid_columns)
@@ -1661,64 +1563,6 @@ void MergeTreeData::checkMetadataProperties(
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,
         local_context);
-}
-
-void MergeTreeData::checkCopiedUnavailableProjections(
-    const StorageInMemoryMetadata & metadata, ContextPtr local_context,
-    bool preserve_unanalyzable, bool validate_codec_policy) const
-{
-    /// Analyze declarations in a temporary copy so the published table retains their original
-    /// ASTs. A copied declaration must be fully checked against its new destination. `RESTORE`
-    /// may lack an external dependency, but its raw declaration must still satisfy table gates.
-    auto checked_metadata = metadata;
-    auto analysis_context = Context::createCopy(local_context);
-    analysis_context->setSetting("enable_positional_arguments_for_projections", 1);
-    Names analyzed_unavailable_names;
-    for (const auto & definition : metadata.projections.getUnavailableDefinitions())
-    {
-        const auto & declaration = definition->as<const ASTProjectionDeclaration &>();
-        std::optional<ProjectionDescription> projection;
-        try
-        {
-            projection.emplace(ProjectionDescription::getProjectionFromAST(
-                definition,
-                metadata.columns,
-                &metadata.partition_key,
-                analysis_context,
-                LoadingStrictnessLevel::ATTACH));
-        }
-        catch (Exception & e)
-        {
-            if (!preserve_unanalyzable)
-            {
-                e.addMessage("Cannot copy unavailable projection {} without validating its destination requirements", backQuote(declaration.name));
-                throw;
-            }
-        }
-        if (projection)
-        {
-            checked_metadata.projections.remove(declaration.name, /*if_exists=*/false);
-            checked_metadata.projections.add(std::move(*projection));
-            analyzed_unavailable_names.push_back(declaration.name);
-        }
-    }
-
-    checkProperties(
-        checked_metadata,
-        checked_metadata,
-        /*attach=*/false,
-        /*allow_empty_sorting_key=*/false,
-        allow_nullable_key,
-        local_context,
-        /*alter_effective_settings=*/nullptr,
-        /*validate_unavailable_as_new=*/preserve_unanalyzable);
-
-    /// The temporary analysis used trusted codec construction to recover output types. A new
-    /// destination must also pass the initiating session's admission policy before publication.
-    if (validate_codec_policy)
-        for (const auto & name : analyzed_unavailable_names)
-            ProjectionDescription::validateDeclaredColumnCodecsAgainstSettings(
-                checked_metadata.projections.get(name), local_context);
 }
 
 void MergeTreeData::setProperties(
@@ -6756,8 +6600,27 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         is_secondary_replay = true;
 #endif
 
-    /// Column changes involving unavailable projections are checked against their raw declarations
-    /// in AlterCommands::apply; metadata-only ALTERs remain valid.
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
+    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
+    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
+    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_PROJECTION)
+                continue;
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_PROJECTION,
+                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
+                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
+                "restarting the server may make the projection usable again; otherwise drop the declaration with "
+                "ALTER TABLE ... DROP PROJECTION",
+                getStorageID().getNameForLogs(),
+                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
+        }
+    }
+
     /// A renamed column keeps its rows, and renaming a column of the old sorting key is refused above,
     /// so the new sorting key can use a renamed column only in an added expression.
     if (!is_secondary_replay)

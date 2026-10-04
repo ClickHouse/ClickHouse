@@ -394,7 +394,6 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
     ContextPtr context,
-    const ProjectionsDescription & local_projections,
     bool check_index_granularity,
     bool strict_check,
     LoggerPtr logger) const
@@ -436,15 +435,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    /// A stored declaration may be unavailable on this replica. When both sides already have
-    /// identical text, parsing it again would fail for the same reason it was skipped at startup.
-    String parsed_zk_projections = from_zk.projections;
-    if (projections != from_zk.projections)
-        parsed_zk_projections = ProjectionsDescription::parse(
-            from_zk.projections, columns, nullptr, context, &local_projections,
-            ProjectionsDescription::UnavailablePolicy::TrustReplicatedMetadata).toString();
-    /// Keep the spelling of an untyped codec: `Delta` and `Delta(4)` may resolve identically
-    /// now, but after `MODIFY COLUMN` widens the output, only the omitted argument adapts.
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
     if (projections != parsed_zk_projections)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
@@ -504,9 +495,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
         diff.new_skip_indices = from_zk.skip_indices;
     }
 
-    /// For an untyped projection column, an omitted codec argument (e.g. `Delta`) is resolved
-    /// again after a type change. An explicit argument (e.g. `Delta(4)`) stays fixed. Their
-    /// current codecs may match, but the definitions are not equivalent across future `ALTER`s.
     if (projections != from_zk.projections)
     {
         diff.projections_changed = true;
@@ -581,9 +569,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
         if (projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(
-                new_projections, new_columns, &new_metadata.partition_key, context, &old_metadata.projections,
-                ProjectionsDescription::UnavailablePolicy::TrustReplicatedMetadata);
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context);
 
         if (ttl_table_changed)
         {
@@ -675,9 +661,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         ProjectionsDescription recalculated_projections;
         for (const auto & projection : new_metadata.projections)
             recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context));
-        for (const auto & definition_ast : new_metadata.projections.getUnavailableDefinitions())
-            recalculated_projections.addUnavailable(definition_ast->clone());
-        recalculated_projections.preserveDeclarationOrder(new_metadata.projections);
         new_metadata.projections = std::move(recalculated_projections);
     }
 

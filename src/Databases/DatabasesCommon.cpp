@@ -282,9 +282,9 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         validateCreateQuery(ast_create_query, metadata.virtuals, context);
 
     /// These declarations are known not to be analyzable on this server, and `validateCreateQuery` analyzes every
-    /// projection it finds, so they can only be put back once it has run. Restore their original order as well.
-    if (metadata.projections.hasUnavailable())
-        ast_create_query.columns_list->projections->children = metadata.projections.getDefinitionsInDeclarationOrder();
+    /// projection it finds, so they can only be put back once it has run.
+    for (const auto & definition_ast : metadata.projections.getUnavailableDefinitions())
+        ast_create_query.columns_list->projections->children.push_back(definition_ast->clone());
 }
 
 

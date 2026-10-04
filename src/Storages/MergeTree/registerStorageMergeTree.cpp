@@ -947,8 +947,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
-            if (args.is_restore_from_backup)
-                metadata.table_ttl.validateRecompressionCodecsForUntypedByteStreams();
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -963,12 +961,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
-
-        /// RESTORE supplies a new table from backup metadata but uses SECONDARY_CREATE, which skips
-        /// the ordinary MergeTree sanity check. Reject part-wide codecs that cannot write new parts
-        /// before the restored table is published; stored ATTACH and replica replay stay loadable.
-        if (args.is_restore_from_backup)
-            storage_settings->validatePartCodecSettings();
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -1096,18 +1088,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 }
                 catch (...)
                 {
-                    if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH && !args.is_restore_from_backup)
+                    if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
                     /// Only the analyzed description, which query execution needs, is missing. The declaration itself
                     /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
                     metadata.projections.addUnavailable(projection_ast->clone());
-                    tryLogCurrentException(
-                        __PRETTY_FUNCTION__,
-                        fmt::format(
-                            "Cannot analyze projection {} while loading table metadata, preserving its declaration. "
-                            "It may be caused by a dependency on a dropped dictionary or a missing object. "
-                            "Consider recreating the projection or dropping and recreating the table.",
-                            projection_ast->formatForErrorMessage()));
+                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
+                        "Cannot parse projection {} during server startup, skipping it. "
+                        "It may be caused by a dependency on a dropped dictionary or a missing object. "
+                        "Consider recreating the projection or dropping and recreating the table.",
+                        projection_ast->formatForErrorMessage()));
                 }
             }
         }
@@ -1337,8 +1327,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
-    PROJECTION projection_name_1 [(name1 [type1] [CODEC(codec1)], ...) AS] (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 [(name2 [type2] [CODEC(codec2)], ...) AS] (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -1941,130 +1931,17 @@ Projections can be modified or dropped with the [ALTER](/reference/statements/al
 
 ### Projection column codecs {#projection-column-codecs}
 
-A projection stores its own copy of the data, so it can benefit from compression codecs that differ from
-the parent table's. A projection sorted by a different key, for example, may have long runs in a column
-that is scattered in the parent table, which `Delta` or `DoubleDelta` can exploit.
-
-To override the codec of a projection's column, list that column before the projection query:
+A MergeTree projection can choose a lossless compression codec for an output column, including
+on replicated tables and in `ON CLUSTER` DDL:
 
 ```sql
-CREATE TABLE t
-(
-    id UInt64,
-    ts DateTime,
-    PROJECTION p
-    (
-        ts CODEC(DoubleDelta, ZSTD)
-    )
-    AS
-    (
-        SELECT id, ts ORDER BY ts
-    )
-)
-ENGINE = MergeTree ORDER BY id;
+PROJECTION p (ts CODEC(DoubleDelta, ZSTD)) AS (SELECT id, ts ORDER BY ts)
 ```
 
-The column list is partial: only the columns whose codec you are overriding need to appear in it, and
-every column that does appear must be produced by the projection query. Columns omitted from the list
-use the table's default compression codec (`default_compression_codec` setting or server's `compression`).
-
-To distinguish a column list from a projection query, quote columns named `select` or `with` if they appear first:
-
-```sql
-PROJECTION p (`select` CODEC(ZSTD)) AS (SELECT id, `select` ORDER BY id)
-```
-
-Anywhere else in the list such a name needs no quoting.
-
-A projection's columns are otherwise determined entirely by its query, so `CODEC` is the only property a
-column may declare. Declaring a default expression, `COMMENT`, `TTL`, `STATISTICS`, a collation, column
-settings, a `NULL` modifier, or `PRIMARY KEY` is rejected rather than silently ignored. A codec cannot be
-declared for a subcolumn such as `a.x`, because a subcolumn is not stored in its own right.
-
-#### Declaring the type {#projection-column-codecs-type}
-
-The type is optional, and whether you write it has a consequence worth understanding.
-
-Omitting it, as in the example above, declares only the codec. The column then remains free to change type
-along with the parent table, and type-dependent codec arguments are inferred again for the new type.
-
-Writing it asserts that the projection query produces exactly that type for that column, and that assertion
-is then enforced for as long as the projection exists. An `ALTER TABLE ... MODIFY COLUMN` that would change
-the type is rejected, so the only way to change it is to drop the projection, modify the column, and add the
-projection back — which rebuilds all of the projection's parts. Prefer to omit the type unless you
-specifically want the column pinned:
-
-```sql
-ALTER TABLE t ADD PROJECTION p (ts CODEC(DoubleDelta), id UInt64 CODEC(NONE)) AS (SELECT id, ts ORDER BY ts);
-
-ALTER TABLE t MODIFY COLUMN ts DateTime64(3);   -- allowed: `ts` was declared without a type
-ALTER TABLE t MODIFY COLUMN id Int64;           -- rejected: `id` was declared as UInt64
-```
-
-#### Changing a declared codec {#projection-column-codecs-changing}
-
-A declared codec cannot be changed in place. `ALTER TABLE ... MODIFY PROJECTION` only accepts
-`WITH SETTINGS` changes, and the column list is part of the projection's definition, so changing a codec
-means dropping the projection, adding it back with the new list, and materializing it:
-
-```sql
-ALTER TABLE t DROP PROJECTION p;
-ALTER TABLE t ADD PROJECTION p (ts CODEC(Delta, ZSTD(3))) AS (SELECT id, ts ORDER BY ts);
-ALTER TABLE t MATERIALIZE PROJECTION p;
-```
-
-`MATERIALIZE PROJECTION` rebuilds the projection for every part. This is considerably more expensive
-than changing a table column's codec, which is a metadata-only change taking effect lazily.
-
-#### Aggregate projections {#projection-column-codecs-aggregate}
-
-An aggregate projection's columns are named and typed by the query, so a declaration must use the name the
-projection produces — the expression text itself — and the aggregate state type rather than the underlying
-one:
-
-```sql
-CREATE TABLE t
-(
-    id UInt64,
-    v UInt64,
-    PROJECTION p
-    (
-        `max(v)` CODEC(ZSTD(3))
-    )
-    AS
-    (
-        SELECT id, max(v) GROUP BY id
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-```
-
-Omitting the type, as above, avoids having to spell out `AggregateFunction(max, UInt64)`.
-
-#### Validation {#projection-column-codecs-validation}
-
-Declared codecs use the same validation rules as a table column's own codec. Suspicious codecs require
-`allow_suspicious_codecs`, and gated codecs require their dedicated setting, such as `enable_sz3_codec`.
-This is checked when the projection is declared or restored from a backup. Once accepted, a lossless
-codec is not re-checked when the table is loaded, so a later setting change cannot make an existing
-table fail to attach. A RESTORE of a suspicious or gated projection codec needs the corresponding
-setting in the restoring session, even when the backup was created with that setting enabled.
-
-Lossy codecs are rejected for projection columns. Projection selection is transparent, so storing altered
-values in a projection would make the same query return different results depending on whether the
-optimizer reads the projection or the parent table.
-
-ClickHouse versions before 26.10 cannot parse a projection column list. For replicated tables,
-Replicated databases, and `ON CLUSTER` DDL, the syntax is disabled by default. After upgrading
-every replica and cluster host that may load the metadata or replay the DDL, explicitly set
-`allow_projection_column_list_in_replicated_metadata = 1` to use it. A downgrade after storing
-the new syntax is not supported. An `ON CLUSTER` operation that declares a fresh projection `CODEC`,
-including full-definition `ATTACH TABLE`, requires `distributed_ddl_entry_format_version >= 2`,
-because version 1 omits the session settings used to validate it. `CREATE TABLE AS source` can copy
-already accepted projection metadata with version 1 without validating its codec again.
-
-The effective codecs of a projection's columns are exposed by the `codecs` column of
-[`system.projections`](/reference/system-tables/projections).
+The list may omit columns that use the part default. Each listed column must appear in the
+projection query; its type is inferred from that query. This first release supports `NONE`,
+`LZ4`, `ZSTD`, `Delta`, and `DoubleDelta`. It does not support `CODEC(Default)` or explicit
+types.
 
 ### Projection indexes {#projection-index}
 

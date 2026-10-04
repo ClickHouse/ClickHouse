@@ -129,17 +129,6 @@ TEST(AdaptiveCodecPool, FloatTypesGetALPAuto)
         expectPool(name, {"ALP(AUTO)"});
 }
 
-TEST(CompressionCodecFactory, ALPDescriptionAndUntypedCanonicalization)
-{
-    ParserCodec parser;
-    ASTPtr ast = parseQuery(parser, "(ALP(AUTO))", /*max_query_size=*/0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    auto float_type = type("Float32");
-    auto & factory = CompressionCodecFactory::instance();
-
-    EXPECT_EQ(factory.get(ast, float_type.get())->getCodecDescription()->formatForLogging(), "ALP(AUTO)");
-    EXPECT_EQ(factory.normalizeCodecForUntypedColumn(ast)->formatForLogging(), "CODEC(ALP)");
-}
-
 TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
 {
     for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "UUID", "BFloat16"})

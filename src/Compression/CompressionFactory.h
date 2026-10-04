@@ -33,34 +33,20 @@ using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
 struct CodecValidationSettings
 {
-    explicit CodecValidationSettings(const Settings & settings_, bool reject_type_sensitive_without_column_type_ = false)
+    explicit CodecValidationSettings(const Settings & settings_)
         : settings(&settings_)
-        , reject_type_sensitive_without_column_type(reject_type_sensitive_without_column_type_)
     {
     }
 
     /// The stored pointer would dangle when constructed from a temporary.
     explicit CodecValidationSettings(Settings &&) = delete;
-    CodecValidationSettings(Settings &&, bool) = delete;
 
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
-    /// A newly admitted codec that will compress streams without a known value type must work on arbitrary bytes.
-    static CodecValidationSettings forUntypedByteStreams()
-    {
-        CodecValidationSettings result;
-        result.reject_type_sensitive_without_column_type = true;
-        return result;
-    }
-
     /// nullptr on trusted paths (every gated / suspicious codec is accepted).
     /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
-
-    /// Require codecs that work on arbitrary bytes when no output type can be established,
-    /// including unavailable projections and part-wide MergeTree codec settings.
-    bool reject_type_sensitive_without_column_type = false;
 
 private:
     CodecValidationSettings() = default;
@@ -74,7 +60,6 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
-    using CanCanonicalizeUntyped = std::function<bool(size_t argument_count)>;
 
     using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
@@ -92,10 +77,6 @@ public:
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(
         const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const;
-
-    /// Substitute defaults only where a codec's registration guarantees that doing so without a
-    /// column type preserves the meaning of omitted arguments after later type changes.
-    ASTPtr normalizeCodecForUntypedColumn(const ASTPtr & ast) const;
 
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const;
@@ -140,26 +121,11 @@ public:
     /// Used by `system.documentation`.
     VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
 
-    /// Register codec with parameters and column type. `can_canonicalize_untyped` selects the
-    /// argument counts for which a description built with a null type preserves the meaning of
-    /// omitted arguments after a column type change. For example, `FPC` qualifies with zero or
-    /// one argument, but not two: its description omits an explicitly supplied float width.
-    /// The `source` is captured automatically at the call site (the codec's registration);
-    /// do not pass it explicitly.
-    void registerCompressionCodecWithType(
-        const String & family_name,
-        std::optional<uint8_t> byte_code,
-        CreatorWithType creator,
-        CanCanonicalizeUntyped can_canonicalize_untyped = {},
-        std::source_location source = std::source_location::current());
-    /// Register codec with parameters. Restrict `can_canonicalize_untyped` if its null-argument
-    /// creator is only meant for decoding and does not describe a valid user declaration.
-    void registerCompressionCodec(
-        const String & family_name,
-        std::optional<uint8_t> byte_code,
-        Creator creator,
-        CanCanonicalizeUntyped can_canonicalize_untyped = [](size_t) { return true; },
-        std::source_location source = std::source_location::current());
+    /// Register codec with parameters and column type. The `source` is captured automatically at the call site
+    /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
+    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator, std::source_location source = std::source_location::current());
+    /// Register codec with parameters
+    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
@@ -171,11 +137,7 @@ protected:
 
 private:
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
-        const ASTPtr & ast,
-        const DataTypePtr & column_type,
-        const Settings * settings,
-        bool sanity_check,
-        bool reject_type_sensitive_without_column_type) const;
+        const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 
     /// Name of the gate setting: `enable_<lowercase family>_codec`.
     static String getGateSettingName(const String & family_name);
@@ -185,16 +147,12 @@ private:
 
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
-    UnorderedMapWithMemoryTracking<String, CanCanonicalizeUntyped> untyped_canonicalizers;
     /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
     UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();
 };
-
-/// Returns true if `codec` compresses any substream of `type` lossily.
-bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type);
 
 /// Type-specific codecs read a compressed block as a sequence of values, so a block must not end or begin in the middle of a value.
 /// Rounds the block size down to a multiple of the value size, but not below one value.

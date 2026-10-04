@@ -16,12 +16,10 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ProjectionMetadataValidation.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -31,7 +29,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -46,7 +43,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/ProjectionsDescription.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -491,14 +487,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
-        if (!skip_access_check)
-            getContext()->checkAccess(getRequiredAccess(table));
-        validateProjectionMetadataAdmission(
-            alter, table,
-            table_id ? DatabaseCatalog::instance().tryGetDatabase(table_id.database_name) : nullptr,
-            getContext());
-        validateProjectionCodecOldDistributedDDLAdmission(alter, getContext());
-
         /// Substitute the database of the altered table into table functions that use the current database
         /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
         /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
@@ -542,7 +530,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    validateProjectionMetadataAdmission(alter, table, database, getContext());
     bool is_mutation = false;
     for (const auto & child : alter.command_list->children)
     {

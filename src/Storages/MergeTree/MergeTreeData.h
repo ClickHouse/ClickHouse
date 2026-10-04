@@ -1670,13 +1670,6 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
-    /// Recheck table-level restrictions before publishing copied or restored unavailable declarations.
-    /// `RESTORE` preserves declarations whose external dependencies cannot yet be analyzed.
-    /// A new destination also applies its initiating session's codec policy after analysis.
-    void checkCopiedUnavailableProjections(
-        const StorageInMemoryMetadata & metadata, ContextPtr local_context,
-        bool preserve_unanalyzable, bool validate_codec_policy) const;
-
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1953,8 +1946,7 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
-        const MergeTreeSettings * alter_effective_settings = nullptr,
-        bool validate_unavailable_as_new = false) const;
+        const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before

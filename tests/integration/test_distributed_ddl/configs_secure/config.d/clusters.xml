@@ -32,17 +32,6 @@
         </shard>
     </cluster>
 
-    <!-- Initiator ch1 is deliberately not a member. -->
-    <worker_only>
-        <shard>
-            <replica>
-                <host>ch2</host>
-                <port>9440</port>
-                <secure>1</secure>
-            </replica>
-        </shard>
-    </worker_only>
-
     <!-- Cluster with specified default database -->
     <cluster2>
         <shard>

@@ -1480,16 +1480,6 @@ Possible values:
         {"25.12", true, false, "New setting to control positional arguments in projections."}, \
         {"25.11", true, false, "New setting to control positional arguments in projections."}, \
         {"25.10", true, false, "New setting to control positional arguments in projections."}) \
-    DECLARE(Bool, allow_projection_column_list_in_replicated_metadata, false, R"(
-Allow a projection column list to be stored by a replicated table, a Replicated database, or an ON CLUSTER DDL query.
-Versions before 26.10 cannot parse this syntax. Enable only after every replica and cluster host that may load the metadata or replay the DDL has been upgraded.
-An `ON CLUSTER` operation that declares a fresh projection `CODEC`, including full-definition
-`ATTACH TABLE`, requires `distributed_ddl_entry_format_version >= 2` because version 1 does not
-carry codec validation settings. `CREATE TABLE AS source` can copy already accepted projection
-metadata with version 1 without validating its codec again.
-This setting is checked when the definition is first accepted, not when stored metadata is loaded.
-)", 0, \
-        {"26.10", false, false, "New setting to explicitly permit projection column-list syntax in replicated metadata after every replica has been upgraded."}) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).

@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -69,12 +68,29 @@ void CompressionCodecFactory::validateCodecString(
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    validateCodecAndGetPreprocessedASTImpl(
-        ast, {}, validation_settings.settings, /*sanity_check=*/ false, validation_settings.reject_type_sensitive_without_column_type);
+    validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
 }
 
 namespace
 {
+
+bool innerDataTypeIsFloat(const DataTypePtr & type)
+{
+    if (isFloat(type))
+        return true;
+    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return innerDataTypeIsFloat(type_nullable->getNestedType());
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return innerDataTypeIsFloat(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+            if (innerDataTypeIsFloat(subtype))
+                return true;
+        return false;
+    }
+    return false;
+}
 
 bool typeContainsMap(const DataTypePtr & type)
 {
@@ -100,16 +116,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
 {
     const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
-    return validateCodecAndGetPreprocessedASTImpl(
-        ast, column_type, validation_settings.settings, sanity_check, validation_settings.reject_type_sensitive_without_column_type);
+    return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
-    const ASTPtr & ast,
-    const DataTypePtr & column_type,
-    const Settings * settings,
-    bool sanity_check,
-    bool reject_type_sensitive_without_column_type) const
+    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -118,20 +129,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
         /// A codec that depends on the data type resolves differently per substream, and every
         /// substream is compressed with its own chain, so there is one chain per substream.
         size_t num_substreams = 0;
-        bool has_non_float_special_substream = false;
         if (column_type)
         {
             ISerialization::StreamCallback count_callback = [&](const auto & substream_path)
             {
                 if (ISerialization::isSpecialCompressionAllowed(substream_path))
-                {
                     ++num_substreams;
-                    chassert(!substream_path.empty());
-                    const auto & substream_type = substream_path.back().data.type;
-                    /// Object and Dynamic structure streams have no data type, so they cannot
-                    /// establish that a floating-point codec is suitable for every stream.
-                    has_non_float_special_substream |= !substream_type || !isFloat(substream_type);
-                }
             };
             column_type->getDefaultSerialization()->enumerateStreams(count_callback, column_type);
         }
@@ -259,25 +262,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 /// This is a sanity check, so it is not enforced when `allow_suspicious_codecs` is set, nor on the
                 /// metadata-load path (`ATTACH`), where `sanity_check` is disabled so that a table stored on an
                 /// earlier version does not become unloadable after an upgrade.
-                /// A projection admitted from an unavailable backup must reject lossy codecs even when
-                /// `allow_suspicious_codecs` disables the ordinary unknown-type sanity check.
-                if ((sanity_check || reject_type_sensitive_without_column_type) && result_codec->isLossyCompression() && !column_type)
+                if (sanity_check && result_codec->isLossyCompression() && !column_type)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
                         "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
-
-                /// Generic compressors, encryption, and the literal NONE codec work on arbitrary
-                /// byte streams. Do not use isNone(): Quantized also reports it, but its side
-                /// stream requires a vector column.
-                /// Every other codec interprets or transforms typed values, so an unavailable
-                /// projection cannot admit it until the output type has been established. This
-                /// includes future special codecs without an error-prone name-based list.
-                if (reject_type_sensitive_without_column_type && !column_type
-                    && !result_codec->isGenericCompression() && !result_codec->isEncryption() && codec_family_name != "NONE")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot validate codec {} without a column type", codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
             }
@@ -359,16 +349,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     "post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs' "
                     "to skip this check).", codec_description);
 
+            /// Floating-point time series codecs are not supposed to compress non-floating-point data
             if (last_floating_point_time_series_codec_pos.has_value()
-                && !column_type && reject_type_sensitive_without_column_type)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot validate floating-point time series codec {} without a column type",
-                    codec_description);
-
-            /// Floating-point time series codecs must suit every stream they compress. A tuple
-            /// with one float and one integer cannot use such a codec on its integer stream.
-            if (last_floating_point_time_series_codec_pos.has_value()
-                    && column_type && has_non_float_special_substream)
+                    && column_type && !innerDataTypeIsFloat(column_type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The combination of compression codecs {} is meaningless,"
                     " because it does not make sense to apply a floating-point time series codec to non-floating-point columns"
@@ -416,19 +399,5 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
     throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
 }
 
-bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type)
-{
-    bool is_lossy = false;
-    ISerialization::StreamCallback callback = [&](const auto & substream_path)
-    {
-        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-            return;
-
-        const auto substream_codec = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get());
-        is_lossy = substream_codec->isLossyCompression();
-    };
-    type->getDefaultSerialization()->enumerateStreams(callback, type);
-    return is_lossy;
-}
 
 }

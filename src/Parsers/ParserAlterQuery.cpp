@@ -2944,10 +2944,10 @@ Use the statement below to add a projection description to a tables metadata:
 
 ```sql
 -- Normal projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 [type1] [CODEC(codec1)], ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 
 -- Aggregate projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 [type1] [CODEC(codec1)], ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
 
 <Note>
@@ -2991,23 +2991,18 @@ AS
 );
 ```
 
-The list is partial: only the columns whose codec is being overridden need to appear in it. Every listed
-column must be produced by the projection query. `CODEC` is the only property a column may declare here;
-lossy codecs and codecs on subcolumns are rejected.
-
-A column's type is optional. Omitting it leaves type-dependent codec arguments free to follow changes to
-the projection's output type. Writing it asserts that the query produces that exact type, so a later
-`MODIFY COLUMN` that changes it is rejected.
-
-The effective codecs are reported by the `codecs` column of
-[`system.projections`](/reference/system-tables/projections).
+The list is partial: only columns whose codec is being overridden need to appear. Every listed
+column must be produced by the projection query. The output type is inferred from that query;
+the list accepts only a name and `CODEC`. The first release accepts `NONE`, `LZ4`, `ZSTD`,
+`Delta`, and `DoubleDelta` without session opt-ins. `CODEC(Default)` and subcolumns are not
+supported. The declaration also works on replicated tables and through `ON CLUSTER` DDL.
 
 ### MODIFY PROJECTION {#modify-projection}
 
 Use the statement below to change the [`WITH SETTINGS`](#with-settings) clause of an existing projection without rebuilding its data:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 [type1] [CODEC(codec1)], ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name1 CODEC(codec1), ...) AS] ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
 For a [projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index), restate the `INDEX` declaration instead of the `SELECT` query:
@@ -3144,9 +3139,9 @@ ENGINE = MergeTree ORDER BY id;
 - ["Materialized Views versus Projections"](/concepts/features/projections/materialized-views-versus-projections)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name [type] [CODEC(codec)], ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
 ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name INDEX <index_expr> TYPE <index_type> [WITH SETTINGS (setting_name = setting_value, ...)]
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name [type] [CODEC(codec)], ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) WITH SETTINGS (setting_name = setting_value, ...)
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name [(column_name CODEC(codec), ...) AS] (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY]) WITH SETTINGS (setting_name = setting_value, ...)
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS (setting_name = setting_value, ...)
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]

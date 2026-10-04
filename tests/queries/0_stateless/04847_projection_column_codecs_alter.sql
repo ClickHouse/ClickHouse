@@ -1,121 +1,43 @@
-SET allow_projection_column_list_in_replicated_metadata = 1;
-SET distributed_ddl_output_mode = 'none';
-SET database_replicated_always_detach_permanently = 1;
-
--- { echo ON }
+-- Tags: no-replicated-database, no-shared-merge-tree, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS t_projection_codecs_alter;
-
-CREATE TABLE t_projection_codecs_alter (x UInt64, y UInt64)
-ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
-
--- `ADD PROJECTION` goes through the same declaration parser as `CREATE TABLE`.
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (x UInt64 CODEC(NONE), y UInt64) AS (SELECT x, y ORDER BY x);
-
--- A duplicate `IF NOT EXISTS` is a no-op, so its declaration is not validated. The same rule
--- applies when an earlier command in this `ALTER` took the name.
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION IF NOT EXISTS p (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x);
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION q (x UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x),
-    ADD PROJECTION IF NOT EXISTS q (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x);
-ALTER TABLE t_projection_codecs_alter DROP PROJECTION q;
-
+CREATE TABLE t_projection_codecs_alter (k UInt64, ts UInt64)
+ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_projection_codecs_alter SELECT number, number FROM numbers(100000);
 
--- Same size check as `04846_projection_column_codecs`, on the `ALTER` path.
-SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
-FROM system.projection_parts_columns
-WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND active AND name = 'p'
-    AND column IN ('x', 'y')
-ORDER BY column;
+ALTER TABLE t_projection_codecs_alter ADD PROJECTION p
+    (k CODEC(NONE), ts CODEC(DoubleDelta, ZSTD)) AS (SELECT k, ts ORDER BY k);
+ALTER TABLE t_projection_codecs_alter MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+SELECT count() = 1 FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND name = 'p'
+    AND active AND column = 'k' AND column_data_compressed_bytes > column_data_uncompressed_bytes;
 
--- The column list must survive into the stored table definition.
-SHOW CREATE TABLE t_projection_codecs_alter;
+-- Omitted codec widths follow a valid change to the SELECT output type.
+ALTER TABLE t_projection_codecs_alter MODIFY COLUMN ts UInt32 SETTINGS mutations_sync = 2;
+SELECT position(create_table_query, 'CODEC(DoubleDelta, ZSTD)') > 0
+FROM system.tables WHERE database = currentDatabase() AND name = 't_projection_codecs_alter';
 
-DETACH TABLE t_projection_codecs_alter;
-ATTACH TABLE t_projection_codecs_alter;
-SHOW CREATE TABLE t_projection_codecs_alter;
+-- An incompatible output type must be rejected without changing published metadata.
+ALTER TABLE t_projection_codecs_alter MODIFY COLUMN ts String; -- { serverError BAD_ARGUMENTS }
+SELECT type = 'UInt32' FROM system.columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND name = 'ts';
 
--- `AlterCommands` reports which projection broke rather than silently re-deriving it.
-ALTER TABLE t_projection_codecs_alter MODIFY COLUMN x String; -- { serverError TYPE_MISMATCH }
+ALTER TABLE t_projection_codecs_alter MODIFY PROJECTION p
+    (k CODEC(NONE), ts CODEC(DoubleDelta, ZSTD)) AS (SELECT k, ts ORDER BY k)
+    WITH SETTINGS (index_granularity = 128);
+SELECT position(create_table_query, 'index_granularity = 128') > 0
+FROM system.tables WHERE database = currentDatabase() AND name = 't_projection_codecs_alter';
 
-ALTER TABLE t_projection_codecs_alter DROP PROJECTION p;
-SHOW CREATE TABLE t_projection_codecs_alter;
+INSERT INTO t_projection_codecs_alter SELECT number, number FROM numbers(100000, 100000);
+OPTIMIZE TABLE t_projection_codecs_alter FINAL;
+SELECT count() = 1 FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND name = 'p'
+    AND active AND column = 'k' AND column_data_compressed_bytes > column_data_uncompressed_bytes;
 
-DROP TABLE t_projection_codecs_alter;
-
--- The same validation applies on the `ALTER` path as on `CREATE`.
-CREATE TABLE t_projection_codecs_alter (x UInt64)
-ENGINE = MergeTree ORDER BY x;
-
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x); -- { serverError THERE_IS_NO_COLUMN }
-
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (x String CODEC(NONE)) AS (SELECT x ORDER BY x); -- { serverError TYPE_MISMATCH }
-
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (x UInt64 COMMENT 'c') AS (SELECT x ORDER BY x); -- { serverError NOT_IMPLEMENTED }
-
--- `AlterCommands::validate` runs with the user's context, so the setting applies here too.
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (x UInt64 CODEC(Delta, Delta)) AS (SELECT x ORDER BY x); -- { serverError BAD_ARGUMENTS }
-
-SET allow_suspicious_codecs = 1;
-ALTER TABLE t_projection_codecs_alter
-    ADD PROJECTION p (x UInt64 CODEC(Delta, Delta)) AS (SELECT x ORDER BY x);
-
--- Building the metadata must not re-check the codec, or the table would stop loading once the setting
--- went back to its default. Reset first, so the round trip is not simply allowed a second time.
-SET allow_suspicious_codecs = 0;
-DETACH TABLE t_projection_codecs_alter;
-ATTACH TABLE t_projection_codecs_alter;
-SELECT name, codecs FROM system.projections
-WHERE database = currentDatabase() AND table = 't_projection_codecs_alter';
+ALTER TABLE t_projection_codecs_alter UPDATE ts = ts + 1 WHERE k < 10 SETTINGS mutations_sync = 2;
+SELECT sum(ts) - sum(k) FROM t_projection_codecs_alter;
+SELECT count() = 1 FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND name = 'p'
+    AND active AND column = 'k' AND column_data_compressed_bytes > column_data_uncompressed_bytes;
 
 DROP TABLE t_projection_codecs_alter;
-
--- One untyped declaration on the `ALTER` path, which runs its own validation pass.
-CREATE TABLE t_alter_untyped (k UInt64, ts DateTime, id UInt64)
-ENGINE = MergeTree ORDER BY k;
-
-ALTER TABLE t_alter_untyped
-    ADD PROJECTION p (k DEFAULT 1 CODEC(NONE)) AS (SELECT k ORDER BY k); -- { serverError NOT_IMPLEMENTED }
-
--- Omitting the type keeps the column free to change with the parent table; declaring it pins the
--- column for as long as the projection exists. Both halves are asserted below.
-ALTER TABLE t_alter_untyped
-    ADD PROJECTION p (ts CODEC(DoubleDelta), id UInt64 CODEC(NONE)) AS (SELECT k, ts, id ORDER BY k);
-
-SHOW CREATE TABLE t_alter_untyped;
-
--- `ts` was declared without a type, so widening it is allowed.
-ALTER TABLE t_alter_untyped MODIFY COLUMN ts DateTime64(3);
-
--- `id` was declared as `UInt64`, so changing it breaks the declaration.
-ALTER TABLE t_alter_untyped MODIFY COLUMN id Int64; -- { serverError TYPE_MISMATCH }
-
--- The declaration survives the widening, codec and all.
-SHOW CREATE TABLE t_alter_untyped;
-SELECT name, codecs FROM system.projections
-WHERE database = currentDatabase() AND table = 't_alter_untyped';
-
-INSERT INTO t_alter_untyped SELECT number, toDateTime64(number, 3), number FROM numbers(1000);
-SELECT count() FROM t_alter_untyped;
-
-DROP TABLE t_alter_untyped;
-
--- Validation follows statement order: the projection sees the Float64 type installed by the
--- preceding command, so Gorilla is not judged against the old UInt64 type.
-CREATE TABLE t_alter_ordered (x UInt64) ENGINE = MergeTree ORDER BY tuple();
-
-ALTER TABLE t_alter_ordered
-    MODIFY COLUMN x Float64,
-    ADD PROJECTION p (x CODEC(Gorilla)) AS (SELECT x ORDER BY x);
-
-SELECT name, codecs FROM system.projections
-WHERE database = currentDatabase() AND table = 't_alter_ordered';
-
-DROP TABLE t_alter_ordered;

@@ -282,7 +282,7 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ParserKeyword s_as(Keyword::AS);
-    /// The type is optional: declaring one pins the column against `ALTER ... MODIFY COLUMN`.
+    /// Parse a column declaration here; projection validation permits only a name and CODEC.
     ParserColumnDeclarationList columns_p(/* require_type_ = */ false);
     ASTPtr query;
     ASTPtr index;
