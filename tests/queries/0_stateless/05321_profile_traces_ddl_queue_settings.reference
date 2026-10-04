@@ -1,0 +1,11 @@
+ON CLUSTER
+CREATE TABLE db.ctas ON CLUSTER test_shard_localhost (`x` UInt8) ENGINE = Memory AS SELECT 1 AS x
+CREATE TABLE db.storage ON CLUSTER test_shard_localhost (`x` UInt8) ENGINE = Memory SETTINGS min_rows_to_keep = 0
+ALTER TABLE db.storage ON CLUSTER test_shard_localhost (ADD COLUMN `y` UInt8)
+CREATE MATERIALIZED VIEW db.mv ON CLUSTER test_shard_localhost TO INNER (`x` UInt8) ENGINE = Memory AS SELECT x FROM db.storage SETTINGS send_profile_traces = 0
+ALTER TABLE db.mv ON CLUSTER test_shard_localhost (MODIFY QUERY SELECT x FROM db.storage WHERE x > 0 SETTINGS send_profile_traces = 1)
+1
+Replicated
+CREATE TABLE ctas (`x` UInt8) ENGINE = Memory AS SELECT 1 AS x
+CREATE MATERIALIZED VIEW mv TO INNER (`x` UInt8) ENGINE = Memory AS SELECT x FROM db_replicated.ctas SETTINGS send_profile_traces = 0
+ALTER TABLE mv (MODIFY QUERY (SELECT x FROM db_replicated.ctas WHERE x > 0 SETTINGS send_profile_traces = 1)) SETTINGS allow_experimental_alter_materialized_view_structure = 1

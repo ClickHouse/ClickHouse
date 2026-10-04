@@ -36,4 +36,12 @@ void prepareSecondaryQuerySettings(Settings & settings);
 /// before formatting the query, as `removeSettingsFromQuery` does.
 void stripProfileTraceOptInsFromQuery(const ASTPtr & query);
 
+/// Remove `send_profile_traces` from a DDL statement before its text is queued for other hosts: by
+/// `ON CLUSTER` or by a `Replicated` database. The hosts executing the queued entry have no trace
+/// receiver, and an older host rejects the setting name as `UNKNOWN_SETTING`. The setting is removed
+/// from the carriers that the statement itself applies (its trailing `SETTINGS` clause and the `CREATE`
+/// storage clause) and from the whole `AS SELECT` of `CREATE TABLE ... AS SELECT`. A stored view
+/// definition, including the query of `ALTER ... MODIFY QUERY`, keeps its own SQL settings.
+void stripProfileTraceSettingsFromDDLQuery(const ASTPtr & query);
+
 }

@@ -4,7 +4,10 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 
 #include <algorithm>
 #include <vector>
@@ -56,6 +59,21 @@ void stripProfileTraceOptInsFromQuery(const ASTPtr & query)
             if (child)
                 nodes.push_back(child.get());
     }
+}
+
+void stripProfileTraceSettingsFromDDLQuery(const ASTPtr & query)
+{
+    if (!query)
+        return;
+
+    static constexpr std::string_view trace_settings[] = {"send_profile_traces"};
+    if (const auto * create = query->as<ASTCreateQuery>(); create && !create->isView() && create->select)
+    {
+        /// Validate nested and duplicate values before removing the execution-only setting.
+        stripProfileTraceOptInsFromQuery(create->select);
+        removeSettingsFromQuery(create->select, trace_settings);
+    }
+    removeSettingsFromQueryTopLevel(query, trace_settings);
 }
 
 }

@@ -352,3 +352,54 @@ def test_create_as_select_invalid_nested_profile_setting(peer_name, clause):
         assert PEERS[peer_name].query(f"EXISTS TABLE {table}", settings=SETTINGS, timeout=30) == "0\n"
     finally:
         PEERS[peer_name].query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)
+
+
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("carrier", ["query", "storage"])
+def test_ddl_top_level_profile_setting(peer_name, carrier):
+    # The trailing `SETTINGS` clause of the statement and the storage clause of `CREATE` are applied by the
+    # statement itself, so the queued text must not carry the delivery-only setting to an older worker.
+    table = f"profile_ddl_{carrier}_{peer_name}"
+    peer = PEERS[peer_name]
+    try:
+        if carrier == "storage":
+            coordinator.query(
+                f"CREATE TABLE {table} ON CLUSTER {peer_name}_cluster ENGINE=Memory SETTINGS send_profile_traces=1 AS SELECT x FROM default.source",
+                settings=SETTINGS,
+                timeout=30,
+            )
+            assert peer.query(f"SELECT x FROM {table} ORDER BY x", settings=SETTINGS, timeout=30) == "0\n1\n2\n"
+        else:
+            coordinator.query(f"CREATE TABLE {table} ON CLUSTER {peer_name}_cluster (x UInt8) ENGINE=Memory", settings=SETTINGS, timeout=30)
+            coordinator.query(
+                f"ALTER TABLE {table} ON CLUSTER {peer_name}_cluster ADD COLUMN y UInt8 SETTINGS send_profile_traces=1",
+                settings=SETTINGS,
+                timeout=30,
+            )
+            assert peer.query(f"SELECT name FROM system.columns WHERE database = 'default' AND table = '{table}' ORDER BY position", settings=SETTINGS, timeout=30) == "x\ny\n"
+        assert "send_profile_traces" not in peer.query(f"SHOW CREATE TABLE {table}", settings=SETTINGS, timeout=30)
+    finally:
+        peer.query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)
+
+
+def test_replicated_database_profile_setting():
+    # A `Replicated` database queues the statement text for its replicas as `ON CLUSTER` does.
+    database = "profile_replicated"
+    try:
+        for node, replica in ((coordinator, "coordinator"), (older, "older")):
+            node.query(
+                f"CREATE DATABASE {database} ENGINE = Replicated('/profile_traces_mixed_versions/{database}', 'shard', '{replica}')",
+                settings=SETTINGS,
+                timeout=30,
+            )
+        coordinator.query(
+            f"CREATE TABLE {database}.ctas ENGINE=Memory SETTINGS send_profile_traces=1 AS SELECT x FROM default.source SETTINGS send_profile_traces=1",
+            settings=SETTINGS,
+            timeout=30,
+        )
+        older.query(f"SYSTEM SYNC DATABASE REPLICA {database}", settings=SETTINGS, timeout=30)
+        assert older.query(f"EXISTS TABLE {database}.ctas", settings=SETTINGS, timeout=30) == "1\n"
+        assert "send_profile_traces" not in older.query(f"SHOW CREATE TABLE {database}.ctas", settings=SETTINGS, timeout=30)
+    finally:
+        for node in (coordinator, older):
+            node.query(f"DROP DATABASE IF EXISTS {database} SYNC", settings=SETTINGS, timeout=30)

@@ -16,12 +16,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -217,16 +214,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
-    if (const auto * create = query_ptr->as<ASTCreateQuery>(); create && !create->isView() && create->select)
-    {
-        /// A `CREATE TABLE AS SELECT` worker has no trace receiver. Its executable `SELECT`
-        /// must not reapply the delivery setting on older workers. Stored view definitions
-        /// retain explicitly supplied SQL settings independently of request-level delivery.
-        /// Validate nested and duplicate values before removing the execution-only setting.
-        stripProfileTraceOptInsFromQuery(create->select);
-        static constexpr std::string_view trace_settings[] = {"send_profile_traces"};
-        removeSettingsFromQuery(create->select, trace_settings);
-    }
+    /// The hosts executing the entry have no trace receiver.
+    stripProfileTraceSettingsFromDDLQuery(query_ptr);
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
