@@ -549,6 +549,10 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// `totalRows` counts the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -570,7 +574,7 @@ bool applyTrivialCountIfPossible(
     if (aggregates.size() != 1)
         return false;
 
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -684,6 +688,10 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
+    /// The column stats describe the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
     if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
@@ -710,7 +718,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
     if (aggregates.size() != 1)
         return false;
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -1227,6 +1235,12 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
+    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// below that boundary, so the amount of data read would depend on the rows the view hides.
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        return;
+
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
     /// `SELECT id FROM v FINAL ORDER BY ts DESC LIMIT 10`) select which rows the
     /// view exposes: `SAMPLE` restricts it to a pseudo-random subset and `FINAL`
@@ -1571,6 +1585,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     }
 
     if (!table_ptr->isMergeTree())
+        return false;
+
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
         return false;
 
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
@@ -2094,7 +2112,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// that node cannot tell whether the policy was pushed down, so keep the policy as an
                     /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
                     /// user's conditions never see the excluded rows.
-                    if (select_query_options.build_logical_plan && storage->supportedPrewhereColumns().has_value())
+                    /// A table function read directly on that node loses a pushed-down policy whatever its contract.
+                    if (select_query_options.build_logical_plan
+                        && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     else if (can_push_down_filter)
@@ -2198,14 +2218,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
-                        /// For `SQL SECURITY NONE`, the inner query normally executes with a no-user
-                        /// (global) context via `getSQLSecurityOverriddenContext`, so caller-specific
-                        /// row policies do not apply to the underlying distributed table. Use that
-                        /// same context here to match `StorageView::readImpl`, which uses the override
-                        /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
-                        if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
-                            inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+                        /// Only an `INVOKER` view gets here: a `DEFINER` or `NONE` view is sealed and
+                        /// `tryGetUnderlyingDistributed` rejects it, so the pushdown runs as the invoker.
 
                         /// Suppress the pushdown when it would move an expression from the coordinator
                         /// onto the shards that is unsafe to evaluate per-shard:

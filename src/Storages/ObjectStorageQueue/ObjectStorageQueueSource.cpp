@@ -93,6 +93,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
@@ -1776,7 +1777,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
                 chassert(!exception_during_read.empty());
                 /// A read pinned to the generation that the listing reported fails when that
-                /// generation is not in the bucket any more - `FILE_CHANGED_DURING_READ` from the
+                /// generation is not in the bucket any more - `AZURE_OBJECT_CHANGED_DURING_READ` from the
                 /// Azure buffer, `S3_OBJECT_CHANGED_DURING_READ` from the S3 one, which pins the
                 /// read whenever `s3_validate_etag_on_read` is on or the post-processing acts on the
                 /// ingested generation (see `ReadBufferFromS3::sendRequest`, `afterProcessingNeedsIngestedGeneration`):
@@ -1795,6 +1796,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// copy of a move and the delete are pinned to the ingested generation on both
                 /// Azure and S3.
                 const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
+                    || exception_during_read_code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
                     || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
 
                 /// Resetting the processing means the path is read again from offset 0 on a later

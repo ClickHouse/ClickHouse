@@ -69,6 +69,7 @@ namespace S3AuthSetting
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
@@ -166,10 +167,10 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
 
 void ObjectStorageQueuePostProcessor::ChangedGeneration::rememberIfCurrentExceptionIsOne()
 {
-    /// The Azure paths report a replaced generation as `FILE_CHANGED_DURING_READ`; the S3 copy and
-    /// the S3 read buffer report it as `S3_OBJECT_CHANGED_DURING_READ`. Both mean the same thing here.
+    /// Each code means a replaced generation: Azure copy and delete, the Azure read buffer, and S3.
     const int code = getCurrentExceptionCode();
-    if (code != ErrorCodes::FILE_CHANGED_DURING_READ && code != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+    if (code != ErrorCodes::FILE_CHANGED_DURING_READ && code != ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+        && code != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
         return;
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveSourceRewritten);
@@ -346,7 +347,8 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
             /// failed for another reason would also hide the change behind that other error, and
             /// in non-`EXCLUSIVE` mode that other error is only logged.
             const int code = getCurrentExceptionCode();
-            if (code == ErrorCodes::FILE_CHANGED_DURING_READ || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+            if (code == ErrorCodes::FILE_CHANGED_DURING_READ || code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+                || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
                 throw;
             if (try_no >= retries)
             {

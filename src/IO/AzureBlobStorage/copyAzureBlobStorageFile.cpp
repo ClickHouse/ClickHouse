@@ -587,7 +587,7 @@ void copyAzureBlobStorageFile(
                 settings->max_single_download_retries,
                 /*use_external_buffer=*/false,
                 /*restricted_seek=*/false,
-                /*read_until_position=*/0,
+                /*read_until_position=*/std::nullopt,
                 blob_storage_log,
                 src_container_for_logging,
                 src_etag);
