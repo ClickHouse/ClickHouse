@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -23,6 +24,7 @@
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -46,6 +48,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char runtime_filter_skip_finish_insert[];
 }
 
 namespace detail
@@ -238,6 +245,18 @@ std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
 namespace
 {
 
+/// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
+/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
+/// float can appear on a path discovered while reading, which is not among the type's static children.
+bool equalsCanDisagreeWithHashTable(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
     const char * position = raw_data;
@@ -368,7 +387,9 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
 
     /// If only one element is in the set then use `equals` instead of set lookup.
     /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
-    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls)
+    /// If `equals` can disagree with the hash table, use `Set`: this filter must not reject a row the join matches.
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls
+        && !equalsCanDisagreeWithHashTable(*filter_column_target_type))
     {
         lookup_state = Single{set.getSetElements().front()};
         return;
@@ -844,6 +865,9 @@ public:
         {
             filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
         }
+        /// The registration above already makes the filter findable by the probe side, so skipping
+        /// the call below holds it in the registered-but-unfinished state that is otherwise transient.
+        fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
         filter->finishInsert();
     }
 

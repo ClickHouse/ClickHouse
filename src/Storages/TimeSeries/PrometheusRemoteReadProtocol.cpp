@@ -71,6 +71,15 @@ namespace
             res_matchers.emplace_back(std::move(res_matcher));
         }
 
+        /// RemoteRead matchers are not PromQL text, and the protocol permits matcher sets
+        /// such as job=~".*" that match an empty label value. TimeSeries rows always have
+        /// a non-empty metric name, so preserve that invariant when the matchers are later
+        /// serialized to PromQL and reparsed by timeSeriesSelector.
+        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
+            .label_name = "__name__",
+            .label_value = "",
+            .matcher_type = PrometheusQueryTree::MatcherType::NE});
+
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 
@@ -163,7 +172,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
+        /// The type of the second column is Array(Tuple(timestamp_data_type, value_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());

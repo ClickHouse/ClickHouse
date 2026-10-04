@@ -23,7 +23,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -32,6 +31,7 @@
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -40,6 +40,7 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -50,6 +51,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
@@ -94,6 +96,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -171,6 +174,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -190,6 +194,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -520,31 +525,6 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -569,19 +549,14 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    /// `totalRows` counts the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
-        return false;
-
-    /** Transaction check here is necessary because
-      * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
-      * But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
-      * so we have to use totalRowsByPartitionPredicate() instead of totalRows even for trivial query
-      * See https://github.com/ClickHouse/ClickHouse/pull/24258/files#r828182031
-      */
-    if (query_context->getCurrentTransaction())
         return false;
 
     if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
@@ -599,7 +574,7 @@ bool applyTrivialCountIfPossible(
     if (aggregates.size() != 1)
         return false;
 
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -614,9 +589,27 @@ bool applyTrivialCountIfPossible(
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
     /// require reading some data (but much faster than reading columns).
     /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+    /// Setting this flag to `true` effectively means "row counting can be implemented without any additional filtering",
+    /// so any condition that may violate this invariant (e.g. we have a filter applied) should be checked before setting this flag.
+    /// However, we may still not be able to rewrite the plan in this function (e.g. `totalRows()` may return `std::nullopt` for some
+    /// storages), and the following checks are devoted to verify that we can do it right here.
     select_query_info.optimize_trivial_count = true;
 
-    /// Get number of rows
+    /// Do not apply trivial count optimization if we're the follower. Because if every follower blindly returns totalRows(),
+    /// the result will be R times the actual count of rows, where R is the number of replicas.
+    /// It's important to make this check after we've set the `select_query_info.optimize_trivial_count` flag, so that storage could apply
+    /// some optimization during the read phase.
+    /// TODO: We could still avoid reading data for MergeTree on the followers: we could read the parts metadata for the set of parts
+    /// we were handed out by the initiator. This would require consuming the `select_query_info.optimize_trivial_count` during the read
+    /// phase and acting accordingly.
+    if (query_context->canUseParallelReplicasOnFollower())
+        return false;
+
+    /// Get number of rows.
+    /// MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial
+    /// `select count() from table` query. But if we have current transaction, then we should return number of rows in current snapshot
+    /// (that may include parts in Outdated state), so the totalRows for transactional case should return the number of rows visible for
+    /// the current transaction.
     std::optional<UInt64> num_rows = storage->totalRows(query_context);
     if (!num_rows)
         return false;
@@ -637,7 +630,6 @@ bool applyTrivialCountIfPossible(
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
-
     }
 
     /// Set aggregation state
@@ -696,13 +688,17 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    /// The column stats describe the live table, not the snapshot pinned for this query.
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
         return false;
 
-    if (query_context->getCurrentTransaction())
+    if (query_context->canUseParallelReplicasOnFollower())
         return false;
 
     if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
@@ -722,7 +718,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
     if (aggregates.size() != 1)
         return false;
-    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    const auto & function_node = aggregates.front()->as<const FunctionNode &>();
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
@@ -779,6 +775,21 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/** Check the SELECT privilege for the columns that the planner resolved "away": `indexHint` arguments and ALIAS
+  * columns inlined into PREWHERE. Checked separately from the selected columns on purpose: a trivial query such as
+  * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
+  */
+void checkAccessRightsForColumnsResolvedAway(
+    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+{
+    const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(
+        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -801,6 +812,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }
     else if (table_function_node)
     {
@@ -945,7 +958,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -1222,6 +1235,12 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
+    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// below that boundary, so the amount of data read would depend on the rows the view hides.
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
+        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        return;
+
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
     /// `SELECT id FROM v FINAL ORDER BY ts DESC LIMIT 10`) select which rows the
     /// view exposes: `SAMPLE` restricts it to a pseudo-random subset and `FINAL`
@@ -1297,7 +1316,7 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1568,6 +1587,10 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     if (!table_ptr->isMergeTree())
         return false;
 
+    /// TODO(unique-key): support parallel replicas.
+    if (table_ptr->hasUniqueKey())
+        return false;
+
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 
@@ -1646,13 +1669,78 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
+/// Disables parallel replicas in the context of every query carried by `node`, including `node` itself.
+/// A subquery is not planned by the `Planner` of the query that contains it: a `UNION` table expression
+/// is planned branch by branch (see `buildPlanForUnionNode`), an `IN` subquery is planned by
+/// `addBuildSubqueriesForSetsStepIfNeeded`, a materialized CTE by `addBuildSubqueriesForMaterializedCTEsIfNeeded`
+/// and a correlated subquery by `buildPlannerForCorrelatedSubquery`. Each of them builds an independent
+/// `Planner` from the subquery's own context, so it is not enough to update the context of the enclosing
+/// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
+/// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
+/// the expression that uses it, so a full traversal of the query tree covers all the carriers.
+void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
+{
+    traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
+    {
+        if (auto * query_node = current_node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+        else if (auto * union_node = current_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+    });
+}
+
+}
+
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+        return;
+
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    const auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTreeNode());
+    const bool joins_multiple_tables = std::any_of(
+        table_expressions_stack.begin(),
+        table_expressions_stack.end(),
+        [](const auto & table_expression)
+        {
+            /// `ARRAY JOIN` is not a join between tables and does not count here.
+            const auto node_type = table_expression->getNodeType();
+            return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
+        });
+
+    if (!joins_multiple_tables)
+        return;
+
+    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    /// Every subquery of this query is planned by an independent `Planner` built from the
+    /// subquery's own context, so updating the query context above is not enough: the switch has to
+    /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
+    /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
+    /// (they are detached, if at all, only when their plan is built, which happens later).
+    disableParallelReplicasForSubqueries(query_node);
+
+    /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
+    /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
+    /// by the traversal above.
+    for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+        if (const auto & set_query_tree = set_subquery->getQueryTree())
+            disableParallelReplicasForSubqueries(set_query_tree);
+}
+
+namespace
+{
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
-    bool wrap_read_columns_in_subquery)
+    bool wrap_read_columns_in_subquery,
+    QueryTreeNodePtr & query_prewhere)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1665,6 +1753,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     {
         auto columns = table_expression_data.getColumns();
         table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+
+        /** Once wrapped, this table is read by the nested planner, so keep its `PREWHERE` with that read.
+          * Drop it from the outer query and from this table's initiator actions: otherwise
+          * `appendSetsFromActionsDAG` still treats the original `IN` sets as useful, and they
+          * stay not-ready after the nested planner built a separate copy.
+          */
+        if (query_prewhere && table_expression_data.getPrewhereFilterActions())
+        {
+            table_expression->as<QueryNode &>().getPrewhere() = query_prewhere->clone();
+            query_prewhere = {};
+            table_expression_data.resetPrewhereFilterActions();
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -1748,7 +1848,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(*storage, query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
@@ -2005,8 +2105,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         }
                     }
 
+                    /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
+                    /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that
+                    /// executes the plan rebuilds the read without it and would return the rows the policy
+                    /// excludes. For a storage whose PREWHERE support depends on the columns (e.g. `Memory`)
+                    /// that node cannot tell whether the policy was pushed down, so keep the policy as an
+                    /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
+                    /// user's conditions never see the excluded rows.
+                    /// A table function read directly on that node loses a pushed-down policy whatever its contract.
+                    if (select_query_options.build_logical_plan
+                        && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
+                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (can_push_down_filter)
+                    else if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                     {
@@ -2107,14 +2218,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
-                        /// For `SQL SECURITY NONE`, the inner query normally executes with a no-user
-                        /// (global) context via `getSQLSecurityOverriddenContext`, so caller-specific
-                        /// row policies do not apply to the underlying distributed table. Use that
-                        /// same context here to match `StorageView::readImpl`, which uses the override
-                        /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
-                        if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
-                            inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+                        /// Only an `INVOKER` view gets here: a `DEFINER` or `NONE` view is sealed and
+                        /// `tryGetUnderlyingDistributed` rejects it, so the pushdown runs as the invoker.
 
                         /// Suppress the pushdown when it would move an expression from the coordinator
                         /// onto the shards that is unsafe to evaluate per-shard:
@@ -2138,14 +2243,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// enforces the view policy in the right namespace and handles the Distributed
                         /// policy (not propagated to shards — see issue #28334) and used_row_policies
                         /// bookkeeping correctly, so we fall back to it whenever any policy is present.
-                        const auto & view_id = storage->getStorageID();
-                        const auto & dist_id = underlying_dist->getStorageID();
-                        auto view_row_policy = query_context->getRowPolicyFilter(
-                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        auto dist_row_policy = query_context->getRowPolicyFilter(
-                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
-                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+                        const bool has_row_policy = getEffectiveRowPolicyFilter(*storage, query_context)
+                            || getEffectiveRowPolicyFilter(*underlying_dist, query_context);
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
@@ -2845,6 +2944,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
+
+            /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
+            /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).
+            /// A subquery is planned by an independent `Planner` using its own context, so this decision
+            /// would not reach it, and a single-table subquery of a multi-table query could still be read
+            /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
+            /// which would clobber the subquery's own settings and bound resources) to the subquery.
+            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+            {
+                disableParallelReplicasForSubqueries(table_expression);
+            }
+
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -3199,12 +3311,22 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
+    /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt
+    /// hash table read as is, so it cannot be filtered at all.
+    bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
+
+    PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (prepared_join.storage_join && right_table_has_row_policy)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot join table {} with the Join engine because a row policy is applied on it",
+            prepared_join.storage_join->getStorageID().getNameForLogs());
+
+    bool allow_storage_join = !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
-    if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (!allow_storage_join)
+        prepared_join = {};
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
@@ -3396,6 +3518,13 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
     /// the rows of the preserved side get emitted more than once. What the right side is does not matter.
     const auto * left_storage = getDistributedStorageFromTableExpression(join_node->getLeftTableExpressionNode());
     if (!left_storage || left_storage->getShardCount() < 2)
+        return;
+
+    /** A `PREWHERE` without a column is bound to the leftmost table. There is no column source that
+      * `buildQueryTreeForShard` could use to recognize that table after the swap, so leave this join
+      * unchanged and let the initiator-side wrapper preserve the filter.
+      */
+    if (query_node.hasPrewhere() && !getPrewhereTableExpression(query_node.getPrewhere()))
         return;
 
     /** A `JOIN USING` key records its sides positionally, the left one first. The join condition, the
@@ -3660,7 +3789,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         select_query_options,
         planner_context,
         is_single_table_expression,
-        should_wrap_left_table /*wrap_read_columns_in_subquery*/);
+        should_wrap_left_table /*wrap_read_columns_in_subquery*/,
+        query_node_typed.getPrewhere());
     if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
         return left_table_expression_query_plan;
 
@@ -3760,7 +3890,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 select_query_options,
                 planner_context,
                 is_single_table_expression,
-                is_remote /*wrap_read_columns_in_subquery*/));
+                is_remote /*wrap_read_columns_in_subquery*/,
+                query_node_typed.getPrewhere()));
         }
     }
 
