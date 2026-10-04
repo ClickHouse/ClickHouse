@@ -367,3 +367,40 @@ TEST(ParseRemoteDescription, ExternalDatabase)
     EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1", 10, 5432, caller), (Addresses{{"host1", 5432}}));
     EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("[2001:db8::1]:5432", 10, 5432, caller), (Addresses{{"2001:db8::1", 5432}}));
 }
+
+TEST(RemoteDescriptionGenerator, TooManyAddressesMessage)
+{
+    /// A reader that asks past the limit gets the same message as the materializing parser: the
+    /// surface that was invoked and the number of addresses of the whole pattern, including the
+    /// replicas its addresses are expanded into when the reader does that.
+    auto message = [](const String & description, size_t max_addresses, std::optional<char> replica_separator)
+    {
+        try
+        {
+            /// A group with the separator inside is expanded by the constructor, so it can throw as well.
+            RemoteDescriptionGenerator generator(
+                description, 0, description.size(), ',', max_addresses,
+                urlCaller("Table function 'url'", "'s3' (or another object storage table function)"), replica_separator);
+            String address;
+            while (generator.next(address))
+            {
+            }
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    const auto single = message("a{0..10000}", 10, std::nullopt);
+    EXPECT_THAT(single, testing::HasSubstr("Table function 'url'"));
+    EXPECT_THAT(single, testing::HasSubstr("too many result addresses: 10001, while at most 10 are allowed"));
+    EXPECT_THAT(single, testing::HasSubstr("'s3'"));
+
+    /// Each of the 100 shards has two replicas.
+    EXPECT_THAT(message("a{1..100}-{1|2}", 10, '|'), testing::HasSubstr("too many result addresses: 200, while at most 10 are allowed"));
+
+    /// A group of alternatives over the limit is expanded while parsing; the number is still the whole pattern.
+    EXPECT_THAT(message("x{a,b,c,d}{1..3}", 2, std::nullopt), testing::HasSubstr("too many result addresses: 12, while at most 2 are allowed"));
+}

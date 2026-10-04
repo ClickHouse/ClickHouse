@@ -5,8 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `urlCluster` has to name itself in the "too many result addresses" message on every code path,
-# not only when the initiator expands a range. Patterns are expanded before anything is fetched,
-# so nothing here reaches the network.
+# not only when the initiator expands a range.
 
 # Failover options (the `|` separator) survive the initiator intact: the whole group is sent to a
 # worker as a single task and is only split there, inside the `StorageURL` created for the
@@ -17,14 +16,15 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', '${
     | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 11, while at most 10 are allowed" \
     | sort -u
 
-# When the structure is omitted, the addresses are expanded during schema inference on the
-# initiator, before any storage is created.
-$CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', 'http://localhost:1/data-{0..2000}.tsv', TSV)" 2>&1 \
-    | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 2001, while at most 1000 are allowed" \
+# A range is generated lazily on the initiator, so the limit is hit by reading every address. The
+# addresses are served by the HTTP interface of the server the test runs against.
+URL="${CLICKHOUSE_URL}&query=SELECT+{0..20}"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM urlCluster('test_shard_localhost', '$URL', TSV, 'x UInt64') SETTINGS glob_expansion_max_elements = 5" 2>&1 \
+    | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 21, while at most 5 are allowed" \
     | head -n 2
 
-# The same with the format omitted as well: format detection takes a different branch of the
-# schema inference.
-$CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', 'http://localhost:1/data-{0..2000}')" 2>&1 \
-    | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 2001, while at most 1000 are allowed" \
+# When the structure is omitted, schema inference on the initiator stops at the first address it can
+# read, and the limit is hit by the reading again.
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM urlCluster('test_shard_localhost', '$URL', TSV) SETTINGS glob_expansion_max_elements = 5" 2>&1 \
+    | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 21, while at most 5 are allowed" \
     | head -n 2
