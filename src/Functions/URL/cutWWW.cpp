@@ -15,10 +15,10 @@ struct ExtractWWW
         res_data = data;
         res_size = 0;
 
-        Pos end = data + size;
-        Pos pos = find_first_symbols<'/'>(data, end);
+        Pos pos = data;
+        Pos end = pos + size;
 
-        if (pos != end)
+        if (end != (pos = find_first_symbols<'/'>(pos, end)))
         {
             if (pos != data)
             {

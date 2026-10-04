@@ -29,7 +29,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -47,13 +47,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -572,20 +572,6 @@ Patterns in `{ }` are used to generate a set of shards or to specify failover ad
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](/reference/functions/table-functions/file#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
 
-The addresses are generated one by one as the query reads them, so `glob_expansion_max_elements` limits how many of them a single query may read rather than how large the pattern is. A query that stops early can use a pattern that describes many more addresses than the limit:
-
-```sql
--- Reads a single address, even though the pattern describes 100020001 of them.
-SELECT * FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1;
-
--- Reading all of them is still rejected.
-SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TSV, 'x UInt64');
-```
-
-The example above pins the query to a single stream. A query reading in parallel starts several sources up front, and each of them takes an address from the generator before the `LIMIT` cancels the reading, so a few addresses can be read instead of one; the number of them is bounded by the number of streams, not by the size of the pattern.
-
-A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the reading of the matching ones is skipped.
-
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
 For `url` and the `URL` table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
@@ -605,7 +591,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}

@@ -528,13 +528,6 @@ bool CPULeaseAllocation::renew(Lease & lease)
             // It is better to run less threads, but utilize CPU better to avoid frequent context switches. This is how down-scaling works.
             setPreempted(thread_num);
 
-            // No thread is running now, so nothing reports consumption until a grant resumes one.
-            // With no running thread, preemption implies `consumed_ns >= requested_ns`: every request
-            // in consumption is fully consumed, but `consume` finishes only one per report. The rest
-            // would hold their slots while we wait, and the grant we wait for may need one of them.
-            if (threads.running_count == 0)
-                finishConsumedRequests(lock);
-
             std::optional<OpenTelemetry::SpanHolder> preemption_span;
             if (settings.trace_cpu_scheduling)
             {
@@ -632,30 +625,6 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
                 grantImpl(lock);
         }
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
-    }
-}
-
-void CPULeaseAllocation::finishConsumedRequests(std::unique_lock<std::mutex> & lock)
-{
-    if (allocated == 0)
-        return;
-
-    while (allocated > 0)
-    {
-        chassert(consumed_ns >= requests.getMaxConsumed());
-        --allocated;
-        --granted;
-        requests.finish();
-        LOG_EVENT(C);
-    }
-    if (granted <= 0 && !exception)
-        acquirable.store(false, std::memory_order_relaxed);
-
-    // Ask for a slot to resume a preempted thread
-    if (!requests.hasEnqueued())
-    {
-        if (!schedule(lock))
-            grantImpl(lock);
     }
 }
 

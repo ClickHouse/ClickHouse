@@ -14,8 +14,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -152,11 +150,7 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    {
-        /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join->shrinkStoredBlocksToFit(dummy, true);
-    }
+    join->shrinkStoredBlocksToFit(dummy, true);
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -177,10 +171,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
-    }
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -226,11 +217,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::move(new_data);
-    }
-    setCurrentQueryMemoryDriftExpected();
+    join = std::move(new_data);
     increment = 1;
 
     if (persistent)
@@ -561,9 +548,9 @@ void registerStorageJoin(StorageFactory & factory)
             .description = R"DOCS_MD(
 Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
 
-<Note>
+:::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-</Note>
+:::
 
 ## Creating a table {#creating-a-table}
 
@@ -653,8 +640,6 @@ Possible values:
 Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
-
-A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 
@@ -892,16 +877,8 @@ protected:
                 join->kind,
                 join->strictness,
                 join->data->maps.front(),
-                join->getMapsKind(),
-                [&](auto kind, auto strictness, auto & map)
-                {
-                    /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
-                    /// in a map that keeps none.
-                    if constexpr (SetJoinMaps<decltype(map)>)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
-                    else
-                        chunk = createChunk<kind, strictness>(map);
-                }))
+                join->preferUseMapsAll(),
+                [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }

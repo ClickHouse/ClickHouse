@@ -1,71 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
-
-JSONIndexArgumentTypes collectJSONIndexArgumentTypes(const ExpressionActions & index_expression)
-{
-    JSONIndexArgumentTypes result;
-
-    const auto & outputs = index_expression.getActionsDAG().getOutputs();
-    for (size_t position = 0; position < outputs.size(); ++position)
-    {
-        const auto * node = outputs[position];
-        if (!node || node->type != ActionsDAG::ActionType::FUNCTION || node->children.empty())
-            continue;
-
-        const auto & argument_type = node->children.front()->result_type;
-        if (!argument_type)
-            continue;
-
-        /// `JSONAllPaths` and `JSONAllValues` accept a `Nullable(JSON)` argument through the default
-        /// adapter for `NULL`, and its subcolumns resolve like those of a plain `JSON` column.
-        auto object_type = removeLowCardinalityAndNullable(argument_type);
-        if (typeid_cast<const DataTypeObject *>(object_type.get()))
-            result.emplace(position, object_type);
-    }
-
-    return result;
-}
-
-/// A typed path of a `JSON` type is reported by `JSONAllPaths` and `JSONAllValues` verbatim, and
-/// their contents are never recursed into: a `JSON(a JSON)` column holding `{"a":{"b":42}}` yields
-/// the granule path set `['a']`, and a `JSON(a Tuple(b Int64))` column yields the same. A subcolumn
-/// that reaches inside a typed path (`json.a.b`, whose path is `a.b`) is therefore absent from every
-/// granule, while reading it returns the value that lives inside the typed path's own column - so
-/// matching such a subcolumn to the index would prune every granule and silently lose rows.
-///
-/// Typed paths may overlap: `JSON(a Array(JSON), a.b Int64)` declares both `a` and `a.b`, and the
-/// subcolumn `json.a.b` reads the typed path `a.b` itself, not something inside `a`. A path that is
-/// a declared typed path is reported by the index verbatim, so it keeps using it regardless of any
-/// shorter typed path it extends.
-static bool pathIsInsideTypedPath(const DataTypePtr & json_type, const String & path)
-{
-    const auto * object_type = typeid_cast<const DataTypeObject *>(json_type.get());
-    if (!object_type)
-        return false;
-
-    const auto & typed_paths = object_type->getTypedPaths();
-    if (typed_paths.contains(path))
-        return false;
-
-    for (const auto & [typed_path, _] : typed_paths)
-    {
-        if (path.size() > typed_path.size() && path.starts_with(typed_path) && path[typed_path.size()] == '.')
-            return true;
-    }
-
-    return false;
-}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
@@ -93,17 +34,15 @@ static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
-    const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const String & json_function_name)
 {
-    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types);
+    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
-    const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const String & json_function_name)
 {
     /// Scan the index columns, not the dot positions of the name: the name can embed a folded
     /// constant, so its length is unbounded while `index_columns` is not.
@@ -154,10 +93,6 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     if (path.empty())
         return std::nullopt;
 
-    /// The index knows nothing about what is stored inside a declared typed path.
-    if (auto it = json_argument_types.find(matched_position); it != json_argument_types.end() && pathIsInsideTypedPath(it->second, path))
-        return std::nullopt;
-
     return JSONSubcolumnIndexInfo{
         .json_column_name = String(matched_json_column),
         .path = std::move(path),
@@ -168,19 +103,17 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
-    const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const String & json_function_name)
 {
-    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types);
+    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
-    const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const String & json_function_name)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types);
+    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -189,7 +122,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types);
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name);
     }
 
     return json_info;
@@ -197,8 +130,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field,
-    const DataTypePtr & value_type)
+    const Field & value_field)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -207,34 +139,8 @@ bool isJSONPathFilterSafe(
 
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
-    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
-    /// than the underlying number, so it has to be converted with that type.
-    DataTypePtr unwrapped_value_type;
-    const IDataTypeEnum * enum_source = nullptr;
-    if (value_type)
-    {
-        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
-
-        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
-        const WhichDataType which_value(unwrapped_value_type);
-        if (which_value.isVariant() || which_value.isDynamic())
-            return false;
-
-        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
-
-        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
-        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
-        /// hold one, is absent from the converted value.
-        bool nested_source_type_lost = false;
-        unwrapped_value_type->forEachChild([&](const IDataType & nested)
-        {
-            const WhichDataType which_nested(nested);
-            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
-        });
-        if (nested_source_type_lost)
-            return false;
-    }
-    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
+    /// Convert value_field to the key expression type before comparing.
+    auto converted = convertFieldToType(value_field, *key_expression_type);
     if (converted == key_expression_type->getDefault())
         return false;
 

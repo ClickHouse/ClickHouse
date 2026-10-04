@@ -10,7 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include "config.h"
+#include <Common/config_version.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -86,6 +86,7 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -97,7 +98,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
-#include <Access/UsersConfigAccessStorage.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -121,8 +121,6 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
-#include <Interpreters/QueryExecutionCounters.h>
-#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -157,7 +155,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -165,6 +163,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -190,10 +189,6 @@ namespace ProfileEvents
     extern const Event MergesThrottlerSleepMicroseconds;
     extern const Event MutationsThrottlerBytes;
     extern const Event MutationsThrottlerSleepMicroseconds;
-    extern const Event DistrCacheReadThrottlerBytes;
-    extern const Event DistrCacheReadThrottlerSleepMicroseconds;
-    extern const Event DistrCacheWriteThrottlerBytes;
-    extern const Event DistrCacheWriteThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -384,7 +379,6 @@ namespace Setting
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 reader_executor_window_size;
     extern const SettingsUInt64 reader_executor_block_size;
-    extern const SettingsUInt64 reader_executor_plan_look_ahead;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
@@ -395,6 +389,7 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -435,8 +430,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_thread_pool_size;
-    extern const ServerSettingsUInt64 max_distributed_cache_read_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
@@ -489,37 +482,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
-
-namespace
-{
-constexpr std::string_view COMPATIBILITY_SETTING_NAME = "compatibility";
-
-/// The `MergeTree` settings `compatibility` gives, except those `constraints` refuse, as for `Settings`.
-MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibility, const SettingsConstraints & constraints)
-{
-    MergeTreeSettings from_compatibility;
-    from_compatibility.applyCompatibilitySetting(compatibility);
-    if (!constraints.restrictsCompatibility())
-        return from_compatibility;
-
-    MergeTreeSettings result;
-    for (const auto & change : from_compatibility.changes())
-    {
-        if (constraints.allowsValueFromCompatibility(settingFullName<MergeTreeSettings>(change.name), change.value))
-            result.set(change.name, change.value);
-    }
-    return result;
-}
-}
-
-/// Per-query deviations from the server-level distributed cache switches. The background and buffer
-/// contexts are built once at startup, so a value coming from their profile would pin them for the
-/// lifetime of the server - which is exactly what makes the switch unobservable for merges,
-/// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
-/// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
-/// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
-    = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
 {                                                       \
@@ -634,7 +596,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
-    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text, deliberately not exposed to SQL
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
@@ -742,8 +704,7 @@ struct ContextSharedPart : boost::noncopyable
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable OnceFlag compression_codec_selector_initialized;
-    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -772,6 +733,11 @@ struct ContextSharedPart : boost::noncopyable
     size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
+
+    /// Optional server-wide override for the analyzer in mutations.
+    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
+    /// Refreshed on config reload.
+    std::atomic<int8_t> mutations_use_analyzer_override = -1;
 
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
@@ -1079,50 +1045,12 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
 
-        /// Stop all MergeTree background executors and cancel the in-flight merges,
-        /// mutations and fetches, in this order:
-        ///
-        /// 1. Flip every executor into shutdown mode without joining it. From this point on
-        ///    no new task can be scheduled (`trySchedule` rejects them) and no pending task
-        ///    can start (worker threads exit at the next step boundary), so the set of
-        ///    running tasks cannot grow.
-        /// 2. Cancel everything that is currently running. `cancelAll` also marks entries
-        ///    inserted later as cancelled, so a task that is inside its first step and has
-        ///    not registered itself in the list yet cannot escape the cancellation.
-        /// 3. Join the executors.
-        ///
-        /// The executors' `wait` (step 3) does not interrupt already running tasks, and the
-        /// per-storage cancellation (`merges_blocker`, `fetcher.blocker`) happens only later,
-        /// in `DatabaseCatalog::shutdown`. Without step 2, `wait` would block until the
-        /// current task step completes, and a single slow step (e.g. a merge applying huge
-        /// patch parts, which can spend minutes inside one block under sanitizers, or a
-        /// fetch of a large part) would delay shutdown beyond any timeout. The results of
-        /// these merges and fetches are discarded after the restart anyway, so finishing
-        /// them is pure waste. Without step 1, the cancellation would be racy: a task
-        /// scheduled after step 2 would be invisible to `cancelAll` and block `wait` again.
-        ///
-        /// Merge and mutate tasks check `MergeListElement::is_cancelled` on every block
-        /// through `MergeProgressCallback` and abort with the `ABORTED` exception; fetches
-        /// check `ReplicatedFetchListElement::is_cancelled` on every buffer refill.
-        ///
-        /// Waiting for the executors before shutting down databases also ensures no
-        /// background task is accessing a storage's data (e.g. data_parts_indexes) while
-        /// `DatabaseCatalog::shutdown` destroys that storage, which used to cause a SIGBUS.
+        /// Stop all MergeTree background executors before shutting down databases.
+        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
+        /// are running when storage objects are shut down or destroyed.
+        /// Without this, a background task could be accessing a storage's data_parts_indexes
+        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
         /// See https://github.com/ClickHouse/ClickHouse/issues/85433
-        LOG_TRACE(log, "Stopping background executors from starting new tasks");
-        if (merge_mutate_executor)
-            merge_mutate_executor->requestShutdown();
-        if (fetch_executor)
-            fetch_executor->requestShutdown();
-        if (moves_executor)
-            moves_executor->requestShutdown();
-        if (common_executor)
-            common_executor->requestShutdown();
-
-        LOG_TRACE(log, "Cancelling merges, mutations and fetches");
-        merge_list.cancelAll();
-        replicated_fetch_list.cancelAll();
-
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
@@ -1159,7 +1087,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionManager::shutdownIfAny();
+        TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
@@ -1408,18 +1336,6 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
-
-        // Distributed cache client throttling.
-        // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
-        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
-            distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
-        else
-            distributed_cache_read_throttler = remote_read_throttler;
-
-        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
-            distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
-        else
-            distributed_cache_write_throttler = remote_write_throttler;
     }
 };
 
@@ -1455,8 +1371,6 @@ ContextData::ContextData(const ContextData &o) :
     user_id(o.user_id),
     current_roles(o.current_roles),
     external_roles(o.external_roles),
-    authentication_grants(o.authentication_grants),
-    authentication_valid_until(o.authentication_valid_until),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -1486,10 +1400,8 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
-    distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
-    query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
     /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
     /// to avoid a data race with `Context::executeTableFunction` and other writers
@@ -1517,7 +1429,6 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
-    streaming_cursor(o.streaming_cursor),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -2250,7 +2161,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2266,44 +2177,17 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     if (!database.empty())
         DatabaseCatalog::instance().assertDatabaseExists(database);
 
-    /// Retroactively enforce constraints when applying a user's stored profiles at login: a user whose
-    /// SQL-defined settings or SQL-defined profiles violate the constraints (or `allow_feature_tier`)
-    /// must not be able to log in. Config-defined users are the admin's root configuration and are
-    /// trusted. For SQL-defined users we check the raw profile elements (so min/max-only and
-    /// writability-only elements are seen), but tolerate config-defined profiles in the chain for
-    /// compatibility (see `SettingsConstraints::check`).
-    /// The check uses what a new session starts from, before this context changes: `setUser` also switches
-    /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
-    if (!isUserDefinedInConfig(user_id_))
-    {
-        auto global_context = getGlobalContext();
-        const auto & new_session_settings = global_context->getSettingsRef();
-        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
-        new_session_constraints->constraints.check(
-            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        new_session_constraints->constraints.check(
-            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
-            /* skip_config_defined_profiles= */ true);
-
-        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
-        SettingsProfileElements applied_profiles;
-        for (const auto & profile_id : enabled_profiles->profiles)
-            applied_profiles.emplace_back().parent_profile = profile_id;
-        new_session_constraints->constraints.check(
-            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
-    }
-
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
 
+    /// A profile can specify a value and a readonly constraint for same setting at the same time,
+    /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
-    setAuthenticationGrantsWithLock(authentication_grants_, lock);
-    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -2324,20 +2208,6 @@ void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<Con
 {
     user_id = user_id_;
     need_recalculate_access = true;
-}
-
-bool Context::isUserDefinedInConfig(const UUID & user_id_) const
-{
-    auto storage = getAccessControl().findStorage(user_id_);
-    return storage && storage->getStorageType() == UsersConfigAccessStorage::STORAGE_TYPE;
-}
-
-bool Context::isCurrentUserDefinedInConfigWithLock() const
-{
-    /// No acting user means an internal/server-initiated operation, which is trusted.
-    if (!user_id)
-        return true;
-    return isUserDefinedInConfig(*user_id);
 }
 
 void Context::setUserID(const UUID & user_id_)
@@ -2365,52 +2235,14 @@ void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_ro
 {
     // External roles are roles received from another node; current roles is a collection of roles that were assigned locally.
     // Replace them unconditionally (rather than append) so that switching the principal via `setUser` clears any external
-    // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor now
+    // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor
     // preserves `external_roles`, so without this reset a context authenticated with pushed roles would keep them after
-    // `setUser(target_user)` (e.g. `EXECUTE AS target_user` via `impersonateSessionContext`), silently widening the
-    // target's privileges. This mirrors how `setAuthenticationGrants` and `setCurrentRoles` overwrite their state.
+    // `setUser(target_user)` (e.g. `EXECUTE AS target_user`), silently widening the target's privileges.
     if (new_external_roles.empty())
         external_roles = nullptr;
     else
         external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
     need_recalculate_access = true;
-}
-
-void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)
-{
-    authentication_grants = authentication_grants_;
-    need_recalculate_access = true;
-}
-
-void Context::setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_)
-{
-    std::lock_guard lock(mutex);
-    setAuthenticationGrantsWithLock(authentication_grants_, lock);
-}
-
-std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() const
-{
-    SharedLockGuard lock(mutex);
-    return authentication_grants;
-}
-
-void Context::setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> &)
-{
-    /// This does not affect the access-rights calculation (unlike the grant limit), so there is no
-    /// need to invalidate the access cache: it is metadata for the deferred-execution expiry check.
-    authentication_valid_until = authentication_valid_until_;
-}
-
-void Context::setAuthenticationValidUntil(time_t authentication_valid_until_)
-{
-    std::lock_guard lock(mutex);
-    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
-}
-
-time_t Context::getAuthenticationValidUntil() const
-{
-    SharedLockGuard lock(mutex);
-    return authentication_valid_until;
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
@@ -2469,14 +2301,6 @@ void Context::setCurrentRolesDefault()
 std::vector<UUID> Context::getCurrentRoles() const
 {
     return getRolesInfo()->getCurrentRoles();
-}
-
-std::vector<UUID> Context::getExternalRoles() const
-{
-    SharedLockGuard lock(mutex);
-    if (external_roles)
-        return *external_roles;
-    return {};
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
@@ -2539,7 +2363,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -2620,48 +2444,17 @@ void Context::setCurrentProfileWithLock(const String & profile_name, bool check_
 
 void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
-    if (check_constraints)
-    {
-        /// Check the profile's settings against current constraints before resolving, because after
-        /// resolving the parent_profile references are already expanded and checkSettingsConstraints
-        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
-        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
-        SettingsProfileElements elements;
-        elements.emplace_back().parent_profile = profile_id;
-        getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
-            *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
-            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
-    }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
+    setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
 }
 
 void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the profile.
-    settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     applySettingsChangesWithLock(profiles_info.settings, lock);
-    /// The new constraints decide anew what a `compatibility` set before may change.
-    if (!profiles_info.settings.tryGet(COMPATIBILITY_SETTING_NAME) && !(*settings)[Setting::compatibility].value.empty())
-    {
-        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
-        restrictSettingsChangedByCompatibilityWithLock(lock);
-    }
+    settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
-}
-
-void Context::restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> &)
-{
-    if (!settings->hasSettingsChangedByCompatibility())
-        return;
-    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
-    const auto & constraints = constraints_and_profiles->constraints;
-    if (!constraints.restrictsCompatibility())
-        return;
-    settings->resetSettingsChangedByCompatibility(
-        [&](std::string_view name, const Field & value) { return constraints.allowsValueFromCompatibility(name, value); });
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -3008,18 +2801,6 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
-SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
-{
-    /// in session context so the history persists across queries
-    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
-        return session_ctx->getSessionQueryIdsHistory();
-
-    std::lock_guard lock(mutex);
-    if (!session_query_ids_history)
-        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
-    return *session_query_ids_history;
-}
-
 HypotheticalObjectStore & Context::getHypotheticalObjectStore() const
 {
     /// in session context so the store persists across queries
@@ -3183,22 +2964,6 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
-void Context::addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const
-{
-    /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
-    /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
-    /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
-    /// was not copied from a query context has no record.
-    if (suppress_query_factories_info || !distributed_plan_local_object)
-        return;
-    distributed_plan_local_object->add(kind, name);
-}
-
-std::shared_ptr<const DistributedPlanLocalObject> Context::getDistributedPlanLocalObject() const
-{
-    return distributed_plan_local_object;
-}
-
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (suppress_query_factories_info)
@@ -3312,7 +3077,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+            auto sample_block = getSettingsRef()[Setting::allow_experimental_analyzer]
+                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context)
+                : InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3689,8 +3456,6 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         return;
     }
     settings->set(name, value);
-    if (name == COMPATIBILITY_SETTING_NAME)
-        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
     contextSanityClampSettingsWithLock(*this, *settings, lock);
@@ -3704,8 +3469,6 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         return;
     }
     settings->set(name, value);
-    if (name == COMPATIBILITY_SETTING_NAME)
-        restrictSettingsChangedByCompatibilityWithLock(lock);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
 }
@@ -3782,11 +3545,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
-    /// `CREATE/ALTER USER/ROLE/PROFILE` by a config-defined admin is trusted to create looser configurations,
-    /// but structural rules (readonly mode, source restrictions, `allow_feature_tier`) still apply; a
-    /// SQL-defined actor must additionally satisfy the constraints it is bound by.
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
-        *settings, profile_elements, source, /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3831,49 +3590,6 @@ void Context::checkSettingsConstraints(const AlterSettingsProfileElements & prof
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
-}
-
-void Context::checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const
-{
-    const auto & access_control = getAccessControl();
-    for (const auto & id : ids)
-    {
-        if (auto old_entity = access_control.tryRead(id))
-            checkRemovedSettings(old_entity, update(old_entity, id));
-    }
-}
-
-void Context::checkSettingsConstraintsForOverwrite(
-    const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const
-{
-    const auto & access_control = getAccessControl();
-    for (const auto & new_entity : new_entities)
-    {
-        /// Only a same-name entity of the destination storage is replaced; one of a later storage is just hidden.
-        std::shared_ptr<const IAccessStorage> storage = storage_name.empty()
-            ? access_control.getStorageForInsertion(new_entity) : access_control.getStorageByName(storage_name);
-        auto id = storage->find(new_entity->getType(), new_entity->getName());
-        if (auto old_entity = id ? storage->tryRead(*id) : nullptr)
-            checkRemovedSettings(old_entity, new_entity);
-    }
-}
-
-void Context::checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const
-{
-    auto settings_of = [](const IAccessEntity & entity) -> const SettingsProfileElements &
-    {
-        if (const auto * user = typeid_cast<const User *>(&entity))
-            return user->settings;
-        if (const auto * role = typeid_cast<const Role *>(&entity))
-            return role->settings;
-        return typeid_cast<const SettingsProfile &>(entity).elements;
-    };
-
-    SharedLockGuard lock(mutex);
-    /// A config-defined admin may drop constraints freely.
-    if (isCurrentUserDefinedInConfigWithLock())
-        return;
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkRemovedSettings(settings_of(*old_entity), settings_of(*new_entity));
 }
 
 void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
@@ -4224,7 +3940,6 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
-    distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4250,17 +3965,22 @@ void Context::makeQueryContext()
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
-    query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
     /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
     /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
-    /// client version of the global context.
+    /// client version of the global context. This server is the real initiator of such queries, so
+    /// fill the version with this server's version. Otherwise remote shards of any distributed
+    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
+    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
     /// Contexts created for real client queries overwrite the client info afterwards
     /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
-    setInitiatorVersionIfUnset();
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -4276,15 +3996,6 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
-
-    /// A mutation runs in the background, from a context built out of the background one rather
-    /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
-    /// and a `0` written in a settings profile of the server configuration survives. The analyzer
-    /// analyzes the mutation either way, so leaving it would only make `getSetting` inside an
-    /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
-    /// analyzed and executed in comes through here.
-    if (!(*settings)[Setting::allow_experimental_analyzer])
-        (*settings)[Setting::allow_experimental_analyzer] = true;
 }
 
 void Context::makeSessionContext()
@@ -4321,7 +4032,6 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
     ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
     background_context_ptr->setCurrentProfile(shared->background_profile_name);
     background_context_ptr->is_background_operation = true;
-    background_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
 
     background_context_instance = background_context_ptr;
     background_context = background_context_ptr;
@@ -4329,14 +4039,11 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
-    /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
-    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
-    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
@@ -4643,20 +4350,6 @@ WasmModuleManager * Context::initWasmModuleManager()
         return nullptr;
 
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
-    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
-    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
-    WasmModuleManager::validateEngineName(engine_name);
-
-#if !USE_WASMTIME
-    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
-    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
-    /// not loaded at startup (loading them would compile the modules and abort the server startup).
-    LOG_WARNING(
-        shared->log,
-        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
-        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
-    return nullptr;
-#else
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -4664,7 +4357,6 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
-#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4677,15 +4369,7 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
-    {
-#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
-#else
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
-#endif
-    }
     return *shared->wasm_module_manager;
 }
 
@@ -4740,31 +4424,16 @@ ThreadPool & Context::getBackgroundQueryPool() const
     return *shared->background_query_pool;
 }
 
-void Context::stopAcceptingNewBackupsAndRestores() const
-{
-    /// Not `if (shared->backups_worker)`: the worker is created on first use, and the flag has to
-    /// land on the instance any later caller will get.
-    getBackupsWorker().stopAcceptingNewOperations();
-}
-
 void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
 }
 
-bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
+void Context::cancelAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
-        return shared->backups_worker->cancelAll(/* wait_= */ true, deadline);
-    return true;
-}
-
-bool Context::hasUnfinishedBackupsAndRestores() const
-{
-    if (shared->backups_worker)
-        return shared->backups_worker->hasUnfinishedOperations();
-    return false;
+        shared->backups_worker->cancelAll();
 }
 
 std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
@@ -4778,16 +4447,6 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
-}
-
-void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
-{
-    streaming_cursor = std::move(cursor);
-}
-
-std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
-{
-    return streaming_cursor;
 }
 
 
@@ -5788,9 +5447,9 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    /// Each cache is null-checked because some `Context` users intentionally do
-    /// not initialize the full set of caches; matches the single-cache
-    /// `clear<X>Cache` methods.
+    /// Each cache is null-checked because some `Context` users (e.g. the
+    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
+    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
@@ -6112,7 +5771,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
-ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
+ThrottlerPtr Context::getRemoteReadThrottler() const
 {
     ThrottlerPtr throttler;
     {
@@ -6124,24 +5783,17 @@ ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) co
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    if (!bandwidth)
-    {
-        SharedLockGuard settings_lock(mutex);
-        bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth];
-    }
-
-    if (*bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
+ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
     ThrottlerPtr throttler;
     {
@@ -6153,24 +5805,17 @@ ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) c
     if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
-    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    if (!bandwidth)
-    {
-        SharedLockGuard settings_lock(mutex);
-        bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth];
-    }
-
-    if (*bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
+ThrottlerPtr Context::getLocalReadThrottler() const
 {
     ThrottlerPtr throttler;
     {
@@ -6178,24 +5823,17 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
         throttler = shared->local_read_throttler;
     }
 
-    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    if (!bandwidth)
-    {
-        SharedLockGuard settings_lock(mutex);
-        bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth];
-    }
-
-    if (*bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
 }
 
-ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
+ThrottlerPtr Context::getLocalWriteThrottler() const
 {
     ThrottlerPtr throttler;
     {
@@ -6203,18 +5841,11 @@ ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) co
         throttler = shared->local_write_throttler;
     }
 
-    /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
-    if (!bandwidth)
-    {
-        SharedLockGuard settings_lock(mutex);
-        bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth];
-    }
-
-    if (*bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -6245,26 +5876,11 @@ ThrottlerPtr Context::getMergesThrottler() const
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->distributed_cache_read_throttler;
-    }
-
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    /// Writes do not need this here: `WriteBufferFromDistributedCache` also flushes through the
-    /// underlying object-storage writer, whose `write_settings.remote_throttler` already carries the
-    /// user-level throttler via `getRemoteWriteThrottler`. Splicing it onto the send socket too would
-    /// account each byte twice against the same token bucket.
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
-
-    return throttler;
+    return shared->distributed_cache_read_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->distributed_cache_write_throttler;
 }
 
@@ -6312,33 +5928,6 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
 
     if (shared->local_write_throttler)
         std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
-}
-
-void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// While distributed cache throttling is off the member aliases the remote throttler
-    /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
-    if (read_bandwidth)
-    {
-        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
-            shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
-        else // Update throttler
-            std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
-    }
-    else if (shared->distributed_cache_read_throttler != shared->remote_read_throttler) // Delete throttler
-        shared->distributed_cache_read_throttler = shared->remote_read_throttler;
-
-    if (write_bandwidth)
-    {
-        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
-            shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
-        else // Update throttler
-            std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
-    }
-    else if (shared->distributed_cache_write_throttler != shared->remote_write_throttler) // Delete throttler
-        shared->distributed_cache_write_throttler = shared->remote_write_throttler;
 }
 
 bool Context::hasDistributedDDL() const
@@ -7118,43 +6707,6 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 }
 
 
-std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const
-{
-    if (!treat_local_port_as_remote)
-        return getCluster(cluster_name);
-
-    /// Follow the resolution order of `tryGetCluster`, so that every cluster name accepted by the
-    /// plain overload (which validates the name at `CREATE DATABASE` time for the `Remote` and
-    /// `Cluster` database engines) is also accepted here. Only the static `remote_servers` case is
-    /// rebuilt from the configuration: the pre-built object treats the replica that matches the
-    /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
-    /// the other sources already account for `treat_local_port_as_remote` on construction (see
-    /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
-    {
-        std::lock_guard lock(shared->clusters_mutex);
-
-        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        const String config_prefix = "remote_servers." + cluster_name;
-        if (config.has(config_prefix))
-            return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
-
-        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
-            return res;
-
-        if (shared->cluster_discovery)
-        {
-            if (auto res = shared->cluster_discovery->getCluster(cluster_name))
-                return res;
-        }
-    }
-
-    if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
-        return res;
-
-    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
-}
-
-
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -7167,7 +6719,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
             res = shared->cluster_discovery->getCluster(cluster_name);
     }
 
-    if (res == nullptr)
+    if (res == nullptr && !cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     return res;
@@ -7494,16 +7046,6 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 }
 
 
-bool Context::hasSystemLogs() const
-{
-    std::lock_guard lock(mutex_shared_context);
-    if (!shared)
-        return false;
-
-    SharedLockGuard lock2(shared->mutex);
-    return shared->system_logs != nullptr;
-}
-
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
     std::lock_guard lock(mutex_shared_context);
@@ -7742,16 +7284,18 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
-    callOnce(shared->compression_codec_selector_initialized, [&]
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
-        auto config = shared->getConfig();
+        const auto & config = shared->getConfigRefWithLock(lock);
 
-        if (config->has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(*config, config_name);
+        if (config.has(config_name))
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
-    });
+    }
 
     return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
@@ -7923,16 +7467,16 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
 const MergeTreeSettings & Context::getMergeTreeSettings() const
 {
-    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
-    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
+        MergeTreeSettings mt_settings;
+
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -7943,16 +7487,16 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 {
-    /// Before `shared->mutex`: elsewhere it is locked while the context mutex is held.
-    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfiles();
     std::lock_guard lock(shared->mutex);
 
     if (!shared->replicated_merge_tree_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
+        MergeTreeSettings mt_settings;
+
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        auto mt_settings = mergeTreeSettingsFromCompatibility((*settings)[Setting::compatibility], constraints_and_profiles->constraints);
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
@@ -8104,6 +7648,20 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
+{
+    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
+    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
+}
+
+std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
+{
+    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
+    if (encoded < 0)
+        return std::nullopt;
+    return encoded != 0;
 }
 
 void Context::setConfigReloaderInterval(size_t value_ms)
@@ -8284,22 +7842,15 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
-    /// Not around `setCurrentProfile` above, which takes the same mutex itself.
-    {
-        std::lock_guard lock(mutex);
-        applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-        adjustSettingsForMakeDistributedPlan(*settings);
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-    }
+    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+    adjustSettingsForMakeDistributedPlan(*settings);
+    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    /// Settle the settings before publishing the context, so that a reader never sees them being changed.
-    ContextMutablePtr buffer_context_ptr = Context::createCopy(shared_from_this());
-    buffer_context_ptr->setCurrentProfile(shared->buffer_profile_name);
-    buffer_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
-    buffer_context = buffer_context_ptr;
+    buffer_context = Context::createCopy(shared_from_this());
+    buffer_context->setCurrentProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -8497,12 +8048,10 @@ void Context::setClientInterface(ClientInfo::Interface interface)
 
 void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
 {
-    client_info.setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-}
-
-void Context::setInitiatorVersionIfUnset()
-{
-    client_info.setInitiatorVersionIfUnset();
+    client_info.client_version_major = client_version_major;
+    client_info.client_version_minor = client_version_minor;
+    client_info.client_version_patch = client_version_patch;
+    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 }
 
 void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
@@ -8603,11 +8152,6 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
 void Context::increaseDistributedDepth()
 {
     ++client_info.distributed_depth;
-}
-
-void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
-{
-    client_info.client_trace_context = trace_context;
 }
 
 
@@ -8811,8 +8355,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
-    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
+    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -9151,10 +8695,6 @@ void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
-
-    /// This mutex cannot be upgraded and the throttler getters below re-enter it exclusively, so it is
-    /// released as soon as the settings have been copied; nothing after the unlock reads `settings_ref`.
-    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
@@ -9202,6 +8742,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
         = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
+    res.page_cache_settings.cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
@@ -9210,30 +8751,14 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    res.reader_executor.plan_look_ahead = settings_ref[Setting::reader_executor_plan_look_ahead];
-    /// Below the floor the executor serves near-empty windows and stalls on tiny source reads; above
-    /// the ceiling one reader holds that much in buffers and cache pins. One band for the three sizes
-    /// keeps `plan_look_ahead >= block_size` satisfiable at every legal `block_size`.
+    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
-    static constexpr UInt64 max_reader_executor_size = MAX_READER_EXECUTOR_SIZE;
-    auto validate_reader_executor_size = [](std::string_view name, UInt64 value)
-    {
-        if (value < min_reader_executor_size)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at least {} bytes",
-                value, name, min_reader_executor_size);
-        if (value > max_reader_executor_size)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at most {} bytes",
-                value, name, max_reader_executor_size);
-    };
-    validate_reader_executor_size("reader_executor_window_size", res.reader_executor.window_size);
-    validate_reader_executor_size("reader_executor_block_size", res.reader_executor.block_size);
-    validate_reader_executor_size("reader_executor_plan_look_ahead", res.reader_executor.plan_look_ahead);
-    /// Looking ahead less than one source block is meaningless, so reject the combination rather than
-    /// silently run at `block_size` and let the setting report a value the executor ignores.
-    if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
-            res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
+    if (res.reader_executor.window_size < min_reader_executor_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
+            res.reader_executor.window_size, min_reader_executor_size);
+    if (res.reader_executor.block_size < min_reader_executor_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
+            res.reader_executor.block_size, min_reader_executor_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -9261,12 +8786,16 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
     res.priority = Priority{settings_ref[Setting::read_priority]};
 
+    res.remote_throttler = getRemoteReadThrottler();
+    res.local_throttler = getLocalReadThrottler();
+
     res.http_settings.max_tries = settings_ref[Setting::http_max_tries];
     res.http_settings.retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
 
+    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
@@ -9276,26 +8805,12 @@ ReadSettings Context::getReadSettings() const
     res.distributed_cache_settings.validate();
 #endif
 
-    /// Read here so that the throttler getters below do not have to take this lock again.
-    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_read_network_bandwidth];
-    const UInt64 local_bandwidth = settings_ref[Setting::max_local_read_bandwidth];
-
-    lock.unlock();
-
-    res.page_cache_settings.cache = getPageCache();
-    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
-    res.remote_throttler = getRemoteReadThrottler(remote_bandwidth);
-    res.local_throttler = getLocalReadThrottler(local_bandwidth);
-
     return res;
 }
 
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
-
-    /// The shared lock is released before the throttler getters, which take it exclusively.
-    SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
     res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
@@ -9307,19 +8822,13 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
 
+    res.remote_throttler = getRemoteWriteThrottler();
+    res.local_throttler = getLocalWriteThrottler();
+
     res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
-
-    /// Read here so that the throttler getters below do not have to take this lock again.
-    const UInt64 remote_bandwidth = settings_ref[Setting::max_remote_write_network_bandwidth];
-    const UInt64 local_bandwidth = settings_ref[Setting::max_local_write_bandwidth];
-
-    lock.unlock();
-
-    res.remote_throttler = getRemoteWriteThrottler(remote_bandwidth);
-    res.local_throttler = getLocalWriteThrottler(local_bandwidth);
 
     return res;
 }
@@ -9329,14 +8838,12 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
-{
-    return query_execution_counters;
-}
-
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
+
+    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+        return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
@@ -9498,15 +9005,8 @@ void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotP
 
 StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
 {
-    /// The population's reads run under contexts derived from the query context, not under the context the
-    /// pin was set on, so the query context is consulted too.
-    if (auto it = pinned_storage_snapshots.find(table_uuid); it != pinned_storage_snapshots.end())
-        return it->second;
-    if (!hasQueryContext())
-        return nullptr;
-    const auto & query_pins = getQueryContext()->pinned_storage_snapshots;
-    auto it = query_pins.find(table_uuid);
-    return it != query_pins.end() ? it->second : nullptr;
+    auto it = pinned_storage_snapshots.find(table_uuid);
+    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

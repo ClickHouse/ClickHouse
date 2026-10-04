@@ -23,8 +23,7 @@ public:
         size_t poll_time_out_,
         size_t stream_number_,
         size_t max_streams_number_,
-        StreamingHandleErrorMode handle_error_mode_,
-        bool skip_broken_records_);
+        StreamingHandleErrorMode handle_error_mode_);
 
     String getName() const override { return "FileLog"; }
 
@@ -49,7 +48,6 @@ private:
     size_t stream_number;
     size_t max_streams_number;
     StreamingHandleErrorMode handle_error_mode;
-    bool skip_broken_records;
 
     std::unique_ptr<FileLogConsumer> consumer;
 
@@ -60,8 +58,6 @@ private:
     /// does not include end.
     size_t start;
     size_t end;
-
-    bool closed = false;
 };
 
 }

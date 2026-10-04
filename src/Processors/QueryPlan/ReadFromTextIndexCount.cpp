@@ -8,10 +8,9 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -110,32 +109,36 @@ UInt64 computeCountForPart(
     /// A single-token count is answered directly from the dictionary cardinality, so posting list is never read.
     const bool single_token = resolved.query->getTokens().size() == 1;
 
-    LoadedMergeTreeDataPartInfoForReader part_info(data_part, std::make_shared<AlterConversions>());
-
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
         .condition = resolved.condition.get(),
-        .part_info = part_info,
+        .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = single_token,
-        .reader_settings = reader_settings,
     };
 
     const auto substreams = index.index->getSubstreams();
-    auto sparse_index_stream = makeTextIndexInputStream(
-        part_info,
-        index.index->getFileName(),
-        substreams[0],
-        reader_settings,
-        /*expected_buffer_size=*/ std::nullopt);
+    auto make_stream = [&](const MergeTreeIndexSubstream & substream)
+    {
+        return makeTextIndexInputStream(
+            data_part->getDataPartStoragePtr(),
+            index.index->getFileName() + substream.suffix,
+            substream.extension,
+            MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
+    };
+
+    auto sparse_index_stream = make_stream(substreams[0]);
+    auto dictionary_stream = make_stream(substreams[1]);
+    auto postings_stream = make_stream(substreams[2]);
 
     sparse_index_stream->seekToStart();
 
-    /// The analysis opens the dictionary and postings streams itself
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
+    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
+    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = postings_stream.get();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
@@ -168,6 +171,9 @@ UInt64 computeCountForPart(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
         granule->getSerializationVersion());
 
+    const PostingBlockReader<CheckCancelledCallback> posting_reader(
+        *postings_stream, state, postings_serialization, granule->getIndexIdForCaches(), check_cancelled);
+
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
     std::vector<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
@@ -177,25 +183,6 @@ UInt64 computeCountForPart(
 
     if (tokens_to_read.empty())
         return query_builder.postings ? query_builder.postings->cardinality() : 0;
-
-    /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
-    size_t largest_segment_bytes = 0;
-    for (const auto * token_info : tokens_to_read)
-        largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
-
-    auto postings_stream = makeTextIndexInputStream(
-        part_info,
-        index.index->getFileName(),
-        substreams[2],
-        reader_settings,
-        largest_segment_bytes);
-
-    const PostingBlockReader<CheckCancelledCallback> posting_reader(
-        *postings_stream,
-        state,
-        postings_serialization,
-        granule->getIndexIdForCaches(),
-        check_cancelled);
 
     if (resolved.query->getSearchMode() != TextSearchMode::All)
     {

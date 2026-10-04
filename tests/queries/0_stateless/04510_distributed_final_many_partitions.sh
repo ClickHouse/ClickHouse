@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-flaky-check, no-distributed-cache
+# Tags: no-darwin, no-old-analyzer, no-flaky-check, no-distributed-cache
+# no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+# no-old-analyzer: make_distributed_plan requires the analyzer.
 # no-flaky-check: creating 600 parts across 300 partitions takes seconds on debug and sanitizer
 # builds; the flaky check's repeated runs exceed its budget.
 # no-distributed-cache: with the distributed cache each tiny part commit costs over a second on
@@ -30,13 +32,13 @@ INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), nu
 INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), number + 5, 2 FROM numbers(15000);
 "
 
-SETTINGS="enable_parallel_replicas = 0, max_rows_to_group_by = 0,
+SETTINGS="enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
     distributed_plan_default_reader_bucket_count = 4, do_not_merge_across_partitions_select_final = 1"
 
 echo -n "split groups all partitions into the target tasks "
 if $CLICKHOUSE_CLIENT --send_logs_level=trace -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL FORMAT Null
-    SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, $SETTINGS" 2>&1 \
+    SETTINGS make_distributed_plan = 1, $SETTINGS" 2>&1 \
     | grep -q "Distributed FINAL read bucketed: 150 layers in 38 lanes per task make 4 tasks"
 then echo 1; else echo 0; fi
 
@@ -44,7 +46,7 @@ then echo 1; else echo 0; fi
 echo -n "distributed plan "
 $CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL
-    SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, $SETTINGS"
+    SETTINGS make_distributed_plan = 1, $SETTINGS"
 echo -n "plain plan "
 $CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL

@@ -109,25 +109,15 @@ def list_hdfs_objects(fs, path="/clickhouse"):
     ]
 
 
-def count_hdfs_objects(fs, path="/clickhouse"):
-    # `fileCount` is recursive: it counts the files of the whole subtree in one request.
-    return fs.get_content_summary(path).fileCount
-
-
-def assert_hdfs_objects_count(fs, expected):
-    count = count_hdfs_objects(fs)
-    assert count == expected, f"{count} != {expected}: {list_hdfs_objects(fs)}"
-
-
 def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
     while num_tries > 0:
-        num_hdfs_objects = count_hdfs_objects(fs)
+        num_hdfs_objects = len(list_hdfs_objects(fs))
         if num_hdfs_objects == expected:
             break
         num_tries -= 1
         time.sleep(1)
-    assert_hdfs_objects_count(fs, expected)
+    assert len(list_hdfs_objects(fs)) == expected
 
 
 @pytest.fixture(autouse=True)
@@ -135,16 +125,17 @@ def drop_table(cluster):
     node = cluster.instances["node"]
 
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
-    print("Number of hdfs objects to delete:", count_hdfs_objects(fs), sep=" ")
+    hdfs_objects = list_hdfs_objects(fs)
+    print("Number of hdfs objects to delete:", len(hdfs_objects), sep=" ")
 
     node.query("DROP TABLE IF EXISTS hdfs_test SYNC")
 
     try:
         wait_for_delete_hdfs_objects(cluster, 0)
     finally:
-        if count_hdfs_objects(fs) == 0:
-            return
         hdfs_objects = list_hdfs_objects(fs)
+        if len(hdfs_objects) == 0:
+            return
         print(
             "Manually removing extra objects to prevent tests cascade failing: ",
             hdfs_objects,
@@ -174,7 +165,9 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
 
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + files_per_part)
+    hdfs_objects = list_hdfs_objects(fs)
+    print(hdfs_objects)
+    assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part
 
     values2 = generate_values("2020-01-04", 4096)
     node.query("INSERT INTO hdfs_test VALUES {}".format(values2))
@@ -183,7 +176,8 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
         == values1 + "," + values2
     )
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + files_per_part * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part * 2
 
     assert (
         node.query("SELECT count(*) FROM hdfs_test where id = 1 FORMAT Values") == "(2)"
@@ -252,7 +246,8 @@ def test_attach_detach_partition(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -306,17 +301,20 @@ def test_move_partition_to_another_disk(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdfs'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
 
 def test_table_manipulations(cluster):
@@ -335,7 +333,8 @@ def test_table_manipulations(cluster):
     node.query("RENAME TABLE hdfs_test TO hdfs_renamed")
     assert node.query("SELECT count(*) FROM hdfs_renamed FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("RENAME TABLE hdfs_renamed TO hdfs_test")
     assert (
@@ -349,7 +348,8 @@ def test_table_manipulations(cluster):
     node.query("ATTACH TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("TRUNCATE TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
@@ -383,7 +383,8 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
-    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4)
+    hdfs_objects = list_hdfs_objects(fs)
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
     create_table(cluster, "hdfs_clone")
 
@@ -395,6 +396,9 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_clone FORMAT Values") == "(8192)"
 
     # Number of objects in HDFS should be unchanged.
+    hdfs_objects = list_hdfs_objects(fs)
+    for obj in hdfs_objects:
+        print("Object in HDFS after move", obj)
     wait_for_delete_hdfs_objects(
         cluster,
         FILES_OVERHEAD * 2
@@ -414,6 +418,10 @@ def test_move_replace_partition_to_another_table(cluster):
     )
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
+
+    hdfs_objects = list_hdfs_objects(fs)
+    for obj in hdfs_objects:
+        print("Object in HDFS after insert", obj)
 
     wait_for_delete_hdfs_objects(
         cluster,
@@ -444,6 +452,11 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     # Data should remain in hdfs
+    hdfs_objects = list_hdfs_objects(fs)
+
+    for obj in hdfs_objects:
+        print("Object in HDFS after drop", obj)
+
     wait_for_delete_hdfs_objects(
         cluster,
         FILES_OVERHEAD

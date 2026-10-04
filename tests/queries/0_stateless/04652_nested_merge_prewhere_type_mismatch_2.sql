@@ -1,4 +1,6 @@
--- Tags: no-replicated-database, shard
+-- Tags: no-old-analyzer, no-replicated-database, shard
+--       no-old-analyzer: this suite assumes the analyzer as the default, like its first half;
+--       the explicit `SETTINGS enable_analyzer = 0` lines still cover the old one.
 --       no-replicated-database: for the lazy_load_tables section below.
 --       shard: the Remote-engine and Distributed sections need a second server address.
 
@@ -131,7 +133,7 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- as the style check requires (a `{...:String}` parameter is not recognized by it).
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT '-- only the re-attached MergeTree is a lazy proxy --';
+SELECT '-- re-attached tables are lazy proxies --';
 SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';

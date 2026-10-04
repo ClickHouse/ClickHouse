@@ -87,10 +87,10 @@ ${CLICKHOUSE_CLIENT} \
     "
 
 # -------------------------------------------------------------------
-# Scenario 3: SQL SECURITY NONE — the view runs with the global context
-# and is sealed, so it is read through `ReadFromSealedView` and never
-# pushed down. A user with SELECT on the view but not on the underlying
-# Distributed table must still succeed.
+# Scenario 3: SQL SECURITY NONE — the pushdown executes the inner
+# query via getSQLSecurityOverriddenContext (no-user/global context),
+# not the calling user's context. A user with SELECT on the view but
+# not on the underlying Distributed table must succeed.
 # -------------------------------------------------------------------
 
 # Revoke the per-column grant added in Scenario 2; the user must have
@@ -114,7 +114,7 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.t04257_dist ORDER BY id;
     " 2>&1 | grep -o "Not enough privileges" | head -1
 
-echo "=== NONE: view access succeeds ==="
+echo "=== NONE: view access succeeds with pushdown ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
@@ -126,14 +126,15 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.v04257_none ORDER BY id;
     "
 
-echo "=== NONE: the view is sealed instead of pushed down ==="
+echo "=== NONE: pushdown fires (no VIEW subquery step) ==="
 ${CLICKHOUSE_CLIENT} \
     --query "
         SET enable_analyzer = 1;
+        SET explain_query_plan_default = 'legacy';
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET optimize_trivial_view_pushdown_to_distributed = 1;
-        SELECT countIf(explain LIKE '%ReadFromSealedView%') AS sealed, countIf(explain LIKE '%ReadFromRemote%') AS remote_reads
+        SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
         FROM (EXPLAIN SELECT id FROM ${db}.v04257_none);
     "
 

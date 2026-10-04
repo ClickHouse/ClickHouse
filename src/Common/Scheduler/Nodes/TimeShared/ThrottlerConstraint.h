@@ -56,7 +56,6 @@ public:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
-            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -86,10 +85,9 @@ public:
             updateBucket(cost);
             SCHED_DBG("{} -- dequeue(cost={}, tokens={:.2f}, max_speed={:.2f})",
                 getPath(), cost, tokens, max_speed);
-            incrementDequeued(cost, active());
+            incrementDequeued(cost);
             return {request, active()};
         }
-        flushThroughputOnDeactivation();
         return {nullptr, false};
     }
 

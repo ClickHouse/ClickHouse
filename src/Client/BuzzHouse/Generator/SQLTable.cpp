@@ -70,23 +70,18 @@ void collectColumnPaths(
             uint32_t i = 1;
             ArrayType * at = dynamic_cast<ArrayType *>(tp);
             ArrayType * at2 = at;
+            ArrayType * at3 = nullptr;
 
-            while (at)
+            while (at && (at = dynamic_cast<ArrayType *>(at->subtype.get())))
             {
-                at = dynamic_cast<ArrayType *>(at->subtype.get());
-                if (!at)
-                    break;
                 next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
                 paths.push_back(next);
                 next.path.pop_back();
                 i++;
             }
             /// Array null values
-            while (at2)
+            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype.get())))
             {
-                ArrayType * at3 = dynamic_cast<ArrayType *>(at2->subtype.get());
-                if (!at3)
-                    break;
                 at2 = at3;
             }
             if (at2)
@@ -1007,10 +1002,10 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         chassert(this->ids.empty());
         for (const auto & entry : this->entries)
         {
+            IntType * itp = nullptr;
             SQLType * tp = entry.getBottomType();
-            const auto * itp = dynamic_cast<IntType *>(tp);
 
-            if (itp && itp->is_unsigned)
+            if ((itp = dynamic_cast<IntType *>(tp)) && itp->is_unsigned)
             {
                 const TableKey & tpk = te->primary_key();
 
@@ -1414,26 +1409,26 @@ void StatementGenerator::generateEngineDetails(
         else if (b.isBufferEngine())
         {
             /// num_layers
-            te->add_params()->set_num(rg.nextLargeNumber() % 101);
+            te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 101));
             /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
             for (int i = 0; i < 6; i++)
             {
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_time
-                te->add_params()->set_num(rg.nextLargeNumber() % 61);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 61));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_rows
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_bytes
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
         }
     }
@@ -1556,11 +1551,9 @@ void StatementGenerator::generateEngineDetails(
             /// The mode setting is mandatory
             SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            /// `exclusive` tracks processed files in this server's memory instead of Keeper
-            static const DB::Strings queue_modes = {"'ordered'", "'unordered'", "'exclusive'"};
 
             sv->set_property("mode");
-            sv->set_value(rg.pickRandomly(queue_modes));
+            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
 
             if (rg.nextSmallNumber() < 3)
             {
@@ -1822,7 +1815,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
     if (usage == IndexUsage::HypotheticalIndex)
     {
-        /// `InterpreterHypotheticalObjectQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
+        /// `InterpreterHypotheticalIndexQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
         static const std::vector<IndexType> hypothetical_index_types
             = {IndexType::IDX_set,
                IndexType::IDX_minmax,
@@ -2083,7 +2076,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                static const DB::Strings post_codecs = {"none", "bitpacking", "pfor"};
+                static const DB::Strings post_codecs = {"none", "bitpacking"};
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
@@ -2132,13 +2125,9 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
 }
 
-void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const ProjectionUsage usage, ProjectionDef * pdef)
+void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef)
 {
-    const bool hypothetical = usage == ProjectionUsage::HypotheticalProjection;
-    const String prefix = hypothetical ? "hp" : "p";
-    uint32_t & counter = hypothetical ? t.hproj_counter : t.proj_counter;
-
-    pdef->mutable_proj()->set_value(rg.nextIdentifier(prefix, counter++, fc.allow_nasty_identifiers));
+    pdef->mutable_proj()->set_value(rg.nextIdentifier("p", t.proj_counter++, fc.allow_nasty_identifiers));
     this->inside_projection = true;
     if (rg.nextBool())
     {
@@ -2594,7 +2583,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_proj,
                   [&]
                   {
-                      addTableProjection(rg, next, ProjectionUsage::TableProjection, ndef->mutable_proj_def());
+                      addTableProjection(rg, next, ndef->mutable_proj_def());
                       added_projs++;
                   }},
                  {add_const,

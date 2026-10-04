@@ -2,8 +2,6 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/parseGlobs.h>
-#include <Disks/DiskType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -31,7 +29,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
-#include <base/sleep.h>
 namespace DB
 {
 namespace Setting
@@ -55,60 +52,9 @@ namespace FailPoints
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
-    const auto path = configuration->getRawPath();
-
-    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
-    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
-    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
-    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
-    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
-    /// name is simply omitted from the sample instead of disabling the fast path.
-    const bool is_archive = configuration->isArchive();
-    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
-    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
-
-    /// For non-glob paths, return directly without any object storage API calls.
-    /// Besides saving a request, this keeps hive partition inference working for an explicitly
-    /// specified key that does not exist (or is filtered out before reading): the path string
-    /// itself carries the partition columns, so it must not depend on the object being present.
-    if (!path.hasGlobs())
-        return path.path + archive_suffix;
-
-    /// For pure brace expansions, one of the expanded path strings is sufficient to infer
-    /// hive partition columns. Avoid probing object metadata, because all explicit keys may
-    /// be absent or later filtered out.
-    if (containsOnlyEnumGlobs(path.path))
-    {
-        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
-        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
-        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
-        /// and, for a table definition, persist it - from a path that the reader always refuses to
-        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
-        /// never built, so taking each group's first alternative is enough.
-        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
-        {
-            auto expanded = expandSelectionGlob(path.path);
-            if (!expanded.empty())
-                return expanded.front() + archive_suffix;
-        }
-        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
-        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
-        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
-        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
-        /// the sample path is never one the reader would not read.
-        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
-            return *first + archive_suffix;
-    }
-
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
-    /// For an explicitly specified key, `throw_on_zero_files_match` is not enough: `KeysIterator` probes
-    /// the object metadata, and that probe throws for a key that does not exist. Sampling a path is only
-    /// needed to infer hive partitioning, so a missing key must leave the sample empty instead of failing
-    /// the query during analysis. A key that is really needed for reading is probed again by the reader,
-    /// which does report the error.
-    query_settings.ignore_non_existent_file = true;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -245,7 +191,7 @@ bool StorageObjectStorageCluster::optimize(
     bool /*cleanup*/,
     ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
@@ -260,7 +206,7 @@ void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands
     configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
 }
 
-void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
+void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
@@ -329,8 +275,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context,
-    const String & target_cluster_name)
+    const ContextPtr & context)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -381,23 +326,16 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         const String cluster_function_name = table_function->name + "Cluster";
         if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
         {
-            args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
             table_function->name = cluster_function_name;
         }
     }
     else
     {
-        /// The function is already the `*Cluster` variant, so it carries a cluster name the user wrote.
-        /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
-        /// destination drives the fan-out, and those nodes reject a name their own `remote_servers` does not
-        /// define even though they take their share of the work from the initiator rather than dispatching
-        /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        if (!target_cluster_name.empty())
-            cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
-        args.insert(args.begin(), std::move(cluster_name_arg));
+        args.insert(args.begin(), cluster_name_arg);
     }
     if (settings_temporary_storage)
     {
@@ -507,3 +445,4 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
+

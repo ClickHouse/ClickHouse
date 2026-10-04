@@ -8,8 +8,4 @@ p	10000	11
 p	10000	79
 -- a merge rebuilds the projection with the new granularity
 p	20000	157
--- MATERIALIZE PROJECTION leaves an existing projection part with the old settings
-p	10000	11
--- CLEAR PROJECTION followed by MATERIALIZE PROJECTION rebuilds it with the new settings
-p	10000	79
 -- errors
