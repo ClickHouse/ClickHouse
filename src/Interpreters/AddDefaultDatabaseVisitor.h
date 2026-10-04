@@ -642,13 +642,15 @@ private:
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
-        /// Already has database.
-        if (identifier.compound())
-            return;
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
         if (identifier.isParam())
             return;
+        if (identifier.compound())
+        {
+            visitCompound(identifier, ast);
+            return;
+        }
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
@@ -663,6 +665,26 @@ private:
             qualified = DatabaseCatalog::instance().resolveHierarchicalName(StorageID("", identifier.name()), database_name, context);
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(qualified.database_name, qualified.table_name);
+        if (!identifier.alias.empty())
+            qualified_identifier->setAlias(identifier.alias);
+        ast = qualified_identifier;
+    }
+
+    /// A qualified name is hierarchical as well (see `DatabaseCatalog`): `ns.t` may be the table `ns.t` of the default
+    /// database when there is no database `ns`. It is bound to the table it denotes now, so that a stored or shipped
+    /// query (a view, `ON CLUSTER`) is not silently retargeted when a database `ns` is created later.
+    void visitCompound(const ASTTableIdentifier & identifier, ASTPtr & ast) const
+    {
+        if (database_name.empty())
+            return;
+
+        StorageID as_written = identifier.getTableId();
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+            StorageID(as_written.database_name, as_written.table_name), database_name, context);
+        if (resolved.database_name == as_written.database_name && resolved.table_name == as_written.table_name)
+            return;
+
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(resolved.database_name, resolved.table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
