@@ -2,9 +2,11 @@
 metricfamilies	ReplacingMergeTree
 recentsamples	MergeTree
 samples	MergeTree
-tags	AggregatingMergeTree
+tags	ReplacingMergeTree
+tagsminmax	AggregatingMergeTree
 -- default_table_engine = ReplicatedMergeTree generates replicated inner engines
 metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedMergeTree
 samples	ReplicatedMergeTree
-tags	ReplicatedAggregatingMergeTree
+tags	ReplicatedReplacingMergeTree
+tagsminmax	ReplicatedAggregatingMergeTree

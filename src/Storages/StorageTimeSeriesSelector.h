@@ -53,7 +53,8 @@ public:
         const PrometheusQueryTree::MatcherList & matchers,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        UInt32 time_scale);
+        UInt32 time_scale,
+        const std::optional<StorageID> & tags_min_max_table_id);
 
     void readImpl(
         QueryPlan & query_plan,

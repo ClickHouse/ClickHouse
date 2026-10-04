@@ -25,8 +25,7 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
+/// Transforms outer columns into blocks for the target tables.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -48,9 +47,8 @@ public:
     /// and throws if the `__name__` tag is missing or appears with conflicting values.
     static void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags);
 
-    /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Every tag goes to `out_tags_names`/`out_tags_values`; tags matching a key in `columns_by_tag_name`
-    /// are also copied to the corresponding column.
+    /// Dispatches one row of already-sorted tags into the output columns.
+    /// Tags matching dedicated columns are also copied to the corresponding column.
     static void insertSortedTagsToColumns(
         const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
         IColumn & out_tags_names,
@@ -98,11 +96,15 @@ private:
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 
+    /// True when min_time/max_time are stored in the "tags min max" target table instead of the "tags" table.
+    bool store_min_max_in_separate_table = false;
+
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
+    std::unique_ptr<TargetPipeline> tags_min_max_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;

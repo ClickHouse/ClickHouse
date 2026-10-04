@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families, ts_ext_tags, ts_cached, ts_ext_tags_copy, ext_tags;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -90,11 +90,30 @@ INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family = 'm5';
 
-SELECT '--- the tags table is not deduplicated if min_time and max_time are stored ---';
+SELECT '--- the tags table is not deduplicated if min_time and max_time are stored in it (before version 8) ---';
+CREATE TABLE ts_v7 ENGINE = TimeSeries SETTINGS version = 7 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
+INSERT INTO ts_v7 (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+INSERT INTO ts_v7 (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_v7);
+ALTER TABLE ts_v7 MODIFY SETTING tags_deduplication_cache_size_bytes = 10; -- { serverError INVALID_SETTING_VALUE }
+
+SELECT '--- from version 8 min_time and max_time are stored in the tags min max table, so the tags table is deduplicated and the bounds still advance ---';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
 INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
-ALTER TABLE ts MODIFY SETTING tags_deduplication_cache_size_bytes = 10; -- { serverError INVALID_SETTING_VALUE }
+SELECT min(min_time) = toDateTime64('2026-01-01 00:00:00', 3), max(max_time) = toDateTime64('2026-01-01 00:00:01', 3) FROM timeSeriesTagsMinMax({CLICKHOUSE_DATABASE:Identifier}.ts);
+
+SELECT '--- an external tags table keeps min_time and max_time itself, so its cache cannot be enabled in version 8 either ---';
+CREATE TABLE ext_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)), max_time Nullable(DateTime64(3)))
+ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
+CREATE TABLE ts_ext_tags ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 10 TAGS ext_tags; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_ext_tags ENGINE = TimeSeries TAGS ext_tags;
+ALTER TABLE ts_ext_tags MODIFY SETTING tags_deduplication_cache_size_bytes = 10; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_cached ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 10;
+CREATE TABLE ts_ext_tags_copy AS ts_cached ENGINE = TimeSeries TAGS ext_tags;
+SELECT name, position(create_table_query, 'tags_deduplication_cache') > 0 FROM system.tables
+WHERE database = currentDatabase() AND name IN ('ts_cached', 'ts_ext_tags_copy') ORDER BY name;
 
 SELECT '--- the same time series is written to the tags table once if min_time and max_time are not stored ---';
 CREATE TABLE ts_tags ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
@@ -128,4 +147,4 @@ ALTER TABLE ext_metric_families DROP CONSTRAINT c;
 INSERT INTO ts2 (metric_family, type, unit, help) VALUES ('bad', 'gauge', '', '');
 SELECT count() FROM ext_metric_families WHERE metric_family = 'bad';
 
-DROP TABLE ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families, ts_ext_tags, ts_cached, ts_ext_tags_copy, ext_tags;

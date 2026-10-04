@@ -41,6 +41,10 @@ struct ViewTarget
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 
+        /// The "tags min max" table of a TimeSeries table, contains `min_time` and `max_time` of each time series.
+        /// It exists only from version MIN_WITH_SEPARATE_TAGS_MIN_MAX; earlier versions keep those columns in the tags table.
+        TagsMinMax,
+
         /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
         /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
         MetricFamilies,
