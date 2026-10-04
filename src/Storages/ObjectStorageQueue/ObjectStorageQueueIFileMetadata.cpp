@@ -44,6 +44,7 @@ namespace
     {
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
+
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
@@ -88,12 +89,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onStateObservedInKeeper(State 
     /// The file was committed as `Processed` or `Failed` by whoever held it. A state we did
     /// not have before is not what the last attempt of this server ended with, so neither
     /// its data nor the marker of the state it replaces may be shown next to it.
+    terminal_state_generation.fetch_add(1);
     if (state.exchange(observed_state) != observed_state)
         resetAttempt();
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    terminal_state_generation.fetch_add(1);
     /// This server committed the file, so it is not held by anyone anymore.
     processing_observed_in_keeper_time = 0;
     state = FileStatus::State::Processed;
@@ -102,6 +105,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    terminal_state_generation.fetch_add(1);
     processing_observed_in_keeper_time = 0;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
@@ -118,6 +122,43 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
     processing_end_time = {};
     processed_rows = 0;
     retries = 0;
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::onProcessingObservedInKeeper(UInt64 expected_terminal_generation)
+{
+    /// The cached record was committed into a terminal state after the keeper read which
+    /// discovered the foreign `processing` node: that record describes a later fact than
+    /// this observation, so it must not be downgraded back to `Processing`.
+    if (terminal_state_generation.load() != expected_terminal_generation)
+        return false;
+
+    onStateObservedInKeeper(State::Processing);
+    return true;
+}
+
+void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateObservedInKeeper(State state_, const std::string & exception, size_t retries_)
+{
+    chassert(state_ == State::Processed || state_ == State::Failed);
+    terminal_state_generation.fetch_add(1);
+    /// The data of an abandoned local attempt does not describe the terminal state.
+    resetAttempt();
+    retries = retries_;
+    state = state_;
+    std::lock_guard lock(last_exception_mutex);
+    last_exception = exception;
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::isProcessingObservedInKeeperTrusted(size_t ttl_seconds) const
+{
+    const auto observed_at = processing_observed_in_keeper_time.load();
+    if (!observed_at)
+        return false;
+
+    /// Unlike `Processed` and `Failed`, this state is not backed by a persistent node in
+    /// keeper: its owner can release the file without committing it, e.g. it can die, and
+    /// nothing would reset the cached state. So trust the observation only for a limited
+    /// time, otherwise the file would never be retried.
+    return ttl_seconds && now() < observed_at + static_cast<time_t>(ttl_seconds);
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -345,17 +386,12 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
 
     if (state == FileStatus::State::Processing)
     {
-        const auto observed_at = file_status->processing_observed_in_keeper_time.load();
         /// A processor of this table holds the file and will update the state itself.
-        if (!observed_at)
+        if (!file_status->isProcessingObservedInKeeper())
             return true;
 
-        /// The file is held by another processor. Unlike `Processed` and `Failed`, this state
-        /// is not backed by a persistent node in keeper: its owner can release the file without
-        /// committing it, e.g. it can die, and nothing would reset the cached state. So trust
-        /// the observation only for a limited time, otherwise the file would never be retried.
-        const auto ttl = processing_state_cache_ttl_seconds.load();
-        return ttl && now() < observed_at + static_cast<time_t>(ttl);
+        /// The file is held by another processor: the observation is trusted only while it is fresh.
+        return file_status->isProcessingObservedInKeeperTrusted(processing_state_cache_ttl_seconds.load());
     }
 
     return false;
@@ -380,8 +416,11 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
-    auto [success, file_state] = setProcessingImpl();
-    afterSetProcessing(success, file_state);
+    snapshotTerminalStateGeneration();
+
+    std::optional<FileTerminalState> terminal_state;
+    auto [success, file_state] = setProcessingImpl(terminal_state);
+    afterSetProcessing(success, file_state, std::move(terminal_state));
 
     LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
@@ -414,10 +453,16 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+
+    snapshotTerminalStateGeneration();
+
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
-void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(
+    bool success,
+    std::optional<FileStatus::State> file_state,
+    std::optional<FileTerminalState> terminal_state)
 {
     if (success)
     {
@@ -436,7 +481,51 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
-            file_status->onStateObservedInKeeper(file_state.value());
+
+            if (file_state.value() == FileStatus::State::Processing)
+            {
+                /// A locally owned `Processing` state is kept as is: the node belongs to a
+                /// concurrent local processor (the file status is shared between tables and threads).
+                /// Otherwise the node is foreign, and it is remembered only as a non-terminal hint,
+                /// because it is not backed by a persistent keeper node.
+                if (file_status->state.load() == FileStatus::State::Processing
+                    && !file_status->isProcessingObservedInKeeper())
+                {
+                    LOG_TEST(log, "File {} is already being processed by a concurrent local processor", path);
+                }
+                else if (!file_status->onProcessingObservedInKeeper(terminal_state_generation_before_set_processing))
+                {
+                    /// Another processor committed the file while this attempt was reading keeper,
+                    /// and the cached record already describes that terminal state.
+                    LOG_TEST(log, "File {} was committed by another processor while setting it as processing", path);
+                }
+            }
+            else
+            {
+                /// A terminal node committed by another processor: refresh the whole cached
+                /// record, with the same guards as the listing pre-filter (see
+                /// `FileIterator::filterProcessableFiles`).
+                const auto cached_state = file_status->state.load();
+                if (cached_state == file_state.value()
+                    && (file_state.value() != FileStatus::State::Failed
+                        || !terminal_state.has_value()
+                        || file_status->retries.load() == terminal_state->retries))
+                {
+                    /// The cached record already describes this terminal state (a local attempt).
+                    /// A cached `Failed` may describe an earlier retriable local attempt, so it
+                    /// is kept only when its retry count matches the `failed` node payload.
+                }
+                else if (cached_state == FileStatus::State::Processing && !file_status->isProcessingObservedInKeeper())
+                {
+                    /// A locally owned `Processing` state is updated by its owner on commit.
+                }
+                else
+                {
+                    const auto terminal = terminal_state.value_or(FileTerminalState{.state = file_state.value()});
+                    chassert(terminal.state == file_state.value());
+                    file_status->onTerminalStateObservedInKeeper(terminal.state, terminal.exception, terminal.retries);
+                }
+            }
         }
     }
 }
