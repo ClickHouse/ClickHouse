@@ -301,7 +301,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
     /// that is split by size and therefore claims the whole sequence. It is done only after the sink has
     /// started writing the first object of the partition, so that an insert that cannot even start it
-    /// fails without deleting a part of the old data.
+    /// fails without deleting a part of the old data. In HDFS, starting the first file of a rewrite already
+    /// truncates it, see `StorageObjectStorage::createSink`.
     if (query_settings.split_on_write_by_size_bytes && query_settings.truncate_on_insert && !names_are_generated)
         removeStaleSplitObjectsByNumber(
             *object_storage,

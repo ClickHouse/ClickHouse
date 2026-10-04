@@ -1013,7 +1013,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// The cleanup is done only after the sink has started writing the first object of this insert, so that
     /// an insert that cannot even start it fails without deleting a part of the old data. Starting an object
     /// does not replace the old one in S3 or Azure - that happens only when the object is committed - so a failed
-    /// cleanup leaves the first object intact as well.
+    /// cleanup leaves the first object intact as well. HDFS is different: opening the first file for a rewrite
+    /// truncates it immediately, exactly as for any insert with `hdfs_truncate_on_insert`, so there a failed cleanup
+    /// leaves the base file already emptied - the same as an insert that fails in the middle of writing the data.
+    /// Running the cleanup first would not help: a failure to open the file would then lose the tail instead.
     if (settings.truncate_on_insert)
     {
         /// The same logger the storage uses; the sink is created from a static context.
