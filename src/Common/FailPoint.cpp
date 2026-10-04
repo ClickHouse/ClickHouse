@@ -291,6 +291,7 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
+    PAUSEABLE_ONCE(backup_pause_before_collecting_table_data) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
     PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \

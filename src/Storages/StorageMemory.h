@@ -47,6 +47,8 @@ public:
         std::shared_ptr<const Blocks> blocks;
         /// The exact number of rows in `blocks`.
         size_t rows = 0;
+        /// See `BlocksWithCounts::columns_version`.
+        Int32 columns_version = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -162,8 +164,37 @@ public:
 private:
     static VirtualColumnsDescription createVirtuals();
 
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    /// Restores the data of this table from backup. `metadata_version` is the version of the table's metadata when
+    /// the restore was scheduled, `names_verified` means that the column names in the backup are its names.
+    /// A stored column in `unmapped_names` fails the restore instead of being dropped as a column the table lacks.
+    void restoreDataImpl(
+        const BackupPtr & backup, const String & data_path_in_backup, Int32 metadata_version, bool names_verified,
+        const NameSet & unmapped_names, const ContextPtr & context);
+
+    /// Renames (`new_name` is set) and drops (`new_name` is empty) of stored columns.
+    struct ColumnChange
+    {
+        String name;
+        String new_name;
+    };
+
+    /// The column changes of one `ALTER`, in order. A block left without columns keeps its number of rows: it gets
+    /// `fill_column` with the type's default values or, if `fill_with_defaults` is set because every physical column
+    /// has a default expression, all physical columns with the values that an `INSERT` without them would store.
+    struct ColumnChangesEntry
+    {
+        Int32 metadata_version = 0;
+        std::vector<ColumnChange> changes;
+        NameAndTypePair fill_column;
+        std::shared_ptr<const ColumnsDescription> fill_with_defaults;
+    };
+
+    static std::vector<ColumnChange> getColumnChanges(
+        const AlterCommands & commands, const StorageInMemoryMetadata & old_metadata, ContextPtr context);
+    /// `fill_actions` keeps the computation of the columns of `entry.fill_with_defaults` for the next blocks.
+    static void applyColumnChanges(
+        Block & block, const ColumnChangesEntry & entry, bool compress, const ContextPtr & context, ExpressionActionsPtr & fill_actions);
+    static void setFillColumn(ColumnChangesEntry & entry, const StorageInMemoryMetadata & metadata);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the
@@ -175,6 +206,8 @@ private:
         Blocks blocks;
         size_t rows = 0;
         size_t bytes = 0;
+        /// The metadata version of the last `ALTER` whose column renames and drops are applied to `blocks`.
+        Int32 columns_version = 0;
     };
 
     /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
@@ -185,6 +218,9 @@ private:
     MultiVersion<BlocksWithCounts> data;
 
     mutable std::mutex mutex;
+
+    /// Every `ALTER` that renamed or dropped columns, for the writers whose blocks predate it. Protected by `mutex`.
+    std::vector<ColumnChangesEntry> column_changes;
 
     bool delay_read_for_global_subqueries = false;
     MaterializedCTEWeakPtr materialized_cte;

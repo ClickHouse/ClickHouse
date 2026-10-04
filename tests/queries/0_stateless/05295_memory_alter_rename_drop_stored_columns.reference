@@ -1,0 +1,54 @@
+rename nullable	5	0	0
+rename nullable	\N	1	1
+add old name	5	0
+add old name	\N	0
+rename string	1	hello	[1,2]
+rename string	2	world	[3]
+where	1
+prewhere	1
+old and new rows	1	hello
+old and new rows	2	world
+old and new rows	3	after
+add old name	1	hello	
+add old name	2	world	
+add old name	3	after	
+drop then add	1	
+drop then add	2	
+drop b, rename a to b	1
+rename b to c, a to b	1	2
+rename a to b, add a	1	0
+rename nested member	1	[1,2]	['p','q']
+drop if exists nested	1	[1,2]	['p','q']
+drop then add nested	1	[]	[]
+rename then update	1	9
+rename then update	2	6
+compress	1	hello
+compress	2	world
+temporary table	1	hello
+all stored columns dropped	3	3	[]
+total_rows	3
+insert after drop	4	3	5
+add dropped name	0	\N
+add dropped name	0	\N
+add dropped name	0	\N
+add dropped name	0	5
+fill columns with defaults	2	[7,7]	['x','x']
+fill column materialized from another default	2	[7,7]	[3,3]
+rejected drop of the last physical column	1	7
+rejected drop of the last physical column	2	7
+bytes before drop	1
+bytes after drop	1
+compressed fill	100000	0
+compressed fill bytes	1
+mixed alter	100000	0
+mixed alter bytes	1
+rejected mixed alter	3	6
+accepted mixed alter	1	3
+insert after mixed alter	1	4
+restored column the table lacks	2	0	0
+restored into a column with a default	2	14
+empty tuple rows	3	0
+empty tuple restored	3
+empty tuple restore into a non-empty table	3
+column kinds restored	1	2	3	[5]
+blocks of different structures restored	3	1099511627779	11
