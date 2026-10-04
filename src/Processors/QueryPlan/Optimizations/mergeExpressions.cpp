@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -94,7 +96,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
         /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
-        /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
+        /// them is left to `tryFoldFilterThroughMaterialize`, which runs after `deduplicateSubtrees` -
         /// a fold before dedup could have its masked-secret constant replaced by an equal plain one
         merged.deduplicateSubtrees();
 
@@ -166,6 +168,38 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     }
 
     return 0;
+}
+
+/// only a dropped filter column hides its `materialize` wrapper (#78166)
+size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const bool folded = dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+
+    /// an always-true `FilterStep` is never pushed over a join and splits the join graph (TPC-DS `query_11`)
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node.column).always_true)
+    {
+        dag.removeUnusedResult(filter_column_name);
+        dag.removeUnusedActions(false, false);
+        auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+        expression->setStepDescription(*filter);
+        if (filter->isInputRemovalPrevented())
+            expression->setPreventInputRemoval();
+        node->step = std::move(expression);
+        return 1;
+    }
+
+    if (!folded)
+        return 0;
+
+    dag.removeUnusedActions(false, false);
+    return 1;
 }
 
 }
