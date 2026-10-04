@@ -1,0 +1,36 @@
+-- horizontal merge
+5	5
+-- vertical merge
+10	10
+['Vertical']
+-- TTL expression that is 0 for some rows
+5	5
+-- column TTL
+5	5
+-- MODIFY TTL with ttl_only_drop_parts
+10	5
+1
+-- part with only TTL 0 rows, reloaded, then merged with an expired part
+5	5
+-- the same with a second TTL rule, whose TTL information must survive the reload too
+1
+5	5
+-- merged twice
+5	5
+5	5
+-- column TTL, merged twice
+5	5
+5	10
+-- column TTL added by MODIFY COLUMN, recalculated only
+5	5
+-- background TTL merge
+5	5
+-- ttl_only_drop_parts drops an expired part whose column TTL is 0 for every row
+0
+TTLDropMerge
+-- rows whose TTL is 0 survive the drop of an expired column TTL that was removed
+10	10
+1
+-- ttl_only_drop_parts drops an expired part after a column TTL that is 0 for some rows is removed, also after a restart
+0
+TTLDropMerge
