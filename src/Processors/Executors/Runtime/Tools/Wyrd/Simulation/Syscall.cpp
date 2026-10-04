@@ -34,12 +34,4 @@ void spawn(std::function<void()> body, std::source_location location)
         simulator->spawn(std::move(body), location);
 }
 
-bool spuriousFailure(std::source_location location)
-{
-    if (auto * simulator = Simulator::current())
-        return simulator->spuriousFailure(location);
-
-    return false;
-}
-
 }

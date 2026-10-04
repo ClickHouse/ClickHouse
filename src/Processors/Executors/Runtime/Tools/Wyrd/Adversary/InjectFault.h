@@ -1,36 +1,13 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Config.h>
-#include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Access.h>
+#include <source_location>
 
 namespace DB::Runtime::Wyrd
 {
 
-inline void injectFault()
-{
-    if (auto * current = adversary())
-        current->threadFault();
-}
-
-inline void injectFaultBefore()
-{
-#if defined(EXECUTOR_FAULT_BEFORE)
-    injectFault();
-#endif
-}
-
-inline void injectFaultAfter()
-{
-#if defined(EXECUTOR_FAULT_AFTER)
-    injectFault();
-#endif
-}
-
-inline bool spuriousFailure()
-{
-    if (auto * current = adversary())
-        return current->threadSpuriousFailure();
-    return false;
-}
+void injectFault();
+void injectFaultBefore(const char * operation, std::source_location location = std::source_location::current());
+void injectFaultAfter(const char * operation, std::source_location location = std::source_location::current());
+bool spuriousFailure(std::source_location location = std::source_location::current());
 
 }
