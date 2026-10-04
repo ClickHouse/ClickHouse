@@ -1,0 +1,27 @@
+concurrent_threads_soft_limit_num	7
+dns_max_consecutive_failures	42
+http_connections_soft_limit	111
+load_marks_threadpool_pool_size	13
+logger.level	information
+max_connections	50
+max_thread_pool_size	999888
+openSSL.server.cacheSessions	1
+openSSL.server.sessionTimeout	4
+query_cache.max_entries	11
+query_cache.max_size_in_bytes	2097152
+shutdown_wait_unfinished_queries	1
+uncompressed_cache_size	1048576
+logger.errorlog	winner.err
+logger.log	winner.log
+winner.log exists
+winner.err exists
+loser.log does not exist
+loser.err does not exist
+OK: logger.level is applied
+777
+1
+Unknown option specified: no_such_server_setting
+Option must not be given more than once: max_thread_pool_size
+OK: --co and --lo resolve
+1
+1

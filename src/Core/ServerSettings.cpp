@@ -49,9 +49,14 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
 #include <Poco/AutoPtr.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/Option.h>
+#include <Poco/Util/OptionSet.h>
+#include <Poco/String.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/XML/NamePool.h>
@@ -59,6 +64,9 @@
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
+
+#include <base/argsToConfig.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <unordered_set>
@@ -66,6 +74,13 @@
 namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
+
+#include <algorithm>
+#include <optional>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -75,7 +90,6 @@ constexpr UInt64 default_global_profiler_period_ns = 0;
 constexpr UInt64 default_global_profiler_period_ns = 10000000000;
 #endif
 }
-
 
 namespace CurrentMetrics
 {
@@ -2072,8 +2086,17 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
+        /// A setting backed by a dotted config path (e.g. `query_cache.max_entries`) may also be
+        /// present under its flat name (`query_cache_max_entries`): `argsToConfig` stores the whole
+        /// command line under the flat argument names (the last occurrence wins), while the direct
+        /// program options registered in `addToProgramOptions` bind the dotted path. The flat name
+        /// takes precedence over the path so that the command line overrides the configuration
+        /// file, and a value after the `--` separator (the last occurrence) overrides a direct
+        /// option, same as for the settings without a path.
         /// `set` names the setting and the value it was given, so nothing has to be added here.
-        if (config.has(*path_or_name))
+        if (!path.empty() && config.has(name))
+            set(name, config.getString(name));
+        else if (config.has(*path_or_name))
             set(name, config.getString(*path_or_name));
         else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
             set(name, config.getString("profiles.default." + *path_or_name));
@@ -2137,6 +2160,269 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
     impl->loadSettingsFromConfig(config);
 }
 
+void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
+{
+    /// Snapshot the options already defined by the daemon and the server (e.g. `config-file`, `pid-file`)
+    /// before we start adding new ones - `addOption` may reallocate the underlying storage and invalidate
+    /// iterators and references into the set.
+    std::vector<std::string> builtin_options;
+    for (const auto & option : options)
+        builtin_options.push_back(option.fullName());
+
+    const auto & accessor = ServerSettingsTraits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        const String & name = accessor.getName(i);
+
+        /// A setting named exactly like a built-in option cannot be registered - `addOption` rejects the
+        /// duplicate - and it would shadow that option anyway. It remains available in the configuration
+        /// file and after the `--` separator.
+        ///
+        /// The abbreviations of the built-in options, which `Poco::Util::OptionSet` accepts because it
+        /// resolves a long option by any unique prefix, do not need such a treatment: the server expands
+        /// them into the full option name before the command line is processed (see
+        /// `expandBuiltinOptionAbbreviations`), so registering a setting that starts with one of them
+        /// (`compiled_expression_cache_size` and the `--co` abbreviation of `--config-file`, every
+        /// `logger_*` setting and `--log`, ...) does not make the abbreviation ambiguous.
+        if (std::ranges::contains(builtin_options, name))
+            continue;
+
+        std::string_view path = accessor.getPath(i);
+
+        /// For settings backed by a dotted config path (e.g. `query_cache_max_entries` ->
+        /// `query_cache.max_entries`), bind the option to the path: the components that consume such
+        /// settings read the dotted key from the raw configuration, so binding the flat name would
+        /// leave them unaffected. Independently of the binding, `argsToConfig` stores the whole
+        /// command line under the flat argument names in a higher-priority configuration layer, and
+        /// `loadSettingsFromConfig` reads the flat name with precedence over the path, so a value
+        /// given after the `--` separator still overrides a direct option for these settings, same
+        /// as for the settings without a path.
+        std::string binding = path.empty() ? name : std::string(path);
+
+        std::string argument_placeholder = "<" + std::string(accessor.getTypeName(i)) + ">";
+
+        options.addOption(
+            Poco::Util::Option(name, "" /* no short name */, std::string(accessor.getDescription(i)))
+                .required(false)
+                .repeatable(false)
+                .argument(argument_placeholder)
+                .binding(binding));
+    }
+}
+
+namespace
+{
+
+/// Resolve a long option the same way as `Poco::Util::OptionSet::getOption`: case-insensitively, by the name
+/// up to the first `:` or `=`, preferring a full match over a unique partial one. Returns null for an unknown
+/// or an ambiguous option.
+const Poco::Util::Option * resolveLongOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    bool ambiguous = false;
+    for (const auto & option : options)
+    {
+        if (option.matchesFull(name_and_value))
+            return &option;
+        if (option.matchesPartial(name_and_value))
+        {
+            ambiguous = resolved != nullptr;
+            resolved = &option;
+        }
+    }
+    return ambiguous ? nullptr : resolved;
+}
+
+/// Rewrite every option before the `--` separator into the form `--<full name>=<value>` (or `--<full name>`
+/// for an option given without a value), resolving it the same way as `Poco::Util::OptionProcessor` does, so
+/// that `argsToConfig` records it under the option's own name. `Poco` matches a long option
+/// case-insensitively and by a unique prefix, accepts both `:` and `=` between the name and the value,
+/// takes the value of a short option from the rest of the argument (`-Lfile`), and takes the value of an
+/// option that requires one from the next argument when it is not given inline - while `argsToConfig` only
+/// splits on `=` and stores the raw spelling. Without this, a later `--LOGGER_LOG b` or `--logger_log:b`
+/// accepted by `Poco` would not be recognized as an occurrence of `logger_log`, and an earlier spelling
+/// would win. The arguments after the separator are not options for `Poco` and are kept verbatim.
+std::vector<std::string> canonicalizeOptions(const std::vector<std::string> & argv, const Poco::Util::OptionSet & options)
+{
+    std::vector<std::string> result;
+    result.reserve(argv.size());
+
+    const Poco::Util::Option * deferred = nullptr;
+    bool options_ended = false;
+    for (size_t i = 0; i < argv.size(); ++i)
+    {
+        const auto & argument = argv[i];
+
+        /// The first argument is the name of the program.
+        if (i == 0 || options_ended)
+        {
+            result.push_back(argument);
+            continue;
+        }
+
+        if (deferred)
+        {
+            result.push_back("--" + deferred->fullName() + "=" + argument);
+            deferred = nullptr;
+            continue;
+        }
+
+        if (argument == "--")
+        {
+            options_ended = true;
+            result.push_back(argument);
+            continue;
+        }
+
+        const Poco::Util::Option * option = nullptr;
+        std::optional<std::string> value;
+        if (argument.starts_with("--"))
+        {
+            std::string name_and_value = argument.substr(2);
+            option = resolveLongOption(options, name_and_value);
+            size_t value_position = name_and_value.find_first_of(":=");
+            if (value_position != std::string::npos)
+                value = name_and_value.substr(value_position + 1);
+        }
+        else if (argument.starts_with("-"))
+        {
+            std::string name_and_value = argument.substr(1);
+            for (const auto & candidate : options)
+            {
+                if (candidate.matchesShort(name_and_value))
+                {
+                    option = &candidate;
+                    break;
+                }
+            }
+            if (option && name_and_value.size() > option->shortName().size())
+                value = name_and_value.substr(option->shortName().size());
+        }
+
+        if (!option)
+            result.push_back(argument);
+        else if (value)
+            result.push_back("--" + option->fullName() + "=" + *value);
+        else if (option->argumentRequired())
+            deferred = option;
+        else
+            result.push_back("--" + option->fullName());
+    }
+
+    if (deferred)
+        result.push_back("--" + deferred->fullName());
+
+    return result;
+}
+
+}
+
+void ServerSettings::mirrorCommandLineToConfigPaths(
+    const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options, Poco::Util::LayeredConfiguration & config)
+{
+    /// A setting backed by a nested config key can be given on the command line under two spellings: the
+    /// flat setting name (`openssl_server_required_tls_v1_2`, as a direct option or after the `--`
+    /// separator) and, after the `--` separator, the nested key itself (`openSSL.server.requireTLSv1_2`),
+    /// because `argsToConfig` stores any `--key value` argument verbatim. The two spellings land in
+    /// different config keys, `loadSettingsFromConfig` reads the flat name with precedence, and the
+    /// components that read the raw configuration instead of `ServerSettings` (e.g. `TLSHandler` reading
+    /// `openSSL.server.*`) only look at the nested key - so without the normalization below the "last
+    /// occurrence wins" contract would not hold across spellings, and `system.server_settings` and the
+    /// actual behaviour of the server would disagree for a mixed invocation such as
+    /// `clickhouse-server --openssl_server_required_tls_v1_2 0 -- --openSSL.server.requireTLSv1_2 1`.
+    ///
+    /// For every such setting, find the last occurrence of either spelling on the command line and publish
+    /// the winning value under both keys. Only the command line is inspected here - the configuration file
+    /// is deliberately not consulted, because a value that comes from the file must keep being read from
+    /// its own (nested) key. Therefore this function has to be called before the configuration file is
+    /// loaded, and it parses the command line into a throwaway configuration instead of looking at
+    /// `config`, which by then already contains the bindings of the direct options.
+    ///
+    /// The options before the separator are canonicalized first (see `canonicalizeOptions`), so that every
+    /// spelling `Poco` accepts for an option is recognized below.
+    Poco::Util::OptionSet all_options(builtin_options);
+    addToProgramOptions(all_options);
+
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line(new Poco::Util::LayeredConfiguration);
+    std::vector<std::pair<std::string, std::string>> ordered_args;
+    argsToConfig(canonicalizeOptions(argv, all_options), *command_line, 0, nullptr, &ordered_args);
+
+    /// Both spellings of every affected setting, mapped to the setting's index. Every setting backed by
+    /// a config key different from the setting name is affected. This includes `config_file`, whose key
+    /// (`config-file`) belongs to the built-in option of the same name: `BaseDaemon::loadConfiguration`
+    /// resolves the configuration file from the `config-file` key of the layered configuration, and this
+    /// function runs before that, so publishing the winning value under `config-file` makes the flat
+    /// spelling (`-- --config_file ...`) actually select the configuration file instead of only being
+    /// reported by `system.server_settings` (and consumed by e.g. the relative `hdfs_libhdfs3_conf`
+    /// resolution) while the server runs on a different config.
+    ///
+    /// A built-in option of the application that binds the config key of such a setting is a third spelling
+    /// of it: `--log-file` (`-L`) binds `logger.log`, the key of `logger_log`, and `--errorlog-file` (`-E`)
+    /// binds `logger.errorlog`, the key of `logger_errorlog`. Poco stores the value of a direct option in
+    /// the application layer, where the later of `--logger_log a --log-file b` wins, but the mirrored layer
+    /// below has a higher priority - so if the built-in spellings were not recognized here, the value of
+    /// `--logger_log` would be published over the later `--log-file` and the earlier occurrence would win.
+    const auto & accessor = ServerSettingsTraits::Accessor::instance();
+    std::unordered_map<std::string_view, size_t> spellings;
+    std::unordered_map<std::string_view, size_t> settings_by_key;
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        std::string_view path = accessor.getPath(i);
+        if (path.empty())
+            continue;
+        spellings[accessor.getName(i)] = i;
+        spellings[path] = i;
+        settings_by_key[path] = i;
+    }
+
+    /// Every spelling of a built-in option before the separator (`-L b`, `--LOG-FILE:b`, ...) reaches
+    /// `argsToConfig` under its full name (`log-file`), see `canonicalizeOptions`.
+    for (const auto & option : builtin_options)
+    {
+        auto it = settings_by_key.find(option.binding());
+        if (it == settings_by_key.end())
+            continue;
+        spellings[option.fullName()] = it->second;
+    }
+
+    /// The last occurrence on the command line wins, whichever spelling it uses.
+    std::unordered_map<size_t, std::string> winning_values;
+    for (const auto & [arg_key, arg_value] : ordered_args)
+    {
+        auto it = spellings.find(arg_key);
+        if (it != spellings.end())
+            winning_values[it->second] = arg_value;
+    }
+
+    if (winning_values.empty())
+        return;
+
+    /// The values are published in a configuration layer with a higher priority than the one `argsToConfig`
+    /// adds for the whole command line in `BaseDaemon::initialize` (`PRIO_APPLICATION - 100`), so that they
+    /// override a losing spelling stored there, and than the configuration file (`PRIO_DEFAULT`), so that
+    /// the command line keeps taking precedence over it, also after a configuration reload.
+    Poco::AutoPtr<Poco::Util::MapConfiguration> mirrored(new Poco::Util::MapConfiguration);
+    for (const auto & [i, value] : winning_values)
+    {
+        mirrored->setString(accessor.getName(i), value);
+        mirrored->setString(std::string(accessor.getPath(i)), value);
+    }
+    config.add(mirrored, Poco::Util::Application::PRIO_APPLICATION - 200);
+}
+
+const std::unordered_set<String> & ServerSettings::allNames()
+{
+    static const std::unordered_set<String> names = []
+    {
+        const auto & accessor = ServerSettingsTraits::Accessor::instance();
+        std::unordered_set<String> result;
+        result.reserve(accessor.size());
+        for (size_t i = 0; i < accessor.size(); ++i)
+            result.emplace(accessor.getName(i));
+        return result;
+    }();
+    return names;
+}
 
 void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check)
 {
