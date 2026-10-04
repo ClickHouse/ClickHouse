@@ -57,6 +57,9 @@ public:
     String getQueryResourceName() override;
     String getMemoryReservationResourceName() override;
 
+    void setResolveCPUToImplicit(bool resolve) override;
+    void setResolveMemoryToImplicit(bool resolve) override;
+
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const override;
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) override;
 
@@ -163,6 +166,12 @@ private:
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries
     String memory_reservation_resource; /// current resource name for memory reservations
+
+    /// Whether the resource-name getters resolve a CPU / memory role to the implicit server-synthesized
+    /// resource. Set by `WorkloadResourceManager` in lockstep with creating / removing that implicit
+    /// resource (true only in the fully-implicit case); never inferred from operator-name emptiness here.
+    bool resolve_cpu_to_implicit = false;
+    bool resolve_memory_to_implicit = false;
 
     // Chain of storages
     std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)

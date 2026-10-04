@@ -12,10 +12,12 @@
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 
 namespace DB
@@ -29,6 +31,11 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Name of the workload synthesized when `implicit_default_workload` is enabled and the operator
+    /// declared none. It matches the default value of the `workload` query setting, so a query that
+    /// leaves `workload` unset resolves to it.
+    constexpr std::string_view DEFAULT_WORKLOAD_NAME = "default";
+
     String getEntityName(const ASTPtr & ast)
     {
         if (auto * create = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
@@ -44,6 +51,34 @@ namespace
         if (auto * create = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
             return create->unit;
         return CostUnit::IOByte;
+    }
+
+    /// Builds a `CREATE RESOURCE` AST for a server-synthesized (implicit) resource with the given
+    /// access modes. It is used only in-memory (never parsed from SQL, never persisted), matching the
+    /// shape the parser produces so the rest of the manager treats it like any other resource.
+    ASTPtr makeImplicitResourceAST(const String & resource_name, const std::vector<ResourceAccessMode> & modes)
+    {
+        auto query = make_intrusive<ASTCreateResourceQuery>();
+        ASTPtr name_ast = make_intrusive<ASTIdentifier>(resource_name);
+        query->resource_name = name_ast;
+        query->children.push_back(name_ast);
+        for (auto mode : modes)
+            query->operations.push_back(ASTCreateResourceQuery::Operation{.mode = mode, .disk = std::nullopt});
+        query->unit = query->operations.empty() ? CostUnit::IOByte : query->operations.front().unit();
+        return query;
+    }
+
+    /// Builds a `CREATE WORKLOAD` AST for a server-synthesized (implicit) parentless workload with the
+    /// given name. It is used only in-memory (never parsed from SQL, never persisted), matching the
+    /// shape the parser produces so the rest of the manager treats it like any other workload.
+    ASTPtr makeImplicitWorkloadAST(const String & workload_name)
+    {
+        auto query = make_intrusive<ASTCreateWorkloadQuery>();
+        ASTPtr name_ast = make_intrusive<ASTIdentifier>(workload_name);
+        query->workload_name = name_ast;
+        query->children.push_back(name_ast);
+        // No parent: the workload attaches directly under the implicit root.
+        return query;
     }
 }
 
@@ -309,6 +344,11 @@ void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_nam
         workload_iter->second->updateWorkload(ast);
     else
         workloads.emplace(workload_name, std::make_shared<Workload>(this, ast));
+
+    // If the operator now declares `default` explicitly, it takes ownership of the entry, so the
+    // synthesized one is not removed when `implicit_default_workload` is later disabled.
+    if (workload_name == DEFAULT_WORKLOAD_NAME)
+        default_workload_synthesized = false;
 }
 
 void WorkloadResourceManager::deleteWorkload(const String & workload_name)
@@ -321,6 +361,11 @@ void WorkloadResourceManager::deleteWorkload(const String & workload_name)
     }
     else // Workload to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
         LOG_ERROR(log, "Delete workload that doesn't exist: {}", workload_name);
+
+    // If the operator dropped an explicit `default` while `implicit_default_workload` is on, restore
+    // the synthesized one so `workload='default'` keeps resolving.
+    if (workload_name == DEFAULT_WORKLOAD_NAME)
+        applyImplicitDefaultWorkloadLocked();
 }
 
 void WorkloadResourceManager::createOrUpdateResource(const String & resource_name, const ASTPtr & ast)
@@ -338,6 +383,11 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
         // Attach the resource
         resources.emplace(resource_name, resource);
     }
+
+    // Re-apply the latest server-wide limits after any resource create OR replace: a newly created
+    // operator resource must take over the implicit one, and a CREATE OR REPLACE that changes the
+    // relevant role must re-derive the implicit resource and root accordingly.
+    applyServerLimitsLocked();
 }
 
 void WorkloadResourceManager::deleteResource(const String & resource_name)
@@ -346,9 +396,158 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
     {
         resources.erase(resource_iter);
+        // Re-apply the latest server-wide limits: if the dropped resource was the operator CPU/memory
+        // resource while the feature is enabled, the implicit server-limit resource must be recreated
+        // so the budget keeps applying without waiting for the next config reload.
+        applyServerLimitsLocked();
     }
     else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
+}
+
+WorkloadResourceManager::ResourcePtr WorkloadResourceManager::createImplicitResourceLocked(const String & resource_name, const ASTPtr & ast)
+{
+    auto resource = std::make_shared<Resource>(ast);
+    for (Workload * workload : topologicallySortedWorkloads())
+        resource->createNode(NodeInfo(resource->getUnit(), workload->workload_entity, resource_name));
+    resources.emplace(resource_name, resource);
+    return resource;
+}
+
+void WorkloadResourceManager::updateServerLimits(const ServerResourceLimits & limits)
+{
+    std::unique_lock lock{mutex};
+    current_limits = limits;
+    applyServerLimitsLocked();
+}
+
+void WorkloadResourceManager::applyServerLimitsLocked()
+{
+    // The implicit `default` workload is gated independently of the resource-limit settings.
+    applyImplicitDefaultWorkloadLocked();
+
+    const bool any_enabled = current_limits.respect_cpu_limit || current_limits.respect_memory_limit;
+
+    // Keep the default (unlimited) behavior without touching any scheduler node while nothing is
+    // requested and nothing has ever been applied.
+    if (!any_enabled && !server_limits_applied)
+        return;
+
+    // CPU concurrency budget on a combined `MASTER THREAD, WORKER THREAD` resource. The manager owns the
+    // storage-side resolution flip for this role so it stays ordered against the resource create/remove.
+    applyResourceLimitLocked(
+        CostUnit::CPUNanosecond,
+        String(IMPLICIT_CPU_RESOURCE_NAME),
+        {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread},
+        current_limits.respect_cpu_limit,
+        current_limits.cpu_slots,
+        [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; },
+        [this](bool on) { storage->setResolveCPUToImplicit(on); });
+
+    // Memory reservation admission budget on a `MEMORY RESERVATION` resource.
+    applyResourceLimitLocked(
+        CostUnit::MemoryByte,
+        String(IMPLICIT_MEMORY_RESOURCE_NAME),
+        {ResourceAccessMode::MemoryReservation},
+        current_limits.respect_memory_limit,
+        current_limits.memory_bytes,
+        [](WorkloadSettings & s, Int64 v) { s.max_memory = v; },
+        [this](bool on) { storage->setResolveMemoryToImplicit(on); });
+
+    server_limits_applied = any_enabled;
+}
+
+void WorkloadResourceManager::applyImplicitDefaultWorkloadLocked()
+{
+    const String default_name(DEFAULT_WORKLOAD_NAME);
+    if (current_limits.implicit_default_workload)
+    {
+        // Synthesize a `default` workload under the implicit root if the operator declared none, so a
+        // query with `workload='default'` resolves to a real workload node. Not persisted through the
+        // entity storage, analogous to the implicit resources.
+        if (!workloads.contains(default_name))
+        {
+            workloads.emplace(default_name, std::make_shared<Workload>(this, makeImplicitWorkloadAST(default_name)));
+            default_workload_synthesized = true;
+        }
+    }
+    else if (default_workload_synthesized)
+    {
+        // Feature disabled: drop the synthesized workload; an operator-declared one is never removed.
+        workloads.erase(default_name);
+        default_workload_synthesized = false;
+    }
+}
+
+void WorkloadResourceManager::applyResourceLimitLocked(
+    CostUnit unit,
+    const String & implicit_name,
+    const std::vector<ResourceAccessMode> & implicit_modes,
+    bool enabled,
+    Int64 effective_limit,
+    const std::function<void(WorkloadSettings &, Int64)> & set_limit_field,
+    const std::function<void(bool)> & set_storage_resolution_enabled)
+{
+    // Snapshot resources of this unit before mutating the map (creating the implicit resource inserts
+    // into `resources`, which would otherwise invalidate an in-progress iteration).
+    std::vector<ResourcePtr> operator_resources;
+    ResourcePtr implicit;
+    for (auto & [name, resource] : resources)
+    {
+        if (resource->getUnit() != unit)
+            continue;
+        if (name == implicit_name)
+            implicit = resource;
+        else
+            operator_resources.push_back(resource);
+    }
+
+    // The feature mirrors one server-wide budget onto a single implicit-root constraint, so it
+    // supports at most one operator-declared resource of this unit (or none, in which case a combined
+    // implicit resource is created). More than one operator resource of the same unit (for CPU, e.g.
+    // separate MASTER and WORKER resources) cannot carry one shared budget without double-counting it,
+    // so the setting has no effect for that unsupported configuration: roots stay unlimited and no
+    // implicit resource is created.
+    const bool supported = operator_resources.empty()
+        || (operator_resources.size() == 1 && operator_resources.front()->coversAllModes(implicit_modes));
+    // A role resolves to the implicit resource IFF this manager currently has it: the fully-implicit case
+    // (feature enabled, layout supported, no operator resource of this unit). The manager owns that
+    // resolution flag and sets it here, ordered against the resource create/remove below, rather than
+    // letting the storage infer it from its own independently-updated operator-name state.
+    if (enabled && supported && operator_resources.empty())
+    {
+        // Fully implicit: create the implicit resource first, cap its root, then turn resolution ON — so a
+        // query can never resolve the implicit name before this manager has that resource.
+        if (!implicit)
+            implicit = createImplicitResourceLocked(implicit_name, makeImplicitResourceAST(implicit_name, implicit_modes));
+
+        WorkloadSettings root_settings;
+        set_limit_field(root_settings, effective_limit);
+        implicit->setImplicitRootLimit(root_settings);
+
+        set_storage_resolution_enabled(true);
+    }
+    else
+    {
+        // Not fully implicit (feature disabled, unsupported layout, or an operator resource takes
+        // precedence): roles must never resolve to the implicit resource. Turn resolution OFF first, so a
+        // query can never resolve the implicit name after the manager removes that resource; only then
+        // drop the auto-created implicit resource and set operator roots.
+        set_storage_resolution_enabled(false);
+
+        // Remove the auto-created implicit resource; its nodes drain via the version machinery once no
+        // classifier references them any longer. An operator resource is never removed here.
+        if (implicit)
+            resources.erase(implicit_name);
+
+        WorkloadSettings root_settings;
+        if (enabled && supported)
+            // One operator resource covers this unit and takes precedence: cap its root in place.
+            set_limit_field(root_settings, effective_limit);
+        // else (disabled or unsupported): leave every operator root unlimited (default-constructed).
+        for (auto & resource : operator_resources)
+            resource->setImplicitRootLimit(root_settings);
+    }
 }
 
 WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
@@ -451,6 +650,41 @@ void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resour
     chassert(getEntityName(new_resource_entity) == resource_name);
     chassert(getResourceUnit(new_resource_entity) == unit); // resource unit cannot be changed
     resource_entity = new_resource_entity;
+}
+
+bool WorkloadResourceManager::Resource::coversAllModes(const std::vector<ResourceAccessMode> & required) const
+{
+    const auto * create = assert_cast<const ASTCreateResourceQuery *>(resource_entity.get());
+    for (auto mode : required)
+    {
+        bool found = false;
+        for (const auto & operation : create->operations)
+        {
+            if (operation.mode == mode)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
+void WorkloadResourceManager::Resource::setImplicitRootLimit(const WorkloadSettings & root_settings)
+{
+    executeInSchedulerThread([&, this]
+    {
+        // The implicit root is an internal node with no explicit parent/priority, so its update never
+        // requires detach (see `updateRequiresDetach`): a `max_*` change is an in-place numeric update
+        // that creates, updates, or removes the root constraint without reparenting.
+        if (auto root = implicitRoot())
+        {
+            root->updateSchedulingSettings(root_settings);
+            updateCurrentVersion();
+        }
+    });
 }
 
 std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)

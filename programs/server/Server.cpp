@@ -413,6 +413,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
+    extern const ServerSettingsBool workloads_respect_server_cpu_limit;
+    extern const ServerSettingsBool workloads_respect_server_memory_limit;
+    extern const ServerSettingsBool implicit_default_workload;
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
@@ -2540,6 +2543,12 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// Whether the server-limit workload features have ever been enabled during this process's
+    /// lifetime. Persists across reloads (captured by the reloader below) so the manager is left
+    /// untouched on the common all-features-off path, yet still reset the one time the feature goes
+    /// from enabled back to disabled.
+    bool workload_server_limits_touched = false;
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2906,6 +2915,45 @@ try
 
             /// Load WORKLOADs and RESOURCEs.
             global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+
+            /// Mirror the resolved server-wide CPU and memory limits onto the per-resource implicit root
+            /// workloads, and synthesize the `default` workload when requested. Done after entities are
+            /// loaded so an operator-declared CPU/memory resource is already known. The budgets reuse the
+            /// resolutions computed above: the effective CPU-slot limit `concurrent_threads_soft_limit`
+            /// (from `concurrent_threads_soft_limit_num`/`_ratio_to_cores`, matching `ConcurrencyControl`)
+            /// and `max_server_memory_usage` (already reduced by its RAM ratio).
+            {
+                const bool respect_cpu_limit = new_server_settings[ServerSetting::workloads_respect_server_cpu_limit];
+                const bool respect_memory_limit = new_server_settings[ServerSetting::workloads_respect_server_memory_limit];
+                const bool implicit_default_workload = new_server_settings[ServerSetting::implicit_default_workload];
+
+                if (respect_cpu_limit || respect_memory_limit || implicit_default_workload || workload_server_limits_touched)
+                {
+                    workload_server_limits_touched = true;
+
+                    /// `concurrent_threads_soft_limit` is `UnlimitedSlots` when neither the number nor the
+                    /// ratio-to-cores limit is set; the workload scheduler represents that as unlimited.
+                    const Int64 cpu_slots = concurrent_threads_soft_limit == UnlimitedSlots
+                        ? WorkloadSettings::unlimited
+                        : static_cast<Int64>(concurrent_threads_soft_limit);
+
+                    ServerResourceLimits workload_limits;
+                    workload_limits.respect_cpu_limit = respect_cpu_limit;
+                    workload_limits.respect_memory_limit = respect_memory_limit;
+                    workload_limits.implicit_default_workload = implicit_default_workload;
+                    workload_limits.cpu_slots = respect_cpu_limit ? cpu_slots : WorkloadSettings::unlimited;
+                    /// `max_server_memory_usage == 0` means "no server memory cap" (unlimited); the
+                    /// workload scheduler's unlimited sentinel is `WorkloadSettings::unlimited`, not 0,
+                    /// so translate it rather than installing a zero-byte reservation budget.
+                    workload_limits.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
+                        ? static_cast<Int64>(max_server_memory_usage)
+                        : WorkloadSettings::unlimited;
+                    /// `updateServerLimits` owns both the implicit server-limit resources and the
+                    /// storage-side resource-name resolution, keeping them consistent; the resolution is
+                    /// not flipped separately here.
+                    global_context->getResourceManager()->updateServerLimits(workload_limits);
+                }
+            }
 
             if (!initial_loading)
             {

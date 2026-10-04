@@ -418,6 +418,15 @@ bool WorkloadEntityStorageBase::storeEntity(
     auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
     auto * resource = typeid_cast<ASTCreateResourceQuery *>(create_entity_query.get());
 
+    // The implicit server-limit resources are created and owned by the resource manager, keyed by
+    // these reserved names; an operator resource with the same name would be mistaken for the
+    // synthesized one (mutated/removed on feature toggles). Forbid creating them via SQL.
+    if (resource
+        && (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Resource name '{}' is reserved for the implicit server-limit resource and cannot be used",
+            entity_name);
+
     while (true)
     {
         std::unique_lock lock{mutex};
@@ -635,12 +644,20 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
+    // Resolve to the implicit combined CPU resource when the manager has enabled it (done in lockstep with
+    // creating `__server_cpu__`); otherwise return this role's operator resource name, empty if the role is
+    // undeclared. The flag is set by the manager, not inferred from the operator names below, which are
+    // updated independently of when the manager creates/removes the implicit resource.
+    if (resolve_cpu_to_implicit)
+        return String(IMPLICIT_CPU_RESOURCE_NAME);
     return master_thread_resource;
 }
 
 String WorkloadEntityStorageBase::getWorkerThreadResourceName()
 {
     std::lock_guard lock{mutex};
+    if (resolve_cpu_to_implicit)
+        return String(IMPLICIT_CPU_RESOURCE_NAME);
     return worker_thread_resource;
 }
 
@@ -653,7 +670,24 @@ String WorkloadEntityStorageBase::getQueryResourceName()
 String WorkloadEntityStorageBase::getMemoryReservationResourceName()
 {
     std::lock_guard lock{mutex};
+    // Resolve to the implicit memory-reservation resource exactly when the manager has told this storage
+    // to (set in lockstep with creating/removing `__server_memory__`); otherwise use the operator-declared
+    // resource, if any. Not inferred from operator-name emptiness -- see getMasterThreadResourceName.
+    if (resolve_memory_to_implicit)
+        return String(IMPLICIT_MEMORY_RESOURCE_NAME);
     return memory_reservation_resource;
+}
+
+void WorkloadEntityStorageBase::setResolveCPUToImplicit(bool resolve)
+{
+    std::lock_guard lock{mutex};
+    resolve_cpu_to_implicit = resolve;
+}
+
+void WorkloadEntityStorageBase::setResolveMemoryToImplicit(bool resolve)
+{
+    std::lock_guard lock{mutex};
+    resolve_memory_to_implicit = resolve;
 }
 
 void WorkloadEntityStorageBase::unlockAndNotify(
@@ -696,7 +730,19 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
 {
     std::unordered_map<String, ASTPtr> local_new_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
-        local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
+    {
+        auto normalized = normalizeCreateWorkloadEntityQuery(*create_query);
+        // Reserved implicit server-limit resource names are managed internally and must not be
+        // config-defined; ignore such an entity (rather than abort startup) with a warning, mirroring
+        // the reject on the SQL path in storeEntity().
+        if (typeid_cast<ASTCreateResourceQuery *>(normalized.get())
+            && (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME))
+        {
+            LOG_WARNING(log, "Ignoring resource '{}' loaded from configuration: the name is reserved for the implicit server-limit resource", entity_name);
+            continue;
+        }
+        local_new_entities[entity_name] = normalized;
+    }
 
     std::unique_lock lock(mutex);
 

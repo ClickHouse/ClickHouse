@@ -2474,6 +2474,606 @@ TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
     }
 }
 
+// The implicit server-limit resource names are reserved: an operator CREATE RESOURCE using them is
+// rejected, so the manager's name-based inference can never mistake an operator resource for the
+// synthesized one.
+TEST(SchedulerWorkloadResourceManager, ServerLimitReservedResourceNamesRejected)
+{
+    ResourceTest t;
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"));
+}
+
+// The server memory limit is mirrored onto the per-resource implicit root workload. When enabled and
+// no `MEMORY RESERVATION` resource is declared, the manager creates an internal one and the storage
+// resolves the reservation resource name to it, so the execution paths route through it.
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAutoCreateAndRemove)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    // Feature off and no operator resource: nothing is created and no name is resolved.
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+
+    // Enable with a finite budget: the implicit resource is created with a root allocation limit.
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = 1000;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
+
+    bool root_limit_seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == implicit_resource && path == "/limit")
+            root_limit_seen = true;
+    });
+    EXPECT_TRUE(root_limit_seen) << "implicit memory resource root should expose a finite allocation limit";
+
+    // Disable: the auto-created resource is removed and the name is no longer resolved to it.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+}
+
+// An "unlimited" server memory limit (`WorkloadSettings::unlimited`, i.e. `max_server_memory_usage = 0`
+// translated by Server.cpp) must NOT install a zero-byte budget on the implicit root: the resource is
+// created but carries no allocation limit, so reservations are not blocked. (Regression: the raw 0 was
+// copied as `max_memory = 0`, which blocked all reservations.)
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitUnlimitedDoesNotBlock)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = WorkloadSettings::unlimited;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    bool root_limit_seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == implicit_resource && path == "/limit")
+            root_limit_seen = true;
+    });
+    EXPECT_FALSE(root_limit_seen) << "unlimited server memory limit must not install a root allocation limit";
+}
+
+// The server budget on the implicit root caps the AGGREGATE reservation across all workloads under it,
+// even when the workloads themselves declare no memory limit.
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAggregateCap)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    t.query("CREATE WORKLOAD A");
+    t.query("CREATE WORKLOAD B");
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = 100;
+    t.manager->updateServerLimits(limits);
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ClassifierPtr c_b = t.manager->acquire("B");
+    ResourceLink link_a = c_a->get(implicit_resource);
+    ResourceLink link_b = c_b->get(implicit_resource);
+
+    // A reserves 80 out of the aggregate 100.
+    TestAllocation a(link_a, "A", 80);
+    a.waitSync();
+
+    // B asks for 80 more: 80 + 80 > 100, so its increase stays pending at the shared root limit.
+    TestAllocation b(link_b, "B", 80);
+    b.assertIncreaseEnqueued();
+
+    // Freeing most of A lets B's reservation fit under the aggregate budget.
+    a.setSize(10);
+    b.waitSync();
+}
+
+// An operator-declared `MEMORY RESERVATION` resource takes precedence: the server budget is applied to
+// its root and no implicit resource is created.
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitOperatorResource)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A");
+    t.query("CREATE WORKLOAD B");
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = 100;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_TRUE(t.manager->hasResource("memory"));
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ClassifierPtr c_b = t.manager->acquire("B");
+    ResourceLink link_a = c_a->get("memory");
+    ResourceLink link_b = c_b->get("memory");
+
+    TestAllocation a(link_a, "A", 80);
+    a.waitSync();
+    TestAllocation b(link_b, "B", 80);
+    b.assertIncreaseEnqueued();
+    a.setSize(10);
+    b.waitSync();
+}
+
+// While enabled, DROP RESOURCE / re-declaration of the operator resource must re-derive the implicit
+// server-limit resource in place, so the budget keeps applying without waiting for the next config
+// reload (regression: previously re-applied only on resource creation, not on drop/update).
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitReappliedOnOperatorResourceDropAndReplace)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_memory_limit = true;
+    limits.memory_bytes = 100;
+    t.manager->updateServerLimits(limits);
+
+    // Operator resource takes precedence: no implicit resource is created, and the getter resolves to it.
+    EXPECT_TRUE(t.manager->hasResource("memory"));
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
+
+    // Dropping the operator resource while enabled re-derives the implicit one in place, and the getter
+    // follows in lockstep (never naming a resource the manager lacks).
+    t.query("DROP RESOURCE memory");
+    EXPECT_FALSE(t.manager->hasResource("memory"));
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
+
+    // Re-declaring the operator resource hands precedence back and drops the implicit one.
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    EXPECT_TRUE(t.manager->hasResource("memory"));
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
+}
+
+// Hot-reload: the budget moves finite -> unlimited -> finite in place (the resource is kept for the
+// enabled lifetime), and disabling removes the auto-created resource.
+TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitHotReload)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    auto root_has_limit = [&]()
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+        {
+            if (r == implicit_resource && path == "/limit")
+                seen = true;
+        });
+        return seen;
+    };
+
+    ServerResourceLimits finite;
+    finite.respect_memory_limit = true;
+    finite.memory_bytes = 1000;
+    t.manager->updateServerLimits(finite);
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_TRUE(root_has_limit());
+
+    // Unlimited budget while still enabled: the resource stays, the limit node is dropped in place.
+    ServerResourceLimits unlimited_budget;
+    unlimited_budget.respect_memory_limit = true;
+    unlimited_budget.memory_bytes = WorkloadSettings::unlimited;
+    t.manager->updateServerLimits(unlimited_budget);
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_FALSE(root_has_limit());
+
+    // Back to finite: the limit node reappears.
+    t.manager->updateServerLimits(finite);
+    EXPECT_TRUE(root_has_limit());
+
+    // Disable: the auto-created resource is removed.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+}
+
+// The server CPU limit is mirrored onto the per-resource implicit root workload. When enabled and no
+// CPU resource is declared, the manager creates an internal combined `MASTER THREAD, WORKER THREAD`
+// resource and the storage resolves the master/worker resource names to it, so the execution paths
+// route CPU scheduling through it.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitAutoCreateAndRemove)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    // Feature off and no operator resource: nothing is created and no name is resolved.
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+
+    // Enable with a finite budget: the implicit resource is created with a root concurrency semaphore.
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_resource);
+
+    bool root_semaphore_seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == implicit_resource && path == "/semaphore")
+            root_semaphore_seen = true;
+    });
+    EXPECT_TRUE(root_semaphore_seen) << "implicit CPU resource root should expose a finite concurrency semaphore";
+
+    // Disable: the auto-created resource is removed and the names are no longer resolved to it.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+}
+
+// The server budget on the implicit root caps the AGGREGATE number of concurrent threads across all
+// workloads under it: a query in one workload cannot start threads while another workload holds the
+// whole shared budget, even though neither workload declares a CPU limit of its own.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
+{
+    ResourceTest t;
+
+    t.query("CREATE WORKLOAD A");
+    t.query("CREATE WORKLOAD B");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    // A query in workload A saturates the shared budget of 4 slots.
+    auto query_a = std::make_shared<TestQuery>(t);
+    query_a->start("A", 8);
+    query_a->waitStartedThreads(4);
+
+    // A query in workload B cannot start any thread: the budget is shared across all workloads under
+    // the implicit root and it is fully consumed by A, so B's request stays enqueued.
+    auto query_b = std::make_shared<TestQuery>(t);
+    query_b->start("B", 4);
+    query_b->waitEnqueued();
+
+    // Releasing A frees the shared slots so B proceeds under the same aggregate budget.
+    query_a.reset();
+    query_b->waitStartedThreads(4);
+    query_b.reset();
+
+    t.wait();
+}
+
+// An operator-declared CPU resource takes precedence: the server budget is applied to its implicit
+// root and no implicit resource is created.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitOperatorResource)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_TRUE(t.manager->hasResource("cpu"));
+
+    // The operator resource's implicit root carries the server budget as a concurrency semaphore.
+    bool root_semaphore_seen = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == "cpu" && path == "/semaphore")
+            root_semaphore_seen = true;
+    });
+    EXPECT_TRUE(root_semaphore_seen);
+}
+
+// Regression for the operator CREATE/DROP RESOURCE switchover race: the storage getters must never
+// resolve a CPU role to a resource this manager lacks. Across precedence handoffs the getters resolve to
+// the implicit resource exactly when the manager has it, and to the operator resource otherwise -- the
+// manager drives both in one ordered step, so no window ever names a never-created resource.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitResolutionTracksOperatorDropAndReplace)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    auto resolves_to_existing = [&]()
+    {
+        for (const String & name : {t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName()})
+            if (!name.empty() && !t.manager->hasResource(name))
+                return false;
+        return true;
+    };
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    // Operator resource takes precedence: both roles resolve to it, implicit not created.
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Drop the operator resource: both roles now resolve to the implicit resource, which the manager
+    // recreated in the same step -- never a dangling implicit name.
+    t.query("DROP RESOURCE cpu");
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_resource);
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Re-declare the operator resource: precedence returns, implicit removed, roles resolve to "cpu".
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
+
+    // Disable: no resolution to implicit; implicit absent; the operator resource still resolves.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_TRUE(resolves_to_existing());
+}
+
+// A split CPU layout (separate MASTER and WORKER resources) is an unsupported configuration: the
+// setting has no effect (no implicit resource is created and neither root is capped), so one budget
+// is never double-counted across two resources.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitSplitResourceNoEffect)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
+    t.query("CREATE RESOURCE cpu_worker (WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    bool any_root_semaphore = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if ((r == "cpu_master" || r == "cpu_worker") && path == "/semaphore")
+            any_root_semaphore = true;
+    });
+    EXPECT_FALSE(any_root_semaphore);
+}
+
+// A single CPU resource covering only one role (here MASTER THREAD) cannot carry the combined
+// MASTER+WORKER budget, so the configuration is unsupported and the setting has no effect: no
+// implicit resource is created and the operator root is not capped.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    ServerResourceLimits limits;
+    limits.respect_cpu_limit = true;
+    limits.cpu_slots = 4;
+    t.manager->updateServerLimits(limits);
+
+    // Manager: the partial layout is unsupported, so no implicit resource is created and the operator
+    // root is not capped.
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    bool root_semaphore = false;
+    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+    {
+        if (r == "cpu_master" && path == "/semaphore")
+            root_semaphore = true;
+    });
+    EXPECT_FALSE(root_semaphore);
+
+    // Storage getters stay consistent with the manager: the declared role resolves to the operator
+    // resource, and the missing role does NOT fall back to the never-created implicit resource.
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu_master");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+}
+
+// Hot-reload: the CPU budget moves finite -> unlimited -> finite in place (the resource is kept for
+// the enabled lifetime), and disabling removes the auto-created resource.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitHotReload)
+{
+    ResourceTest t;
+    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
+
+    auto root_has_semaphore = [&]()
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
+        {
+            if (r == implicit_resource && path == "/semaphore")
+                seen = true;
+        });
+        return seen;
+    };
+
+    ServerResourceLimits finite;
+    finite.respect_cpu_limit = true;
+    finite.cpu_slots = 8;
+    t.manager->updateServerLimits(finite);
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_TRUE(root_has_semaphore());
+
+    // Unlimited budget while still enabled: the resource stays, the semaphore is dropped in place.
+    ServerResourceLimits unlimited_budget;
+    unlimited_budget.respect_cpu_limit = true;
+    unlimited_budget.cpu_slots = WorkloadSettings::unlimited;
+    t.manager->updateServerLimits(unlimited_budget);
+    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
+    EXPECT_FALSE(root_has_semaphore());
+
+    // Back to finite: the semaphore reappears.
+    t.manager->updateServerLimits(finite);
+    EXPECT_TRUE(root_has_semaphore());
+
+    // Disable: the auto-created resource is removed.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+}
+
+// Switchover consistency: a single `updateServerLimits` drives BOTH the manager's resource presence and
+// the storage-side name resolution, ordered so the two never disagree in the dangerous direction (the
+// storage resolving an implicit name the manager has not created). This test never calls
+// `setServer*LimitEnabled` by hand -- with the fix Server.cpp no longer flips the storage flag
+// separately, so the manager must drive it. At every observable step storage resolution and manager
+// presence agree. Per-role control is exercised by disabling one role while keeping the other.
+TEST(SchedulerWorkloadResourceManager, ServerLimitSwitchoverDrivesStorageResolution)
+{
+    ResourceTest t;
+    const String implicit_cpu(IMPLICIT_CPU_RESOURCE_NAME);
+    const String implicit_memory(IMPLICIT_MEMORY_RESOURCE_NAME);
+
+    // Off: nothing is created and no name resolves to an implicit resource.
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+
+    // Enable both roles in one reload: each implicit resource exists AND the storage resolves its role
+    // names to it -- presence and resolution agree, proving the manager drove the storage flip.
+    ServerResourceLimits both;
+    both.respect_cpu_limit = true;
+    both.cpu_slots = 4;
+    both.respect_memory_limit = true;
+    both.memory_bytes = 1000;
+    t.manager->updateServerLimits(both);
+
+    EXPECT_TRUE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_cpu);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_cpu);
+    EXPECT_TRUE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
+
+    // Per-role switchover in one reload: disable CPU while keeping memory enabled. The CPU implicit
+    // resource is gone and its names no longer resolve, while memory is untouched -- each role's
+    // presence and resolution stay in agreement independently.
+    ServerResourceLimits memory_only;
+    memory_only.respect_memory_limit = true;
+    memory_only.memory_bytes = 1000;
+    t.manager->updateServerLimits(memory_only);
+
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_TRUE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
+
+    // Disable the remaining role: everything is removed and nothing resolves to an implicit resource.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+}
+
+// When `implicit_default_workload` is enabled and no `default` workload is declared, one is synthesized
+// under the implicit root so a query with `workload='default'` resolves to a real node. Disabling
+// removes it again.
+TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadCreateAndRemove)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+
+    // Without the feature, `default` resolves to no node of the resource.
+    {
+        ClassifierPtr c = t.manager->acquire("default");
+        EXPECT_FALSE(c->has("cpu"));
+    }
+
+    // Enable: a `default` workload is synthesized and resolves for classification.
+    ServerResourceLimits limits;
+    limits.implicit_default_workload = true;
+    t.manager->updateServerLimits(limits);
+    {
+        ClassifierPtr c = t.manager->acquire("default");
+        EXPECT_TRUE(c->has("cpu"));
+    }
+
+    // Disable: the synthesized workload is removed again.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+    {
+        ClassifierPtr c = t.manager->acquire("default");
+        EXPECT_FALSE(c->has("cpu"));
+    }
+}
+
+// An operator-declared `default` takes ownership even if the feature synthesized one first, and is
+// never removed when the feature is later disabled.
+TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadOperatorPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+
+    // Enable the feature so a `default` workload is synthesized.
+    ServerResourceLimits limits;
+    limits.implicit_default_workload = true;
+    t.manager->updateServerLimits(limits);
+
+    // The operator then declares `default` explicitly with a distinctive setting: it takes over.
+    t.query("CREATE WORKLOAD default SETTINGS max_concurrent_threads = 7");
+
+    // Disabling the feature must NOT remove the operator-declared `default`.
+    t.manager->updateServerLimits(ServerResourceLimits{});
+
+    ClassifierPtr c = t.manager->acquire("default");
+    EXPECT_TRUE(c->has("cpu"));
+    EXPECT_EQ(c->getWorkloadSettings("cpu").max_concurrent_threads, 7);
+}
+
+// Dropping an operator-declared `default` while the feature is on re-synthesizes the implicit one, so
+// `workload='default'` keeps resolving.
+TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadRestoredAfterDrop)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD default");
+
+    ServerResourceLimits limits;
+    limits.implicit_default_workload = true;
+    t.manager->updateServerLimits(limits);
+
+    // Operator drops its `default`; the synthesized one is restored.
+    t.query("DROP WORKLOAD default");
+
+    ClassifierPtr c = t.manager->acquire("default");
+    EXPECT_TRUE(c->has("cpu"));
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
 {
     ResourceTest t;
