@@ -13,6 +13,7 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
@@ -114,6 +115,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
+    /// A filter that is deterministic only within one query (a join runtime filter `__applyFilter` pushed below
+    /// the aggregation, `now`) changes which rows reach the heap, and so the boundary, but its contents are not
+    /// part of the query condition cache key.
+    bool has_non_deterministic_filter = false;
 
     while (!read_step)
     {
@@ -153,6 +158,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             }
             key_name = std::move(*input_name);
             closest_filter_step = filter_step;
+
+            const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
+                has_non_deterministic_filter = true;
         }
         else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
@@ -273,13 +282,18 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
 
     read_step->setTopKColumn(info);
 
+    /// This pass runs after `disableTopKQueryConditionCacheUnderNonDeterministicFilters`, so it applies the same
+    /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
+    if (has_non_deterministic_filter)
+        read_step->disableTopKPrewhereQueryConditionCache();
+
     /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
     /// filter the granules it sees are only those the boundary let through, so the entry must be salted with the
     /// top-K parameters (the same way `updateQueryConditionCache` salts a read stamped by `tryOptimizeTopK`), or
-    /// dropped when the cache is not to be used for top-K reads at all.
+    /// dropped when the cache is not to be used for top-K reads at all or a filter above the read is not deterministic.
     if (closest_filter_step && closest_filter_step->hasConditionForQueryConditionCache())
     {
-        if (settings.use_query_condition_cache_for_top_k)
+        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_filter)
             closest_filter_step->saltConditionForQueryConditionCache(read_step->getTopKFilterInfo()->condition_hash);
         else
             closest_filter_step->resetConditionForQueryConditionCache();
