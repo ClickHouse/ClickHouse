@@ -1594,7 +1594,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 {
     /// The task's table, emptied by the conversion of its previous bucket's last unit, moves into this bucket's slot:
     /// the slots are exclusively owned by the tasks that merge their buckets, and a retired bucket's slot is never
-    /// read again.
+    /// read again. Insertion grows the table by its distinct keys, and conversion retains that capacity
+    /// for the next unit or bucket. Reserving by the record count would oversize tables with repeated keys,
+    /// increasing the cost of probing, scanning and clearing them.
     if (previous_bucket >= 0)
         std::swap(dest_method.data.impls[bucket], dest_method.data.impls[previous_bucket]);
 
@@ -1727,13 +1729,6 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             if (alive_count < bins_per_unit)
                 alive_bins = alive.data();
         }
-
-        /// The table is empty here, and grows once to hold the unit's records and source cells, of its alive bins
-        /// when it is pruned, in their share of the bins. The string table keeps its sub-maps as they are, because it
-        /// would split the hint evenly over its four size-class sub-maps while a real key set concentrates in one of
-        /// them.
-        if constexpr (!requires { table.emptyStringSlot(); })
-            table.reserve((unit_records + cells.size()) * alive_count / bins_per_unit);
 
         /// The groups of the unit, which a count-first unit does not keep in its table.
         size_t unit_groups = 0;
