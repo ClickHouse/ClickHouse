@@ -86,15 +86,7 @@ size_t SetVariantsTemplate<Variant>::estimatePreparedKeysMemory(size_t num_rows,
             return 0;
     };
 
-    switch (type)
-    {
-        case Type::EMPTY: UNREACHABLE();
-
-    #define M(NAME) case Type::NAME: return estimate(*(NAME));
-        APPLY_FOR_SET_VARIANTS(M)
-    #undef M
-    }
-    UNREACHABLE();
+    return callOnMethod(estimate);
 }
 
 template <typename Variant>
