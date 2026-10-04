@@ -1,0 +1,9 @@
+The key count of the two-level condition
+matches the baseline	1
+froze	1
+The tracked memory of the two-level condition, over few groups of heap states
+matches the baseline	1
+froze	1
+No bound reached: the tables keep learning
+matches the baseline	1
+froze	0

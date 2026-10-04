@@ -28,6 +28,7 @@ namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+extern const SettingsBool adaptive_aggregator_disable_thaw;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
@@ -288,7 +289,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
-            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+            /*adaptive_aggregator_disable_thaw_=*/settings[Setting::adaptive_aggregator_disable_thaw]);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]

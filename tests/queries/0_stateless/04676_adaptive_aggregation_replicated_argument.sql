@@ -31,12 +31,11 @@ INSERT INTO t_adaptive_repl_right SELECT number FROM numbers(400000) WHERE intDi
 INSERT INTO t_adaptive_repl_right SELECT number FROM numbers(400000) WHERE intDiv(number, 2048) % 8 = 0;
 OPTIMIZE TABLE t_adaptive_repl_right FINAL;
 
--- The staged batches are coalesced only while several of them are buffered together, so the two
--- external-aggregation thresholds have to stay off: either one drains the backlog one batch at a
--- time and the coalescing is skipped. A two-level conversion is incompatible with the frozen path,
--- and the size hint can divert the table before the freeze. All four are randomized by the test
--- runner, as is enable_lazy_columns_replication, which is what produces the mixed argument
--- representations in the first place.
+-- The two external-aggregation thresholds stay off, so every staged record reaches the merge
+-- from memory. A two-level conversion is incompatible with the frozen path, and the size hint can
+-- divert the table before the freeze. All four are randomized by the test runner, as is
+-- enable_lazy_columns_replication, which is what produces the mixed argument representations in
+-- the first place.
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold = 10000000;
@@ -61,14 +60,14 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 1000;
 
 -- Each aggregate is computed twice, once through the adaptive aggregator and once through the
--- baseline one, so the pair also checks the coalesced values and not only the absence of an abort.
+-- baseline one, so the pair also checks the staged values and not only the absence of an abort.
 
 SELECT 'String';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.s) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         log_comment = '04676_seal_string';
+         log_comment = '04676_staged_string';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.s) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
@@ -79,7 +78,7 @@ SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.u) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         log_comment = '04676_seal_uint128';
+         log_comment = '04676_staged_uint128';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.u) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
@@ -90,31 +89,22 @@ SELECT sum(cityHash64(g, toString(m))) FROM (
     SELECT l.g AS g, max(l.nv) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         log_comment = '04676_seal_nullable';
+         log_comment = '04676_staged_nullable';
 SELECT sum(cityHash64(g, toString(m))) FROM (
     SELECT l.g AS g, max(l.nv) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 0;
 
--- The coalescing above is entered only once at least two staged batches are buffered together;
--- a lone batch is published as it is, by an earlier return. The counter is incremented after that
--- return, so a non-zero count is what distinguishes the three arms having exercised the
--- coalescing from their having agreed on a value without ever reaching it.
+-- The arguments of a staged record are copied out of the block into the record, the lazily
+-- replicated ones materialized first, and rebuilt into columns at the merge. A non-zero count of
+-- staged records is what distinguishes the three arms having gone through that from their having
+-- agreed on a value without staging anything.
 SYSTEM FLUSH LOGS query_log;
-SELECT 'sealed chunks', coalesce(sum(ProfileEvents['AdaptiveAggregationSealedChunks']), 0) > 0
+SELECT 'staged records', coalesce(sum(ProfileEvents['AdaptiveAggregationStagedRecords']), 0) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment LIKE '04676_seal_%';
-
--- The seal normalizes a gathered argument column that arrived in a wrapped representation, and
--- the join's lazily replicated blocks guarantee such columns reach the seal. The count is
--- summed over the three arms because which blocks stay replicated is the join's decision.
-SELECT 'normalized', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment LIKE '04676_seal_%';
+    AND log_comment LIKE '04676_staged_%';
 
 DROP TABLE t_adaptive_repl_left;
 DROP TABLE t_adaptive_repl_right;

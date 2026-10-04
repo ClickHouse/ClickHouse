@@ -74,11 +74,11 @@ public:
     bool isFinal() const { return final; }
 
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
-    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    void enableBucketTopK(size_t n, bool ascending, size_t rank_index)
     {
         params.bucket_top_k = n;
         params.bucket_top_k_ascending = ascending;
-        params.bucket_top_k_count_index = count_index;
+        params.bucket_top_k_rank_index = rank_index;
     }
 
     /// See `Aggregator::Params::having_prefilter_op`; called by the plan optimization.

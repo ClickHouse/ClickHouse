@@ -1,0 +1,9 @@
+UInt64 key	1	1	1	1
+COUNT(DISTINCT)	1	1	1	1
+String key	1	1	1	1
+With other aggregates	1	1	1	1
+Nullable argument	1	1	1	1
+uniqExactIf	1	1	1	1
+Two arguments	1	1	1	1
+Spilled records	1	1	1	1
+Ascending order	1	1	0	0

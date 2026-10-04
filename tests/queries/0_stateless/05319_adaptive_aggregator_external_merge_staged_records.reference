@@ -1,0 +1,5 @@
+UInt64 key, fixed-width argument	1	1	1	0
+String key, count	1	1	1	0
+UInt64 key, variable-width argument	1	1	1	0
+String key, states with destructors	1	1	1	0
+Staged records in memory	1	1	1	1

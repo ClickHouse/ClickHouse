@@ -1,0 +1,28 @@
+String key, narrow argument
+3000000	3000000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+String key, wide string argument
+1500000	1500000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+Wide string key
+1000000	1000000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+String key, states with heap memory
+250000	1000000	1000000	1000000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+Two UInt64 keys, count
+3000000	3000000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+Four UInt64 keys, count
+3000000	3000000
+the producers spilled most of the stream	1
+stayed on the frozen path	1
+UInt64 key, wide fixed state
+1200000	1200000
+the producers spilled most of the stream	1
+stayed on the frozen path	1

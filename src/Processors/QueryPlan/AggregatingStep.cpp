@@ -65,6 +65,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -364,15 +365,17 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
-    /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
-    /// statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off.
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    /// The staged streams of most threads of a prior run kept repeating the missed keys (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again. The verdict
+    /// lives in the hash-table statistics; a run without it takes the ordinary path with the statistics-driven
+    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask: the verdict is the
+    /// thaw's, and a top-K run that shares the statistics of the query without its `LIMIT` gains by its frozen tables.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !params.adaptive_aggregator_disable_thaw
+        && !params.adaptiveTopKPrunes())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
         if (hint && hint->adaptive_staging_repeat_dominated)
-            return "a prior run measured the staged stream as repeat-dominated";
+            return "a prior run measured the staged streams as repeat-dominated";
     }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.
@@ -694,7 +697,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
-            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
+            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>(
+                AdaptivePartitionLayout::forProducers(pipeline.getNumStreams(), transform_params->params.max_bytes_before_external_group_by));
 
         /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
         /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the
@@ -1062,6 +1066,11 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
             = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
+    /// The same for a name of a later version. A peer that predates it thaws as it always did, and a thaw changes
+    /// only the speed and the memory of the aggregation, not its result.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW)
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
+
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1295,7 +1304,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

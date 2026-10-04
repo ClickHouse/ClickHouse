@@ -252,6 +252,25 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     }
 }
 
+void AggregatedDataVariants::resetToSingleLevel()
+{
+    switch (type)
+    {
+#define M(NAME) \
+        case Type::NAME ## _two_level: \
+            init(Type::NAME); \
+            (NAME ## _two_level).reset(); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
+    }
+}
+
 void AggregatedDataVariants::convertToTwoLevel()
 {
     ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
