@@ -220,7 +220,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
 {
     const auto & rhs_typed = assert_cast<const UnionNode &>(rhs);
 
@@ -231,18 +231,17 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         return false;
 
     return is_subquery == rhs_typed.is_subquery
-        && is_cte == rhs_typed.is_cte
-        && is_materialized == rhs_typed.is_materialized
+        && (options.ignore_cte
+            || (is_cte == rhs_typed.is_cte && is_materialized == rhs_typed.is_materialized && cte_name == rhs_typed.cte_name))
         && is_recursive_cte == rhs_typed.is_recursive_cte
-        && cte_name == rhs_typed.cte_name
         && union_mode == rhs_typed.union_mode;
 }
 
-void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
-    state.update(is_materialized);
+    state.update(!options.ignore_cte && is_cte);
+    state.update(!options.ignore_cte && is_materialized);
     state.update(is_recursive_cte);
 
     if (recursive_cte_table)
@@ -252,8 +251,9 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(full_name);
     }
 
-    state.update(cte_name.size());
-    state.update(cte_name);
+    std::string_view hashed_cte_name = options.ignore_cte ? std::string_view{} : std::string_view{cte_name};
+    state.update(hashed_cte_name.size());
+    state.update(hashed_cte_name);
 
     state.update(static_cast<size_t>(union_mode));
 }
