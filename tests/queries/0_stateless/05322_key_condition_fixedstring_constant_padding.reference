@@ -6,10 +6,17 @@ SELECT count() FROM t_deterministic WHERE s = toFixedString('abc', 4);
 3
 SELECT count() FROM t_deterministic WHERE s IN (SELECT toFixedString('abc', 4));
 3
+SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Variant(FixedString(4), UInt64));
+3
+SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Dynamic);
+3
 SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 3
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
 3
+SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
+3
 DROP TABLE t_monotonic;
 DROP TABLE t_deterministic;
 DROP TABLE t_bare;
+DROP TABLE t_array;
