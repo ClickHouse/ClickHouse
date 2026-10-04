@@ -1162,7 +1162,8 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, Time64, or numeric types representing seconds since midnight.
-Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) follow the [`date_time_overflow_behavior`](/reference/settings/formats/date-time#date_time_overflow_behavior) setting: `ignore` (the default) and `saturate` clamp them to the range boundaries, while `throw` throws an exception.
+Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception, regardless of the setting.
 `Time64` values are floored towards negative infinity to whole seconds and saturated to the same range.
 
 <Note title="Legacy `toTime`">

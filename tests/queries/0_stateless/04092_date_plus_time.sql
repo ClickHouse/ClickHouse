@@ -402,12 +402,13 @@ INSERT INTO test_saturate_intermediate SELECT arrayJoin([CAST(toDecimal128('-120
 SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 DROP TABLE test_saturate_intermediate;
 
-SET date_time_overflow_behavior = 'throw';
-
 -- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
 -- whatever the width of the source type is, so a value beyond the visible range is stored
 -- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
 -- therefore two `Time` values that print identically also produce the same `DateTime`.
+-- A numeric cast to `Time` consults `date_time_overflow_behavior`, so the saturation is
+-- requested explicitly here instead of relying on the `throw` mode set above.
+SET date_time_overflow_behavior = 'saturate';
 SELECT
     toTime(9999999) AS t_raw,
     toTime(3599999) AS t_vis,
