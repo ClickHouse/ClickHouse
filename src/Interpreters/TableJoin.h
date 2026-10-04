@@ -361,6 +361,13 @@ public:
         static const std::vector<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
+    /// For a join whose hash table holds only a part of the right side, which must not replace the
+    /// runtime filter of the whole right side.
+    void clearSharedRuntimeFilterDescriptors()
+    {
+        if (join_operator)
+            join_operator->shared_runtime_filter_descriptors.clear();
+    }
 
     bool oneDisjunct() const;
 

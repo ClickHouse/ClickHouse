@@ -1307,6 +1307,10 @@ Pipes readByLayers(
     {
         merging_pipes[i] = step_getter(layers[i]);
 
+        /// Layers of whole partitions do not overlap, there is no range to filter by.
+        if (borders.empty())
+            continue;
+
         auto description = in_reverse_order ? fmt::format(
                                                   "filter values in [{}, {})",
                                                   i < borders.size() ? ::toString(borders[i]) : "-inf",
