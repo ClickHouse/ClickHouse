@@ -359,6 +359,29 @@ WHERE NOT (
     AND exponentialTimeDecayingValueAtUnitTime(negative) < -1
     AND exponentialTimeDecayingValueAtUnitTime(negative) > -1.000000000000001);
 
+-- Within one compact unit-time bucket, the residual value carries the remaining
+-- ordering precision. The direction must agree with native curve ordering in
+-- both sign domains.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    exponentialTimeDecaying(1)(1., t1) AS positive_a,
+    exponentialTimeDecaying(1)(1., t2) AS positive_b,
+    exponentialTimeDecaying(1)(-1., toFloat64(1)) AS negative_a,
+    exponentialTimeDecaying(1)(-1., t1) AS negative_b
+SELECT 'unit-time pair ordering mismatch'
+WHERE NOT (
+    exponentialTimeDecayingUnitTime(positive_a)
+        = exponentialTimeDecayingUnitTime(positive_b)
+    AND exponentialTimeDecayingValueAtUnitTime(positive_a)
+        < exponentialTimeDecayingValueAtUnitTime(positive_b)
+    AND positive_a < positive_b
+    AND exponentialTimeDecayingUnitTime(negative_a)
+        = exponentialTimeDecayingUnitTime(negative_b)
+    AND exponentialTimeDecayingValueAtUnitTime(negative_a)
+        > exponentialTimeDecayingValueAtUnitTime(negative_b)
+    AND negative_a > negative_b);
+
 -- Equivalent curves must expose the same ordered pair regardless of the anchor
 -- used to construct them.
 WITH
