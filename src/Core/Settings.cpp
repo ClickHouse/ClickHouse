@@ -3350,7 +3350,11 @@ Additionally, exact equality predicates of the form `nullIf(key, sentinel) = con
 )", 0, \
         {"26.5", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."}) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
-Force joined subqueries and table functions to have aliases for correct name qualification.
+Require an alias for a subquery or table function used in a JOIN when the alias is needed for name qualification.
+
+The alias is required only when a name is actually ambiguous: an identifier resolves to different columns of several joined table expressions, or `*` produces several columns with the same name, and one of these columns belongs to a subquery or table function without an alias. Such a column cannot be qualified, so the query fails with `ALIAS_REQUIRED` instead of being resolved silently or failing with `AMBIGUOUS_IDENTIFIER`. Unambiguous queries do not need the alias.
+
+Set to `0` to disable the restriction.
 )", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
 Return empty result when aggregating without keys on empty set.
