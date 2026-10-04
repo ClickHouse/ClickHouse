@@ -1251,6 +1251,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             "Index {} is not used for part {}. Reason: {}",
                             index->index.name, ranges.data_part->name, check_result.error().text));
                     }
+
+                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
+                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
+                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
+                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
+                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
+                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned, so the read sees exactly the
+                    /// rows the index was built on; a pending `ALTER DELETE` is applied regardless of that setting.
+                    const bool hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask]
+                        && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete());
+                    if (index->isVectorSimilarityIndex() && (hides_lightweight_deleted_rows || alter_conversions->hasDeleteMutation()))
+                    {
+                        return std::unexpected(PreformattedMessage::create(
+                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
+                            index->index.name, ranges.data_part->name));
+                    }
                     return {};
                 };
 
