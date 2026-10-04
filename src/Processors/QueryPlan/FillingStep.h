@@ -33,6 +33,9 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// How many leading `ORDER BY` keys the output is still sorted by.
+    size_t getPreservedSortPrefixSize() const;
+
 private:
     void updateOutputHeader() override;
 
