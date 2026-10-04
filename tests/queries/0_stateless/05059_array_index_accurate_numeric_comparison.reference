@@ -27,6 +27,18 @@ LowCardinality strings keep their padding semantics
 1
 1
 1
+1	1
+1	1
+1	1
+0	0
+1	1
+1	1
+1	1
+1	1
+0	0
+0	0
+1	1
+1	1
 LowCardinality lossy casts outside the numeric domain
 0	0
 0	0
