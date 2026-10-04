@@ -1,0 +1,33 @@
+#include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/FutexTable.h>
+#include <Processors/Executors/Runtime/Tools/Wyrd/Random.h>
+
+namespace DB::Runtime::Wyrd
+{
+
+void FutexTable::park(void * address, SimulatedThread * thread)
+{
+    queues[address].push_back(thread);
+}
+
+std::vector<SimulatedThread *> FutexTable::wake(void * address, size_t count)
+{
+    std::vector<SimulatedThread *> woken;
+
+    auto it = queues.find(address);
+    if (it == queues.end())
+        return woken;
+
+    std::vector<SimulatedThread *> & waiters = it->second;
+    while (count > 0 && !waiters.empty())
+    {
+        woken.push_back(popRandom(waiters));
+        --count;
+    }
+
+    if (waiters.empty())
+        queues.erase(it);
+
+    return woken;
+}
+
+}
