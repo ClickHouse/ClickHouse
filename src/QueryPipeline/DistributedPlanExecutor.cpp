@@ -869,8 +869,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
-        /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
-        /// so both come from the query's settings.
+        /// The thread limit and the concurrency-control flag come from the task's settings, which for
+        /// a local task carry its stage's share of the plan's thread limit.
         query_plan.setMaxThreads(pipeline_settings.max_threads);
         query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
@@ -982,6 +982,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
         task_context->setClientInfo(client_info);
     }
 
+    task_context->applySettingsChanges(task.settings_changes);
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
@@ -1073,6 +1074,9 @@ protected:
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+        /// A task's steps read `max_threads` from its context, some while the fragment is deserialized.
+        if (const UInt64 stamped_max_threads = stage.query_plan_fragment.getMaxThreads())
+            task_description.settings_changes.emplace_back("max_threads", stamped_max_threads);
 
         for (const auto & task : stage.tasks)
         {

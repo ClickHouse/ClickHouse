@@ -941,6 +941,18 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
+/// Local tasks all run in this process at once, so the tasks of a stage share the plan's thread limit.
+/// A synchronous remote read raises that limit to `max_distributed_connections` for threads that wait
+/// on sockets; the tasks do not, so they never get more than the setting.
+/// TODO: stages that run at the same time each get the whole limit. Throttling task starts across them must not
+/// hold back a consumer whose streaming producers already run and wait for it to connect.
+static void shareMaxThreadsAmongLocalTasks(DistributedQueryPlan & distributed_plan, size_t plan_max_threads, size_t setting_max_threads)
+{
+    const size_t limit = plan_max_threads ? std::min(plan_max_threads, setting_max_threads) : setting_max_threads;
+    for (auto & [_, stage] : distributed_plan.stages)
+        stage.query_plan_fragment.setMaxThreads(std::max<size_t>(1, limit / std::max<size_t>(1, stage.tasks.size())));
+}
+
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
@@ -1020,6 +1032,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
         /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
         const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
+        if (execute_locally)
+            shareMaxThreadsAmongLocalTasks(distributed_plan, getMaxThreads(), optimization_settings.max_threads);
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
         TaskToHostMapPtr task_to_host_map = execute_locally
