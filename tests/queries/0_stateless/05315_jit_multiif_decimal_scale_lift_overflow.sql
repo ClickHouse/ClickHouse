@@ -1,6 +1,6 @@
 -- An `if`/`multiIf` that lifts a `Decimal`, `DateTime64` or `Time64` branch to a larger result scale gives the same result when
 -- the lifted value does not fit the result's 32- or 64-bit storage, whether or not the expression is compiled: `DECIMAL_OVERFLOW`,
--- or, for a `DateTime64` branch of a `DateTime64` result, the value clamped to the result's range.
+-- or, for a `DateTime64` / `Time64` branch of a result of the same type, the value clamped to the result's range.
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
 
@@ -22,9 +22,10 @@ DROP TABLE t_jit_decimal_lift;
 -- clamps it to the last representable tick, the default `date_time_overflow_behavior` of the implicit cast.
 SELECT multiIf(number = 0, materialize(toDateTime64('2290-01-01 00:00:00', 0, 'UTC')), number = 1, toDateTime64('2000-01-01 00:00:00', 0, 'UTC'), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1);
 SELECT if(number = 0, materialize(toDateTime64('2290-01-01 00:00:00', 0, 'UTC')), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1);
--- Interval arithmetic stores a `Time64` outside its display range; it overflows the lift the same way.
-SELECT multiIf(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), number = 1, toTime64('00:00:01', 0), toTime64('00:00:01', 9)) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
-SELECT if(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), toTime64('00:00:01', 9)) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
+-- Interval arithmetic stores a `Time64` outside its display range; the rescaling of a `Time64` clamps it to the result's
+-- clock window the same way.
+SELECT multiIf(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), number = 1, toTime64('00:00:01', 0), toTime64('00:00:01', 9)) FROM numbers(1);
+SELECT if(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), toTime64('00:00:01', 9)) FROM numbers(1);
 SELECT multiIf(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), number = 1, toTime64('00:00:01', 0), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
 
 -- The widest lift that cannot overflow stays compiled and exact at the lowest value; one step wider is interpreted.

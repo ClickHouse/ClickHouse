@@ -97,7 +97,7 @@ public:
 private:
     /// Compiled code can neither raise nor clamp, so a `Decimal`, `DateTime64` or `Time64` branch whose lift to the result scale
     /// can leave 32- or 64-bit storage, where the interpreted cast raises `DECIMAL_OVERFLOW` (or, for a `DateTime64`
-    /// branch of a `DateTime64` result, clamps to the range of the result), is not compilable.
+    /// branch of a `DateTime64` result or a `Time64` branch of a `Time64` result, clamps to the range of the result), is not compilable.
     static bool scaleLiftCanOverflow(const IDataType & branch, const IDataType & result)
     {
         const bool same_family = (isDecimal(branch) && isDecimal(result))

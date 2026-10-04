@@ -2513,6 +2513,20 @@ struct ConvertImpl
                 return value.value % divisor == 0;
             };
 
+            /// A `Time64` value is not necessarily inside the clock window: arithmetic such as
+            /// `addSeconds(toTime64('00:00:00', 0), 4000000)` can produce one beyond 999:59:59. Check the window of the
+            /// target like the numeric and `Decimal` sources do, so that such a value is rejected by the accurate casts
+            /// and follows `date_time_overflow_behavior` otherwise, instead of being rescaled as is.
+            const Int64 to_scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_to->getScale());
+            const Int64 max_ticks = maxTicksForTime64(to_scale_multiplier);
+            const Int64 min_ticks = minTicksForTime64(to_scale_multiplier);
+
+            const auto try_convert = [&](const auto & value, ToFieldType & result)
+            {
+                return tryConvertDecimals<FromDataType, ToDataType>(value, col_from->getScale(), col_to->getScale(), result)
+                    && result.value >= min_ticks && result.value <= max_ticks;
+            };
+
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
                 auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
@@ -2520,7 +2534,7 @@ struct ConvertImpl
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     ToFieldType result;
-                    if (can_convert_exactly(vec_from[i]) && tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (can_convert_exactly(vec_from[i]) && try_convert(vec_from[i], result))
                     {
                         vec_to[i] = result;
                     }
@@ -2540,7 +2554,7 @@ struct ConvertImpl
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     ToFieldType result;
-                    if (!can_convert_exactly(vec_from[i]) || !tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (!can_convert_exactly(vec_from[i]) || !try_convert(vec_from[i], result))
                         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
                     vec_to[i] = result;
                 }
@@ -2548,7 +2562,24 @@ struct ConvertImpl
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                {
+                    ToFieldType result;
+                    if (try_convert(vec_from[i], result))
+                    {
+                        vec_to[i] = result;
+                    }
+                    else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                    {
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                            "Value {} is out of bounds of type {} with scale {}",
+                            vec_from[i].value, ToDataType::family_name, col_to->getScale());
+                    }
+                    else
+                    {
+                        /// Both the `saturate` and the (default) `ignore` mode clamp instead of failing.
+                        vec_to[i] = static_cast<ToFieldType>(vec_from[i].value > 0 ? max_ticks : min_ticks);
+                    }
+                }
             }
 
             return col_to;
