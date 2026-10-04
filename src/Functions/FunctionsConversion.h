@@ -86,6 +86,7 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_keep_nullable;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
@@ -133,11 +134,16 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
-    /// Note: context may be nullptr (i.e. via castColumn())
-    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
+    /// Note: context may be nullptr (i.e. via castColumn()). Then `fixed_string_to_string_strip_trailing_zeros_without_context`
+    /// stands for the setting `cast_fixed_string_to_string_strip_trailing_zeros`.
+    explicit FunctionConvertSettings(
+        const ContextPtr & context,
+        FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
+        bool fixed_string_to_string_strip_trailing_zeros_without_context = false)
         /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
         : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
         , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
@@ -149,6 +155,9 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_fixed_string_to_string_strip_trailing_zeros(context
+              ? context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros].value
+              : fixed_string_to_string_strip_trailing_zeros_without_context)
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -2831,7 +2840,8 @@ struct ConvertImpl
                         arguments[0].column->getName(), Name::name);
         }
         /// Conversion from FixedString to String.
-        /// Cutting sequences of zero bytes from end of strings.
+        /// The bytes are copied as is, unless `cast_fixed_string_to_string_strip_trailing_zeros`
+        /// asks for the old behavior of cutting sequences of zero bytes from end of strings.
         else if constexpr (std::is_same_v<ToDataType, DataTypeString>
             && std::is_same_v<FromDataType, DataTypeFixedString>)
         {
@@ -2849,6 +2859,8 @@ struct ConvertImpl
                 data_to.resize(size * n);
                 offsets_to.resize(size);
 
+                const bool strip_trailing_zeros = settings.cast_fixed_string_to_string_strip_trailing_zeros;
+
                 size_t offset_from = 0;
                 size_t offset_to = 0;
                 for (size_t i = 0; i < size; ++i)
@@ -2856,8 +2868,9 @@ struct ConvertImpl
                     if (!null_map || !null_map->getData()[i])
                     {
                         size_t bytes_to_copy = n;
-                        while (bytes_to_copy > 0 && data_from[offset_from + bytes_to_copy - 1] == 0)
-                            --bytes_to_copy;
+                        if (strip_trailing_zeros)
+                            while (bytes_to_copy > 0 && data_from[offset_from + bytes_to_copy - 1] == 0)
+                                --bytes_to_copy;
 
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
@@ -4851,10 +4864,12 @@ struct ToStringMonotonicity
 
         if (checkDataTypes<DataTypeFixedString>(type_ptr))
         {
-            /// `toString(FixedString(N))` removes trailing zero bytes. For example, with `N = 4`,
-            /// `['a', 'b', '\0', '\0']` becomes `'ab'`, and `['a', 'b', '\1', '\0']` becomes `'ab\1'`.
-            /// This preserves lexicographic order on `FixedString(N)`, so the transformation is
-            /// strictly monotonic on the whole type range.
+            /// `toString(FixedString(N))` copies the bytes as is, which is the identity on the order.
+            /// With `cast_fixed_string_to_string_strip_trailing_zeros` it removes trailing zero bytes
+            /// instead. For example, with `N = 4`, `['a', 'b', '\0', '\0']` becomes `'ab'`, and
+            /// `['a', 'b', '\1', '\0']` becomes `'ab\1'`. This preserves lexicographic order on
+            /// `FixedString(N)` as well, so in both cases the transformation is strictly monotonic on
+            /// the whole type range.
             return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
         }
 
@@ -5592,7 +5607,8 @@ private:
 /// `context` may be nullptr.
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    bool fixed_string_to_string_strip_trailing_zeros_without_context = false);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,

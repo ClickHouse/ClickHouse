@@ -2,7 +2,8 @@
 -- which drops the source type and silently falls back to raw numeric conversion. That
 -- produces wrong results in three families: `Date`/`Date32` -> `DateTime`/`DateTime64`
 -- treats days as seconds, `Enum` -> `String` emits the underlying integer instead of
--- the value name, and `FixedString` -> `String` keeps trailing NULs. `caseWithExpression`
+-- the value name, and `FixedString` -> `String` used to differ between the const and the
+-- materialized path. `caseWithExpression`
 -- inherits the same bug because it rewrites to `transform` when all WHEN/THEN values
 -- are constant. The fix routes the default through `castColumn`, like the other arrays.
 
@@ -26,8 +27,8 @@ SELECT transform(materialize(0), [1], [CAST('x' AS String)], materialize(CAST('c
 SELECT transform(materialize(0), [1], [CAST('x' AS FixedString(10))], CAST('cV1' AS Enum8('cV1' = 125)));
 SELECT transform(materialize(0), [1], [CAST('x' AS FixedString(10))], materialize(CAST('cV1' AS Enum8('cV1' = 125))));
 
--- Group C: FixedString default, String result type. Materialized path trims trailing NULs;
--- the const path used to keep them.
+-- Group C: FixedString default, String result type. Both paths keep the trailing NULs, as
+-- `CAST(FixedString AS String)` does.
 SELECT length(transform(materialize(0), [1], [CAST('x' AS String)], CAST(toFixedString('', 23) AS FixedString(23))));
 SELECT length(transform(materialize(0), [1], [CAST('x' AS String)], materialize(CAST(toFixedString('', 23) AS FixedString(23)))));
 SELECT transform(materialize(0), [1], [CAST('x' AS String)], CAST(toFixedString('1972-9-5', 54) AS FixedString(54)));

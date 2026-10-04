@@ -3,7 +3,7 @@
 -- `has` over a `Map` is not the same adapter as `mapContainsKey`. `FunctionArrayIndex::executeMap`
 -- rewrites the map to an array of its keys and strips `LowCardinality` from both arguments before
 -- comparing, so it compares the raw padded bytes, while `mapContainsKey` runs over the keys
--- subcolumn, which keeps the wrapper, and casts the constant to the dictionary type, stripping the
+-- subcolumn, which keeps the wrapper, and casts the constant to the dictionary type, keeping the
 -- padding of a `FixedString`. A `bloom_filter` index on `mapKeys` must follow the former for `has`.
 -- Cells compare the indexed answer against an unindexed oracle, so no expected value is baked in;
 -- every reference row of that shape answers 1.
@@ -26,17 +26,17 @@ SELECT (SELECT count() FROM k_has_lc WHERE has(m, toFixedString('K1', 2))) = (SE
 SELECT (SELECT count() FROM k_has_lc WHERE has(m, 'K1')) = (SELECT count() FROM o_has_lc WHERE has(m, 'K1'));
 SELECT (SELECT count() FROM k_has_lc WHERE has(m, 'X')) = (SELECT count() FROM o_has_lc WHERE has(m, 'X'));
 
--- `has` selects the physically padded key while `mapContainsKey` selects the unpadded one: pin both,
--- so the divergence cannot be lost to a shared coercion.
+-- Both `has` and `mapContainsKey` select the physically padded key: pin both, as they get there
+-- through different coercions.
 SELECT id FROM k_has_lc WHERE has(m, toFixedString('K1', 3)) ORDER BY id;
 SELECT id FROM k_has_lc WHERE mapContainsKey(m, toFixedString('K1', 3)) ORDER BY id;
 
 -- The index must still prune: more than zero and fewer than all granules are selected.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_has_lc WHERE has(m, toFixedString('K1', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 
--- `LowCardinality(FixedString(3))` keys: `has` casts both sides to the least supertype, so an
--- over-wide constant still matches, while the dictionary cast of `mapContainsKey` rejects it by
--- width alone and the error must stay reachable.
+-- `LowCardinality(FixedString(3))` keys: `has` casts both sides to the least supertype, which keeps
+-- the padding of both sides, so an over-wide constant matches nothing, while the dictionary cast of
+-- `mapContainsKey` rejects it by width alone and the error must stay reachable.
 CREATE TABLE o_has_lcfs (id UInt64, m Map(LowCardinality(FixedString(3)), UInt8)) ENGINE = Log;
 CREATE TABLE k_has_lcfs (id UInt64, m Map(LowCardinality(FixedString(3)), UInt8),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1)
@@ -51,8 +51,8 @@ SELECT (SELECT count() FROM k_has_lcfs WHERE has(m, toFixedString('K1', 5))) = (
 SELECT id FROM k_has_lcfs WHERE has(m, toFixedString('K1', 5)) ORDER BY id;
 SELECT count() FROM k_has_lcfs WHERE mapContainsKey(m, toFixedString('K1', 5)); -- { serverError TOO_LARGE_STRING_SIZE }
 
--- The supertype cast of `has` keeps the over-wide constant hashable, so the index is used instead
--- of declined.
+-- The over-wide constant matches no key, so the index declines it instead of pruning: the cell
+-- answers 0.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_has_lcfs WHERE has(m, toFixedString('K1', 5))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 
 DROP TABLE o_has_lc;

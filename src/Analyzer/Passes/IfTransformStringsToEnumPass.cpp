@@ -171,6 +171,11 @@ public:
             if (!isArray(literal_to->getResultType()) || !isString(literal_default->getResultType()))
                 return;
 
+            /// The values of a `FixedString` array are `String` fields as well, but `transform` converts them
+            /// to the result type `String` by its own rules, so only a `String` array keeps the values as is.
+            if (!isString(removeNullable(assert_cast<const DataTypeArray &>(*literal_to->getResultType()).getNestedType())))
+                return;
+
             auto array_to = literal_to->getValue().safeGet<Array>();
 
             if (array_to.empty())
