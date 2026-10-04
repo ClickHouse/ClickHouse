@@ -26,6 +26,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -626,6 +627,8 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         std::move(load_after),
         TablesLoaderBackgroundLoadPoolId,
         fmt::format("load table {}", name.getFullName()),
+        onLoadJobWaitersIncrement,
+        onLoadJobWaitersDecrement,
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
             SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
@@ -706,6 +709,8 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
         std::move(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup table {}", name.getFullName()),
+        onLoadJobWaitersIncrement,
+        onLoadJobWaitersDecrement,
         [this, name] (AsyncLoader &, const LoadJobPtr &)
         {
             if (auto table = tryGetTableNoWait(name.table))
@@ -738,6 +743,8 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
         std::move(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Ordinary database {}", getDatabaseName()),
+        onLoadJobWaitersIncrement,
+        onLoadJobWaitersDecrement,
         ignoreDependencyFailure,
         [] (AsyncLoader &, const LoadJobPtr &)
         {
