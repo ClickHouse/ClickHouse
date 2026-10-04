@@ -724,6 +724,8 @@ void StorageView::readImpl(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    options.build_logical_plan = query_info.build_logical_plan;
+    options.cacheable_logical_plan = query_info.cacheable_logical_plan;
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this);

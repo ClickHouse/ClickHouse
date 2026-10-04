@@ -1,0 +1,8 @@
+-- miss (both columns granted; the helper column is a):
+3
+-- hits: 0
+-- grants moved from the helper column to the other one; the hit must still be allowed:
+3
+-- hits: 1
+-- with no column granted at all the hit must be denied:
+ACCESS_DENIED
