@@ -30,8 +30,8 @@ public:
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
         std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
-        /// Rows in the posting blocks of `token_info` that these rows can reach. `clipRowsRange` is too coarse
-        /// for this: its one interval also covers the gaps between the ranges.
+        /// An upper bound on the rows in the posting blocks of `token_info` that these rows can reach.
+        /// `clipRowsRange` is too coarse for this: its one interval also covers the gaps between the ranges.
         size_t countReachableRows(const TokenPostingsInfo & token_info) const;
         PostingList clipPostings(const PostingList & postings);
         size_t getSizeInBytes() const;

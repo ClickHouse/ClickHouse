@@ -75,6 +75,7 @@ SELECT number,
        multiIf(number < 1000 OR (number >= 150000 AND number < 151000), 'gapfar',
                number >= 70000 AND number < 71000, 'gapnear',
                (number >= 100000 AND number < 101000) OR number = 190000, 'tailtok',
+               (number >= 20000 AND number < 30000 AND number % 10 = 0) OR number = 195000, 'sparsetok',
                'filler')
 FROM numbers(200000)
 SETTINGS max_insert_threads = 1;
@@ -132,6 +133,14 @@ WHERE id >= 190000 AND id < 191000 AND message LIKE '%tail%'
     SETTINGS log_comment = 'like_direct_q10', text_index_like_min_pattern_length = 3,
              use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
              text_index_like_rows_max_selectivity = 0.000001;
+
+-- Q13: `sparsetok` has blocks of 500, 500 and 1 rows spread over wide row ranges, and the window reaches
+-- only the middle one. Its range spans 4991 rows, so the token counts all 1001, above 0.002 (400 rows).
+SELECT count() FROM t_text_index_like_gap
+WHERE id >= 26500 AND id < 30000 AND message LIKE '%sparse%'
+    SETTINGS log_comment = 'like_direct_q13', text_index_like_min_pattern_length = 3,
+             use_text_index_postings_cache = 0, use_text_index_dictionary_cache = 0,
+             text_index_like_rows_max_selectivity = 0.002;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -211,6 +220,12 @@ SELECT 'q12',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q12';
+
+SELECT 'q13',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 1 AS discarded_scan_once
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q13';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;

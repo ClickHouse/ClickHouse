@@ -45,21 +45,12 @@ size_t TextIndexAnalyzer::ReadableRows::countReachableRows(const TokenPostingsIn
         for (size_t block : token_info.getBlocksToRead(*it))
             blocks.insert(block);
 
-    /// A block holds at most as many rows as its row range, which bounds the reachable rows from both sides.
-    /// Within the bounds, assume equal blocks: the row count of a single block is not stored.
+    /// The row count of a single block is not stored, but a block holds at most as many rows as its row range.
     size_t reachable_width = 0;
-    size_t unreachable_width = 0;
-    for (size_t i = 0; i < token_info.ranges.size(); ++i)
-    {
-        const size_t width = token_info.ranges[i].end - token_info.ranges[i].begin + 1;
-        (blocks.contains(i) ? reachable_width : unreachable_width) += width;
-    }
+    for (size_t block : blocks)
+        reachable_width += token_info.ranges[block].end - token_info.ranges[block].begin + 1;
 
-    const size_t cardinality = token_info.cardinality;
-    const size_t max_rows = std::min(cardinality, reachable_width);
-    const size_t min_rows = cardinality - std::min(cardinality, unreachable_width);
-    const size_t equal_blocks_rows = cardinality * blocks.size() / token_info.ranges.size();
-    return std::min(std::max(equal_blocks_rows, min_rows), max_rows);
+    return std::min<size_t>(token_info.cardinality, reachable_width);
 }
 
 std::optional<RowsRange> TextIndexAnalyzer::ReadableRows::clipRowsRange(const RowsRange & rows_range) const
