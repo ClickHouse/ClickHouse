@@ -189,11 +189,16 @@ struct AdaptiveTopKPruning
 
 struct AdaptiveAggregationSession
 {
+    explicit AdaptiveAggregationSession(AdaptivePartitionLayout layout_)
+        : layout(layout_)
+    {
+    }
+
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
-    /// The partitioning of every producer's staged records, fixed by the first freeze.
-    AdaptivePartitionLayout layout;
+    /// Every producer uses the layout chosen for the pipeline's aggregation streams.
+    const AdaptivePartitionLayout layout;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
     /// `Aggregator::finishAdaptiveProducer`). The merge tasks read them without the mutex: they are created after

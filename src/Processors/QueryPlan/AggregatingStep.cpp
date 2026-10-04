@@ -697,7 +697,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
-            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
+            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>(
+                AdaptivePartitionLayout::forProducers(pipeline.getNumStreams(), transform_params->params.max_bytes_before_external_group_by));
 
         /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
         /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the

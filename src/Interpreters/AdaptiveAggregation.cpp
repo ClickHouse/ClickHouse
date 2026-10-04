@@ -59,8 +59,6 @@ bool adaptiveStagingWastes(
 
 void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
 {
-    shared.layout = AdaptivePartitionLayout::forProducers(params.max_threads, params.max_bytes_before_external_group_by);
-
     if (params.adaptiveTopKPrunes())
         shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k);
 
