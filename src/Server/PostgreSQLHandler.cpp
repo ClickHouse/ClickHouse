@@ -1272,6 +1272,9 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 /// PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG` names
 /// the same schema and is matched case-insensitively; a quoted identifier keeps its
 /// case in PostgreSQL, so only the exact `"pg_catalog"` spelling is matched there.
+/// For the same reason an unquoted name qualified with `pg_catalog` is folded to lower case, so that
+/// `PG_CATALOG.PG_TYPE` names the `pg_type` view, as in PostgreSQL, where every catalog object has a
+/// lower-case name.
 static String removePgCatalogQualifier(const String & query)
 {
     static constexpr std::string_view pg_catalog = "pg_catalog";
@@ -1304,9 +1307,17 @@ static String removePgCatalogQualifier(const String & query)
     String result;
     result.reserve(query.size());
     std::optional<size_t> prev_emitted_significant;
+    std::optional<size_t> fold_to_lower_case;
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Token & token = tokens[i];
+        if (fold_to_lower_case == i)
+        {
+            for (const char * pos = token.begin; pos != token.end; ++pos)
+                result.push_back(toLowerASCII(*pos));
+            prev_emitted_significant = i;
+            continue;
+        }
         if (is_pg_catalog(token)
             && (!prev_emitted_significant || tokens[*prev_emitted_significant].type != TokenType::Dot))
         {
@@ -1318,6 +1329,8 @@ static String removePgCatalogQualifier(const String & query)
                     && (tokens[*after_dot].type == TokenType::BareWord || tokens[*after_dot].type == TokenType::QuotedIdentifier))
                 {
                     /// Skip the qualifier and the dot (and anything insignificant in between).
+                    if (tokens[*after_dot].type == TokenType::BareWord)
+                        fold_to_lower_case = *after_dot;
                     i = *dot;
                     continue;
                 }
