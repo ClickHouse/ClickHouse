@@ -134,6 +134,10 @@ How many times a single-level aggregation hash table was converted to two-level 
 
 How many hash tables were inited as two-level for aggregation.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 For how many blocks optimization of equal ranges of keys was applied
@@ -4419,6 +4423,14 @@ Total time a query was sleeping to conform 'max_local_write_bandwidth' throttlin
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 Number of times query masking rules was successfully matched.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 
