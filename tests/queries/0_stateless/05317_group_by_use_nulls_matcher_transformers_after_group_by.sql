@@ -34,3 +34,10 @@ SELECT * REPLACE (k || '!' AS k) FROM values('k String', ('a'), ('b')) GROUP BY 
 SELECT '-- matchers inside aggregate and grouping functions keep the original key type';
 SELECT count(t.* REPLACE (100 - c AS c)) FROM (SELECT number AS c FROM numbers(3)) AS t GROUP BY c WITH ROLLUP ORDER BY ALL;
 SELECT * APPLY (x -> grouping(x)) FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
+
+SELECT '-- matchers of a named window referenced by the projection';
+SELECT k, count() OVER w FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP WINDOW w AS (PARTITION BY * APPLY isNull) ORDER BY k NULLS LAST;
+SELECT k, count() OVER w FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP WINDOW w AS (PARTITION BY isNull(k)) ORDER BY k NULLS LAST;
+
+SELECT '-- REPLACE rewrites the WINDOW clause restored for the second expansion';
+SELECT * REPLACE (-c AS c), groupArray(c) OVER w FROM (SELECT number AS c FROM numbers(3)) GROUP BY c WITH ROLLUP WINDOW w AS (ORDER BY c ASC NULLS LAST) ORDER BY ALL;

@@ -3251,8 +3251,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     if (!node) return;
 
                     /// The other clauses of a query with the projection matchers expanded for the second time
-                    /// were already rewritten by the first expansion, see `resolveQuery`.
-                    if (query_node == query_with_replaced_clauses && node != query_node->getProjectionNode())
+                    /// were already rewritten by the first expansion, see `resolveQuery`. The projection and
+                    /// the `WINDOW` clause are restored to their state before the first expansion, so they are rewritten again.
+                    if (query_node == query_with_replaced_clauses
+                        && node != query_node->getProjectionNode()
+                        && node != query_node->getWindowNode())
                         return;
 
                     std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
@@ -7395,8 +7398,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
-    /// With `group_by_use_nulls`, the projection before its matchers were expanded, see below.
+    /// With `group_by_use_nulls`, the projection and the `WINDOW` clause before the matchers of the projection
+    /// were expanded, see below.
     QueryTreeNodePtr projection_with_unexpanded_matchers;
+    QueryTreeNodePtr window_with_unexpanded_matchers;
 
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
@@ -7421,11 +7426,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           *
           * The `APPLY` and `REPLACE` transformers resolve the expressions they produce, before the GROUP BY keys
           * are known: `* APPLY isNull` would be folded into `0`. So the unexpanded projection is kept, and after
-          * GROUP BY its matchers are expanded for the second time, see below.
+          * GROUP BY its matchers are expanded for the second time, see below. The same applies to the named
+          * windows referenced by the projection, whose matchers are expanded in place in the `WINDOW` clause.
           */
         auto unexpanded_projection = query_node_typed.getProjectionNode()->clone();
+        auto unexpanded_window = query_node_typed.hasWindow() ? query_node_typed.getWindowNode()->clone() : nullptr;
         if (expandProjectionMatchers(query_node_typed, scope))
+        {
             projection_with_unexpanded_matchers = std::move(unexpanded_projection);
+            window_with_unexpanded_matchers = std::move(unexpanded_window);
+        }
 
         if (query_node_typed.isGroupByAll())
         {
@@ -7502,6 +7512,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (projection_with_unexpanded_matchers)
     {
         query_node_typed.getProjectionNode() = std::move(projection_with_unexpanded_matchers);
+
+        /// The named windows are looked up by name, so the mapping has to point to the restored definitions.
+        if (window_with_unexpanded_matchers)
+        {
+            query_node_typed.getWindowNode() = std::move(window_with_unexpanded_matchers);
+            scope.window_name_to_window_node.clear();
+            for (const auto & window_node : query_node_typed.getWindow().getNodes())
+                scope.window_name_to_window_node.emplace(window_node->getAlias(), window_node);
+        }
+
         const auto * previous_query_with_replaced_clauses = query_with_replaced_clauses;
         query_with_replaced_clauses = query_node.get();
         SCOPE_EXIT({ query_with_replaced_clauses = previous_query_with_replaced_clauses; });
