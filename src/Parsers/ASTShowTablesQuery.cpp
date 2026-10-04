@@ -5,6 +5,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -25,6 +26,41 @@ ASTPtr ASTShowTablesQuery::clone() const
 
     cloneOutputOptions(*res);
     return res;
+}
+
+void ASTShowTablesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(databases);
+    hash_state.update(clusters);
+    hash_state.update(cluster);
+    hash_state.update(dictionaries);
+    hash_state.update(m_settings);
+    hash_state.update(merges);
+    hash_state.update(changed);
+    hash_state.update(temporary);
+    hash_state.update(caches);
+    hash_state.update(full);
+    hash_state.update(has_like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster_str);
+    update_string(like);
+
+    hash_state.update(where_expression != nullptr);
+    if (where_expression)
+        where_expression->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(limit_length != nullptr);
+    if (limit_length)
+        limit_length->updateTreeHash(hash_state, ignore_aliases);
+
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 String ASTShowTablesQuery::getFrom() const
@@ -195,12 +231,9 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     auto from_child = r.readChildOfType<ASTIdentifier>("from");
     if (from_child)
         set(from, from_child);
+    /// These are member-only in parser-produced ASTs and are hashed explicitly in updateTreeHashImpl.
     where_expression = r.readChild("where_expression");
-    if (where_expression)
-        children.push_back(where_expression);
     limit_length = r.readChild("limit_length");
-    if (limit_length)
-        children.push_back(limit_length);
 
     /// Restore output options inherited from `ASTQueryWithOutput` through the shared helper so
     /// the validation of their interdependencies stays in one place instead of diverging from

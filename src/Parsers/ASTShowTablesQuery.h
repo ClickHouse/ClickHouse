@@ -49,6 +49,8 @@ public:
     String getFrom() const;
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatLike(WriteBuffer & ostr, const FormatSettings & settings) const;
     void formatLimit(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
