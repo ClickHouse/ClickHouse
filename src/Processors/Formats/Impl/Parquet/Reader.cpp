@@ -31,6 +31,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <algorithm>
+#include <bit>
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
@@ -1897,7 +1899,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
 }
 
 /// The value set of one column chunk's dictionary, prepared for lookups: the hashes of all
-/// dictionary values, sorted for binary search. `default_value_hash` stands for the values the
+/// dictionary values, sorted lazily (see `containsAny`). `default_value_hash` stands for the values the
 /// dictionary does not hold: nulls decoded as the type's default under `input_format_null_as_default`
 /// (see `hashDictionaryValues`). It is kept out of `hashes` so the vector stays exactly the
 /// allocation `parquetTryHashColumn` made, which the pruning-memory reservation accounts for;
@@ -1906,8 +1908,11 @@ struct DictionaryValueHashes
 {
     std::vector<UInt64> hashes;
     std::optional<UInt64> default_value_hash;
+    bool sorted = false;
+    size_t scanned_probes = 0;
 
     /// Whether any of `probes` is among the dictionary's values.
+    /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
     /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
     /// this is an intersection of two sorted sequences rather than a sequence of independent binary
@@ -1919,14 +1924,31 @@ struct DictionaryValueHashes
     /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
     /// column chunk. An out-of-order probe merely restarts the window, so the result does not depend
     /// on the probes being sorted.
-    bool containsAny(const std::vector<UInt64> & probes) const
+    bool containsAny(const std::vector<UInt64> & probes)
     {
+        for (UInt64 probe : probes)
+            if (probe == default_value_hash)
+                return true;
+
+        if (!sorted)
+        {
+            const size_t max_scanned_probes = std::max<size_t>(8, static_cast<size_t>(std::bit_width(hashes.size())));
+            if (scanned_probes + probes.size() <= max_scanned_probes)
+            {
+                scanned_probes += probes.size();
+                for (UInt64 probe : probes)
+                    if (std::find(hashes.begin(), hashes.end(), probe) != hashes.end())
+                        return true;
+                return false;
+            }
+            std::sort(hashes.begin(), hashes.end());
+            sorted = true;
+        }
+
         auto it = hashes.begin();
         UInt64 previous_probe = 0;
         for (UInt64 probe : probes)
         {
-            if (probe == default_value_hash)
-                return true;
             if (probe < previous_probe)
                 it = hashes.begin();
             previous_probe = probe;
@@ -1974,7 +1996,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) is always built and sorted in place; the
+    /// exactly `count * sizeof(UInt64)`) is always built in place (and sorted in place, if at all); the
     /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
     /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
     /// hashable type is stored inline in `Field`. When
@@ -2041,11 +2063,10 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     DictionaryValueHashes value_hashes;
     value_hashes.hashes = std::move(*hashes);
     hashes.reset();
-    /// Sort once so every lookup is a binary search. Sorting in place needs no extra memory, unlike
-    /// a hash table of the values, whose buffer (a power-of-two sized to a maximum fill factor of
-    /// 0.5) would hold up to ~4 cells per value on top of this vector - several times the footprint
-    /// for a value set that is built once per column chunk and probed a handful of times.
-    std::sort(value_hashes.hashes.begin(), value_hashes.hashes.end());
+    /// The vector is searched in place (see `DictionaryValueHashes::containsAny`), which needs no extra
+    /// memory, unlike a hash table of the values, whose buffer (a power-of-two sized to a maximum fill
+    /// factor of 0.5) would hold up to ~4 cells per value on top of this vector - several times the
+    /// footprint for a value set that is built once per column chunk and probed a handful of times.
 
     /// The dictionary holds only the non-null values of the column chunk, so we must account for how
     /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
@@ -2077,7 +2098,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     }
 
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
-    /// evaluation finishes, so keep its persistent footprint - the sorted `hashes` buffer - reserved
+    /// evaluation finishes, so keep its persistent footprint - the `hashes` buffer - reserved
     /// against the shared budget and hand the amount to the caller to release when the value set is
     /// freed. The transient `indexes`/`values` allocations were already freed by leaving their scope
     /// above, so release that part of the reservation now: a second dictionary-filtered column, or
