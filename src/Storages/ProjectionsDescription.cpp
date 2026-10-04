@@ -5,6 +5,8 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
+#include <Common/quoteString.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,6 +23,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -44,6 +47,9 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Poco/String.h>
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -56,6 +62,8 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 }
 
 namespace Setting
@@ -74,6 +82,74 @@ extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+
+}
+
+namespace
+{
+
+/// The first release admits codecs whose behavior does not depend on session opt-ins or
+/// a changing part default. Keep the original AST spelling so omitted codec arguments can
+/// follow an allowed change to the projection output type.
+std::unordered_map<String, ASTPtr> resolveProjectionColumnCodecs(
+    const IAST & declarations,
+    const Block & sample_block,
+    const ColumnsDescription & source_columns,
+    const String & projection_name)
+{
+    static const Settings codec_policy;
+    static const NameSet allowed_families = {"NONE", "LZ4", "ZSTD", "DELTA", "DOUBLEDELTA"};
+
+    std::unordered_map<String, ASTPtr> result;
+    for (const auto & child : declarations.children)
+    {
+        const auto & declaration = child->as<const ASTColumnDeclaration &>();
+        const auto & name = declaration.name;
+        if (result.contains(name))
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} is declared more than once in projection {}", backQuote(name), backQuote(projection_name));
+
+        const auto * output = sample_block.findByName(name);
+        if (!output)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                "Column {} is not produced by projection {}", backQuote(name), backQuote(projection_name));
+        if (source_columns.hasSubcolumn(GetColumnsOptions::All, name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot declare a codec for subcolumn {}", backQuote(projection_name), backQuote(name));
+
+        if (declaration.getType() || declaration.default_specifier != ColumnDefaultSpecifier::Empty
+            || declaration.getDefaultExpression() || declaration.getComment() || declaration.getTTL()
+            || declaration.getStatisticsDesc() || declaration.getCollation() || declaration.getSettings()
+            || declaration.null_modifier || declaration.primary_key_specifier)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection {} column {} may declare only CODEC, without a type or other properties",
+                backQuote(projection_name), backQuote(name));
+
+        const auto codec_ast = declaration.getCodec();
+        const auto * codec = codec_ast ? codec_ast->as<ASTFunction>() : nullptr;
+        if (!codec || !codec->arguments || codec->arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} column {} must declare a CODEC", backQuote(projection_name), backQuote(name));
+
+        for (const auto & stage : codec->arguments->children)
+        {
+            String family;
+            if (const auto * identifier = stage->as<ASTIdentifier>())
+                family = identifier->name();
+            else if (const auto * function = stage->as<ASTFunction>())
+                family = function->name;
+            if (!allowed_families.contains(Poco::toUpper(family)))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Codec {} is not supported for projection column {}; supported codecs are "
+                    "NONE, LZ4, ZSTD, Delta, and DoubleDelta",
+                    stage->formatForErrorMessage(), backQuote(name));
+        }
+
+        result.emplace(name, CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+            codec_ast, output->type, CodecValidationSettings(codec_policy)));
+    }
+    return result;
+}
 
 }
 
@@ -299,11 +375,15 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (result.index)
     {
+        if (projection_definition->columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A projection index cannot have a column codec list");
         result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context, *merge_tree_settings);
     }
     else
     {
-        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
+        fillProjectionDescriptionByQuery(
+            result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns,
+            partition_key, query_context, *merge_tree_settings, projection_definition->columns);
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
@@ -377,7 +457,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    const MergeTreeSettings & projection_settings)
+    const MergeTreeSettings & projection_settings,
+    const IAST * declared_columns)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -513,6 +594,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         metadata.primary_key.definition_ast = nullptr;
     }
 
+    /// Resolve names as the SELECT exposes them, before the internal _part_offset rename.
+    std::unordered_map<String, ASTPtr> declared_codecs;
+    if (declared_columns)
+        declared_codecs = resolveProjectionColumnCodecs(
+            *declared_columns, result.sample_block, columns, result.name);
+
     /// Rename parent _part_offset to _parent_part_offset column
     if (can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
     {
@@ -550,6 +637,11 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             /// before the column was added reads the table default, not the column type's default.
             if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
                 column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            const String select_column_name = result.with_parent_part_offset && column_with_type_name.name == "_parent_part_offset"
+                ? "_part_offset" : column_with_type_name.name;
+            if (auto codec = declared_codecs.find(select_column_name);
+                codec != declared_codecs.end())
+                column_description.codec = codec->second;
             metadata_columns.add(std::move(column_description));
         }
     }

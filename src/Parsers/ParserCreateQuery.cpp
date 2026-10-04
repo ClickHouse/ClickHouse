@@ -281,18 +281,42 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
     ParserExpressionWithOptionalArguments type_p;
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
+    ParserKeyword s_as(Keyword::AS);
+    /// Parse a column declaration here; projection validation permits only a name and CODEC.
+    ParserColumnDeclarationList columns_p(/* require_type_ = */ false);
     ASTPtr query;
     ASTPtr index;
     ASTPtr type;
     ASTPtr with_settings;
+    ASTPtr columns;
 
     if (s_lparen.ignore(pos, expected))
     {
-        if (!query_p.parse(pos, query, expected))
+        /// A column can be named `select` or `with`, and `(select CODEC(NONE))` can also
+        /// parse as a SELECT query. Try the complete column-list form, including `AS (query)`,
+        /// before accepting the query-only form.
+        IParser::Pos columns_pos = pos;
+        Expected columns_expected = expected;
+        ASTPtr candidate_columns;
+        ASTPtr candidate_query;
+        if (columns_p.parse(columns_pos, candidate_columns, columns_expected)
+            && s_rparen.ignore(columns_pos, columns_expected)
+            && s_as.ignore(columns_pos, columns_expected)
+            && s_lparen.ignore(columns_pos, columns_expected)
+            && query_p.parse(columns_pos, candidate_query, columns_expected)
+            && s_rparen.ignore(columns_pos, columns_expected))
+        {
+            pos = columns_pos;
+            columns = std::move(candidate_columns);
+            query = std::move(candidate_query);
+        }
+        else if (!query_p.parse(pos, query, expected) || !s_rparen.ignore(pos, expected))
+        {
+            if (columns_expected.max_parsed_pos
+                && (!expected.max_parsed_pos || columns_expected.max_parsed_pos > expected.max_parsed_pos))
+                expected = std::move(columns_expected);
             return false;
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+        }
     }
     else if (s_index.ignore(pos, expected))
     {
@@ -332,6 +356,8 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
         projection->set(projection->type, type);
     if (with_settings)
         projection->set(projection->with_settings, with_settings);
+    if (columns)
+        projection->set(projection->columns, columns);
     node = projection;
 
     return true;

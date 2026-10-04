@@ -111,7 +111,8 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
-        const MergeTreeSettings & projection_settings);
+        const MergeTreeSettings & projection_settings,
+        const IAST * declared_columns = nullptr);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,

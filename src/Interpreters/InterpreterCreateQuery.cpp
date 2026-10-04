@@ -42,6 +42,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -1003,6 +1004,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
         {
+            /// CREATE AS copies only analyzed projections. Refuse a codec declaration that would
+            /// otherwise disappear because its source projection is temporarily unavailable.
+            for (const auto & definition : as_storage_metadata->getProjections().getUnavailableDefinitions())
+                if (definition->as<const ASTProjectionDeclaration &>().columns)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Cannot copy a projection with column codecs while that projection is unavailable");
+
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
             const auto & indices = as_storage_metadata->getSecondaryIndices();

@@ -1929,6 +1929,20 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 Projections can be modified or dropped with the [ALTER](/reference/statements/alter/projection) statement.
 
+### Projection column codecs {#projection-column-codecs}
+
+A MergeTree projection can choose a lossless compression codec for an output column, including
+on replicated tables and in `ON CLUSTER` DDL:
+
+```sql
+PROJECTION p (ts CODEC(DoubleDelta, ZSTD)) AS (SELECT id, ts ORDER BY ts)
+```
+
+The list may omit columns that use the part default. Each listed column must appear in the
+projection query; its type is inferred from that query. This first release supports `NONE`,
+`LZ4`, `ZSTD`, `Delta`, and `DoubleDelta`. It does not support `CODEC(Default)` or explicit
+types.
+
 ### Projection indexes {#projection-index}
 
 Projection indexes extend the projection subsystem by providing a lightweight and explicit way to define projection-level indexes.
