@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <base/range.h>
 
@@ -152,6 +153,22 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     }
 }
 
+namespace
+{
+
+/// Identify ClickHouse in the MongoDB connection handshake, so that server operators can tell
+/// ClickHouse connections apart from other clients in mongod/mongos logs, `currentOp` output
+/// and monitoring tools (the driver reports itself as "mongoc / mongocxx / ClickHouse").
+/// See https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries
+mongocxx::client createClient(const mongocxx::uri & uri)
+{
+    mongocxx::client client{uri};
+    /// The metadata is sent with the initial `hello` command, so it has to be appended before the first operation.
+    client.append_metadata("ClickHouse", VERSION_STRING);
+    return client;
+}
+
+}
 
 MongoDBSource::MongoDBSource(
     const mongocxx::uri & uri,
@@ -161,7 +178,7 @@ MongoDBSource::MongoDBSource(
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
     : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
-    , client{uri}
+    , client{createClient(uri)}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
