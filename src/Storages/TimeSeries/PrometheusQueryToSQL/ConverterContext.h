@@ -4,7 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRangeGetter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB::PrometheusQueryToSQL

@@ -133,7 +133,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}',
 
 # ---------------------------------------------------------------------------------------------
 # Part 1: a TimeSeries table with EXTERNAL target tables. It still owns inner tables (the
-# on-by-default recent samples table and its feeding materialized view), so dropInnerTableIfAny
+# on-by-default recent samples and time ranges tables), so dropInnerTableIfAny
 # adds their drops to the metadata transaction. This shape already recovered before the fix, so
 # it is the control case.
 # ---------------------------------------------------------------------------------------------
@@ -172,7 +172,7 @@ count_inner_drop_rejections ts_ext
 
 ${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
-# The outer TimeSeries table plus its 3 inner tables (data, tags, metrics).
+# The outer TimeSeries table plus its 5 inner tables, and the 2 inner tables of `ts_ext`.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
 # Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
@@ -191,9 +191,9 @@ diverge_from_keeper ts
 force_recovery
 wait_for_recovery ts "$RECOVERIES_BEFORE"
 
-# Before the fix this stays at 3: only the orphaned inner tables survive, `ts` never comes back.
+# Before the fix this stays at 7: only the orphaned inner tables survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-# `ts` specifically exists again (a count of 4 made only of inner tables would be wrong).
+# `ts` specifically exists again (a count of 8 made only of inner tables would be wrong).
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
 # The inner tables really were dropped and re-created, so they are empty again. If the eager inner

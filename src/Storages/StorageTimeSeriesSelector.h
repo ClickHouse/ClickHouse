@@ -8,6 +8,7 @@
 namespace DB
 {
 
+class StorageTimeSeries;
 struct TimeSeriesSettings;
 
 /// Represents a storage for table function timeSeriesSelector().
@@ -42,10 +43,12 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
-    /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds (need stored min_time/max_time), registering their tags for timeSeriesIdToTags().
-    /// The time bounds have the scale `time_scale`; they are converted to the type of the timestamps in the table, and the query
-    /// reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.
+    /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds,
+    /// registering their tags for timeSeriesIdToTags(). The time bounds have the scale `time_scale`; they are converted
+    /// to the type of the timestamps in the table and applied to the stored time ranges of the series if the table
+    /// stores them. The query reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.
     static ASTPtr makeSelectIDsQuery(
+        const StorageTimeSeries & time_series_storage,
         const StorageID & tags_table_id,
         const TimeSeriesSettings & time_series_settings,
         const DataTypePtr & table_timestamp_type,
@@ -53,7 +56,8 @@ public:
         const PrometheusQueryTree::MatcherList & matchers,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        UInt32 time_scale);
+        UInt32 time_scale,
+        const ContextPtr & context);
 
     void readImpl(
         QueryPlan & query_plan,
