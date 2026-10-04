@@ -260,7 +260,7 @@ namespace
 
             static constexpr std::array node_descriptors
             {
-                APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE, MAKE_ACCESS_FLAGS_NODE)
+                APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
             };
 
 #           undef MAKE_ACCESS_FLAGS_NODE

@@ -64,7 +64,7 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
 #define ADD_ACCESS_TYPE_ENUM_VALUE(name, aliases, node_type, parent_group_name) \
         res.emplace_back(toString(AccessType::name), static_cast<size_t>(AccessType::name));
 
-        APPLY_FOR_ACCESS_TYPES(ADD_ACCESS_TYPE_ENUM_VALUE, ADD_ACCESS_TYPE_ENUM_VALUE)
+        APPLY_FOR_ACCESS_TYPES(ADD_ACCESS_TYPE_ENUM_VALUE)
 #undef ADD_ACCESS_TYPE_ENUM_VALUE
 
         return res;
@@ -109,7 +109,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
     auto & column_parent_group_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_is_obsolete = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
-    auto add_row = [&](AccessType access_type, std::string_view aliases, Level max_level, AccessType parent_group, bool is_obsolete)
+    auto add_row = [&](AccessType access_type, std::string_view aliases, Level max_level, AccessType parent_group)
     {
         column_access_type.push_back(static_cast<Int16>(access_type));
 
@@ -149,18 +149,15 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
             column_parent_group_null_map.push_back(false);
         }
 
-        column_is_obsolete.push_back(is_obsolete);
+        column_is_obsolete.push_back(isObsolete(access_type));
     };
 
 #define STORAGE_SYSTEM_PRIVILEGES_ADD_ROW(name, aliases, node_type, parent_group_name) \
-    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name, false);
-#define STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW(name, aliases, node_type, parent_group_name) \
-    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name, true);
+    add_row(AccessType::name, aliases, node_type, AccessType::parent_group_name);
 
-    APPLY_FOR_ACCESS_TYPES(STORAGE_SYSTEM_PRIVILEGES_ADD_ROW, STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW)
+    APPLY_FOR_ACCESS_TYPES(STORAGE_SYSTEM_PRIVILEGES_ADD_ROW)
 
 #undef STORAGE_SYSTEM_PRIVILEGES_ADD_ROW
-#undef STORAGE_SYSTEM_PRIVILEGES_ADD_OBSOLETE_ROW
 }
 
 }

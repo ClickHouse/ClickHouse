@@ -149,20 +149,17 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 }
 
 
-
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType : uint8_t
 {
-/// Macros M and M_OBSOLETE should be defined as M(name, aliases, node_type, parent_group_name)
+/// Macros M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
 /// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
-/// parent_group_name is the name of the group containing this access type (or NONE if there is no such group);
-/// M_OBSOLETE declares an obsolete access type: it is kept only for compatibility and has no effect anymore because the
-/// feature it protected was removed, see `isObsolete`. Consumers which do not care pass the same macro as M and M_OBSOLETE.
+/// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
-#define APPLY_FOR_ACCESS_TYPES(M, M_OBSOLETE) \
+#define APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M_OBSOLETE) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
     M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
@@ -457,10 +454,13 @@ enum class AccessType : uint8_t
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
+/// Applies M to all access types, including the obsolete ones.
+#define APPLY_FOR_ACCESS_TYPES(M) APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M)
+
 #define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
     name,
 
-    APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST, DECLARE_ACCESS_TYPE_ENUM_CONST)
+    APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
 
