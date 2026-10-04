@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
@@ -18,9 +19,6 @@ namespace DB
 
 class TextIndexAnalyzer;
 class MergeTreeIndexConditionText;
-
-class PostingListCursor;
-using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
@@ -88,6 +86,30 @@ private:
     void initializeTokensToRead();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
+
+    /// Search of one column resolved once per part, since none of it depends on the granule.
+    /// Non-owning: the cursors belong to `lazy_cursors`, `direct_postings` to the analyzer.
+    struct ResolvedSearch
+    {
+        enum class Kind : uint8_t
+        {
+            /// No row matches.
+            Zeros,
+            /// Only analyzer-folded postings: fill from `direct_postings` clipped to the granule.
+            DirectPostings,
+            /// Union (`Any`) or intersection (`All`) of `cursors`.
+            Cursors,
+        };
+
+        Kind kind = Kind::Zeros;
+        std::vector<PostingListCursor *> cursors;
+        TextSearchMode mode = TextSearchMode::Any;
+        TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Leapfrog;
+        const PostingList * direct_postings = nullptr;
+    };
+
+    /// Also creates the cursors of the column in `lazy_cursors`.
+    ResolvedSearch resolveSearch(size_t column_idx);
 
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
@@ -159,14 +181,15 @@ private:
     bool use_lazy_mode = false;
     TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Auto;
 
-    /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
-    /// Cursors are forward-only and hold mutable segment/block position, so they must not be
-    /// shared across columns. Dropped on granule reload and on backward `readRows` jumps (`from_row < current_row`).
-    std::vector<absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
+    /// Owns the cursors of `resolved_searches`. Cursors are forward-only and hold mutable segment/block
+    /// position, so each column gets its own. Dropped on granule reload and on backward `readRows` jumps.
+    std::vector<PostingListCursorPtr> lazy_cursors;
 
-    /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,
-    /// combined with large-posting stream cursors. Dropped on the same triggers as `lazy_cursors`.
-    std::vector<PostingListCursorPtr> prebuilt_cursors;
+    /// Per-column `ResolvedSearch`, built on the first granule. Dropped together with `lazy_cursors`.
+    std::vector<std::optional<ResolvedSearch>> resolved_searches;
+
+    /// Counters of the lazy intersections, added to the profile events when the reader is destroyed.
+    LazyPostingsStats lazy_postings_stats;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

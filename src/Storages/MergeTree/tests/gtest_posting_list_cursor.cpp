@@ -140,6 +140,39 @@ std::vector<PostingListCursorPtr> resolveTokenCursors(
     return cursors;
 }
 
+/// Helper: convert the cursors to raw pointers.
+std::vector<PostingListCursor *> rawCursors(const std::vector<PostingListCursorPtr> & cursors)
+{
+    std::vector<PostingListCursor *> raw;
+    raw.reserve(cursors.size());
+    for (const auto & cursor : cursors)
+        raw.push_back(cursor.get());
+    return raw;
+}
+
+/// Helper: sort the cursors and perform union, as the reader does.
+void unionSorted(IColumn & column, const std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows)
+{
+    auto sorted = rawCursors(cursors);
+    sortCursorsForUnion(sorted);
+    lazyUnionPostingLists(column, sorted, column_offset, row_offset, num_rows);
+}
+
+/// Helper: sort the cursors, resolve the algorithm and perform intersection, as the reader does.
+void intersectSorted(
+    IColumn & column,
+    const std::vector<PostingListCursorPtr> & cursors,
+    size_t column_offset,
+    size_t row_offset,
+    size_t num_rows,
+    TextIndexPostingsIntersectionAlgorithm algorithm)
+{
+    auto sorted = rawCursors(cursors);
+    sortCursorsForIntersection(sorted);
+    LazyPostingsStats stats;
+    lazyIntersectPostingLists(column, sorted, column_offset, row_offset, num_rows, chooseIntersectionAlgorithm(sorted, algorithm), stats);
+}
+
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
@@ -153,7 +186,7 @@ std::vector<uint32_t> intersectAndCollect(
         : TextIndexPostingsIntersectionAlgorithm::Leapfrog;
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
     auto cursors = resolveTokenCursors(postings, tokens);
-    lazyIntersectPostingLists(*col, cursors, 0, row_offset, num_rows, algorithm);
+    intersectSorted(*col, cursors, 0, row_offset, num_rows, algorithm);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -171,7 +204,7 @@ std::vector<uint32_t> unionAndCollect(
 {
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
     auto cursors = resolveTokenCursors(postings, tokens);
-    lazyUnionPostingLists(*col, cursors, 0, row_offset, num_rows);
+    unionSorted(*col, cursors, 0, row_offset, num_rows);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -3778,7 +3811,7 @@ TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
     auto col = ColumnUInt8::create(64, UInt8(0));
     EXPECT_THROW(
-        lazyUnionPostingLists(*col, cursors, 0, huge_offset, 64),
+        unionSorted(*col, cursors, 0, huge_offset, 64),
         Exception);
 }
 
@@ -3794,7 +3827,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::Leapfrog),
+            intersectSorted(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::Leapfrog),
             Exception);
     }
 
@@ -3802,7 +3835,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::BruteForce),
+            intersectSorted(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::BruteForce),
             Exception);
     }
 }
@@ -3858,7 +3891,7 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     {
         std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::BruteForce);
+        intersectSorted(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::BruteForce);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);  // m - 3: only in a
         EXPECT_EQ(data[1], 0u);  // m - 2: only in b
@@ -3871,7 +3904,7 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     {
         std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::Leapfrog);
+        intersectSorted(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::Leapfrog);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);
         EXPECT_EQ(data[1], 0u);
