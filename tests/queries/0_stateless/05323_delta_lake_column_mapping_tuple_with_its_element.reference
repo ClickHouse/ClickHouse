@@ -36,3 +36,6 @@ typed JSON path
 dynamic JSON path
 1	('{"a":1,"b":2}')	2
 2	('{"a":3,"b":4}')	4
+partly renamed struct and the struct
+1	(10,(100,1000))	(100,1000)
+2	(20,(200,2000))	(200,2000)

@@ -600,11 +600,11 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     NameAndTypePair result_column;
     if (column.isSubcolumn())
     {
-        result_column = NameAndTypePair(
-            physical_name_in_storage,
-            getPhysicalSubcolumnName(column.getTypeInStorage(), physical_type_in_storage, column.getSubcolumnName()),
-            physical_type_in_storage,
-            column.type);
+        auto physical_subcolumn_name = getPhysicalSubcolumnName(column.getTypeInStorage(), physical_type_in_storage, column.getSubcolumnName());
+        auto physical_subcolumn_type = column.getTypeInStorage()->equals(*physical_type_in_storage)
+            ? column.type
+            : physical_type_in_storage->getSubcolumnType(physical_subcolumn_name);
+        result_column = NameAndTypePair(physical_name_in_storage, physical_subcolumn_name, physical_type_in_storage, physical_subcolumn_type);
     }
     else
     {

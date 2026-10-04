@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DIR="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}"
 rm -rf "$DIR"
-for T in mapped plain json; do
+for T in mapped plain json overlap; do
     mkdir -p "$DIR/$T/_delta_log"
 done
 
@@ -26,6 +26,9 @@ INSERT INTO FUNCTION file('$DIR/plain/data.parquet', Parquet,
 VALUES (1, (10, (100))), (2, (20, (200))), (3, (NULL, (300)));
 INSERT INTO FUNCTION file('$DIR/json/data.parquet', Parquet, '\`c-id\` Int32, \`c-t\` Tuple(\`c-t-j\` Nullable(String))')
 VALUES (1, ('{\"a\":1,\"b\":2}')), (2, ('{\"a\":3,\"b\":4}'));
+INSERT INTO FUNCTION file('$DIR/overlap/data.parquet', Parquet,
+    '\`c-id\` Int32, \`c-t\` Tuple(\`c-t-x\` Nullable(Int32), \`c-t-n\` Tuple(y Nullable(Int32), \`c-t-n-z\` Nullable(Int32)))')
+VALUES (1, (10, (100, 1000))), (2, (20, (200, 2000)));
 "
 
 python3 - "$DIR" <<'EOF'
@@ -85,10 +88,18 @@ write_log("json", [
     field("id", "integer", "c-id"),
     field("t", struct(field("j", "string", "c-t-j")), "c-t"),
 ], 2)
+
+write_log("overlap", [
+    field("id", "integer", "c-id"),
+    field("t", struct(
+        field("x", "integer", "c-t-x"),
+        field("n", struct(field("y", "integer", "y"), field("z", "integer", "c-t-n-z")), "c-t-n")), "c-t"),
+], 2)
 EOF
 
 # The declared schema lists the fields of `t` in a different order than the Delta log.
 # In `typed` the JSON path `b` is a typed path, in `dynamic` it is a dynamic one.
+# In `overlap` the field `y` keeps its logical name as its physical name, as after enabling column mapping on an existing table.
 $CLICKHOUSE_LOCAL -q "
 SELECT 'struct and its field';
 SELECT id, t, t.x FROM deltaLakeLocal('$DIR/mapped') ORDER BY id;
@@ -114,6 +125,8 @@ SELECT id, t, t.j.b FROM typed ORDER BY id;
 SELECT 'dynamic JSON path';
 CREATE TABLE dynamic (id Nullable(Int32), t Tuple(j JSON(a Int64))) ENGINE = DeltaLakeLocal('$DIR/json');
 SELECT id, t, t.j.b FROM dynamic ORDER BY id;
+SELECT 'partly renamed struct and the struct';
+SELECT id, t, t.n FROM deltaLakeLocal('$DIR/overlap') ORDER BY id;
 "
 
 rm -rf "$DIR"
