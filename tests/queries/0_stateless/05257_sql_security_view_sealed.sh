@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: interserver mode requires SSL
 
 # A view with `SQL SECURITY DEFINER` or `NONE` that hides rows is read through an opaque step,
 # so the invoker's expressions and predicates never see the rows the view drops.
@@ -10,6 +12,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user05257_${CLICKHOUSE_DATABASE}_$RANDOM"
 definer="definer05257_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
+
+# `parallel_replicas_local_plan = 0` makes every replica a remote one, so the shipped read always runs.
+pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, parallel_replicas_plan_based = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_min_number_of_rows_per_replica = 0, automatic_parallel_replicas_mode = 0, serialize_query_plan = 0"
+# The cluster has an interserver secret, so a replica runs a shipped read as the initial user.
+url_pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_interserver_secret', parallel_replicas_for_cluster_engines = 1, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0, automatic_parallel_replicas_mode = 0"
+# Custom-key parallel replicas ship the read as SQL as well.
+ck_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'cityHash64(owner)', serialize_query_plan = 0"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user, $definer;
@@ -30,6 +39,24 @@ INSERT INTO $db.policy_secrets VALUES ('alice', 'visible'), ('bob', 'HIDDEN');
 CREATE ROW POLICY policy05257 ON $db.policy_secrets USING owner = 'alice' TO $definer;
 GRANT SELECT ON $db.policy_secrets TO $definer;
 CREATE VIEW $db.policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets;
+-- The view's own query asks for parallel replicas.
+CREATE VIEW $db.pr_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets SETTINGS $pr_settings;
+CREATE VIEW $db.ck_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets SETTINGS $ck_settings;
+GRANT READ ON URL, CREATE TEMPORARY TABLE ON *.* TO $definer;
+CREATE VIEW $db.url_view DEFINER = $definer SQL SECURITY DEFINER
+    AS SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8');
+-- The only shard has three replicas, one of them local.
+CREATE TABLE $db.policy_dist AS $db.policy_secrets
+    ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, $db, policy_secrets);
+GRANT SELECT ON $db.policy_dist TO $definer;
+CREATE VIEW $db.dist_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_dist;
+CREATE VIEW $db.dist_ck_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_dist SETTINGS $ck_settings;
+
+-- A NONE view applies no row policies, even when the invoker has one on the table.
+CREATE TABLE $db.invoker_policy_secrets (owner String) ENGINE = MergeTree ORDER BY owner SETTINGS index_granularity = 1;
+INSERT INTO $db.invoker_policy_secrets VALUES ('alice'), ('bob');
+CREATE ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets USING owner = 'bob' TO $user;
+CREATE VIEW $db.none_projection_view SQL SECURITY NONE AS SELECT owner FROM $db.invoker_policy_secrets;
 
 -- So does a plain projection if the invoker has a row policy on the view itself.
 CREATE VIEW $db.view_policy_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.secrets;
@@ -48,6 +75,12 @@ GRANT SELECT ON $db.param_view TO $user;
 GRANT SELECT ON $db.none_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
 GRANT SELECT ON $db.view_policy_view TO $user;
+GRANT SELECT ON $db.pr_policy_view TO $user;
+GRANT SELECT ON $db.ck_policy_view TO $user;
+GRANT SELECT ON $db.none_projection_view TO $user;
+GRANT SELECT ON $db.url_view TO $user;
+GRANT SELECT ON $db.dist_policy_view TO $user;
+GRANT SELECT ON $db.dist_ck_policy_view TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
@@ -83,6 +116,55 @@ ${CLICKHOUSE_CLIENT} --user "$user" --make_distributed_plan 1 --distributed_plan
     SELECT secret FROM $db.definer_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
 ${CLICKHOUSE_CLIENT} --make_distributed_plan 1 --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 --enable_parallel_replicas 0 --query "
     SELECT countIf(explain LIKE '%Exchange%') > 0 FROM (EXPLAIN SELECT secret FROM $db.definer_view WHERE secret = 'x')"
+
+echo "--- nor on parallel replicas, which would run the view's reads as another user"
+for allow_view in 0 1; do
+    ${CLICKHOUSE_CLIENT} --user "$user" --query "
+        SELECT secret FROM $db.policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+        SETTINGS $pr_settings, parallel_replicas_allow_view_over_mergetree = $allow_view" 2>&1
+done
+for inline in 0 1; do
+    ${CLICKHOUSE_CLIENT} --user "$user" --query "
+        SELECT owner FROM $db.none_projection_view ORDER BY owner SETTINGS $pr_settings, analyzer_inline_views = $inline" 2>&1
+done
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.pr_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0 SETTINGS enable_parallel_replicas = 0" 2>&1
+# The same settings do read with parallel replicas when no view switches the user.
+${CLICKHOUSE_CLIENT} --user "$definer" --query "SELECT secret FROM $db.policy_secrets SETTINGS $pr_settings, log_comment = '05257_pr_${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+      AND log_comment = '05257_pr_${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.ck_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS enable_parallel_replicas = 0, log_comment = '05257_ck_view_${CLICKHOUSE_DATABASE}'" 2>&1
+${CLICKHOUSE_CLIENT} --user "$definer" --query "
+    SELECT secret FROM $db.policy_secrets SETTINGS $ck_settings, log_comment = '05257_ck_direct_${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT x FROM $db.url_view SETTINGS $url_pr_settings, log_comment = '05257_url_view_${CLICKHOUSE_DATABASE}'" 2>&1
+${CLICKHOUSE_CLIENT} --user "$definer" --query "
+    SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8')
+    SETTINGS $url_pr_settings, log_comment = '05257_url_direct_${CLICKHOUSE_DATABASE}'"
+# Without parallel replicas, a `Distributed` shard with a local replica is read locally, as the definer.
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.dist_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_view_${CLICKHOUSE_DATABASE}'" 2>&1
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.dist_ck_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1" 2>&1
+${CLICKHOUSE_CLIENT} --user "$definer" --query "
+    SELECT secret FROM $db.policy_dist SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_direct_${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query) > 0 FROM system.query_log
+    WHERE type = 'QueryFinish' AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+          AND log_comment IN ('05257_url_view_${CLICKHOUSE_DATABASE}', '05257_url_direct_${CLICKHOUSE_DATABASE}',
+              '05257_ck_view_${CLICKHOUSE_DATABASE}', '05257_ck_direct_${CLICKHOUSE_DATABASE}',
+              '05257_dist_view_${CLICKHOUSE_DATABASE}', '05257_dist_direct_${CLICKHOUSE_DATABASE}'))
+    GROUP BY log_comment ORDER BY log_comment"
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
 # The table is sorted by `secret`, so a predicate on it would skip granules by the primary key.
@@ -134,4 +216,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%'
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP VIEW $db.dist_policy_view; DROP VIEW $db.dist_ck_policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"

@@ -1013,7 +1013,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
-    if (can_use_parallel_replicas && !is_secondary_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !context_->isSQLSecurityOverriddenBody())
     {
         auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(

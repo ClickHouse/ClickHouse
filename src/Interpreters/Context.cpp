@@ -363,6 +363,7 @@ namespace Setting
     extern const SettingsBool page_cache_inject_eviction;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -1504,6 +1505,7 @@ ContextData::ContextData(const ContextData &o) :
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     is_view_inner_query(o.is_view_inner_query),
+    is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
@@ -9347,7 +9349,8 @@ bool Context::canUseTaskBasedParallelReplicas() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator
+        && (!is_sql_security_overridden_body || getSettingsRef()[Setting::parallel_replicas_plan_based]);
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
@@ -9370,7 +9373,8 @@ bool Context::canUseParallelReplicasCustomKey() const
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
 {
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1
+        && !is_sql_security_overridden_body;
 }
 
 bool Context::canUseOffsetParallelReplicas() const
