@@ -1,6 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>

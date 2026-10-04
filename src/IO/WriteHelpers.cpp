@@ -1,6 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/DecomposedFloat.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/formatIPv6.h>
 #include <Common/NaNUtils.h>
 
