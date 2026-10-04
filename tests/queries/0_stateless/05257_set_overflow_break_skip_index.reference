@@ -1,0 +1,5 @@
+-- both indexes answer an IN over a subquery
+1
+-- a truncated set: with and without the skip indexes must agree
+8
+8
