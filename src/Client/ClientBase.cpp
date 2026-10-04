@@ -2571,11 +2571,26 @@ void ClientBase::onEndOfStream()
         {
             /// A query that produced no result blocks (an `INSERT`, a DDL statement, an empty
             /// `SELECT`) still prints its success epilogue to the interactive terminal - which
-            /// may be exactly what is stuck, with the query already finished and the receive
-            /// loop (the code that observes a Ctrl+C) already gone. A plain blocking write here
-            /// would then hang the client on its very last line of output, so route it through
-            /// the same bounded best-effort path as the cancellation diagnostics.
-            printMessageBestEffort("Ok.");
+            /// may be exactly what is stuck. After a Ctrl+C, route it through the same bounded
+            /// best-effort path as the cancellation diagnostics. Otherwise this is ordinary
+            /// success output and must not be lossy - a slow-but-draining sink (e.g. a pipe whose
+            /// reader starts late) has to receive it - so write it through `std_out` with the
+            /// responsive hook armed: it waits for the sink as long as needed, and a Ctrl+C
+            /// received while it waits (the interrupt handler is still armed here) discards the
+            /// line instead of hanging the client on a stuck terminal.
+            if (cancelled || query_interrupt_handler.interruptedWhileRunning() || !std_out)
+            {
+                printMessageBestEffort("Ok.");
+            }
+            else
+            {
+                output_stream.flush();
+                const auto interrupted = [this]() { return query_interrupt_handler.interruptedWhileRunning(); };
+                std_out->setCancellationHook(interrupted, interrupted);
+                SCOPE_EXIT({ std_out->setCancellationHook({}); });
+                writeCString("Ok.\n", *std_out);
+                std_out->next();
+            }
         }
     }
 }
