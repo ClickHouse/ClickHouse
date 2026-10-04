@@ -26,3 +26,19 @@ SELECT metric_name, job FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_de
 
 DROP TABLE ts_derived;
 DROP TABLE ts_src;
+
+-- A custom inner engine keeps its own sorting key on copy. Only a generated sorting key may be dropped
+-- and regenerated, and only while no explicit primary key survives: with one, nothing regenerates the
+-- sorting key and MergeTree rejects the copy with "ORDER BY cannot be empty".
+DROP TABLE IF EXISTS ts_custom_src;
+DROP TABLE IF EXISTS ts_custom_copy;
+CREATE TABLE ts_custom_src ENGINE = TimeSeries
+SAMPLES ENGINE = ReplacingMergeTree(timestamp) PRIMARY KEY id ORDER BY (id, timestamp);
+
+SELECT '-- a custom SAMPLES engine with its own primary key survives the copy';
+CREATE TABLE ts_custom_copy AS ts_custom_src;
+SELECT extract(create_table_query, 'SAMPLES INNER ENGINE = (.*?) SETTINGS')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_custom_copy';
+
+DROP TABLE ts_custom_copy;
+DROP TABLE ts_custom_src;
