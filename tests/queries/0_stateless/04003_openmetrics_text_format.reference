@@ -35,18 +35,18 @@ metric_family: http_requests
 help:          Total number of HTTP requests
 type:          counter
 tags:          [('code','200'),('method','POST')]
-time_series:   [('2024-01-01 00:00:00.000',1027)]
+samples:       [('2024-01-01 00:00:00.000',1027)]
 Row 1:
 ──────
 metric_name: q
 tags:        [('a','1')]
-time_series: [('1970-01-01 00:00:01.000',10),('1970-01-01 00:00:02.000',11)]
+samples:     [('1970-01-01 00:00:01.000',10),('1970-01-01 00:00:02.000',11)]
 
 Row 2:
 ──────
 metric_name: q
 tags:        [('a','2')]
-time_series: [('1970-01-01 00:00:01.000',20)]
+samples:     [('1970-01-01 00:00:01.000',20)]
 u	unknown
 [('1970-01-01 00:00:00.000',5)]
 1520879607789
@@ -61,4 +61,4 @@ help	String
 type	String					
 unit	String					
 tags	Array(Tuple(String, String))					
-time_series	Array(Tuple(DateTime64(3), Float64))					
+samples	Array(Tuple(DateTime64(3), Float64))					

@@ -5,10 +5,13 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -74,7 +77,50 @@ inline String normalizeOpenMetricsType(std::string_view type)
     return String{type};
 }
 
-/// `pos` at opening `"`. Decodes `\\`, `\"`, `\n`; rejects other escape sequences. Returns false on malformed input.
+/// Sample-name suffixes that make a sample a member of a family of the given (normalized) type, per
+/// the OpenMetrics 1.0 MetricType rules. An empty suffix means the sample carries the family name
+/// itself (the quantile samples of a `summary`). Returns nullptr for types whose sample names are not
+/// constrained by a suffix rule (`unknown`, `gauge`, `stateset`, and an absent type).
+inline const std::vector<std::string_view> * familySampleSuffixes(std::string_view type)
+{
+    static const std::vector<std::string_view> counter = {"_total", "_created"};
+    static const std::vector<std::string_view> histogram = {"_bucket", "_count", "_sum", "_created"};
+    static const std::vector<std::string_view> gaugehistogram = {"_bucket", "_gcount", "_gsum", "_created"};
+    static const std::vector<std::string_view> summary = {"", "_count", "_sum", "_created"};
+    static const std::vector<std::string_view> info = {"_info"};
+
+    if (type == "counter")
+        return &counter;
+    if (type == "histogram")
+        return &histogram;
+    if (type == "gaugehistogram")
+        return &gaugehistogram;
+    if (type == "summary")
+        return &summary;
+    if (type == "info")
+        return &info;
+    return nullptr;
+}
+
+/// Every non-empty suffix that `familySampleSuffixes` knows about, used to fold a sample name back to
+/// its family on input.
+inline constexpr std::array<std::string_view, 8> ALL_FAMILY_SAMPLE_SUFFIXES
+    = {"_total", "_created", "_bucket", "_gcount", "_gsum", "_count", "_sum", "_info"};
+
+/// The label that a sample with the given family-relative suffix must carry: `le` on histogram
+/// buckets and `quantile` on the bare summary samples. Returns nullptr when no label is required.
+inline const char * requiredBoundaryLabel(std::string_view type, std::string_view suffix)
+{
+    if (suffix == "_bucket" && (type == "histogram" || type == "gaugehistogram"))
+        return "le";
+    if (suffix.empty() && type == "summary")
+        return "quantile";
+    return nullptr;
+}
+
+/// `pos` at opening `"`. Decodes `\\`, `\"`, `\n`; rejects other escape sequences and raw control
+/// characters (they are not representable on output, see `validateLabelValue`). Returns false on
+/// malformed input.
 inline bool readQuotedLabelValue(std::string_view s, size_t & pos, String & out)
 {
     if (pos >= s.size() || s[pos] != '"')
@@ -86,6 +132,8 @@ inline bool readQuotedLabelValue(std::string_view s, size_t & pos, String & out)
         const char c = s[pos++];
         if (c == '"')
             return true;
+        if (static_cast<unsigned char>(c) < 32)
+            return false;
         if (c != '\\')
         {
             out.push_back(c);
@@ -157,7 +205,7 @@ inline bool equalsIgnoreCaseAscii(std::string_view a, std::string_view b)
     return true;
 }
 
-/// `tryReadFloatText` accepts tokens like `.` and `1e+` that OpenMetrics `realnumber` forbids.
+/// `tryReadFloatTextPrecise` accepts tokens like `.` and `1e+` that OpenMetrics `realnumber` forbids.
 inline bool isStrictRealNumberToken(std::string_view token)
 {
     if (token.empty())
@@ -214,6 +262,22 @@ inline bool isStrictRealNumberToken(std::string_view token)
     }
 
     return i == token.size();
+}
+
+/// Rescale a raw `DateTime64` value between decimal scales (`DateTime64` scales are at most 9, so the
+/// factor always fits `Int64`). Scaling down truncates toward zero; scaling up is overflow-checked and
+/// returns false if the result does not fit `Int64`.
+inline bool tryRescaleDateTime64(Int64 value, UInt32 from_scale, UInt32 to_scale, Int64 & out)
+{
+    Int64 factor = 1;
+    for (UInt32 i = std::min(from_scale, to_scale); i < std::max(from_scale, to_scale); ++i)
+        factor *= 10;
+    if (to_scale < from_scale)
+    {
+        out = value / factor;
+        return true;
+    }
+    return !common::mulOverflow(value, factor, out);
 }
 
 /// Writer side of the timestamp contract. The ClickHouse timestamp is Prometheus-compatible

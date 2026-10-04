@@ -24,9 +24,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
-#include <initializer_list>
 #include <limits>
 #include <map>
 #include <optional>
@@ -145,7 +145,7 @@ Float64 parseRealNumber(std::string_view token, const String & line)
 
     Float64 v = 0;
     ReadBufferFromString buf(token);
-    if (!tryReadFloatText(v, buf) || !buf.eof() || !std::isfinite(v))
+    if (!tryReadFloatTextPrecise(v, buf) || !buf.eof() || !std::isfinite(v))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
     return v;
 }
@@ -175,7 +175,7 @@ Float64 parseSampleValue(std::string_view token)
 
     Float64 v = 0;
     ReadBufferFromString buf(token);
-    if (!tryReadFloatText(v, buf) || !buf.eof())
+    if (!tryReadFloatTextPrecise(v, buf) || !buf.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse float value '{}' in OpenMetrics format", token);
     return v;
 }
@@ -211,12 +211,15 @@ void parseExemplarSuffix(std::string_view s, size_t & pos, const String & line)
 }
 
 /// Splits `# <PREFIX> <name>[ <rest>]` after `prefix_len` chars (including the trailing space of the prefix).
+/// The family name follows the same grammar as a sample's metric name.
 void parseMetadataLine(const String & line, size_t prefix_len, String & name, String & rest)
 {
     std::string_view sv{line};
     size_t p = prefix_len;
     skipAsciiSpaces(sv, p);
     name = String{readToken(sv, p)};
+    if (!isValidName(name, /*allow_colon=*/true))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid metric family name '{}' in OpenMetrics line: {}", name, line);
     skipAsciiSpaces(sv, p);
     rest = String{sv.substr(p)};
 }
@@ -271,9 +274,9 @@ bool isTagsColumnType(const DataTypePtr & type)
     return false;
 }
 
-/// `time_series` is inserted via `ColumnDecimal<DateTime64>` + `ColumnFloat64`, so require exactly
+/// `samples` is inserted via `ColumnDecimal<DateTime64>` + `ColumnFloat64`, so require exactly
 /// `Array(Tuple(DateTime64, Float64))`.
-bool isTimeSeriesColumnType(const DataTypePtr & type)
+bool isSamplesColumnType(const DataTypePtr & type)
 {
     if (!isArray(type))
         return false;
@@ -281,24 +284,6 @@ bool isTimeSeriesColumnType(const DataTypePtr & type)
     const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
     return type_tuple && type_tuple->getElements().size() == 2
         && isDateTime64(type_tuple->getElement(0)) && WhichDataType(type_tuple->getElement(1)).isFloat64();
-}
-
-/// Convert Prometheus-compatible milliseconds to a raw `DateTime64` value at `scale` decimal places.
-Int64 millisToDateTime64(Int64 ms, UInt32 scale)
-{
-    if (scale == 3)
-        return ms;
-    if (scale > 3)
-    {
-        Int64 mult = 1;
-        for (UInt32 i = 3; i < scale; ++i)
-            mult *= 10;
-        return ms * mult;
-    }
-    Int64 div = 1;
-    for (UInt32 i = scale; i < 3; ++i)
-        div *= 10;
-    return ms / div;  /// sub-millisecond precision is truncated toward zero
 }
 
 void insertTags(IColumn & column, const std::vector<std::pair<String, String>> & tags)
@@ -329,7 +314,11 @@ void insertPoints(IColumn & column, const std::vector<std::pair<Int64, double>> 
     auto & col_val = assert_cast<ColumnFloat64 &>(col_tuple.getColumn(1));
     for (const auto & [ms, value] : points)
     {
-        col_ts.insertValue(DateTime64(millisToDateTime64(ms, scale)));
+        Int64 raw = 0;
+        if (!OpenMetricsText::tryRescaleDateTime64(ms, 3, scale, raw))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "OpenMetrics timestamp of {} ms does not fit DateTime64({})", ms, scale);
+        col_ts.insertValue(DateTime64(raw));
         col_val.insertValue(value);
     }
     col_array.getOffsets().push_back(col_tuple.size());
@@ -348,14 +337,16 @@ OpenMetricsTextRowInputFormat::ColumnLoc OpenMetricsTextRowInputFormat::buildCol
     };
     /// All slots are optional: `markFormatSupportsSubsetOfColumns` lets `file()`/`format()` pass only
     /// the columns the query actually requests (e.g. `SELECT metric_name FROM file(..., OpenMetrics)`).
-    static const std::array<Spec, 7> specs = {{
+    /// The points column is `samples`, or `time_series` as in `TimeSeries` tables of version 2 and earlier.
+    static const std::array<Spec, 8> specs = {{
         {"metric_name",   &ColumnLoc::metric_name,   &isPlainString},
         {"metric_family", &ColumnLoc::metric_family, &isPlainString},
         {"help",          &ColumnLoc::help,          &isPlainString},
         {"type",          &ColumnLoc::type,          &isPlainString},
         {"unit",          &ColumnLoc::unit,          &isPlainString},
         {"tags",          &ColumnLoc::tags,          &isTagsColumnType},
-        {"time_series",   &ColumnLoc::time_series,   &isTimeSeriesColumnType},
+        {"samples",       &ColumnLoc::samples,       &isSamplesColumnType},
+        {"time_series",   &ColumnLoc::samples,       &isSamplesColumnType},
     }};
 
     ColumnLoc loc;
@@ -370,6 +361,11 @@ OpenMetricsTextRowInputFormat::ColumnLoc OpenMetricsTextRowInputFormat::buildCol
                 ErrorCodes::BAD_ARGUMENTS,
                 "Illegal type '{}' of column '{}' for input format '{}'",
                 col.type->getName(), s.name, FORMAT_NAME);
+        if (loc.*(s.slot))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Columns 'samples' and 'time_series' cannot both be present for input format '{}'",
+                FORMAT_NAME);
         loc.*(s.slot) = idx;
     }
     return loc;
@@ -410,34 +406,21 @@ String OpenMetricsTextRowInputFormat::deriveMetricFamily(const String & metric_n
     if (declared(metric_name))
         return metric_name;
 
-    const auto in_set = [](const String & t, std::initializer_list<std::string_view> set)
-    {
-        for (const auto & s : set)
-            if (t == s)
-                return true;
-        return false;
-    };
-    const auto try_base = [&](std::string_view suffix, auto type_ok) -> std::optional<String>
+    /// Fold a suffixed sample back to its base family when the base's declared type lists that suffix
+    /// (OpenMetrics MetricType suffix rules, shared with the writer). The type stored in `family_meta`
+    /// is already normalized (`untyped` -> `unknown`).
+    for (const auto suffix : OpenMetricsText::ALL_FAMILY_SAMPLE_SUFFIXES)
     {
         if (metric_name.size() <= suffix.size() || !metric_name.ends_with(suffix))
-            return std::nullopt;
-        String base = metric_name.substr(0, metric_name.size() - suffix.size());
+            continue;
+        const String base = metric_name.substr(0, metric_name.size() - suffix.size());
         const auto it = family_meta.find(base);
-        if (it != family_meta.end() && type_ok(it->second.type))
+        if (it == family_meta.end())
+            continue;
+        const auto * suffixes = OpenMetricsText::familySampleSuffixes(it->second.type);
+        if (suffixes && std::find(suffixes->begin(), suffixes->end(), suffix) != suffixes->end())
             return base;
-        return std::nullopt;
-    };
-
-    /// Suffix -> the base-family types for which that suffix is a member sample (OpenMetrics MetricType
-    /// suffix rules). The type stored in `family_meta` is already normalized (`untyped` -> `unknown`).
-    if (auto b = try_base("_total",   [&](const String & t) { return t == "counter"; })) return *b;
-    if (auto b = try_base("_created", [&](const String & t) { return in_set(t, {"counter", "histogram", "summary", "gaugehistogram"}); })) return *b;
-    if (auto b = try_base("_bucket",  [&](const String & t) { return in_set(t, {"histogram", "gaugehistogram"}); })) return *b;
-    if (auto b = try_base("_gcount",  [&](const String & t) { return t == "gaugehistogram"; })) return *b;
-    if (auto b = try_base("_gsum",    [&](const String & t) { return t == "gaugehistogram"; })) return *b;
-    if (auto b = try_base("_count",   [&](const String & t) { return in_set(t, {"histogram", "summary"}); })) return *b;
-    if (auto b = try_base("_sum",     [&](const String & t) { return in_set(t, {"histogram", "summary"}); })) return *b;
-    if (auto b = try_base("_info",    [&](const String & t) { return t == "info"; })) return *b;
+    }
     return metric_name;
 }
 
@@ -450,9 +433,6 @@ void OpenMetricsTextRowInputFormat::parseAll()
     /// checking siblings never grows the map.
     const auto familyOrSiblingEmittedSample = [this](const String & family) -> bool
     {
-        static constexpr std::array<std::string_view, 8> sibling_suffixes
-            = {"_bucket", "_sum", "_count", "_total", "_created", "_gcount", "_gsum", "_info"};
-
         const auto emitted = [this](const String & key)
         {
             const auto it = family_meta.find(key);
@@ -461,14 +441,14 @@ void OpenMetricsTextRowInputFormat::parseAll()
 
         if (emitted(family))
             return true;
-        for (const auto & suffix : sibling_suffixes)
+        for (const auto suffix : OpenMetricsText::ALL_FAMILY_SAMPLE_SUFFIXES)
             if (emitted(family + String{suffix}))
                 return true;
         return false;
     };
 
     /// Maps a series identity (metric_name + tags) to its row in `output_rows`, so repeated samples of
-    /// the same series accumulate into one `time_series` array.
+    /// the same series accumulate into one `samples` array.
     std::unordered_map<String, size_t> series_index;
 
     while (!in->eof() && !saw_eof)
@@ -527,6 +507,8 @@ void OpenMetricsTextRowInputFormat::parseAll()
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
                 /// Normalize to the OpenMetrics 1.0 vocabulary (Prometheus `untyped` -> `unknown`).
                 fm.type = OpenMetricsText::normalizeOpenMetricsType(rest);
+                if (!OpenMetricsText::isValidOpenMetricsType(fm.type))
+                    throwIncorrect("Unknown metric type in # TYPE descriptor", line);
                 fm.has_type = true;
             }
             else if (line.starts_with("# UNIT "))
@@ -585,6 +567,17 @@ void OpenMetricsTextRowInputFormat::parseAll()
         const auto meta_it = family_meta.find(metric_family);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
+        /// Histogram buckets must carry `le` and bare summary samples `quantile` (the same rule the writer
+        /// enforces), otherwise the sample is indistinguishable from an unrelated series.
+        if (metric_family.size() <= stem.size() && stem.starts_with(metric_family))
+        {
+            const std::string_view suffix = std::string_view{stem}.substr(metric_family.size());
+            if (const char * boundary = OpenMetricsText::requiredBoundaryLabel(fm.type, suffix);
+                boundary && !labels.contains(boundary))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "OpenMetrics {} sample '{}' is missing the '{}' label", fm.type, stem, boundary);
+        }
+
         /// `std::map` iterates in sorted label-name order, giving a deterministic, canonical tag order.
         std::vector<std::pair<String, String>> tags(labels.begin(), labels.end());
 
@@ -628,9 +621,9 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
     {
         const Block & header = getPort().getHeader();
         column_loc = buildColumnLoc(header);
-        if (column_loc.time_series)
+        if (column_loc.samples)
         {
-            const auto & ts_type = header.getByPosition(*column_loc.time_series).type;
+            const auto & ts_type = header.getByPosition(*column_loc.samples).type;
             const auto & ts_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*ts_type).getNestedType());
             timestamp_scale = assert_cast<const DataTypeDateTime64 &>(*ts_tuple.getElement(0)).getScale();
         }
@@ -672,10 +665,10 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         insertTags(*columns[*column_loc.tags], series.tags);
         ext.read_columns[*column_loc.tags] = 1;
     }
-    if (column_loc.time_series)
+    if (column_loc.samples)
     {
-        insertPoints(*columns[*column_loc.time_series], series.points, timestamp_scale);
-        ext.read_columns[*column_loc.time_series] = 1;
+        insertPoints(*columns[*column_loc.samples], series.points, timestamp_scale);
+        ext.read_columns[*column_loc.samples] = 1;
     }
 
     return true;
@@ -685,7 +678,7 @@ NamesAndTypesList OpenMetricsTextSchemaReader::readSchema()
 {
     auto str = std::make_shared<DataTypeString>();
     auto tags = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{str, str}));
-    auto time_series = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+    auto samples = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
         DataTypes{std::make_shared<DataTypeDateTime64>(3), std::make_shared<DataTypeFloat64>()}));
     return {
         {"metric_name",   str},
@@ -694,7 +687,7 @@ NamesAndTypesList OpenMetricsTextSchemaReader::readSchema()
         {"type",          str},
         {"unit",          str},
         {"tags",          tags},
-        {"time_series",   time_series},
+        {"samples",       samples},
     };
 }
 

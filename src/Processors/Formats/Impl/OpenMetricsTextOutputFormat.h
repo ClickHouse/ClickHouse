@@ -25,7 +25,8 @@ class WriteBuffer;
 ///   * `metric_family` (String, optional)               — the family named in `# HELP`/`# TYPE`/`# UNIT`
 ///   * `help` / `type` / `unit` (String, optional)      — family metadata
 ///   * `tags` (Map(String,String) or Array(Tuple(String,String)), optional) — labels
-///   * `time_series` (Array(Tuple(DateTime64(3), Float64))) — the series' (timestamp, value) points
+///   * `samples` (Array(Tuple(DateTime64(3), Float64))) — the series' (timestamp, value) points; named
+///     `time_series` in `TimeSeries` tables of version 2 and earlier, and accepted under that name too
 class OpenMetricsTextOutputFormat final : public IRowOutputFormat
 {
 public:
@@ -34,7 +35,7 @@ public:
     String getName() const override { return "OpenMetricsTextOutputFormat"; }
 
 private:
-    /// `metric_name` and `time_series` are required and always assigned by `getColumnPos`; the
+    /// `metric_name` and `samples` are required and always assigned by `getColumnPos`; the
     /// explicit zero-initializers exist purely to satisfy `cppcoreguidelines-pro-type-member-init`.
     struct ColumnPositions
     {
@@ -44,7 +45,7 @@ private:
         std::optional<size_t> type;
         std::optional<size_t> unit;
         std::optional<size_t> tags;
-        size_t time_series = 0;
+        size_t samples = 0;
     };
 
     /// One buffered time series (a single input row): its on-wire sample name, its label set, and its
@@ -78,7 +79,7 @@ private:
 
     ColumnPositions pos;
     CurrentFamily current_family;
-    /// Scale of the `DateTime64` in the `time_series` tuple; used to normalize points to milliseconds.
+    /// Scale of the `DateTime64` in the `samples` tuple; used to normalize points to milliseconds.
     UInt32 timestamp_scale = 3;
     /// Set while assembling a row in `write()`; if still true when `finalizeImpl` runs, a validation
     /// error aborted the row and the stream terminator must not be emitted.

@@ -1,0 +1,53 @@
+--- export
+# HELP http_requests Total number of HTTP requests
+# TYPE http_requests counter
+http_requests_total{code="200",method="GET"} 34 1704067200
+http_requests_total{code="200",method="POST"} 1027 1704067200
+http_requests_total{code="200",method="POST"} 1038 1704067215.5
+# HELP temperature_celsius Room temperature
+# TYPE temperature_celsius gauge
+# UNIT temperature_celsius celsius
+temperature_celsius{room="a"} 21.5 1704067200
+# EOF
+--- re-export is identical
+OK
+--- imported table
+Row 1:
+──────
+metric_name:   
+tags:          {}
+samples:       []
+metric_family: http_requests
+type:          counter
+unit:          
+help:          Total number of HTTP requests
+
+Row 2:
+──────
+metric_name:   http_requests_total
+tags:          {'__name__':'http_requests_total','code':'200','method':'GET'}
+samples:       [('2024-01-01 00:00:00.000',34)]
+metric_family: http_requests
+type:          counter
+unit:          
+help:          Total number of HTTP requests
+
+Row 3:
+──────
+metric_name:   http_requests_total
+tags:          {'__name__':'http_requests_total','code':'200','method':'POST'}
+samples:       [('2024-01-01 00:00:00.000',1027),('2024-01-01 00:00:15.500',1038)]
+metric_family: http_requests
+type:          counter
+unit:          
+help:          Total number of HTTP requests
+
+Row 4:
+──────
+metric_name:   temperature_celsius
+tags:          {'__name__':'temperature_celsius','room':'a'}
+samples:       [('2024-01-01 00:00:00.000',21.5)]
+metric_family: temperature_celsius
+type:          gauge
+unit:          celsius
+help:          Room temperature

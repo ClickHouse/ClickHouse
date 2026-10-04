@@ -18,8 +18,9 @@ class ReadBuffer;
 
 /// Parses OpenMetrics text (and common Prometheus text exposition) into the `TimeSeries`-aligned
 /// per-series column model: one row per (metric_name, tags) series, its (timestamp, value) points
-/// collected into a `time_series` array. Because a series' samples can be spread across the stream,
-/// the whole exposition is read to `# EOF` and grouped before the first row is produced.
+/// collected into a `samples` array (named `time_series` in `TimeSeries` tables of version 2 and
+/// earlier). Because a series' samples can be spread across the stream, the whole exposition is read
+/// to `# EOF` and grouped before the first row is produced.
 class OpenMetricsTextRowInputFormat final : public IRowInputFormat
 {
 public:
@@ -40,7 +41,7 @@ private:
         std::optional<size_t> type;
         std::optional<size_t> unit;
         std::optional<size_t> tags;
-        std::optional<size_t> time_series;
+        std::optional<size_t> samples;
     };
 
     static ColumnLoc buildColumnLoc(const Block & header);
@@ -88,7 +89,7 @@ private:
 
     ColumnLoc column_loc;
     bool column_loc_initialized = false;
-    /// Scale of the `DateTime64` in the target `time_series` tuple; points are stored at this scale.
+    /// Scale of the `DateTime64` in the target `samples` tuple; points are stored at this scale.
     UInt32 timestamp_scale = 3;
 
     bool parsed = false;
