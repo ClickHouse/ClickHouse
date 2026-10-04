@@ -27,7 +27,8 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         bool commit_in_suffix = false,
-        std::optional<UInt64> cancel_epoch_ = {});
+        std::optional<UInt64> cancel_epoch_ = {},
+        size_t poll_batch_size_ = 0);
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -46,6 +47,8 @@ private:
     Names column_names;
     LoggerPtr log;
     UInt64 max_block_size;
+    /// `0` means keep the consumer's configured `kafka_poll_max_batch_size`.
+    size_t poll_batch_size;
 
     KafkaConsumerPtr consumer;
     bool broken = true;
