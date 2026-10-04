@@ -29,6 +29,10 @@ struct AggregatesValidationParams
   * 4. Check that there are no GROUPING functions that have arguments that are not specified in GROUP BY keys in HAVING, ORDER BY,
   * PROJECTION.
   * 5. Throws exception if there is GROUPING SETS or ROLLUP or CUBE or WITH TOTALS without aggregation.
+  *
+  * Table ALIAS columns in HAVING, ORDER BY, PROJECTION, etc. whose expressions can be computed from GROUP BY keys
+  * are replaced with their expressions, because their values computed when the table is read are not available
+  * after aggregation.
   */
 void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params);
 
