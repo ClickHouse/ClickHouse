@@ -162,8 +162,6 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
     /// folder.
@@ -190,6 +188,13 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
+
+    /// A metadata ALTER commits to Keeper and to the local metadata file in two separate steps, so an
+    /// interrupted one leaves this replica's znodes ahead of the local file. The check below cannot be
+    /// reached a second time, so the divergence has to be resolved here rather than after startup.
+    storage.adoptCommittedMetadataFromPendingAlter(zookeeper);
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
     storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
