@@ -944,26 +944,12 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
 
     auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
     const auto catalog_storage_type = catalog->getStorageType();
-    bool namespace_created = false;
     if (!table_metadata && !catalog_storage_type)
     {
-        namespace_created = catalog->createNamespaceIfNotExists(namespace_name);
-        if (namespace_created)
-            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-    }
-
-    auto drop_created_namespace = [&]
-    {
-        if (!namespace_created)
-            return;
-        LOG_DEBUG(log, "Dropping namespace {} created for table {} that cannot be created", namespace_name, name);
-        catalog->dropNamespace(namespace_name);
-    };
-
-    if (!table_metadata && !catalog_storage_type)
-    {
-        drop_created_namespace();
-        throw cannotTellNewTableLocation(name);
+        catalog->createNamespaceIfNotExists(namespace_name);
+        table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+        if (!table_metadata)
+            throw cannotTellNewTableLocation(name);
     }
 
     const auto table_format = table_metadata ? catalog->getTableFormat(*table_metadata) : catalog->getTableFormat(DataLake::TableMetadata());
@@ -972,7 +958,6 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
     if (auto engine_name = chooseTableEngineName(table_format, storage_type))
         return *engine_name;
 
-    drop_created_namespace();
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Cannot choose a table engine for table {} in database {}: its catalog creates {} tables in {}. "
@@ -999,31 +984,38 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     };
 
     auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-    bool namespace_created = false;
     if (!table_metadata)
     {
         if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
             throw storage_mismatch(*catalog_storage_type);
 
-        namespace_created = catalog->createNamespaceIfNotExists(namespace_name);
-        if (namespace_created)
-            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-    }
-
-    if (!table_metadata || table_metadata->getStorageType() != engine_type)
-    {
-        if (namespace_created)
-        {
-            LOG_DEBUG(log, "Dropping namespace {} created for table {} that cannot be created", namespace_name, name);
-            catalog->dropNamespace(namespace_name);
-        }
-
+        catalog->createNamespaceIfNotExists(namespace_name);
+        table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
         if (!table_metadata)
             throw cannotTellNewTableLocation(name);
-        throw storage_mismatch(table_metadata->getStorageType());
     }
 
-    return buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false).args;
+    if (table_metadata->getStorageType() != engine_type)
+        throw storage_mismatch(table_metadata->getStorageType());
+
+    auto engine_args = buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false);
+
+    const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
+    if (engine_args.args.size() == 1 && catalog_manages_provider_chain)
+    {
+        if (auto static_credentials = DataLake::tryGetStaticStorageCredentials(engine_args.storage_type, settings))
+            static_credentials->addCredentialsToEngineArgs(engine_args.args);
+    }
+
+    if (engine_args.args.size() == 1 && (settings[DatabaseDataLakeSetting::vended_credentials].value || catalog_manages_provider_chain))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot create table {} in database {} without table engine arguments: the database takes storage credentials "
+            "from the catalog, which is not supported for new tables yet. Specify storage credentials in the database "
+            "engine arguments or settings, or the location and credentials in the table engine arguments",
+            name, backQuoteIfNeed(getDatabaseName()));
+
+    return engine_args.args;
 }
 
 bool DatabaseDataLake::empty() const

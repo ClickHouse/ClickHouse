@@ -629,7 +629,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-bool GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
@@ -644,20 +644,6 @@ bool GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
             "Exception calling CreateDatabase for namespace {}: {}",
             namespace_name, outcome.GetError().GetMessage());
     }
-    return outcome.IsSuccess();
-}
-
-void GlueCatalog::dropNamespace(const std::string & namespace_name) const
-{
-    Aws::Glue::Model::DeleteDatabaseRequest request;
-    request.SetName(namespace_name);
-
-    auto outcome = glue_client->DeleteDatabase(request);
-    if (!outcome.IsSuccess())
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Exception calling DeleteDatabase for namespace {}: {}",
-            namespace_name, outcome.GetError().GetMessage());
 }
 
 std::optional<std::string> GlueCatalog::getDefaultTableLocation(

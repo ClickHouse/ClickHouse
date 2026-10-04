@@ -1857,7 +1857,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         wb->ignoreAll();
 }
 
-bool RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     const auto state_snapshot = state.get();
 
@@ -1868,7 +1868,7 @@ bool RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     try
     {
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
-        return false;
+        return;
     }
     catch (const DB::HTTPException & e)
     {
@@ -1901,17 +1901,7 @@ bool RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
         /// Lost the race to a concurrent creator.
         if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             throw;
-        return false;
     }
-    return true;
-}
-
-void RestCatalog::dropNamespace(const std::string & namespace_name) const
-{
-    const auto state_snapshot = state.get();
-    const std::string endpoint
-        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
-    sendRequest(*state_snapshot, endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_DELETE, /* ignore_result */ true);
 }
 
 std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string & namespace_name) const

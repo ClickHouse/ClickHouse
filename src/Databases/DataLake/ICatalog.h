@@ -270,10 +270,8 @@ public:
     /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
-    /// Creates the namespace unless it already exists. Returns whether this call created it.
-    virtual bool createNamespaceIfNotExists(const String & namespace_name) const;
-
-    virtual void dropNamespace(const std::string & namespace_name) const;
+    /// Creates the namespace unless it already exists.
+    virtual void createNamespaceIfNotExists(const String & namespace_name) const;
 
     virtual bool managesTableLocation() const { return false; }
 

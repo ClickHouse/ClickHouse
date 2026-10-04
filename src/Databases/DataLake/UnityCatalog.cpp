@@ -406,10 +406,9 @@ std::optional<std::string> UnityCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
 }
 
-bool UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
-    return false;
 }
 
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
