@@ -457,14 +457,16 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            break;
+            continue;
 
+        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
+        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            break;
+            continue;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            break;
+            continue;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;

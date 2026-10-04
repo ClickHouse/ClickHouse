@@ -94,6 +94,21 @@ FROM (EXPLAIN PLAN sorting = 1
 WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, b.v)) AS rows
 SELECT 'order by result', length(rows), rows = arraySort(rows);
 
+-- A non-monotonic function of the key (`toMonth` is not monotonic on its whole domain) computed above the
+-- lower join before the key itself does not hide the key from the merge-join sort of the upper join.
+SELECT 'non-monotonic projection chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(s.m) FROM (SELECT toMonth(toDate(a.id)) AS m, a.id AS id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+    INNER JOIN fsmj_order_c AS c ON s.id = c.id);
+
+SELECT 'non-monotonic projection', count(), sum(s.m), sum(c.v)
+FROM (SELECT toMonth(toDate(a.id)) AS m, a.id AS id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+INNER JOIN fsmj_order_c AS c ON s.id = c.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'non-monotonic projection', count(), sum(s.m), sum(c.v)
+FROM (SELECT toMonth(toDate(a.id)) AS m, a.id AS id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+INNER JOIN fsmj_order_c AS c ON s.id = c.id;
+
 -- `JOIN ... USING (k)` merges the two key columns into a single output column, which is still the ordered
 -- one, so the chain keeps merging instead of sorting from scratch.
 SELECT 'using chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
