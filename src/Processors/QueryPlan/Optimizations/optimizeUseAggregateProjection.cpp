@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -751,6 +752,19 @@ static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions 
     return true;
 }
 
+/// The implicit `minmax_count` projection answers from the stored partition values and the first primary key
+/// column of the part index, which hold what those expressions produced under the server baseline.
+static bool minMaxCountProjectionKeysFollowSessionSettings(const StorageMetadataPtr & metadata, const ContextPtr & context)
+{
+    const auto & primary_key = metadata->getPrimaryKey();
+    if (primary_key.expression && !primary_key.column_names.empty()
+        && getKeySubexpressionsWithSessionDependentValues(*primary_key.expression, context).contains(primary_key.column_names.front()))
+        return true;
+
+    const auto & partition_key = metadata->getPartitionKey();
+    return partition_key.expression && !getKeySubexpressionsWithSessionDependentValues(*partition_key.expression, context).empty();
+}
+
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
@@ -778,7 +792,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
         && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
-        && canMinMaxCountProjectionMatchAggregates(aggregates);
+        && canMinMaxCountProjectionMatchAggregates(aggregates)
+        && !minMaxCountProjectionKeysFollowSessionSettings(metadata, context);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;

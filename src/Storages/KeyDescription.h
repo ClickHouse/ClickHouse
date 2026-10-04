@@ -16,6 +16,29 @@ class ColumnsDescription;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+/// Returns a context suitable for analyzing storage key/index expressions: the enumerated settings that
+/// would otherwise change the key expression result type (e.g. enable_extended_results_for_datetime_functions,
+/// cast_keep_nullable, geo_distance_returns_float64_on_float64_arguments) are pinned to the server
+/// baseline (default/system profile, including any `compatibility`) read from the global context, so the
+/// key type is stable regardless of the transient session that (re)builds the metadata and matches the
+/// types the on-disk parts were serialized with. Only those listed settings are neutralized, not every
+/// possible session setting. Returns the input context unchanged when no adjustment is needed.
+ContextPtr createKeyExpressionContext(const ContextPtr & context);
+
+/// The read-side complement of createKeyExpressionContext. A key expression is analyzed under the server
+/// baseline, but a query predicate or ORDER BY over the same text is analyzed under the query session, and
+/// the index consumers (KeyCondition, skip indexes, read-in-order) match the two by name. For a setting
+/// that changes the VALUE a key function produces (h3togeo_lon_lat_result_order exchanges the elements
+/// h3ToGeo returns, geotoh3_argument_order exchanges the arguments geoToH3 takes, and
+/// geo_distance_returns_float64_on_float64_arguments computes geoDistance and its siblings in single
+/// precision, which rounds the result) a session that deviates from the baseline
+/// makes the same text mean two different values, so matching by name would prune away rows the runtime
+/// filter keeps, or announce an order the parts do not have. Returns the names of every subexpression of
+/// `key_expr` (including the key columns themselves) that depends on such a function while the session
+/// deviates from the baseline for its setting; the consumers must not match those names. Empty when the
+/// session agrees with the baseline. Only the functions listed above are covered.
+NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context);
+
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {
@@ -52,10 +75,25 @@ struct KeyDescription
     /// for example Iceberg.
     std::optional<Int32> sort_order_id;
 
+    /// Whether this key's expression types are canonicalized (analyzed with createKeyExpressionContext,
+    /// so type-affecting session settings are pinned to the server baseline). Set once by getKeyFromAST
+    /// and preserved across recalculateWithNew* recomputes, so a later ALTER / replication sync re-resolves
+    /// this key under the same policy it was first built with. See getKeyFromAST for when to opt out.
+    bool canonicalize_key_types = true;
+
     /// Parse key structure from key definition. Requires all columns available
     /// in storage. Can contain additional columns defined by storage type (like
     /// Version column in VersionedCollapsingMergeTree) or virtual columns
     /// (like `_block_number` for MergeTreeQueue).
+    ///
+    /// When `canonicalize_key_types` is true (the default), the key expression is analyzed with
+    /// createKeyExpressionContext, so the resulting types are independent of type-affecting session
+    /// settings. This is what persisted MergeTree primary/partition/skip-index key metadata needs.
+    /// Callers whose key AST is later re-analyzed in the caller's own (unpinned) context at query time
+    /// must pass false, otherwise the validated type diverges from the type the expression actually
+    /// produces at runtime. This applies to query-time validators (parallel_replicas_custom_key) and to
+    /// the sampling key, whose read-time filter (MergeTreeDataSelectExecutor) is built in the query context.
+    ///
     /// `hint_columns` restricts the `maybe you meant` suggestions for an unknown identifier in the key to
     /// these names, for a caller whose subsequent check accepts only a part of the columns (@sa
     /// `TreeRewriterResult::hint_columns`). Unset means every column, subcolumn and virtual column
@@ -66,6 +104,7 @@ struct KeyDescription
         const VirtualColumnsDescription & virtuals,
         const ContextPtr & context,
         const NamesAndTypesList & additional_columns = {},
+        bool canonicalize_key_types = true,
         const std::optional<Names> & hint_columns = {});
 
     /// Build a primary key description from an explicit PRIMARY KEY. The PRIMARY KEY names a

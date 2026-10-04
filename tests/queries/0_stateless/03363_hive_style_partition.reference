@@ -36,3 +36,7 @@ test/t_03363_function/year=2025/country=/<snowflakeid>.parquet	11
 USA	2022	1
 0
 1
+test/t_03363_ext_dt/d=2020-01-01/ts=2020-01-01 00:00:00.000/<snowflakeid>.parquet	1
+test/t_03363_ext_dt/d=2021-02-03/ts=2021-02-03 04:05:06.000/<snowflakeid>.parquet	2
+2020-01-01	2020-01-01 00:00:00.000	1
+2021-02-03	2021-02-03 04:05:06.000	2
