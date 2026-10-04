@@ -9049,6 +9049,12 @@ Start version of delta lake snapshot to read. Value -1 means to read latest vers
 End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
 )", 0, \
         {"25.12", -1, -1, "New setting."}) \
+    DECLARE(Milliseconds, delta_lake_snapshot_load_timeout_ms, 600000, R"(
+Maximum time to wait for delta-kernel to load a snapshot of a Delta Lake table (listing and reading its `_delta_log`).
+The load runs on a separate thread and the query waits for it, so the wait is interrupted by `KILL QUERY` and `max_execution_time`,
+and fails with `TIMEOUT_EXCEEDED` once this timeout is exceeded. Value 0 means no timeout.
+)", 0, \
+        {"26.10", 0, 600000, "New setting bounding how long a query waits for delta-kernel to load a Delta Lake table snapshot; the wait is also interrupted by `KILL QUERY` and `max_execution_time`."}) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
 )", 0, \

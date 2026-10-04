@@ -169,6 +169,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_select_sequential_consistency_before_keeper_fence) \
     PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(delta_kernel_snapshot_load_pause) \
+    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
     PAUSEABLE_ONCE(delta_lake_create_table_pause) \
     ONCE(delta_lake_write_cancel_in_commit_window) \
     ONCE(delta_lake_commit_fail_before_log_write) \
