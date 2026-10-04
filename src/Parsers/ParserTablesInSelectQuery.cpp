@@ -621,9 +621,12 @@ Only the following subset is supported so far; anything else is rejected with an
 - The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
   `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
   not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
-- The rows of all evaluations are matched to the left rows by a single join, so `max_rows_in_join` and
-  `max_bytes_in_join` count the rows of all evaluations together, and they are always enforced as if
-  `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
+- The rows of all evaluations are matched to the left rows by a single join. As for any hash join,
+  `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
+  planner chooses that side: with the default settings (`correlated_subqueries_use_in_memory_buffer = 1`)
+  it is the left side of `JOIN LATERAL`, because the left rows must be fully read before the lateral
+  subquery is evaluated; otherwise it can be the results of all evaluations together. The limits are always
+  enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
 
 **Example**
 

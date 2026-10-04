@@ -1558,7 +1558,10 @@ QueryPlan buildLogicalJoinForLateral(
         SortingStep::Settings(settings));
     result_join->setStepDescription("LATERAL JOIN");
 
-    /// This is a user join, so its size limits still apply. But it matches the rows of all evaluations of the
+    /// This is a user join, so its size limits still apply. As for any hash join, they limit the physical
+    /// build side, which is not necessarily the lateral subquery: in the buffered layout and with the default
+    /// `correlated_subqueries_default_join_kind = 'right'` it is the outer input stream (the buffered layout
+    /// cannot be changed, see above). The join matches the rows of all evaluations of the
     /// subquery to all outer rows at once, so under join_overflow_mode = 'break' it could stop early and
     /// silently drop outer rows unrelated to the one that overflowed. In the buffered layout the build side
     /// is the buffered input stream, so stopping early would also let the lateral side read the buffer before
