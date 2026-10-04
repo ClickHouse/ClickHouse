@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransformer & transformer)
@@ -227,6 +228,53 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
 
 }
 
+void applyColumnsRenameTransformer(const ASTColumnsRenameTransformer & transformer, ASTs & nodes)
+{
+    if (transformer.lambda)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda RENAME column transformer is supported only by the analyzer");
+
+    std::map<String, String> rename_map;
+    for (size_t i = 0; i < transformer.source_names.size(); ++i)
+    {
+        auto [_, inserted] = rename_map.emplace(transformer.source_names[i], transformer.target_names[i]);
+        if (!inserted)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expressions in columns transformer RENAME should not contain the same column more than once");
+    }
+
+    for (auto & column : nodes)
+    {
+        String name;
+        if (const auto * id = column->as<ASTIdentifier>())
+            name = id->shortName();
+        else if (auto alias = column->tryGetAlias(); !alias.empty())
+            name = alias;
+        else
+            name = column->getColumnName();
+
+        auto rename_it = rename_map.find(name);
+        if (rename_it != rename_map.end())
+        {
+            setTransformerAlias(column, rename_it->second);
+            rename_map.erase(rename_it);
+        }
+    }
+
+    if (!rename_map.empty())
+    {
+        String expected_columns;
+        for (const auto & [name, _] : rename_map)
+        {
+            if (!expected_columns.empty())
+                expected_columns += ", ";
+            expected_columns += name;
+        }
+
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer RENAME expects following column(s) : {}",
+            expected_columns);
+    }
+}
+
 
 }
 
@@ -238,6 +286,8 @@ void applyColumnsTransformer(const ASTPtr & transformer, ASTs & nodes)
         applyColumnsExceptTransformer(*except, nodes);
     else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
         applyColumnsReplaceTransformer(*replace, nodes);
+    else if (const auto * rename = transformer->as<ASTColumnsRenameTransformer>())
+        applyColumnsRenameTransformer(*rename, nodes);
 }
 
 }
