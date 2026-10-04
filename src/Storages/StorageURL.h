@@ -73,7 +73,8 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool structure_is_required = true);
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -157,7 +158,8 @@ private:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool structure_is_required = true);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
