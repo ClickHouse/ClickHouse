@@ -120,6 +120,8 @@ Patterns in `{ }` are used to generate a set of shards or to specify failover ad
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 `urlCluster` always rejects `*`/`**` wildcards expanded from [HTTP index pages](/reference/functions/table-functions/url#wildcards-with-http-index-pages), regardless of the configured `http_method`.
 
+The addresses are generated one by one as tasks are handed to the nodes of the cluster, so `glob_expansion_max_elements` limits how many addresses a single query may read rather than how large the pattern is, as described for the [url](/reference/functions/table-functions/url#globs-in-url) function. A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the matching ones are dispatched.
+
 ## Related {#related}
 
 -   [HDFS engine](/reference/engines/table-engines/integrations/hdfs)

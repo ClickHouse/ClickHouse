@@ -1063,7 +1063,7 @@ namespace JSONUtils
             return ReturnType(true);
         };
 
-        PeekableReadBuffer peekable_buf(istr, true);
+        PeekableReadBuffer peekable_buf(istr);
         return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
     }
 
