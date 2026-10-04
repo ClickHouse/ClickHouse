@@ -821,6 +821,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/reference/data-types/int-uint)) — Number of times the global memory limit was exceeded.
 - `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/reference/data-types/int-uint)) — Number of times memory has been allocated without checking for memory constraints.
 - `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of bytes that has been allocated without checking for memory constraints.
+- `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/reference/data-types/int-uint)) — Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.
+- `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/reference/data-types/int-uint)) — Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.
 - `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/reference/data-types/int-uint)) — Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.
 - `ProfileEvent_AzureGetObject` ([UInt64](/reference/data-types/int-uint)) — Number of Azure API GetObject calls.
 - `ProfileEvent_AzureUpload` ([UInt64](/reference/data-types/int-uint)) — Number of Azure blob storage API Upload calls
@@ -854,7 +856,6 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_CachedReadBufferReadFromSourceBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source (from remote fs, etc)
 - `ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source for predownload (from remote fs, etc)
 - `ProfileEvent_CachedReadBufferReadFromCacheBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache
-- `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data
 - `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written from source (remote fs, etc) to filesystem cache
 - `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent writing data into filesystem cache
 - `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/reference/data-types/int-uint)) — Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache
@@ -972,6 +973,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.
 - `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
 - `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
+- `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
@@ -1560,6 +1562,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the index marks
 - `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting
 - `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/reference/data-types/int-uint)) — Number of (sub)queries executed using parallel replicas during a query execution
+- `ProfileEvent_AutomaticParallelReplicasProbePlansBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins
 - `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/reference/data-types/int-uint)) — Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool
 - `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/reference/data-types/int-uint)) — Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.
 - `ProfileEvent_RefreshableViewRefreshSuccess` ([UInt64](/reference/data-types/int-uint)) — How many times refreshable materialized views refreshed

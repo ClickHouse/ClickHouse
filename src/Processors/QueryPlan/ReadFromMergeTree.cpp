@@ -25,6 +25,7 @@
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -3497,11 +3498,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSource
-    /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
-    /// filter below. Fail closed rather than serve logically-deleted rows.
-    ///
-    /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
+    /// TODO(unique-key): support streaming reads.
     if (query_info_.isStream())
     {
         if (metadata_snapshot->hasUniqueKey())
@@ -6861,6 +6858,11 @@ void ReadFromMergeTree::verifyBucketedReadSupported() const
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// TODO(unique-key): support distributed plans.
+    if (getStorageMetadata()->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "distributed query plan is not supported on UNIQUE KEY tables");
+
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
     /// earlier in getReasonReadCannotBeDistributed.)
@@ -7097,7 +7099,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
+    auto * merge_tree = castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());
