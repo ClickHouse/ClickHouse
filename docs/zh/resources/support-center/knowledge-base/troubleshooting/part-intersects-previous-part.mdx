@@ -1,0 +1,76 @@
+---
+title: "DB::Exception：Part XXXXX 与前一个 part YYYYY 发生相交。这是一个 bug，或是手动干预 ZooKeeper 数据所致。"
+date: 2023-05-02
+description: "本文说明如何解决 ClickHouse 中与 parts 相交相关的 DB::Exception error，该问题通常由竞态条件或手动干预 ZooKeeper 数据引起。"
+tags: ['错误与异常', '系统表']
+keywords: ['Part 相交', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## 为什么会出现
+</div>
+
+发生此错误时，表会显示为只读，错误信息中会提示存在相交的 parts。
+
+你可以在日志中看到该错误，或者通过
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+错误信息如下：
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## 错误原因
+</div>
+
+此错误可能是由 `mergeSelectingTask` 与队列重新初始化之间发生的竞态条件导致的。
+
+<div id="solution">
+  ## 解决方案
+</div>
+
+在所有副本上执行以下查询：
+
+```sql
+DETACH TABLE table_name;  -- DROP REPLICA 的前置操作
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- 将删除 /table_path_in_zk 下的所有内容
+
+ATTACH TABLE table_name;  -- 表将进入只读模式，因为 ZK 中尚无元数据
+```
+
+然后在所有副本上执行以下命令：
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- 将分离所有分区，在 ZK 中重新创建元数据（如同新建空表），然后重新挂载所有分区
+
+SYSTEM SYNC REPLICA table_name; -- 等待副本同步 parts。建议在恢复完成后检查所有副本上的 `system.detached_parts`。
+```
+
+<Tip>
+  建议升级到最新版本的 ClickHouse
+</Tip>
+
+<div id="additional-resources">
+  ## 更多资源
+</div>
+
+相关 PR 和 GitHub issue：
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## 受影响的版本：
+</div>
+
+ClickHouse v 22.12 及之前版本

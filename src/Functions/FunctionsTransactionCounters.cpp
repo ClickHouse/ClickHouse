@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Core/UUID.h>
 
 
@@ -23,13 +23,16 @@ public:
     {
         Tuple res;
         if (txn)
-            res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id};
+            res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id, txn->tid.session_node_version};
         else
-            res = {static_cast<UInt64>(0), static_cast<UInt64>(0), UUIDHelpers::Nil};
+            res = {static_cast<UInt64>(0), static_cast<UInt64>(0), UUIDHelpers::Nil, static_cast<Int64>(0)};
         return res;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
+
+    /// Reads the executing node's transaction state.
+    bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
@@ -40,10 +43,13 @@ class FunctionTransactionLatestSnapshot final : public FunctionConstantBase<Func
     static UInt64 getLatestSnapshot(ContextPtr context)
     {
         context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-        return TransactionLog::instance().getLatestSnapshot();
+        return TransactionManager::instance().getLatestSnapshot();
     }
 public:
     static constexpr auto name = "transactionLatestSnapshot";
+    /// Reads the executing node's transaction state.
+    bool isServerConstant() const override { return true; }
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
     explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
 };
@@ -53,10 +59,13 @@ class FunctionTransactionOldestSnapshot final : public FunctionConstantBase<Func
     static UInt64 getOldestSnapshot(ContextPtr context)
     {
         context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-        return TransactionLog::instance().getOldestSnapshot();
+        return TransactionManager::instance().getOldestSnapshot();
     }
 public:
     static constexpr auto name = "transactionOldestSnapshot";
+    /// Reads the executing node's transaction state.
+    bool isServerConstant() const override { return true; }
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
     explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}
 };
@@ -71,9 +80,9 @@ REGISTER_FUNCTION(TransactionCounters)
 
 Returns the ID of a transaction.
 
-:::note
+<Note>
 This function is part of an experimental feature set.
-Enable experimental transaction support by adding this setting to your [configuration](/operations/configuration-files):
+Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <clickhouse>
@@ -81,19 +90,20 @@ Enable experimental transaction support by adding this setting to your [configur
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
-:::
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_transactionID = "transactionID()";
     FunctionDocumentation::Arguments arguments_transactionID = {};
     FunctionDocumentation::ReturnedValue returned_value_transactionID = {
     R"(
-Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`.
+Returns a tuple consisting of `start_csn`, `local_tid`, `host_id` and `session_node_version`.
 - `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began.
 - `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn.
 - `host_id`: UUID of the host that has started this transaction.
+- `session_node_version`: Version of the host's session znode at transaction start; lets peers detect a dead-session TID across replicas.
     )",
-    {"Tuple(UInt64, UInt64, UUID)"}
+    {"Tuple(UInt64, UInt64, UUID, Int64)"}
     };
     FunctionDocumentation::Examples examples_transactionID = {
     {
@@ -104,9 +114,9 @@ SELECT transactionID();
 ROLLBACK;
         )",
         R"(
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
         )"
     }
     };
@@ -120,9 +130,9 @@ ROLLBACK;
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the newest snapshot (Commit Sequence Number) of a [transaction](/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) that is available for reading.
 
-:::note
+<Note>
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
 ```xml
@@ -131,8 +141,8 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
-:::
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_transactionLatestSnapshot = "transactionLatestSnapshot()";
     FunctionDocumentation::Arguments arguments_transactionLatestSnapshot = {};
@@ -162,9 +172,9 @@ ROLLBACK;
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 
-:::note
+<Note>
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
 ```xml
@@ -173,8 +183,8 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
-:::
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_transactionOldestSnapshot = "transactionOldestSnapshot()";
     FunctionDocumentation::Arguments arguments_transactionOldestSnapshot = {};

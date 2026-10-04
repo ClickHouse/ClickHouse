@@ -89,6 +89,8 @@ private:
 
     /// Methods to manage replication.
 
+    void adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx);
+
     void checkConnectionAndStart();
 
     void consumerFunc();
@@ -140,9 +142,18 @@ private:
 
     const bool user_managed_slot;
     const String user_provided_snapshot;
-    const String replication_slot;
-    const String tmp_replication_slot;
-    const String publication_name;
+    /// Not const: adoptLegacyReplicationIdentityIfNeeded() switches these to the legacy names once, on
+    /// attach of a deployment created before the generated names became schema-aware. They are never
+    /// modified after the replication consumer is created.
+    String replication_slot;
+    String tmp_replication_slot;
+    String publication_name;
+    /// The legacy, schema-unaware replication slot and publication names this configuration would have
+    /// used before the generated names became schema-aware. Equal to the current names when the engine
+    /// targets the default PostgreSQL schema, or (for the slot) when the slot name does not depend on
+    /// the schema (a user-managed slot or a unique replication consumer identifier).
+    const String legacy_replication_slot;
+    const String legacy_publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;

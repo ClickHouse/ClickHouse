@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/StatusRequestsPool.h>
@@ -185,7 +186,7 @@ void StorageSystemReplicas::readImpl(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
@@ -193,11 +194,8 @@ void StorageSystemReplicas::readImpl(
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
@@ -398,7 +396,8 @@ Chunk SystemReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
+                /// The table has been shut down or dropped, so its row is skipped instead of being reported as an error.
+                LOG_DEBUG(logger, "Cannot get the status of a storage: {}", e.displayText());
                 continue;
             }
             throw;

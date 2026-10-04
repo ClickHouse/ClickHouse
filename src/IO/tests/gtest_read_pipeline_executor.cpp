@@ -61,7 +61,7 @@ protected:
     std::unique_ptr<ReadBufferFromFileBase> build(const StoredObject & obj)
     {
         ReadSettings settings;
-        settings.use_reader_executor = true;
+        settings.reader_executor.enabled = true;
         ReadPipeline pipeline;
         pipeline.setSource(storage, StoredObjects{obj}, settings);
         return pipeline.build();

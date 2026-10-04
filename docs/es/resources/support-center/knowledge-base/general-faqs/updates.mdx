@@ -1,0 +1,19 @@
+---
+title: '¿ClickHouse admite actualizaciones en tiempo real?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'ClickHouse admite actualizaciones ligeras en tiempo real'
+doc_type: 'reference'
+keywords: ['actualizaciones', 'tiempo real']
+---
+
+ClickHouse admite la sentencia UPDATE y puede ejecutar actualizaciones en tiempo real con la misma rapidez con la que ejecuta INSERTs.
+
+Esto es posible gracias a la [estructura de datos de patch parts](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way), que permite aplicar cambios rápidamente sin afectar de forma significativa al rendimiento de las consultas SELECT.
+
+Además, gracias a MVCC (control de concurrencia multiversión) y al aislamiento de instantáneas, las actualizaciones ofrecen propiedades ACID.
+
+<Info>
+  Las actualizaciones ligeras se introdujeron en ClickHouse 25.7.
+</Info>

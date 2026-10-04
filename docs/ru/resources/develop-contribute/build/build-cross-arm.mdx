@@ -1,0 +1,11 @@
+---
+description: 'Руководство по сборке ClickHouse из исходного кода для архитектуры AARCH64'
+sidebarTitle: 'Сборка в Linux для AARCH64'
+slug: /development/build-cross-arm
+title: 'Как собрать ClickHouse в Linux для AARCH64'
+doc_type: 'guide'
+---
+
+Для сборки ClickHouse для Aarch64 на машине с архитектурой Aarch64 никаких специальных действий не требуется.
+
+Чтобы выполнить кросс-компиляцию ClickHouse для AArch64 на x86-машине с Linux, передайте `cmake` следующий флаг: `-DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake`

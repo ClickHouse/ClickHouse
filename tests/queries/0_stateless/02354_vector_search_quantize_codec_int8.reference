@@ -1,0 +1,8 @@
+show_create_has_codec	1
+subcolumn_type	FixedString(68)
+code_length	68
+full_precision_rows	4000
+plan	1	1
+unfiltered_exact	1
+filtered_exact	1
+nearest_is_self	1

@@ -42,17 +42,6 @@ struct MarkInCompressedFile
  */
 class MarksInCompressedFile
 {
-public:
-    using PlainArray = PODArray<MarkInCompressedFile>;
-
-    explicit MarksInCompressedFile(const PlainArray & marks);
-
-    MarkInCompressedFile get(size_t idx) const;
-
-    size_t approximateMemoryUsage() const;
-
-    size_t getNumberOfMarks() const { return num_marks; }
-
 private:
     /** Throughout this class:
      *   * "x" stands for offset_in_compressed_file,
@@ -97,7 +86,62 @@ private:
         UInt8 trailing_zero_bits_in_y = 63;
     };
 
+public:
+    using PlainArray = PODArray<MarkInCompressedFile>;
+
+    /// Create from a complete plain marks array.
+    static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
+
+    MarkInCompressedFile get(size_t idx) const;
+
+    size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
+
     static constexpr size_t MARKS_PER_BLOCK = 256;
+
+    /// Streaming builder that compresses marks one block at a time,
+    /// avoiding the need to materialize the full plain marks array.
+    /// Callers can feed marks in arbitrary-sized chunks; the builder
+    /// internally buffers and flushes at MARKS_PER_BLOCK boundaries.
+    class Builder
+    {
+    public:
+        explicit Builder(size_t total_marks_);
+
+        /// Add arbitrary number of marks. Internally buffers and compresses
+        /// in MARKS_PER_BLOCK-sized blocks.
+        void addMarks(const MarkInCompressedFile * marks, size_t count);
+
+        /// Finalize and return the compressed marks object.
+        /// Flushes any remaining buffered marks.
+        std::shared_ptr<MarksInCompressedFile> finish();
+
+    private:
+        friend MarksInCompressedFile;
+
+        /// Add all marks at once. Processes full blocks directly without
+        /// copying into the internal buffer. Must only be called once on
+        /// an empty builder (no prior addMarks calls). Used by create.
+        void addAllMarks(const MarkInCompressedFile * marks, size_t count);
+
+        /// Compress up to MARKS_PER_BLOCK marks into one internal block.
+        void flushBlock(const MarkInCompressedFile * data, size_t count);
+
+        size_t total_marks;
+        size_t marks_flushed = 0;
+        size_t packed_bits = 0;
+        PODArray<MarkInCompressedFile> pending;
+        PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
+        PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
+    };
+
+private:
+    /// Private constructor used by Builder::finish.
+    MarksInCompressedFile(
+        size_t num_marks_,
+        PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
+        PODArray<UInt64, 4096, JemallocCacheAllocator> && packed_);
 
     size_t num_marks;
     PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;

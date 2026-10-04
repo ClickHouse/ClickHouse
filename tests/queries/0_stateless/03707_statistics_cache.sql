@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET enable_analyzer = 1;
 SET use_statistics = 1;
 
@@ -40,7 +40,7 @@ INSERT INTO sc_unused
 SELECT number, number % 100
 FROM numbers(50000);
 
-ALTER TABLE sc_unused ADD STATISTICS val TYPE MinMax;
+ALTER TABLE sc_unused ADD STATISTICS val TYPE basic;
 ALTER TABLE sc_unused MATERIALIZE STATISTICS ALL;
 
 SELECT sum(val) FROM sc_unused

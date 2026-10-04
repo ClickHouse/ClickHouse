@@ -20,6 +20,7 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 
@@ -270,15 +271,15 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             return;
         add_rows(it, kafka_table);
     };
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & db : databases)
     {
         for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
         {
             StoragePtr storage = it->table();
-            if (auto * kafka_table = dynamic_cast<StorageKafka *>(storage.get()))
+            if (auto kafka_table = castStorage<StorageKafka>(storage, DeferredTable::Skip))
                 handle_table(it, *kafka_table);
-            else if (auto * kafka_2_table = dynamic_cast<StorageKafka2 *>(storage.get()))
+            else if (auto kafka_2_table = castStorage<StorageKafka2>(storage, DeferredTable::Skip))
                 handle_table(it, *kafka_2_table);
         }
     }

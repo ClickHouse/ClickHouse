@@ -1,0 +1,24 @@
+---
+title: Materialized Views 是否会同步插入？
+description: 本文探讨 Materialized Views 是否会同步插入
+date: 2023-03-01
+tags: ['数据建模']
+keywords: ['Materialized View']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## materialized view 是同步插入的吗？
+</div>
+
+**问题：** 当源表有新行插入时，这些新行也会被发送到该源表的所有 materialized view。对 Materialized Views 的插入是同步执行的吗？也就是说，一旦服务器向客户端成功确认插入，是否就意味着所有 Materialized Views 都已经完全更新，并且可以查询？
+
+**回答：**
+
+1. 当 `INSERT` 成功时，数据会同时插入该表及其所有 materialized view。
+2. 对 materialized view 而言，插入不是原子的。在 `INSERT` 执行过程中，并发客户端可能会看到中间状态：数据已经插入主表，但尚未插入 materialized view，反之亦然。
+3. 如果你使用的是 [异步插入](/zh/concepts/features/operations/insert/asyncinserts)，它会先收集数据，然后在底层执行一次常规插入，并向客户端返回与常规插入相同类型的响应。如果客户端通过带有 `wait_for_async_insert` 选项的异步插入收到了成功响应 (默认如此) ，则数据会被插入到该表及其所有 materialized view 中。
+
+**问题：** 那么链式/级联 materialized view 呢？
+
+**回答：**
+规则相同——`INSERT` 成功返回意味着数据已插入链中的每一个 materialized view。该插入仍然是非原子的。

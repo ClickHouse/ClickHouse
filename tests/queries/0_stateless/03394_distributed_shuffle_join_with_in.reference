@@ -5,10 +5,10 @@ Expression (Project names)
       Expression ((Before ORDER BY + Projection))
         JoinLogical
           ShuffleExchange (by hash([__table1.path]))
-            Expression
+            Expression ((Apply runtime join filter + (Change column names to column identifiers + (Project names + Projection))))
               Aggregating
                 ShuffleExchange (by hash([__table2.path]))
-                  Expression
+                  Expression ((((Apply runtime join filter + (Change column names to column identifiers + (Project names + Projection))) + Before GROUP BY) + (WHERE + Change column names to column identifiers)))
                     ReadFromMergeTree (default.test)
           ShuffleExchange (by hash([__table3.path]))
             BuildRuntimeFilter (Build runtime join filter on __table3.path)

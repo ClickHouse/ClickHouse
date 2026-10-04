@@ -1,0 +1,366 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: 'Cascading materialized views'
+description: 'How to use multiple materialized views from a source table.'
+keywords: ['materialized view', 'aggregation']
+doc_type: 'guide'
+---
+
+This example demonstrates how to create a materialized view, and then how to cascade a second materialized view on to the first. In this page, you will see how to do it, many of the possibilities, and the limitations. Different use cases can be answered by creating a Materialized view using a second Materialized view as the source.
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+<br />
+
+Example:
+
+We will use a fake dataset with the number of views per hour for a group of domain names.
+
+Our Goal
+
+1. We need the data aggregated by month for each domain name,
+2. We also need the data aggregated by year for each domain name.
+
+You could choose one of these options:
+
+- Write queries that will read and aggregate the data during the SELECT request
+- Prepare the data at the ingest time to a new format
+- Prepare the data at the time of ingest to a specific aggregation.
+
+Preparing the data using Materialized views will allow you to limit the amount of data and calculation ClickHouse needs to do, making your SELECT requests faster.
+
+## Source table for the materialized views {#source-table-for-the-materialized-views}
+
+Create the source table, because our goals involve reporting on the aggregated data and not the individual rows, we can parse it, pass the information on to the Materialized Views, and discard the actual incoming data. This meets our goals and saves on storage so we will use the `Null` table engine.
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+You can create a materialized view on a Null table. So the data written to the table will end up affecting the view, but the original raw data will still be discarded.
+</Note>
+
+## Monthly aggregated table and materialized view {#monthly-aggregated-table-and-materialized-view}
+
+For the first materialized view, we need to create the `Target` table, for this example, it will be `analytics.monthly_aggregated_data` and we will store the sum of the views by month and domain name.
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+The materialized view that will forward the data on the target table will look like this:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+## Yearly aggregated table and materialized view {#yearly-aggregated-table-and-materialized-view}
+
+Now we will create the second Materialized view that will be linked to our previous target table `monthly_aggregated_data`.
+
+First, we will create a new target table that will store the sum of views aggregated by year for each domain name.
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+This step defines the cascade. The `FROM` statement will use the `monthly_aggregated_data` table, this means the data flow will be:
+
+1. The data comes to the `hourly_data` table.
+2. ClickHouse will forward the data received to the first materialized view `monthly_aggregated_data` table,
+3. Finally, the data received in step 2 will be forwarded to the `year_aggregated_data`.
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+A common misinterpretation when working with Materialized views is that data is read from the table, This isn't how `Materialized views` work; the data forwarded is the inserted block, not the final result in your table.
+
+Let's imagine in this example that the engine used in `monthly_aggregated_data` is a CollapsingMergeTree, the data forwarded to our second Materialized view `year_aggregated_data_mv` won't be the final result of the collapsed table, it will forward the block of data with the fields defined as in the `SELECT ... GROUP BY`.
+
+If you're using CollapsingMergeTree, ReplacingMergeTree, or even SummingMergeTree and you plan to create a cascade Materialized view you need to understand the limitations described here.
+</Note>
+
+## Sample data {#sample-data}
+
+Now is the time to test our cascade materialized view by inserting some data:
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+If you SELECT the contents of `analytics.hourly_data` you will see the following because the table engine is `Null`, but the data was processed.
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+We have used a small dataset to be sure we can follow and compare the result with what we're expecting, once your flow is correct with a small data set, you could just move to a large amount of data.
+
+## Results {#results}
+
+If you try to query the target table by selecting the `sumCountViews` field, you will see the binary representation (in some terminals), as the value isn't stored as a number but as an AggregateFunction type.
+To get the final result of the aggregation you should use the `-Merge` suffix.
+
+You can see the special characters stored in AggregateFunction with this query:
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 rows in set. Elapsed: 0.003 sec.
+```
+
+Instead, let's try using the `Merge` suffix to get the `sumCountViews` value:
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+In the `AggregatingMergeTree` we have defined the `AggregateFunction` as `sum`, so we can use the `sumMerge`. When we use the function `avg` on the `AggregateFunction`, we will use `avgMerge`, and so forth.
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+Now we can review that the Materialized Views answer the goal we have defined.
+
+Now that we have the data stored in the target table `monthly_aggregated_data` we can get the data aggregated by month for each domain name:
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+The data aggregated by year for each domain name:
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+## Combining multiple source tables to single target table {#combining-multiple-source-tables-to-single-target-table}
+
+Materialized views can also be used to combine multiple source tables into the same destination table. This is useful for creating a materialized view that is similar to a `UNION ALL` logic.
+
+First, create two source tables representing different sets of metrics:
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+Then create the `Target` table with the combined set of metrics:
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+Create two materialized views pointing to the same `Target` table. You don't need to explicitly include the missing columns:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- if you omit this, it will be the same 0
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- if you omit this, it will be the same 0
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+Now when you insert values those values will be aggregated to their respective columns in the `Target` table:
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+The combined impressions and clicks together in the `Target` table:
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+This query should output something like:
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```

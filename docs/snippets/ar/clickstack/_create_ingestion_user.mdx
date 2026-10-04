@@ -1,0 +1,16 @@
+---
+title: إنشاء مستخدم للإدخال
+---
+
+نوصي بإنشاء مستخدم مخصّص للمجمِّع بدلًا من إعادة استخدام `default`. اتصل بخدمتك عبر SQL Console ثم شغّل:
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+  استبدل كلمة المرور في المقتطف أعلاه بقيمة قوية وآمنة.
+</Tip>
+
+ينشئ الـ collector مخطط السجلات والتتبعات والمقاييس داخل قاعدة البيانات `otel` عند استخدامه لأول مرة. ولمزيد من الإرشادات حول إعداد مستخدم بيئة الإنتاج، راجع [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production#create-a-database-ingestion-user-managed).

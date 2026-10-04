@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Traits to unify creation and management of scheduler nodes for both time-shared and space-shared resources
@@ -743,11 +742,6 @@ public:
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
     std::string_view getTypeName() const override { return "workload"; }
 
-    bool equals(ISchedulerNode *) override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkloadNode should not be used with CustomResourceManager");
-    }
-
     ConstraintsBranch impl;
 };
 
@@ -785,6 +779,7 @@ private:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -811,8 +806,10 @@ private:
         if (request)
         {
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, child_active);
         }
+        else if (!child_active)
+            flushThroughputOnDeactivation();
 
         return {request, child_active};
     }

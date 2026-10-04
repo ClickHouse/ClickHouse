@@ -1,0 +1,336 @@
+---
+sidebarTitle: 'SCIM provisioning with Entra ID'
+slug: /cloud/security/scim-setup-entra
+title: 'SCIM provisioning with Microsoft Entra ID'
+description: 'How to set up SCIM provisioning between Microsoft Entra ID and ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SCIM', 'provisioning', 'Entra ID', 'Azure AD', 'Microsoft', 'SSO', 'SAML', 'identity provider', 'IdP', 'user management']
+---
+
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<EnterprisePlanFeatureBadge feature="SCIM"/>
+
+ClickHouse Cloud supports SCIM 2.0 (System for Cross-domain Identity Management) for automated user and group lifecycle management. Once connected to your identity provider, every user you assign to the ClickHouse Cloud application is automatically created in your organization with the right role, profile updates flow through automatically, and removing a user from your IdP removes their access — no manual invites, no orphaned accounts.
+
+This guide walks through setting up SCIM provisioning end-to-end with **Microsoft Entra ID** (formerly Azure Active Directory). The ClickHouse Cloud SCIM endpoint follows SCIM 2.0 (RFC 7644). Entra ID authenticates to the endpoint using a long-lived bearer token, which you assemble from the SCIM token key and secret generated in the ClickHouse Cloud Console.
+
+<Tip>
+**Using Okta instead?**
+
+If your identity provider is Okta, follow the [SCIM provisioning with Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) guide. The ClickHouse Cloud side is identical; only the IdP configuration differs.
+</Tip>
+
+## Before you begin {#before-you-begin}
+
+You'll need:
+
+- The **Admin** role in your ClickHouse Cloud organization.
+- [SAML SSO](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) already configured between Entra ID and ClickHouse Cloud. SCIM creates the user accounts; those accounts sign in through SAML, so SSO must be working first.
+- Access to the **Microsoft Entra admin center** with at least the **Application Administrator** (or **Cloud Application Administrator**) role, with permission to configure provisioning on the enterprise application.
+- A list of the roles you want to assign through SCIM (for example: Admins, Developers, Read-only). Decide this up front — you'll create matching groups in Entra ID.
+
+## How SCIM works with ClickHouse Cloud {#how-scim-works}
+
+1. An admin in Entra ID assigns a user — directly or through a group — to the ClickHouse Cloud enterprise application.
+2. Entra ID's provisioning service calls the ClickHouse Cloud SCIM endpoint over HTTPS, authenticated with a bearer token you generate.
+3. ClickHouse Cloud creates the user in your organization and assigns roles based on Entra ID group membership.
+4. The user signs in to ClickHouse Cloud through your existing SAML SSO flow.
+5. Profile changes, group changes, and deactivation in Entra ID propagate to ClickHouse Cloud automatically.
+
+## Configure SCIM on your ClickHouse Cloud organization {#configure-clickhouse-cloud}
+
+<Steps>
+<Step title="Enable SCIM" id="enable-scim-provisioning">
+
+Sign in to **ClickHouse Cloud Console** as an organization admin and open **Organization settings → SAML and SCIM settings → SCIM Configuration**.
+
+Click `Enable SCIM`. SCIM is unlocked once SAML SSO is connected — if the option is greyed out, finish your SAML setup first.
+
+A **SCIM endpoint URL** is generated, in the form:
+
+```plaintext
+https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
+```
+
+Copy it — you'll paste it into Entra ID later as the **Tenant URL**.
+</Step>
+<Step title="Generate a SCIM access token" id="generate-scim-token">
+
+Locate the `Generate new key` section and choose an expiration date.
+
+<Tip>
+**Plan for rotation**
+
+We recommend setting an expiry of 12 months and adding a calendar reminder. ClickHouse Cloud supports up to two active SCIM tokens at once so you can rotate without downtime: generate the new token, swap Entra ID over, confirm provisioning still works, then revoke the old token.
+</Tip>
+
+Click `Generate new key`. The token is shown **once**, as a key (prefixed `scim_`) and a secret. Copy both immediately and store them in a secure secrets manager — they can't be retrieved later. If you lose them, revoke the token and generate a new one.
+
+You'll combine the key and secret into a single bearer token for Entra ID in the form:
+
+```plaintext
+<scim-key>:<scim-secret>
+```
+
+Specifically, the token **key** (starting with `scim_`), a colon, then the token **secret**, with no spaces. Entra ID sends this value as an `Authorization: Bearer` header on every request.
+</Step>
+<Step title="Define the role mapping" id="define-role-mapping">
+
+From the SCIM Configuration panel, click **Map roles in "Users and roles"** (or navigate directly via **Users and roles → Roles**).
+
+SCIM groups bind to ClickHouse Cloud roles by name, with a few rules to keep in mind:
+
+- **You can't map a SCIM group to a predefined system role.** SCIM mappings apply only to custom roles. If you need to expose a system-level capability through SCIM, create a custom role that wraps the permissions you want.
+- **Matching names auto-link.** If a custom role has the same name as the incoming SCIM group, ClickHouse Cloud links them automatically — no manual mapping needed.
+- **To use a different role name than the group name**, create the custom role with the role name you want, then set its **SCIM group** field to the name of the SCIM group it should bind to.
+- **Unmapped groups create new roles.** If Entra ID pushes a group that doesn't match an existing role name and isn't referenced by any role's `SCIM group` field, ClickHouse Cloud creates a new custom role with that group's name. You can then grant it the permissions you want.
+</Step>
+</Steps>
+
+## Configure provisioning in Microsoft Entra ID {#configure-entra}
+
+<Steps>
+<Step title="Open your ClickHouse Cloud enterprise application" id="open-clickhouse-cloud-app">
+
+Open the **Microsoft Entra ID** overview and, under **Manage** in the left-hand menu, select **Enterprise applications**. Open the application you created when you set up SAML SSO for ClickHouse Cloud.
+
+If you haven't created the enterprise application yet, follow the [SAML SSO setup guide](/products/cloud/guides/security/cloud-access-management/saml-sso-setup#azure-enterprise-app) first — with SAML-based SSO, the same enterprise application is used for both single sign-on and SCIM provisioning.
+</Step>
+<Step title="Set the provisioning mode and credentials" id="connect-entra-scim">
+
+In the application's left sidebar, select **Provisioning**, then click `Get started` (or `Provisioning` → `Edit provisioning`).
+
+Set **Provisioning Mode** to `Automatic`. Under **Admin Credentials**, fill in:
+
+- **Tenant URL** — the SCIM endpoint URL from the ClickHouse Cloud Console (the `.../scim` URL).
+- **Secret Token** — your SCIM credentials joined with a colon, in the form `<scim-key>:<scim-secret>`. Entra ID sends this as an `Authorization: Bearer` header.
+
+Click `Test Connection`. Entra ID makes a test call to the SCIM endpoint; you should see a success notification. If it fails, jump to [Troubleshooting](#troubleshooting).
+
+Click `Save`.
+</Step>
+<Step title="Configure attribute mappings" id="map-user-attributes">
+
+After saving credentials, expand the **Mappings** section. Entra ID shows two mapping sets:
+
+- **Provision Microsoft Entra ID Users**
+- **Provision Microsoft Entra ID Groups**
+
+Open **Provision Microsoft Entra ID Users** and confirm the attribute mappings line up with what ClickHouse Cloud expects.
+
+By default, Entra ID maps `userName` from `userPrincipalName`. **What matters is that `userName` is sourced from whichever attribute holds the same email address your SAML SSO uses to sign users in** — not any specific attribute name. In some tenants `userPrincipalName` is already that email and no change is needed; in others the email lives in `mail`, so you edit the mapping to source `userName` from `mail`. To change the source, click the `userName` row, set the **Source attribute** to the correct one, and save.
+
+Set the **Matching precedence** so that `userName` is the primary matching attribute. You can remove unsupported mappings; anything outside the SCIM standard set is ignored on the ClickHouse Cloud side.
+
+<Warning>
+**Match the email used for SAML SSO**
+
+The value that flows into `userName` **must** match the email address each user signs in with through SAML SSO. SCIM creates the account and SAML authenticates it, so if the SCIM `userName` and the SAML assertion's email don't match, SAML creates a separate new user on sign-in that isn't managed by SCIM — leaving a duplicate, unmanaged account. Map `userName` from whichever attribute (`userPrincipalName`, `mail`, or another) carries the same email your SAML configuration sends.
+</Warning>
+
+The remaining rows below come mapped by default — double-check that each is in place:
+
+| Microsoft Entra ID attribute | ClickHouse Cloud (SCIM) attribute | Required |
+|---|---|---|
+| `mail` | `emails[type eq "work"].value` | **Yes** — must match `userName` |
+| `givenName` | `name.givenName` | Recommended |
+| `surname` | `name.familyName` | Recommended |
+| `displayName` | `displayName` | Recommended — shown in the ClickHouse Cloud UI |
+| `Switch([IsSoftDeleted], ...)` | `active` | **Yes** — drives deactivation |
+
+Open **Provision Microsoft Entra ID Groups** and confirm `displayName` maps to `displayName` and `members` maps to `members` — group display name is what binds to your ClickHouse Cloud role.
+
+<Warning>
+**Email casing matters**
+
+Make sure the value that flows into `userName` and the value that flows into the primary email use the same casing. ClickHouse Cloud normalises emails to lowercase; mismatches between the two fields can cause provisioning failures.
+</Warning>
+</Step>
+<Step title="Set the provisioning scope" id="configure-provisioning-behavior">
+
+Expand the **Settings** section:
+
+- Set **Scope** to `Sync only assigned users and groups`. This limits provisioning to the users and groups you explicitly assign to the application in the next step.
+- Leave **Provisioning Status** `Off` for now — you'll turn it on after assigning your test users.
+
+Click `Save`.
+</Step>
+<Step title="Assign groups and users" id="push-groups-and-assign-users">
+
+This is where roles get applied automatically.
+
+**Create groups in Entra ID.** For each role mapping you set up earlier, create or identify an Entra ID group with the **exact same display name**. For example, if your mapping says `ClickHouse-Admins → Admin`, create a group called `ClickHouse-Admins` in Entra ID.
+
+**Assign groups to the application.** In the enterprise application, go to **Users and groups → Add user/group**, select your role group, and assign it. Repeat for each role group. Because the application's provisioning scope is set to *assigned users and groups*, only these groups (and their members) are provisioned.
+
+<Note>
+**Group provisioning requires the right Entra ID licensing**
+
+Provisioning groups (not just their members) requires Microsoft Entra ID P1 or higher. With group provisioning, the group itself is created in ClickHouse Cloud and bound to the matching role by display name.
+</Note>
+
+**Assign users.** You have two options:
+
+- **Via groups (recommended).** Add users to the Entra ID groups you assigned to the application. They'll be provisioned to ClickHouse Cloud and assigned the matching role automatically.
+- **Directly.** Assign individual users to the application under **Users and groups**. They'll be provisioned with the **Default role** unless they're also a member of an assigned group.
+
+Group-based assignment is cleaner for ongoing management — when someone changes role, you only update group membership.
+</Step>
+<Step title="Turn on provisioning" id="turn-on-provisioning">
+
+Return to **Provisioning**, set **Provisioning Status** to `On`, and click `Save`.
+
+Entra ID runs provisioning on a recurring cycle (approximately every 40 minutes). To provision a specific user immediately — useful for testing — use **Provisioning → Provision on demand**, search for the user, and run a single provisioning operation.
+</Step>
+</Steps>
+
+## Test the integration {#test-the-integration}
+
+Once provisioning is on, use **Provision on demand** to push one or two test users right away rather than waiting for the next cycle. Then return to **Settings → Users and roles** in the ClickHouse Cloud Console to confirm that synchronised users have appeared with the expected roles.
+
+Run through this short test plan with one or two test users **before** you assign your whole team. If a step doesn't take effect, use **Provision on demand** to force a sync, then check the [Troubleshooting](#troubleshooting) section.
+
+| # | Action in Entra ID | Expected result in ClickHouse Cloud |
+|---|---|---|
+| 1 | Add a test user to the `ClickHouse-Admins` group and run **Provision on demand** | User appears in **Settings → Members** with role **Admin** |
+| 2 | The test user signs in to ClickHouse Cloud via SSO | They land on the dashboard with admin access |
+| 3 | Update the user's first name in Entra ID and re-provision | Updated name appears in **Members** |
+| 4 | Move the user from `ClickHouse-Admins` to `ClickHouse-Read-only` and re-provision | Their role changes to **Read-only** |
+| 5 | Unassign the user from the application (or disable the account in Entra ID) | User is removed from the organization; further sign-in attempts fail |
+
+If any step fails, fix the underlying issue before continuing — symptoms usually compound.
+
+<Tip>
+**Where to look for SCIM errors in Entra ID**
+
+SCIM errors surface in the application's **Provisioning → View provisioning logs** screen (also available under **Identity → Monitoring & health → Provisioning logs**). Each entry shows the request, the target, and the error returned by ClickHouse Cloud verbatim — start there.
+</Tip>
+
+## Best practices for production {#best-practices}
+
+### Rotate tokens regularly {#rotate-tokens}
+
+Set a calendar reminder for SCIM token rotation. Recommended cadence: every 12 months, or immediately whenever an admin who knew the token leaves the company. ClickHouse Cloud allows two active tokens per organization specifically so you can rotate without breaking provisioning — generate the new token, update the **Secret Token** in Entra ID, confirm with **Test Connection**, then revoke the old token.
+
+### Use groups, not direct assignments {#use-groups}
+
+Direct user assignment to the application works, but quickly becomes hard to audit. Driving assignment through Entra ID groups means access reviews and role changes happen in one place.
+
+### Review the audit log {#review-audit-log}
+
+Every SCIM action — user created, user deactivated, profile updated — is recorded in the ClickHouse Cloud audit log. See [Audit logging](/products/cloud/reference/security/audit-logging). Check the log periodically, especially after large provisioning bursts.
+
+### Set a sensible default role {#default-role}
+
+If an Entra ID user gets assigned to the application but isn't in any assigned group, they're created with the **Default role**. Pick the most restrictive role that still lets the user accomplish *something*, so misconfigurations fail safely.
+
+### Avoid SCIM and manual invites at the same time {#avoid-manual-invites}
+
+Once SCIM is on, manage membership through Entra ID — don't also send manual invites for the same users. Mixing the two paths leads to confusion about who is the source of truth and can produce duplicates.
+
+### Account for the provisioning cycle {#account-for-provisioning-cycle}
+
+Entra ID syncs on a recurring cycle (roughly every 40 minutes), so routine changes aren't instant. Use **Provision on demand** when you need a change to land immediately, and monitor **Provisioning logs** for persistent failures.
+
+## Troubleshooting {#troubleshooting}
+
+<AccordionGroup>
+
+<Accordion title='"Test connection" fails in Entra ID' id="test-credentials-fails">
+
+- Confirm SCIM is **enabled** in the ClickHouse Cloud Console.
+- Confirm the **Tenant URL** in Entra ID exactly matches the SCIM endpoint URL shown in the Cloud Console — the organization id must be correct.
+- Confirm the **Secret Token** is in the form `<scim-key>:<scim-secret>` — the key (starting with `scim_`), a colon, and then the secret. Include no leading or trailing whitespace, and no `Bearer` prefix (Entra ID adds that automatically).
+- If you've rotated tokens, make sure you're using the **new** key and secret, not the previous pair.
+
+</Accordion>
+
+<Accordion title="Users get created but have no permissions" id="users-no-permissions">
+
+- Check that you've added a row under **Map roles in "Users and roles"** for the role you expect.
+- Check that the Entra ID group name **exactly** matches the SCIM group name in the mapping, including capitalisation and hyphens.
+- If your design intentionally provisions some users without a group, confirm the **Default role** is set.
+
+</Accordion>
+
+<Accordion title="Users or groups aren't provisioning at all" id="nothing-provisioning">
+
+- Confirm **Provisioning Status** is `On`.
+- Confirm **Scope** is set to `Sync only assigned users and groups` and that the users/groups are actually assigned to the application under **Users and groups**.
+- Remember the cycle runs roughly every 40 minutes — use **Provision on demand** to test a single user immediately.
+- Provisioning groups (rather than just their members) requires Microsoft Entra ID P1 or higher.
+
+</Accordion>
+
+<Accordion title="Duplicate user in the member list" id="duplicate-user">
+
+Usually caused by inconsistent email casing between Entra ID and an earlier manual invite. Remove the duplicate from the Members list, then unassign and reassign the user in Entra ID (or re-run **Provision on demand**) to provision fresh.
+
+</Accordion>
+
+<Accordion title="Group provisioning fails with a name mismatch" id="group-display-name">
+
+The group display name in Entra ID doesn't match a configured mapping in ClickHouse Cloud. Either rename the Entra ID group or add a mapping under **Map roles in "Users and roles"** from the SCIM Configuration panel (or via **Users and roles → Roles**).
+
+</Accordion>
+
+<Accordion title="Deactivated users still show as members" id="deactivated-users-remaining">
+
+Deactivation propagates on the next provisioning cycle. To force it immediately, use **Provision on demand** for that user. If the user is still a member afterwards, check **Provisioning → View provisioning logs** for an error on the disable operation.
+
+</Accordion>
+
+<Accordion title="I rotated the SCIM token and now Entra ID is failing" id="token-rotation-issue">
+
+Check that you updated the **Secret Token** on the correct enterprise application in Entra ID, in the form `<scim-key>:<scim-secret>`. After updating, click `Test Connection` to confirm. Once provisioning is back to healthy, revoke the old token in the ClickHouse Cloud Console.
+
+</Accordion>
+
+<Accordion title="I lost the SCIM token" id="lost-token">
+
+Tokens can't be recovered. In **Organization settings → SAML and SCIM settings → SCIM Configuration** in the ClickHouse Cloud Console, revoke the lost token and generate a new one, then update the **Secret Token** in Entra ID.
+
+</Accordion>
+
+</AccordionGroup>
+
+## Frequently asked questions {#faq}
+
+<AccordionGroup>
+
+<Accordion title="Do I need SAML SSO before I can use SCIM?">
+
+Yes. SCIM creates the user accounts, but ClickHouse Cloud authenticates them through SAML. Set up [SAML SSO](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) first.
+
+</Accordion>
+
+<Accordion title="Can I use the same enterprise application for SAML and SCIM?">
+
+Yes. With SAML-based SSO, a single Entra ID enterprise application handles both single sign-on and SCIM provisioning.
+
+</Accordion>
+
+<Accordion title="Why is the Secret Token formatted as key:secret?">
+
+Entra ID authenticates by sending the Secret Token as an `Authorization: Bearer` header. The ClickHouse Cloud SCIM endpoint expects the bearer value to be your token key and secret joined by a colon.
+
+</Accordion>
+
+<Accordion title="How quickly do changes in Entra ID show up in ClickHouse Cloud?">
+
+Entra ID provisions on a recurring cycle of roughly 40 minutes. For an immediate update, use **Provision on demand** for the specific user.
+
+</Accordion>
+
+<Accordion title="Where do I get help if I'm stuck?">
+
+Open a support ticket from the ClickHouse Cloud Console (**Help → Contact support**) and include:
+
+- your organization id,
+- the name (and object id) of your Entra ID enterprise application, and
+- a screenshot of the failing entry from **Provisioning → View provisioning logs**.
+
+</Accordion>
+
+</AccordionGroup>

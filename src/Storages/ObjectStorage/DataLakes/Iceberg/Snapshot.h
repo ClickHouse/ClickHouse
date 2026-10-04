@@ -4,6 +4,7 @@
 #if USE_AVRO
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Poco/JSON/Array.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
@@ -19,10 +20,15 @@ struct IcebergDataSnapshot
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
+    std::optional<size_t> total_equality_delete_rows;
+    /// Opaque incremental refreshable-MV cursor from the snapshot summary (`clickhouse.refresh-cursor`), as stored.
+    std::optional<String> refresh_cursor;
+    Poco::JSON::Array::Ptr partition_specs;
 
     std::optional<size_t> getTotalRows() const
     {
-        if (total_rows.has_value() && total_position_delete_rows.has_value())
+        if (total_rows.has_value() && total_position_delete_rows.has_value() && *total_position_delete_rows <= *total_rows
+            && total_equality_delete_rows == 0)
             return *total_rows - *total_position_delete_rows;
         return std::nullopt;
     }

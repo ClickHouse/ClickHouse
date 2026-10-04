@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Vue d’ensemble'
+slug: /migrations/redshift-overview
+description: 'Migration d’Amazon Redshift vers ClickHouse'
+keywords: ['Redshift']
+title: 'Comparaison entre ClickHouse Cloud et Amazon Redshift'
+doc_type: 'guide'
+---
+
+> Ce document présente la migration des données d’Amazon
+> Redshift vers ClickHouse.
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Amazon Redshift est un entrepôt de données cloud qui offre des capacités de reporting et d’analyse pour les données structurées et semi-structurées. Il a été conçu pour prendre en charge des charges de travail analytiques sur de grands jeux de données, en s’appuyant sur des principes de base de données orientée colonnes similaires à ceux de ClickHouse. Dans l’offre AWS, il constitue souvent la solution par défaut vers laquelle les utilisateurs d’AWS se tournent pour répondre à leurs besoins en analytique.
+
+S’il séduit les utilisateurs déjà présents sur AWS grâce à son intégration étroite avec l’écosystème Amazon, ceux qui adoptent Redshift pour faire fonctionner des applications d’analyse en temps réel se rendent souvent compte qu’ils ont besoin d’une solution mieux optimisée pour cet usage. Ils se tournent donc de plus en plus vers ClickHouse pour bénéficier de meilleures performances de requête et d’une meilleure compression des données, soit en remplacement, soit comme « couche d’accélération » déployée aux côtés des charges de travail Redshift existantes.
+
+<div id="clickhouse-vs-redshift">
+  ## ClickHouse vs Redshift
+</div>
+
+Pour les utilisateurs fortement investis dans l’écosystème AWS, Redshift constitue un
+choix naturel pour répondre à des besoins d’entreposage de données. Redshift se distingue de
+ClickHouse sur un point important : son moteur est optimisé pour des
+charges de travail d’entreposage de données nécessitant des rapports complexes et des requêtes analytiques.
+Dans tous les modes de déploiement, les deux limitations suivantes compliquent
+l’utilisation de Redshift pour des charges de travail analytiques en temps réel :
+
+* Redshift [compile du code pour chaque plan d’exécution de requête](https://docs.aws.amazon.com/redshift/latest/dg/c-query-performance.html),
+  ce qui ajoute un surcoût important à la première exécution d’une requête. Ce surcoût peut
+  se justifier lorsque les modèles de requêtes sont prévisibles et que les plans d’exécution compilés
+  peuvent être stockés dans un cache de requêtes. Cela pose toutefois des difficultés pour les
+  applications interactives dont les requêtes varient. Même lorsque Redshift est capable d’exploiter ce
+  cache de compilation du code, ClickHouse reste plus rapide sur la plupart des requêtes. Voir [&quot;ClickBench&quot;](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|Rf\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-).
+* Redshift [limite la concurrence à 50 sur l’ensemble des files d’attente](https://docs.aws.amazon.com/redshift/latest/dg/c_workload_mngmt_classification.html),
+  ce qui, bien que suffisant pour la BI, le rend inadapté aux applications analytiques
+  à forte concurrence.
+
+À l’inverse, même si ClickHouse peut lui aussi être utilisé pour des requêtes analytiques complexes,
+il est optimisé pour les charges de travail analytiques en temps réel, que ce soit pour alimenter des applications
+ou comme couche d’accélération pour un entrepôt de données. En conséquence, les utilisateurs de Redshift
+remplacent généralement Redshift par ClickHouse, ou le complètent avec ClickHouse, pour les raisons suivantes :
+
+| Avantage                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latences de requête plus faibles**              | ClickHouse offre des latences de requête plus faibles, y compris pour des modèles de requêtes variés, en situation de forte concurrence et avec des insertions en streaming. Même lorsqu’une requête ne bénéficie pas du cache — ce qui est inévitable dans les usages analytiques interactifs orientés utilisateur — ClickHouse peut malgré tout la traiter rapidement.                                                                                                                      |
+| **Limites de requêtes concurrentes plus élevées** | ClickHouse fixe des limites bien plus élevées pour les requêtes concurrentes, ce qui est essentiel pour les applications en temps réel. Dans ClickHouse, en autogéré comme dans ClickHouse Cloud, vous pouvez augmenter vos ressources de calcul afin d’atteindre le niveau de concurrence nécessaire à chaque service de votre application. Le niveau de concurrence autorisé pour les requêtes est configurable dans ClickHouse, et ClickHouse Cloud utilise par défaut une valeur de 1000. |
+| **Compression des données supérieure**            | ClickHouse offre une meilleure compression des données, ce qui vous permet de réduire votre volume total de stockage (et donc les coûts), ou de conserver davantage de données à coût égal et d’en tirer davantage d’insights en temps réel. Voir « ClickHouse vs Redshift Storage Efficiency » ci-dessous.                                                                                                                                                                                   |

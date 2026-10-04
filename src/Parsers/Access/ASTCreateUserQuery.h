@@ -8,6 +8,7 @@
 
 namespace DB
 {
+class ASTUserNameWithHost;
 class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
 class ASTDatabaseOrNone;
@@ -52,7 +53,7 @@ public:
     bool replace_authentication_methods = false;
 
     boost::intrusive_ptr<ASTUserNamesWithHost> names;
-    std::optional<String> new_name;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     String storage_name;
 
     std::vector<boost::intrusive_ptr<ASTAuthenticationData>> authentication_methods;
@@ -70,15 +71,20 @@ public:
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
 
     ASTPtr global_valid_until;
+    /// If true, `global_valid_until` holds an interval expression coming from `VALID FOR <interval>`
+    /// (the deadline is `now` plus the interval); otherwise it holds a `VALID UNTIL` value.
+    bool global_valid_until_is_interval = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

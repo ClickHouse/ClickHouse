@@ -1,0 +1,200 @@
+---
+sidebarTitle: '安全'
+slug: /cloud/security
+title: '安全'
+description: '进一步了解如何保护 ClickHouse Cloud 和 BYOC'
+doc_type: 'reference'
+keywords: ['安全', '云安全', '访问控制', '合规', '数据保护']
+---
+
+本文档详细介绍了可用于保护 ClickHouse 组织和服务的安全选项及最佳实践。
+ClickHouse 致力于提供安全的分析型数据库解决方案，因此，保障数据安全和服务完整性是其首要任务。
+本文介绍了多种方法，旨在帮助用户保护其 ClickHouse 环境。
+
+<div id="cloud-console-auth">
+  ## Cloud 控制台 身份验证
+</div>
+
+<div id="password-auth">
+  ### 密码身份验证
+</div>
+
+ClickHouse Cloud 控制台的密码设置遵循 NIST 800-63B 标准，长度至少为 12 个字符，并且必须满足以下 4 项复杂度要求中的 3 项：大写字母、小写字母、数字和/或特殊字符。
+
+详细了解[密码身份验证](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account#email-and-password)。
+
+<div id="social-sso">
+  ### 社交单点登录 (SSO)
+</div>
+
+ClickHouse Cloud 支持通过 Google 或 Microsoft 的社交身份验证实现单点登录 (SSO) 。
+
+如需了解更多信息，请参阅[社交 SSO](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account#social-sso)。
+
+<div id="mfa">
+  ### 多重身份验证
+</div>
+
+使用电子邮件和密码或社交 SSO 的用户，也可以通过 Authy 或 Google Authenticator 等身份验证器应用配置多重身份验证。
+
+详细了解[多重身份验证](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa)。
+
+<div id="saml-auth">
+  ### 安全断言标记语言 (SAML) 身份验证
+</div>
+
+Enterprise 客户可配置 SAML 身份验证。
+
+如需了解更多信息，请参阅 [SAML 身份验证](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
+
+<div id="api-auth">
+  ### API 身份验证
+</div>
+
+客户可以配置 API 密钥，用于 OpenAPI、Terraform 和查询 API 端点。
+
+了解更多信息，请参阅 [API 身份验证](/zh/products/cloud/features/admin-features/api/openapi)。
+
+<div id="database-auth">
+  ## 数据库身份验证
+</div>
+
+<div id="db-password-auth">
+  ### 数据库密码身份验证
+</div>
+
+ClickHouse 数据库用户密码遵循 NIST 800-63B 标准，最少为 12 个字符，并需满足复杂度要求：包含大写字母、小写字母、数字和/或特殊字符。
+
+详细信息请参见[数据库密码身份验证](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#database-user-id--password)。
+
+<div id="ssh-auth">
+  ### Secure Shell (SSH) 数据库身份验证
+</div>
+
+可以为 ClickHouse 数据库用户配置 SSH 身份验证。
+
+如需了解更多信息，请参阅 [SSH 身份验证](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#database-ssh)。
+
+<div id="access-control">
+  ## 访问控制
+</div>
+
+<div id="console-rbac">
+  ### 控制台基于角色的访问控制 (RBAC)
+</div>
+
+ClickHouse Cloud 支持对组织、服务和数据库权限进行角色分配。通过此方式设置的数据库权限仅在 SQL 控制台中受支持。
+
+如需了解更多信息，请参阅[控制台 RBAC](/zh/products/cloud/reference/security/console-roles)。
+
+<div id="database-user-grants">
+  ### 数据库用户授权
+</div>
+
+ClickHouse 数据库支持通过用户授权进行细粒度权限管理，并实现基于角色的访问控制。
+
+进一步了解[数据库用户授权](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#database-permissions)。
+
+<div id="network-security">
+  ## 网络安全
+</div>
+
+<div id="ip-filters">
+  ### IP 过滤器
+</div>
+
+配置 IP 过滤器，以限制可访问您的 ClickHouse 服务的入站连接。
+
+了解更多信息，请参阅 [IP 过滤器](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+
+<div id="private-connectivity">
+  ### 私有连接
+</div>
+
+通过私有连接从 AWS、GCP 或 Azure 连接到您的 ClickHouse 集群。
+
+了解更多[私有连接](/zh/products/cloud/guides/security/connectivity/private-networking/index)信息。
+
+<div id="encryption">
+  ## 加密
+</div>
+
+<div id="storage-encryption">
+  ### 存储级别加密
+</div>
+
+ClickHouse Cloud 默认使用由云提供商管理的 AES 256 密钥对静态数据进行加密。
+
+了解更多[存储加密](/zh/products/cloud/guides/security/cmek#storage-encryption)相关信息。
+
+<div id="tde">
+  ### 透明数据加密
+</div>
+
+除存储加密外，ClickHouse Cloud Enterprise 客户还可启用数据库级透明数据加密，以提供额外保护。
+
+进一步了解[透明数据加密](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde)。
+
+<div id="cmek">
+  ### 客户管理的加密密钥
+</div>
+
+ClickHouse Cloud Enterprise 客户可使用自己的密钥对数据库级数据进行加密。
+
+如需了解更多信息，请参阅[客户管理的加密密钥](/zh/products/cloud/guides/security/cmek#customer-managed-encryption-keys-cmek)。
+
+<div id="auditing-logging">
+  ## 审计与日志
+</div>
+
+<div id="console-audit-log">
+  ### 控制台审计日志
+</div>
+
+控制台中的活动都会被记录，相关日志可供查看和导出。
+
+进一步了解[控制台审计日志](/zh/products/cloud/guides/security/audit-logging/console-audit-log)。
+
+<div id="database-audit-logs">
+  ### 数据库审计日志
+</div>
+
+数据库中的活动都会被记录下来。您可以查看并导出这些日志。
+
+如需了解更多信息，请参阅[数据库审计日志](/zh/products/cloud/guides/security/audit-logging/database-audit-log)。
+
+<div id="byoc-security-playbook">
+  ### BYOC 安全手册
+</div>
+
+适用于管理 ClickHouse BYOC 实例的安全团队的示例检测查询。
+
+如需了解更多信息，请参阅 [BYOC 安全手册](/zh/products/cloud/guides/security/audit-logging/byoc-security-playbook)。
+
+<div id="compliance">
+  ## 合规
+</div>
+
+<div id="compliance-reports">
+  ### 安全与合规报告
+</div>
+
+ClickHouse 建立了完善的安全与合规体系。请定期查看新的第三方审计报告。
+
+详细了解[安全与合规报告](/zh/products/cloud/reference/security/compliance-overview)。
+
+<div id="hipaa-compliance">
+  ### 符合 HIPAA 要求的服务
+</div>
+
+ClickHouse Cloud Enterprise 客户在签署《业务伙伴协议》(BAA) 后，可将承载受保护健康信息 (PHI) 的服务部署到符合 HIPAA 要求的区域。
+
+进一步了解 [HIPAA 合规](/zh/products/cloud/guides/security/compliance/hipaa-onboarding)。
+
+<div id="pci-compliance">
+  ### 符合 PCI 要求的服务
+</div>
+
+ClickHouse Cloud Enterprise 客户可将存储信用卡信息的服务部署到符合 PCI 要求的区域。
+
+了解更多：[PCI 合规](/zh/products/cloud/guides/security/compliance/pci-onboarding)。

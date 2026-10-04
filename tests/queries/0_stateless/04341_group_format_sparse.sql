@@ -22,9 +22,13 @@ select column, serialization_kind
 from system.parts_columns
 where table = 't_group_format_sparse' and database = currentDatabase() and column = 'v';
 
--- The first formatted rows must follow input order: row 0 (default 0), then the non-default
+-- The first formatted rows must follow the `id` order: row 0 (default 0), then the non-default
 -- rows 1 and 2, then more defaults - not the non-default values pulled to the front.
+-- The source is wrapped in an `ORDER BY` subquery because `groupFormat` output order is
+-- unspecified otherwise (e.g. with parallel replicas the read is split across replicas).
+-- The sort is satisfied by reading in order, so `v` still reaches the aggregation as `Sparse`
+-- and the regression stays exercised.
 select arraySlice(splitByChar('\n', groupFormat('JSONEachRow')(v)), 1, 4)
-from t_group_format_sparse;
+from (select v from t_group_format_sparse order by id);
 
 drop table t_group_format_sparse;

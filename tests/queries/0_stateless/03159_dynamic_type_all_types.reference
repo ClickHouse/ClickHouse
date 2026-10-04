@@ -14,12 +14,12 @@ Decimal(76, 4)	-999999999.9999
 Float32	-inf
 Float32	-inf
 Float32	-inf
-Float32	-3.4028233e38
-Float32	-1.1754942e-38
+Float32	-3.4028235e38
+Float32	-1.1754944e-38
 Float32	-1e-45
 Float32	1e-45
-Float32	1.1754942e-38
-Float32	3.4028233e38
+Float32	1.1754944e-38
+Float32	3.4028235e38
 Float32	inf
 Float32	inf
 Float32	inf
@@ -31,12 +31,12 @@ Float64	-inf
 Float64	-inf
 Float64	-1.7976931348623157e308
 Float64	-3.40282347e38
-Float64	-1.1754943499999998e-38
-Float64	-1.3999999999999999e-45
+Float64	-1.17549435e-38
+Float64	-1.4e-45
 Float64	-2.2250738585072014e-308
 Float64	2.2250738585072014e-308
-Float64	1.3999999999999999e-45
-Float64	1.1754943499999998e-38
+Float64	1.4e-45
+Float64	1.17549435e-38
 Float64	3.40282347e38
 Float64	1.7976931348623157e308
 Float64	inf
@@ -109,8 +109,8 @@ MultiPolygon	[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)]
 Map(Dynamic, Dynamic)	{'11':'v1','22':'1'}
 Nested(x UInt32, y String)	[(1,'aa'),(2,'bb')]
 Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String))	[(1,(2,['aa','bb']),[(3,'cc'),(4,'dd')]),(5,(6,['ee','ff']),[(7,'gg'),(8,'hh')])]
-Point	(1.23,4.5600000000000005)
-Ring	[(1.23,4.5600000000000005),(2.34,5.67)]
+Point	(1.23,4.56)
+Ring	[(1.23,4.56),(2.34,5.67)]
 String	string
 SimpleAggregateFunction(anyLast, Array(Int16))	[1,2]
 Tuple(Dynamic)	('')
@@ -159,12 +159,12 @@ Decimal(76, 4)	-999999999.9999
 Float32	-inf
 Float32	-inf
 Float32	-inf
-Float32	-3.4028233e38
-Float32	-1.1754942e-38
+Float32	-3.4028235e38
+Float32	-1.1754944e-38
 Float32	-1e-45
 Float32	1e-45
-Float32	1.1754942e-38
-Float32	3.4028233e38
+Float32	1.1754944e-38
+Float32	3.4028235e38
 Float32	inf
 Float32	inf
 Float32	inf
@@ -176,12 +176,12 @@ Float64	-inf
 Float64	-inf
 Float64	-1.7976931348623157e308
 Float64	-3.40282347e38
-Float64	-1.1754943499999998e-38
-Float64	-1.3999999999999999e-45
+Float64	-1.17549435e-38
+Float64	-1.4e-45
 Float64	-2.2250738585072014e-308
 Float64	2.2250738585072014e-308
-Float64	1.3999999999999999e-45
-Float64	1.1754943499999998e-38
+Float64	1.4e-45
+Float64	1.17549435e-38
 Float64	3.40282347e38
 Float64	1.7976931348623157e308
 Float64	inf
@@ -254,8 +254,8 @@ MultiPolygon	[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)]
 Map(Dynamic, Dynamic)	{'11':'v1','22':'1'}
 Nested(x UInt32, y String)	[(1,'aa'),(2,'bb')]
 Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String))	[(1,(2,['aa','bb']),[(3,'cc'),(4,'dd')]),(5,(6,['ee','ff']),[(7,'gg'),(8,'hh')])]
-Point	(1.23,4.5600000000000005)
-Ring	[(1.23,4.5600000000000005),(2.34,5.67)]
+Point	(1.23,4.56)
+Ring	[(1.23,4.56),(2.34,5.67)]
 String	string
 SimpleAggregateFunction(anyLast, Array(Int16))	[1,2]
 Tuple(Dynamic)	('')
