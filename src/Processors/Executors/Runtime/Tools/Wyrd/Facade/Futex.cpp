@@ -1,10 +1,10 @@
 #include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Futex.h>
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/InjectFault.h>
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Syscall.h>
 #    include <limits>
-#elif defined(EXECUTOR_FAULT_INJECTION)
+#elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/InjectFault.h>
 #    include <Common/futex.h>
 #endif
@@ -12,7 +12,7 @@
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value)
 {
@@ -23,40 +23,37 @@ void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value)
 
 void futexWakeOne(Atomic<UInt32> & address)
 {
-    injectFaultBefore("futex::wakeOne");
+    injectFault("futex::wakeOne");
     futexWake(&address, 1);
 }
 
 void futexWakeAll(Atomic<UInt32> & address)
 {
-    injectFaultBefore("futex::wakeAll");
+    injectFault("futex::wakeAll");
     futexWake(&address, std::numeric_limits<size_t>::max());
 }
 
-#elif defined(EXECUTOR_FAULT_INJECTION)
+#elif defined(WYRD_ADVERSARY)
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value)
 {
-    injectFaultBefore("futex::waitFetch");
+    injectFault("futex::waitFetch");
     if (spuriousFailure())
         value = address.load();
     else
         DB::futexWaitFetch(address.underlying(), value);
-    injectFaultAfter("futex::waitFetch");
 }
 
 void futexWakeOne(Atomic<UInt32> & address)
 {
-    injectFaultBefore("futex::wakeOne");
+    injectFault("futex::wakeOne");
     DB::futexWakeOne(address.underlying());
-    injectFaultAfter("futex::wakeOne");
 }
 
 void futexWakeAll(Atomic<UInt32> & address)
 {
-    injectFaultBefore("futex::wakeAll");
+    injectFault("futex::wakeAll");
     DB::futexWakeAll(address.underlying());
-    injectFaultAfter("futex::wakeAll");
 }
 
 #endif

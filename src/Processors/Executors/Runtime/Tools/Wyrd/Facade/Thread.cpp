@@ -1,16 +1,16 @@
 #include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Thread.h>
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Simulation/Syscall.h>
 #    include <limits>
-#elif defined(EXECUTOR_FAULT_INJECTION)
+#elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Adversary/Access.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 
 Thread::Thread(std::function<void()> body)
     : done(std::make_shared<UInt32>(0))
@@ -30,7 +30,7 @@ void Thread::join()
         futexWait(done.get());
 }
 
-#elif defined(EXECUTOR_FAULT_INJECTION)
+#elif defined(WYRD_ADVERSARY)
 
 Thread::Thread(std::function<void()> body)
     : impl(

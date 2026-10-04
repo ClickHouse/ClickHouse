@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Config.h>
 #include <base/defines.h>
 
 #include <mutex>
 
-#if defined(EXECUTOR_SIM) || defined(EXECUTOR_FAULT_INJECTION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Atomic.h>
 #    include <base/types.h>
 #endif
@@ -13,7 +12,7 @@
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM) || defined(EXECUTOR_FAULT_INJECTION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 
 class TSA_CAPABILITY("mutex") Mutex
 {

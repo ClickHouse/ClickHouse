@@ -1,13 +1,13 @@
 #include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Mutex.h>
 
-#if defined(EXECUTOR_SIM) || defined(EXECUTOR_FAULT_INJECTION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Futex.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM) || defined(EXECUTOR_FAULT_INJECTION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 
 void Mutex::lock()
 {

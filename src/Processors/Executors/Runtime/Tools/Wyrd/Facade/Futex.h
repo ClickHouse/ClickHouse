@@ -1,17 +1,16 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Config.h>
 #include <Processors/Executors/Runtime/Tools/Wyrd/Facade/Atomic.h>
 #include <base/types.h>
 
-#if !defined(EXECUTOR_SIM) && !defined(EXECUTOR_FAULT_INJECTION)
+#if !defined(WYRD_SIMULATION) && !defined(WYRD_ADVERSARY)
 #    include <Common/futex.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM) || defined(EXECUTOR_FAULT_INJECTION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value);
 void futexWakeOne(Atomic<UInt32> & address);

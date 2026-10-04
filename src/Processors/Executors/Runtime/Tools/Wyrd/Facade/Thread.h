@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Tools/Wyrd/Config.h>
 
 #include <functional>
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 #    include <base/types.h>
 #    include <memory>
 #else
@@ -14,7 +13,7 @@
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(EXECUTOR_SIM)
+#if defined(WYRD_SIMULATION)
 
 class Thread
 {
@@ -27,7 +26,7 @@ private:
     std::shared_ptr<UInt32> done;
 };
 
-#elif defined(EXECUTOR_FAULT_INJECTION)
+#elif defined(WYRD_ADVERSARY)
 
 class Thread
 {
