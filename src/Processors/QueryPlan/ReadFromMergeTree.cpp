@@ -3304,7 +3304,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!indexes)
     {
         auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
-        auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input);
+        auto index_hint_node_name_to_input = query_info.buildNodeNameToInputNodeColumn(/*for_index_hint=*/ true);
+        auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input, true, &index_hint_node_name_to_input);
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 
         /// NOTE: Currently we store two DAGs for analysis:
@@ -3358,7 +3359,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                     collect_sorting_key_atoms(node);
             }
 
-            auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
+            auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input, true, &index_hint_node_name_to_input);
             if (idx_dag)
                 index_filter_dag_without_deferred = std::make_shared<const ActionsDAG>(std::move(*idx_dag));
             /// nullptr is fine here: all filters are deferred, nothing left for indexes

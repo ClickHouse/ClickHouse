@@ -568,11 +568,13 @@ public:
       * and children of this node will be filter nodes.
       *
       * If single_output_condition_node = false, result dag has multiple output nodes.
+      * If index_hint_node_name_to_input_node_column is set, it replaces node_name_to_input_node_column for `indexHint` arguments.
       */
     static std::optional<ActionsDAG> buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
-        bool single_output_condition_node = true);
+        bool single_output_condition_node = true,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> * index_hint_node_name_to_input_node_column = nullptr);
 
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.

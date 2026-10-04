@@ -224,6 +224,7 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    /// With `for_index_hint`, the map is for `indexHint` arguments, which use identifiers instead of column names.
+    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn(bool for_index_hint = false) const;
 };
 }

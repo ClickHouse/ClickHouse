@@ -27,7 +27,7 @@ bool SelectQueryInfo::isStream() const
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn(bool for_index_hint) const
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
@@ -38,6 +38,10 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
             /// so they should not be added to the input nodes.
             if (table_expression_data.hasAliasColumn(column_name))
+                continue;
+            /// Filters can already use column names, and then this identifier means the column with this name.
+            /// `indexHint` arguments use identifiers, so their map keeps it.
+            if (!for_index_hint && column_identifier != column_name && table_expression_data.hasColumn(column_identifier))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
             node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));

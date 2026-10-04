@@ -65,10 +65,11 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename ReplacementLookup>
+template <typename ReplacementLookup, typename IndexHintReplacementLookup>
 std::optional<ActionsDAG> buildFilterActionsDAGImpl(
     const ActionsDAG::NodeRawConstPtrs & filter_nodes,
     ReplacementLookup && replacement_lookup,
+    IndexHintReplacementLookup && index_hint_replacement_lookup,
     bool single_output_condition_node);
 
 std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
@@ -4102,16 +4103,15 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             input_nodes_to_replace.insert_or_assign(input_nodes.front(), it->second);
         }
 
+        auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
+        {
+            auto it = input_nodes_to_replace.find(node);
+            if (it == input_nodes_to_replace.end())
+                return nullptr;
+            return &it->second;
+        };
         auto updated_filter = *buildFilterActionsDAGImpl(
-            {filter.getOutputs()[filter_pos]},
-            [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
-            {
-                auto it = input_nodes_to_replace.find(node);
-                if (it == input_nodes_to_replace.end())
-                    return nullptr;
-                return &it->second;
-            },
-            true /* single_output_condition_node */);
+            {filter.getOutputs()[filter_pos]}, replacement_lookup, replacement_lookup, true /* single_output_condition_node */);
         chassert(updated_filter.getOutputs().size() == 1);
 
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
@@ -4295,10 +4295,11 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 namespace
 {
 
-template <typename ReplacementLookup>
+template <typename ReplacementLookup, typename IndexHintReplacementLookup>
 std::optional<ActionsDAG> buildFilterActionsDAGImpl(
     const ActionsDAG::NodeRawConstPtrs & filter_nodes,
     ReplacementLookup && replacement_lookup,
+    IndexHintReplacementLookup && index_hint_replacement_lookup,
     bool single_output_condition_node)
 {
     if (filter_nodes.empty())
@@ -4414,7 +4415,8 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
 
                             if (!index_hint_args.empty())
                                 index_hint_filter_dag = *buildFilterActionsDAGImpl(index_hint_args,
-                                    replacement_lookup,
+                                    index_hint_replacement_lookup,
+                                    index_hint_replacement_lookup,
                                     false /*single_output_condition_node*/);
 
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
@@ -4473,7 +4475,8 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
 std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     const NodeRawConstPtrs & filter_nodes,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-    bool single_output_condition_node)
+    bool single_output_condition_node,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> * index_hint_node_name_to_input_node_column)
 {
     /// Only INPUT nodes should be replaced from the map.  Non-INPUT nodes (ALIAS,
     /// FUNCTION, etc.) represent computed values — replacing them with a raw INPUT
@@ -4481,12 +4484,12 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     /// ExpressionStep when a MaterializedView maps one column type to another).
     /// Discarding the chain leads to incorrect key extraction in storage filter
     /// push-down and therefore to wrong query results (see #83894).
-    auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
+    auto replacement_lookup = [](const ActionsDAG::Node * node, const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_column) -> const ColumnWithTypeAndName *
     {
         if (node->type != ActionsDAG::ActionType::INPUT)
             return nullptr;
-        auto it = node_name_to_input_node_column.find(node->result_name);
-        if (it == node_name_to_input_node_column.end())
+        auto it = node_name_to_column.find(node->result_name);
+        if (it == node_name_to_column.end())
             return nullptr;
         /// The replacement must not change the type: the parent FUNCTION nodes are rebuilt with
         /// their existing function_base, so a differently-typed input makes the DAG inconsistent
@@ -4501,7 +4504,13 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
         return &it->second;
     };
 
-    return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
+    const auto & index_hint_node_name_to_column
+        = index_hint_node_name_to_input_node_column ? *index_hint_node_name_to_input_node_column : node_name_to_input_node_column;
+    return buildFilterActionsDAGImpl(
+        filter_nodes,
+        [&](const ActionsDAG::Node * node) { return replacement_lookup(node, node_name_to_input_node_column); },
+        [&](const ActionsDAG::Node * node) { return replacement_lookup(node, index_hint_node_name_to_column); },
+        single_output_condition_node);
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
