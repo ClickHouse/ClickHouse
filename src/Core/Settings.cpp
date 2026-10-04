@@ -7333,7 +7333,10 @@ Possible values:
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
-Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, materializes only each two-level bucket's best n groups in that order during the aggregation's final conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+
+For ordering by `count`, the optimization can select the best groups during the final conversion. For aggregates whose merged values can be bounded from their partial states, it can instead use a threshold merge (Fagin's Threshold Algorithm), which skips merging groups that cannot reach the top n. This supports `count`, `sum` of unsigned integers, and `uniqExact` in descending order, and `max` in descending and `min` in ascending order for supported non-nullable, fixed-width types other than floating point. The algorithm is chosen automatically according to the aggregate, query shape, and distribution of partial states.
+
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
