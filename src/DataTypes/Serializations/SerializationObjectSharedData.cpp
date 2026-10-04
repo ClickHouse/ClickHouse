@@ -13,6 +13,7 @@
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <algorithm>
+#include <numeric>
 #include <ranges>
 
 namespace DB
@@ -20,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
@@ -28,19 +30,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A per-granule count (the number of paths, or the number of substreams of a path) is read from a
-/// possibly-untrusted stream (e.g. a corrupted on-disk `Object` part) and used only as a sizing hint
-/// before the corresponding items are read one by one. It must not be handed to a container's
-/// `reserve` directly, for the same reasons as the outer path lists (see `reserveOrThrowTooManyPaths`
-/// in `SerializationObject.cpp`):
-///   * A count the container cannot hold (`> max_size()`, close to `SIZE_MAX`) would escape as an
-///     uncaught non-`DB::Exception` (`std::length_error`), so reject it as corruption up front.
-///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
-///     `std::vector<String>`, yet handing it to `reserve` would allocate gigabytes before a single
-///     byte of payload is read and fail as `std::bad_alloc` / OOM.
-/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
-/// item as it is decoded (growing the container on demand for a legitimately large count), while a
-/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
+/// The count is untrusted, so use it only as a capped hint; the caller appends items as it reads them.
 template <typename Container>
 void reserveOrThrowTooMany(Container & container, size_t count, const char * what)
 {
@@ -678,6 +668,32 @@ void SerializationObjectSharedData::deserializeStructureGranuleSuffix(ReadBuffer
     readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_decompressed_block, buf);
 }
 
+void SerializationObjectSharedData::checkGranulesMatchFirstBucket(
+    const StructureGranules & granules, const StructureGranules & first_bucket_granules, size_t bucket)
+{
+    if (granules.size() != first_bucket_granules.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Bucket {} of Object shared data has {} granules, but bucket 0 has {} granules",
+            bucket,
+            granules.size(),
+            first_bucket_granules.size());
+
+    for (size_t granule = 0; granule != granules.size(); ++granule)
+    {
+        if (granules[granule].limit != first_bucket_granules[granule].limit || granules[granule].offset != first_bucket_granules[granule].offset)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Granule {} of bucket {} of Object shared data has {} rows at offset {}, but the same granule of bucket 0 has {} rows at offset {}",
+                granule,
+                bucket,
+                granules[granule].limit,
+                granules[granule].offset,
+                first_bucket_granules[granule].limit,
+                first_bucket_granules[granule].offset);
+    }
+}
+
 std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationObjectSharedData::deserializeStructure(
     size_t rows_offset,
     size_t limit,
@@ -1078,6 +1094,17 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 {
                     ColumnPtr subcolumn = subcolumns_infos[pos].type->createColumn();
                     subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    /// The callers read the rows of the granule out of this column, so a shorter one
+                    /// would be read out of bounds.
+                    if (subcolumn->size() != structure_granule.num_rows)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected size of subcolumn {} of path {} in Object shared data: {}. Expected size {}",
+                            subcolumns_infos[pos].name,
+                            requested_path,
+                            subcolumn->size(),
+                            structure_granule.num_rows);
+
                     paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
             }
@@ -1090,6 +1117,14 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 ColumnPtr dynamic_column = dynamic_type->createColumn();
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                 dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                if (dynamic_column->size() != structure_granule.num_rows)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected size of path {} in Object shared data: {}. Expected size {}",
+                        requested_path,
+                        dynamic_column->size(),
+                        structure_granule.num_rows);
+
                 paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
             }
         }
@@ -1161,7 +1196,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
-            std::vector<String> paths;
+            VectorWithMemoryTracking<String> paths;
 
             /// Collect all paths stored in this granule in all buckets.
             for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -1309,7 +1344,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1318,10 +1362,11 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             /// Collect list of paths from all buckets for each granule.
-            std::vector<std::vector<String>> granules_paths;
+            std::vector<VectorWithMemoryTracking<String>> granules_paths;
             /// Collect offsets and limits for each granule.
             std::vector<size_t> granules_offsets;
             std::vector<size_t> granules_limits;
+            std::shared_ptr<StructureGranules> first_bucket_structure_granules;
 
             if (!settings.continuous_reading)
                 shared_data_state->last_incomplete_granule_offset = 0;
@@ -1340,6 +1385,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 /// Initialize granules_paths/granules_offsets/granules_limits on first bucket.
                 if (bucket == 0)
                 {
+                    first_bucket_structure_granules = structure_granules;
                     granules_paths.resize(structure_granules->size());
                     granules_offsets.reserve(structure_granules->size());
                     granules_limits.reserve(structure_granules->size());
@@ -1361,6 +1407,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                         else
                             shared_data_state->last_incomplete_granule_offset = 0;
                     }
+                }
+                else
+                {
+                    checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
                 }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
@@ -1398,6 +1448,20 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Each granule has its own set of indexes, we should deserialize them granule by granule.
             size_t offsets_current_granule_start = prev_offset_size;
             auto & offsets = shared_data_array_column.getOffsets();
+
+            /// The granules and the sizes stream describe the same rows: covering more would index the
+            /// offsets out of bounds, fewer would leave the paths short. Reported as a short read, like
+            /// a truncated elements stream in SerializationArray.
+            size_t num_granules_rows = std::accumulate(granules_offsets.begin(), granules_offsets.end(), size_t(0))
+                + std::accumulate(granules_limits.begin(), granules_limits.end(), size_t(0));
+            size_t num_offsets_rows = offsets.size() - prev_offset_size;
+            if (num_granules_rows != num_offsets_rows)
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Granules of Object shared data contain {} rows, but {} rows were read from the sizes stream",
+                    num_granules_rows,
+                    num_offsets_rows);
+
             for (size_t granule = 0; granule != granules_paths.size(); ++granule)
             {
                 /// Calculate how many rows should be skipped in this granule.
@@ -1431,7 +1495,19 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
+            if (!values_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy values");
+
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();

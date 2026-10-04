@@ -75,7 +75,8 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+template <typename PathsContainer>
+void unflattenAndInsertPaths(const PathsContainer & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -102,6 +103,12 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Column
         shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
+
+template void unflattenAndInsertPaths<std::vector<String>>(
+    const std::vector<String> &, Columns &&, ColumnObject &, size_t);
+
+template void unflattenAndInsertPaths<VectorWithMemoryTracking<String>>(
+    const VectorWithMemoryTracking<String> &, Columns &&, ColumnObject &, size_t);
 
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
 {
@@ -154,6 +161,18 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);
 
     size_t num_rows = shared_data_buckets[0]->size();
+    /// Every row is collected from all buckets at once, so a shorter bucket would be indexed out of bounds.
+    for (size_t bucket = 1; bucket != shared_data_buckets.size(); ++bucket)
+    {
+        if (shared_data_buckets[bucket]->size() != num_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Bucket {} of Object shared data has {} rows, but bucket 0 has {} rows",
+                bucket,
+                shared_data_buckets[bucket]->size(),
+                num_rows);
+    }
+
     for (size_t i = 0; i != num_rows; ++i)
     {
         /// Shared data contains paths in sorted order in each row.
@@ -215,7 +234,7 @@ ColumnPtr createPathsIndexesImpl(const std::unordered_map<std::string_view, size
 }
 
 template <typename T = UInt8>
-void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t rows_offset, size_t limit)
 {
     /// Ignore first rows_offset values as we don't need them in the result.
     istr.ignore(sizeof(T) * rows_offset);
@@ -226,11 +245,10 @@ void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuff
     /// Avoiding calling resize in a loop improves the performance.
     data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
 
+    /// The number of indexes comes from the offsets, so stopping at the end of the stream would leave the
+    /// paths column shorter than the offsets say and it would be read out of bounds.
     for (size_t i = 0; i != limit; ++i)
     {
-        if (istr.eof())
-            break;
-
         T index;
         readBinaryLittleEndian(index, istr);
 
@@ -272,7 +290,7 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
     }
 }
 
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit)
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t rows_offset, size_t limit)
 {
     auto & paths_string_column = assert_cast<ColumnString &>(paths_column);
     auto indexes_type = getSmallestIndexesType(paths.size());
