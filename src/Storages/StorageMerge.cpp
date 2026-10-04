@@ -1887,6 +1887,20 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     return ok;
 }
 
+/// Whether both keys start with the same `prefix_size` columns, sorted in the same directions.
+static bool sortingKeysSharePrefix(const KeyDescription & lhs, const KeyDescription & rhs, size_t prefix_size)
+{
+    if (lhs.column_names.size() < prefix_size || rhs.column_names.size() < prefix_size)
+        return false;
+
+    auto is_reverse = [](const KeyDescription & key, size_t i) { return !key.reverse_flags.empty() && key.reverse_flags[i]; };
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (lhs.column_names[i] != rhs.column_names[i] || is_reverse(lhs, i) != is_reverse(rhs, i))
+            return false;
+
+    return true;
+}
+
 QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     ChildPlan & child,
     QueryProcessingStage::Enum processed_stage) const
@@ -2559,6 +2573,26 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
+
+    /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
+    /// A read whose key is shorter than the prefix refuses the request itself.
+    auto table_it = selected_tables.begin();
+    for (const auto & child_plan : *child_plans)
+    {
+        const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
+        auto agrees_with_table_key = [&](ReadFromMergeTree & read_from_merge_tree)
+        {
+            const auto read_metadata = read_from_merge_tree.getStorageMetadata();
+            const auto & read_key = read_metadata->getSortingKey();
+            return sortingKeysSharePrefix(
+                read_key,
+                table_metadata->getSortingKey(),
+                std::min(order_info_->used_prefix_of_sorting_key_size, read_key.column_names.size()));
+        };
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), agrees_with_table_key))
+            return false;
+    }
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {
