@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -13,6 +17,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -20,6 +25,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
+    extern const SettingsTextIndexPostingsIntersectionAlgorithm text_index_postings_intersection_algorithm;
+}
 
 namespace ErrorCodes
 {
@@ -88,6 +99,41 @@ private:
     const CheckCancelledCallback & check_cancelled;
 };
 
+/// Counts the rows matched by the posting-list cursors in `range`, without materializing the postings.
+/// The cursors are applied window by window to a reusable byte filter, the same way the lazy reader fills its columns.
+template <typename CheckCancelledCallback>
+UInt64 countWithCursors(
+    const std::vector<PostingListCursorPtr> & cursors,
+    TextSearchMode search_mode,
+    TextIndexPostingsIntersectionAlgorithm intersection_algorithm,
+    const RowsRange & range,
+    const CheckCancelledCallback & check_cancelled)
+{
+    static constexpr size_t window_size = 65536;
+
+    auto filter = ColumnUInt8::create();
+    auto & filter_data = filter->getData();
+    UInt64 count = 0;
+
+    for (size_t row_offset = range.begin; row_offset <= range.end; row_offset += window_size)
+    {
+        check_cancelled();
+
+        const size_t num_rows = std::min(window_size, range.end - row_offset + 1);
+        filter_data.clear();
+        filter_data.resize_fill(num_rows, 0);
+
+        const bool may_be_true = search_mode == TextSearchMode::Any
+            ? lazyUnionPostingLists(*filter, cursors, 0, row_offset, num_rows)
+            : lazyIntersectPostingLists(*filter, cursors, 0, row_offset, num_rows, intersection_algorithm);
+
+        if (may_be_true)
+            count += countBytesInFilter(filter_data);
+    }
+
+    return count;
+}
+
 /// Counts matching rows in one part from the text-index posting metadata, without reading rows.
 /// `check_cancelled` is polled between posting blocks and tokens so a large part stays interruptible.
 template <typename CheckCancelledCallback>
@@ -99,6 +145,9 @@ UInt64 computeCountForPart(
 {
     const auto & data_part = part_with_ranges.data_part;
     const auto & index = resolved.index;
+
+    if (data_part->rows_count == 0)
+        return 0;
 
     auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     if (!index_format)
@@ -155,28 +204,71 @@ UInt64 computeCountForPart(
         return it == token_infos.end() ? 0 : static_cast<UInt64>(it->second->cardinality);
     }
 
-    /// `is_failed`: e.g. All mode with a token missing from the part. An empty part matches nothing.
-    if (data_part->rows_count == 0)
-        return 0;
-
     const auto & query_builder = analyzer.getQueryBuilder(*resolved.query);
     if (query_builder.is_failed)
         return 0;
 
-    const RowsRange full_range(0, data_part->rows_count - 1);
-    auto postings_serialization = PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
-        granule->getSerializationVersion());
-
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
     std::vector<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
+
     for (const auto & [token, token_info] : query_builder.tokens)
+    {
         if (!analyzer.hasReadPostings(token))
             tokens_to_read.push_back(token_info.get());
+    }
 
     if (tokens_to_read.empty())
         return query_builder.postings ? query_builder.postings->cardinality() : 0;
+
+    const auto & settings = resolved.condition->getContext()->getSettingsRef();
+    const auto search_mode = resolved.query->getSearchMode();
+
+    /// Same conditions as the lazy mode of `MergeTreeReaderTextIndex`: cursors need the per-segment block index of compressed postings.
+    const bool use_lazy_mode = settings[Setting::text_index_posting_list_apply_mode] == TextIndexPostingListApplyMode::Lazy
+        && granule->getPostingsCodecType() != IPostingListCodec::Type::None
+        && granule->getSerializationVersion() >= MergeTreeTextIndexSerializationVersion::V1_WithCodec;
+
+    if (use_lazy_mode)
+    {
+        /// Each cursor seeks its own stream, so the cursors do not invalidate each other's buffered reads.
+        std::vector<std::unique_ptr<MergeTreeReaderStream>> cursor_streams;
+        std::vector<PostingListCursorPtr> cursors;
+        cursor_streams.reserve(tokens_to_read.size());
+        cursors.reserve(tokens_to_read.size() + 1);
+
+        for (const auto * token_info : tokens_to_read)
+        {
+            if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
+
+            cursor_streams.push_back(makeTextIndexInputStream(
+                part_info,
+                index.index->getFileName(),
+                substreams[2],
+                reader_settings,
+                estimatePostingListBufferSize(*token_info)));
+
+            cursors.push_back(std::make_shared<PostingListCursor>(
+                *cursor_streams.back(),
+                *token_info,
+                resolved.condition->postingsCache().get(),
+                granule->getIndexIdForCaches()));
+        }
+
+        /// The folded small postings join the intersection or union as one more cursor over a flat array.
+        if (query_builder.postings && !query_builder.postings->isEmpty())
+            cursors.push_back(std::make_shared<PostingListCursor>(query_builder.getFlatPostings()));
+
+        /// `rows_range` is the hull of the tokens' rows for `Any` and their overlap for `All`; an empty overlap fails the query.
+        chassert(query_builder.rows_range);
+        auto intersection_algorithm = settings[Setting::text_index_postings_intersection_algorithm];
+        return countWithCursors(cursors, search_mode, intersection_algorithm, *query_builder.rows_range, check_cancelled);
+    }
+
+    auto postings_serialization = PostingsSerialization(
+        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
+        granule->getSerializationVersion());
 
     /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
     size_t largest_segment_bytes = 0;
@@ -197,7 +289,9 @@ UInt64 computeCountForPart(
         granule->getIndexIdForCaches(),
         check_cancelled);
 
-    if (resolved.query->getSearchMode() != TextSearchMode::All)
+    const RowsRange full_range(0, data_part->rows_count - 1);
+
+    if (search_mode != TextSearchMode::All)
     {
         std::optional<PostingList> merged_postings = query_builder.postings;
         for (const auto * token_info : tokens_to_read)
@@ -220,6 +314,7 @@ UInt64 computeCountForPart(
 
     std::optional<PostingList> candidates = query_builder.postings;
     size_t next = 0;
+
     if (!candidates)
     {
         candidates = posting_reader.read(*tokens_to_read.front(), full_range, nullptr);

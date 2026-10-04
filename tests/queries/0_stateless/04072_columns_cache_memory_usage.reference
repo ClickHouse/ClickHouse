@@ -1,0 +1,5 @@
+4999950000	10000000	10000000	10000000
+4999950000	10000000	10000000	10000000
+4999950000	10000000	10000000	10000000
+PASS: per-query memory overhead is bounded (ratios < 5)
+PASS: query memory did not grow with the cached data (ratio < 3)
