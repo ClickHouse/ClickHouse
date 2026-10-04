@@ -288,7 +288,10 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST(new_options);
+        {
+            function_ast->children.push_back(window_node->toAST(new_options));
+            function_ast->window_definition = function_ast->children.back();
+        }
     }
 
     return function_ast;
