@@ -409,10 +409,12 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 const auto nested_cast_type
                     = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
+                /// A float cast to a narrower float type is not masked: the rounded element stays a member.
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
                     || isDateTime(nested_init_type)
-                    || isDateTime64(nested_init_type))
+                    || isDateTime64(nested_init_type)
+                    || (isFloat(nested_init_type) && isInteger(nested_cast_type)))
                 {
                     /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
