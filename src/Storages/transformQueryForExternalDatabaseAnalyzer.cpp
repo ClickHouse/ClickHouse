@@ -25,6 +25,7 @@
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -75,7 +76,8 @@ std::optional<ColumnWithTypeAndName> unwrapCarrier(const ColumnPtr & column, con
     return unwrapCarrier(value, active_type);
 }
 
-/// Whether the size-1 `column` holds an `Enum` value, also inside a `Tuple`. `Array` and `Map` are not searched.
+}
+
 bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
 {
     auto value = unwrapCarrier(column, type);
@@ -95,10 +97,21 @@ bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
     return false;
 }
 
+namespace
+{
+
 bool isStringOrNumber(const DataTypePtr & type)
 {
     auto value_type = removeLowCardinalityAndNullable(type);
     return isStringOrFixedString(value_type) || isNumber(value_type);
+}
+
+/// Table function arguments may hold identifiers and unresolved functions, which have no type.
+bool hasResultType(const QueryTreeNodePtr & node)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+        return function_node->isResolved();
+    return node->as<ColumnNode>() || node->as<ConstantNode>();
 }
 
 /// Rewrites each `Enum` leaf of the size-1 constant `column` as a comparison with `operand_type` reads it: the name
@@ -235,7 +248,7 @@ private:
     void renderEnumConstants(FunctionNode & function_node) const
     {
         auto & arguments = function_node.getArguments().getNodes();
-        if (arguments.size() != 2)
+        if (arguments.size() != 2 || !std::ranges::all_of(arguments, hasResultType))
             return;
 
         const auto & name = function_node.getFunctionName();

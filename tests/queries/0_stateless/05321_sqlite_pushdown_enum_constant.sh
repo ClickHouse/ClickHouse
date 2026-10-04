@@ -15,6 +15,7 @@ DB_PATH="${BASE}/data.sqlite"
 
 function cleanup()
 {
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321_check"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321"
     rm -rf "${BASE}"
 }
@@ -93,3 +94,16 @@ echo 'strict (s, n) < (E, n)'
 ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE (s, n) < ($E, n) SETTINGS external_table_strict_query = 1" 2>&1 | grep -o 'INCORRECT_QUERY' | head -1
 echo 'strict s = E'
 ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE s = $E SETTINGS external_table_strict_query = 1"
+
+# A subquery in a CHECK constraint.
+function check_constraint()
+{
+    echo "$1"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05321_check"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05321_check (n Int64, s String, CONSTRAINT c CHECK $2) ENGINE = MergeTree ORDER BY n"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_05321_check VALUES (3, '7')" 2>&1 | grep -oE '\([A-Z_]+\)' | head -1
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05321_check"
+}
+
+check_constraint 'CHECK n IN (SELECT n ... n = E)' "n IN (SELECT n FROM t_05321 WHERE n = $E)"
+check_constraint 'CHECK (n, s) IN (SELECT n, s ... (n, s) IN ((E, 7)))' "(n, s) IN (SELECT n, s FROM t_05321 WHERE (n, s) IN (($E, '7')))"

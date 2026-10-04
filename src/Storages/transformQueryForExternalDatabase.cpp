@@ -74,6 +74,11 @@ public:
             {
                 node = make_intrusive<ASTLiteral>(Field());
             }
+            else if (holdsEnumValue(assert_cast<const ColumnConst &>(*result.column).getDataColumnPtr(), result.type))
+            {
+                /// Left as is, so the condition is not pushed down: an `Enum` compares by name or by value depending on the other operand.
+                return;
+            }
             else if (isNumber(result.type))
             {
                 node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());

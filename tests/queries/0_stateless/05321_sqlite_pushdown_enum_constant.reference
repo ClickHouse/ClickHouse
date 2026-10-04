@@ -109,3 +109,7 @@ strict (s, n) < (E, n)
 INCORRECT_QUERY
 strict s = E
 7
+CHECK n IN (SELECT n ... n = E)
+1
+CHECK (n, s) IN (SELECT n, s ... (n, s) IN ((E, 7)))
+1
