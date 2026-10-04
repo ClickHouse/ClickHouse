@@ -36,6 +36,9 @@ public:
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
+    bool canReattachTableWithFullDefinition() const override { return false; }
+
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.
     /// TODO May be it's better to use DiskMemory for such tables.

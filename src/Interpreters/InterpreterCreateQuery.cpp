@@ -2489,7 +2489,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 backQuoteIfNeed(create.getTable()));
         }
     }
-    else if (!create.attach)
+    else if (!create.attach || (!create.attach_short_syntax && !database->canReattachTableWithFullDefinition()))
     {
         /// Checking that table may exists in detached/detached permanently state
         try

@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -124,6 +125,15 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
         return {};
     }
     return it->second->clone();
+}
+
+void DatabaseMemory::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    ensurePopulated();
+    std::lock_guard lock{mutex};
+    if (snapshot_detached_tables.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
+                        backQuote(database_name), backQuote(table_name));
 }
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
