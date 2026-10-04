@@ -21,6 +21,7 @@ release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="CreateRelease",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
@@ -32,6 +33,7 @@ workflow = Workflow.Config(
     # Route the job's pass/fail to the Slack Praktika app (the praktika-native
     # replacement for the dropped CIBuddy notifications), as master /
     # release_branches / pull_request do, so a failed release is not silent.
+    enable_concurrency_queue=True,
     enable_slack_feed=True,
     inputs=[
         Workflow.Config.InputConfig(
@@ -39,13 +41,6 @@ workflow = Workflow.Config(
             description="Git reference (branch or commit SHA) from which to create the release",
             is_required=True,
             default_value="",
-        ),
-        Workflow.Config.InputConfig(
-            name="type",
-            description="Release type - new for a new release branch, patch for a patch release",
-            is_required=True,
-            default_value="patch",
-            options=["patch", "new"],
         ),
         Workflow.Config.InputConfig(
             name="skip-repo",
