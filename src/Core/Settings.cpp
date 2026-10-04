@@ -6970,6 +6970,26 @@ For how many elements it is allowed to preallocate space in all hash tables in t
 )", 0, \
         {"24.12", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."}, \
         {"24.7", 0, 100'000'000, "New setting."}) \
+    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, true, R"(
+Use column statistics to automatically demote high-cardinality JOIN equality keys out of the hash table key set. The hash table is built on the subset of equality keys that reaches a target bucket size; the remaining equalities are evaluated per row during the probe. Applies only to a build side of at least `query_plan_hash_join_subset_keys_min_rows` rows whose column statistics are known.
+)", 0, \
+        {"26.10", false, true, "Enable cardinality-based automatic demotion of JOIN equality keys out of the hash table key set. `compatibility` below 26.9 sets it to 0 and keeps the hash table keyed on every equality."}) \
+    DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, R"(
+Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to apply. A small hash table does not benefit from key demotion.
+)", 0, \
+        {"26.10", 1000000, 1000000, "New setting: minimum build-side row count for `query_plan_hash_join_subset_keys_auto` to apply."}) \
+    DECLARE(Double, query_plan_hash_join_subset_keys_max_probe_cost_ns, 200.0, R"(
+Cost ceiling for `query_plan_hash_join_subset_keys_auto`, in estimated nanoseconds of probe-time work per probe row: the mean bucket size the kept keys leave, multiplied by what one candidate check costs for the demoted key types and the join kind. A demotion above this ceiling is rejected. Demoting a key can never make the probe cheaper - it only shrinks the hash table - so this bounds what is paid for that memory. Note the bucket size used here is the mean, which understates a skewed key distribution, so the default leaves room for that.
+)", 0, \
+        {"26.10", 200.0, 200.0, "New setting: ceiling on the probe-time work per probe row that `query_plan_hash_join_subset_keys_auto` may create."}) \
+DECLARE(UInt64, query_plan_hash_join_subset_keys_min_saving_bytes, 134217728, R"(
+Minimum estimated hash-table saving, in bytes, for `query_plan_hash_join_subset_keys_auto` to apply. Compares the cell array the full key set would allocate against the one the kept subset would, both as a power-of-two array kept at most half full. The estimate counts cells only and so overstates the real saving, since the arena that holds rows chaining past the first per key grows as keys are removed. The default is one arena chunk: below that, the peak the query reports would not move.
+)", 0, \
+        {"26.10", 134217728, 134217728, "New setting: minimum estimated hash-table saving for `query_plan_hash_join_subset_keys_auto` to apply."}) \
+DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, R"(
+Target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`, approximated as `NDV(kept_keys) / build_side_rows`. The smallest key subset that still reaches it is kept, bounding the bucket the probe-time equalities run over. The default `0.01` targets buckets of about 100 rows.
+)", 0, \
+        {"26.10", 0.01, 0.01, "New setting: target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`."}) \
     \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.

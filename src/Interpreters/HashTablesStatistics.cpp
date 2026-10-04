@@ -166,7 +166,15 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
     return std::nullopt;
 }
 
+std::optional<HashJoinFanoutEntry> getHashJoinFanoutHint(const DB::StatsCollectingParams & stats_collecting_params)
+{
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+        return DB::getHashTablesStatistics<HashJoinFanoutEntry>().getSizeHint(stats_collecting_params);
+    return std::nullopt;
+}
+
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
+template class HashTablesStatistics<HashJoinFanoutEntry>;
 }
