@@ -613,12 +613,18 @@ private:
             /// First condition checks that the point is inside horizontal row between edge top and bottom y-coordinate.
             /// Second condition checks for intersection with the edge.
 
-            if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
-                && (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
-                    * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
-                    + ring_x_data[vertex1_idx]))
+            if ((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
             {
-                res = !res;
+                if (std::abs(ring_x_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_x_data[vertex2_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex2_idx]) > max_abs_polygon_coordinate)
+                    throwPolygonCoordinateIsTooLarge();
+
+                if (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
+                        * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
+                        + ring_x_data[vertex1_idx])
+                    res = !res;
             }
 
             vertex2_idx = vertex1_idx;
@@ -935,6 +941,7 @@ Checks whether the point belongs to the polygon on the plane.
 <Note>
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
+- Polygon coordinates must not exceed `1e100` in absolute value; the function throws an exception when it would compute with a larger one.
 - The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
 </Note>
     )";
