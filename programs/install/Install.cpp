@@ -177,6 +177,36 @@ static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, 
     return false;
 }
 
+/// Whether the user at `user_path` in a users config can authenticate only with credentials, i.e. not with an empty password
+/// or `no_password`. Checks the same carriers as `UsersConfigParser`: the flat fields of the user and every entry of `auth_methods`.
+/// Any entry of `auth_methods` that needs no credentials makes the user accessible without them.
+static bool hasCredentials(const Poco::Util::AbstractConfiguration & config, const std::string & user_path)
+{
+    auto has_credentials_at = [&](const std::string & path)
+    {
+        for (const auto * key : {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex"})
+            if (!config.getString(path + "." + key, "").empty())
+                return true;
+        for (const auto * key : {"ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication"})
+            if (config.has(path + "." + key))
+                return true;
+        return false;
+    };
+
+    const std::string auth_methods_path = user_path + ".auth_methods";
+    if (!config.has(auth_methods_path))
+        return has_credentials_at(user_path);
+
+    Poco::Util::AbstractConfiguration::Keys auth_methods;
+    config.keys(auth_methods_path, auth_methods);
+    if (auth_methods.empty())
+        return false;
+    for (const auto & auth_method : auth_methods)
+        if (!has_credentials_at(auth_methods_path + "." + auth_method))
+            return false;
+    return true;
+}
+
 /// Whether a `DiskAccessStorage` at `directory_path` is known not to define the default user.
 /// Mirrors how it loads entities at startup: if there is no `need_rebuild_lists.mark` and all `*.list` files can be read,
 /// it trusts them and ignores `<id>.sql` files not listed there; otherwise it rebuilds the lists from all `<id>.sql` files.
@@ -690,6 +720,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path data_path = prefix / options["data-path"].as<std::string>();
         fs::path pid_path = prefix / options["pid-path"].as<std::string>();
 
+        /// True if the authentication of the default user is configured with anything but an empty flat `password`,
+        /// so the installer does not set up a password for it.
+        bool has_authentication_for_default_user = false;
+        /// True if the default user cannot log in without credentials, so it is reasonable to accept connections from the network.
         bool has_password_for_default_user = false;
         bool is_default_user_removed = false;
         /// True if no XML users config preceding `shadowing_access_storage` defines the default user,
@@ -1018,7 +1052,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     continue;
 
                 is_default_user_removed = false;
-                has_password_for_default_user = hasAuthentication(*configuration, "users.default");
+                has_authentication_for_default_user = hasAuthentication(*configuration, "users.default");
+                has_password_for_default_user = hasCredentials(*configuration, "users.default");
                 if (i != 0)
                 {
                     default_user_config_file = users_config_path;
@@ -1144,6 +1179,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         else if (has_password_for_default_user)
         {
             fmt::print("{}Password for the default user is already specified. To remind or reset, see {} and {}.{}\n",
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
+        }
+        else if (has_authentication_for_default_user)
+        {
+            fmt::print("{}The default user is configured to be accessible without a password. See {} and {} to change it.{}\n",
                 start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
         else if (!can_ask_password)
