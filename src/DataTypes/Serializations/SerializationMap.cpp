@@ -11,6 +11,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -610,6 +611,10 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
+    /// Merged dictionaries of `LowCardinality` keys and values of the buckets.
+    MapBucketsLowCardinalityDictionary keys_low_cardinality_dictionary;
+    MapBucketsLowCardinalityDictionary values_low_cardinality_dictionary;
+
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMap>(*this);
@@ -1158,6 +1163,43 @@ void splitMapToBucketsDispatch(
 #undef CALL_KEY_SPLIT
 }
 
+/// Calls `callback.template operator()<Index>()` with the smallest index type that can address a dictionary of `dictionary_size`.
+template <typename Callback>
+void callForLowCardinalityIndexType(size_t dictionary_size, Callback && callback)
+{
+    if (dictionary_size <= std::numeric_limits<UInt8>::max())
+        callback.template operator()<UInt8>();
+    else if (dictionary_size <= std::numeric_limits<UInt16>::max())
+        callback.template operator()<UInt16>();
+    else if (dictionary_size <= std::numeric_limits<UInt32>::max())
+        callback.template operator()<UInt32>();
+    else
+        callback.template operator()<UInt64>();
+}
+
+/// Takes the indexes of the elements from the buckets in the order of `bucket_index_col`.
+template <typename IndexColumn, typename Index>
+void gatherLowCardinalityIndexesFromBuckets(
+    const std::vector<const PaddedPODArray<Index> *> & bucket_indexes,
+    const IndexColumn & bucket_index_col,
+    PaddedPODArray<Index> & indexes)
+{
+    const auto & bucket_index_data = bucket_index_col.getData();
+
+    std::vector<size_t> bucket_positions(bucket_indexes.size());
+    indexes.resize(bucket_index_data.size());
+    for (size_t i = 0; i != bucket_index_data.size(); ++i)
+    {
+        size_t bucket = bucket_index_data[i];
+        if (bucket >= bucket_indexes.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket, bucket_indexes.size());
+        size_t pos = bucket_positions[bucket]++;
+        if (pos >= bucket_indexes[bucket]->size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index has more elements of bucket {} than the bucket has: {}", bucket, bucket_indexes[bucket]->size());
+        indexes[i] = (*bucket_indexes[bucket])[pos];
+    }
+}
+
 /// Devirtualized inner loop for collecting Map from buckets in original insertion order.
 /// Uses the bucket index array to pull key-value pairs from the correct bucket
 /// in the order they were originally inserted.
@@ -1165,7 +1207,9 @@ template <typename IndexColumn>
 void collectMapFromBucketsWithOrderImpl(
     const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
     const IndexColumn & bucket_index_col,
-    IColumn & map_column)
+    IColumn & map_column,
+    MapBucketsLowCardinalityDictionary & keys_dictionary,
+    MapBucketsLowCardinalityDictionary & values_dictionary)
 {
     if (map_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
@@ -1190,9 +1234,16 @@ void collectMapFromBucketsWithOrderImpl(
     size_t num_rows = map_buckets[0]->size();
     map_offsets.reserve(map_offsets.size() + num_rows);
 
+    /// For `LowCardinality`, `insertFrom` from another dictionary is a hash table lookup for every element,
+    /// so such columns are collected by `collectLowCardinalityFromBucketsWithOrder` instead.
+    const bool keys_low_cardinality = map_keys_column.lowCardinality();
+    const bool values_low_cardinality = map_values_column.lowCardinality();
+    const bool insert_elements = !keys_low_cardinality || !values_low_cardinality;
+
     const auto & bucket_index_data = bucket_index_col.getData();
     std::vector<size_t> bucket_positions(map_buckets.size());
     size_t bucket_index_offset = 0;
+    size_t num_elements = map_offsets.empty() ? 0 : map_offsets.back();
 
     for (size_t i = 0; i != num_rows; ++i)
     {
@@ -1205,32 +1256,60 @@ void collectMapFromBucketsWithOrderImpl(
             total_size += offset_end - offset_start;
         }
 
-        for (size_t j = 0; j < total_size; ++j)
+        if (insert_elements)
         {
-            size_t bucket_idx = bucket_index_data[bucket_index_offset++];
-            if (bucket_idx >= map_buckets.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
-            size_t pos = bucket_positions[bucket_idx]++;
-            map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
-            map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
+            for (size_t j = 0; j < total_size; ++j)
+            {
+                size_t bucket_idx = bucket_index_data[bucket_index_offset++];
+                if (bucket_idx >= map_buckets.size())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
+                size_t pos = bucket_positions[bucket_idx]++;
+                if (!keys_low_cardinality)
+                    map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
+                if (!values_low_cardinality)
+                    map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
+            }
         }
 
-        map_offsets.push_back(map_keys_column.size());
+        num_elements += total_size;
+        map_offsets.push_back(num_elements);
     }
+
+    if (keys_low_cardinality)
+        SerializationMap::collectLowCardinalityFromBucketsWithOrder(map_keys_buckets, bucket_index_col, map_keys_column, keys_dictionary, /*disjoint_dictionaries=*/ true);
+    if (values_low_cardinality)
+        SerializationMap::collectLowCardinalityFromBucketsWithOrder(map_values_buckets, bucket_index_col, map_values_column, values_dictionary, /*disjoint_dictionaries=*/ false);
 }
 
 /// Dispatch wrapper for collectMapFromBucketsWithOrderImpl — dispatches on the index column type.
 void collectMapFromBucketsWithOrderDispatch(
     const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
     const IColumn & bucket_index_column,
-    IColumn & map_column)
+    IColumn & map_column,
+    MapBucketsLowCardinalityDictionary & keys_dictionary,
+    MapBucketsLowCardinalityDictionary & values_dictionary)
 {
 // NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
 #define CALL_COLLECT(IndexColumn) collectMapFromBucketsWithOrderImpl<IndexColumn>( \
-    map_buckets, static_cast<const IndexColumn &>(bucket_index_column), map_column)
+    map_buckets, static_cast<const IndexColumn &>(bucket_index_column), map_column, keys_dictionary, values_dictionary)
 // NOLINTEND(bugprone-macro-parentheses)
     DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_COLLECT)
 #undef CALL_COLLECT
+}
+
+/// Dispatch wrapper for `gatherLowCardinalityIndexesFromBuckets` on the bucket index column type.
+template <typename Index>
+void gatherLowCardinalityIndexesFromBucketsDispatch(
+    const std::vector<const PaddedPODArray<Index> *> & bucket_indexes,
+    const IColumn & bucket_index_column,
+    PaddedPODArray<Index> & indexes)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+#define CALL_GATHER(IndexColumn) gatherLowCardinalityIndexesFromBuckets<IndexColumn, Index>( \
+    bucket_indexes, static_cast<const IndexColumn &>(bucket_index_column), indexes)
+// NOLINTEND(bugprone-macro-parentheses)
+    DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_GATHER)
+#undef CALL_GATHER
 }
 
 #undef DISPATCH_BUCKET_INDEX_COLUMN_TYPE
@@ -1326,9 +1405,127 @@ void SerializationMap::collectMapFromBuckets(const VectorWithMemoryTracking<Colu
 void SerializationMap::collectMapFromBucketsWithOrder(
     const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
     const IColumn & bucket_index_column,
-    IColumn & map_column) const
+    IColumn & map_column,
+    MapBucketsLowCardinalityDictionary & keys_dictionary,
+    MapBucketsLowCardinalityDictionary & values_dictionary) const
 {
-    collectMapFromBucketsWithOrderDispatch(map_buckets, bucket_index_column, map_column);
+    collectMapFromBucketsWithOrderDispatch(map_buckets, bucket_index_column, map_column, keys_dictionary, values_dictionary);
+}
+
+/// The dictionaries of all buckets are merged into one dictionary, which is reused while the buckets keep
+/// the same shared dictionaries. Then the index of every element is translated to the merged dictionary with
+/// a lookup table and the elements are taken in the order of the bucket index. No values are hashed or copied
+/// unless the dictionaries change, and the result shares the merged dictionary if `column` is empty.
+void SerializationMap::collectLowCardinalityFromBucketsWithOrder(
+    const VectorWithMemoryTracking<ColumnPtr> & buckets,
+    const IColumn & bucket_index_column,
+    IColumn & column,
+    MapBucketsLowCardinalityDictionary & merged_dictionary,
+    bool disjoint_dictionaries)
+{
+    const size_t num_buckets = buckets.size();
+    std::vector<const ColumnLowCardinality *> bucket_columns(num_buckets);
+    size_t total_elements = 0;
+    bool all_shared = true;
+    bool dictionaries_changed = merged_dictionary.bucket_dictionaries.size() != num_buckets;
+    for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+    {
+        bucket_columns[bucket] = &assert_cast<const ColumnLowCardinality &>(*buckets[bucket]);
+        total_elements += bucket_columns[bucket]->size();
+        all_shared = all_shared && bucket_columns[bucket]->isSharedDictionary();
+        dictionaries_changed = dictionaries_changed
+            || merged_dictionary.bucket_dictionaries[bucket].get() != bucket_columns[bucket]->getDictionaryPtr().get();
+    }
+
+    if (bucket_index_column.size() != total_elements)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index has {} elements, but buckets have {}", bucket_index_column.size(), total_elements);
+
+    if (total_elements == 0)
+        return;
+
+    auto & column_low_cardinality = assert_cast<ColumnLowCardinality &>(column);
+
+    /// A dictionary that is not shared belongs to a single read, so the merged dictionary is rebuilt every time.
+    const bool rebuild = dictionaries_changed || !all_shared;
+    std::vector<ColumnPtr> bucket_positions;
+    if (rebuild)
+    {
+        const auto & column_dictionary = column_low_cardinality.getDictionary();
+        MutableColumnPtr dictionary;
+        bucket_positions.resize(num_buckets);
+        if (disjoint_dictionaries && !column_dictionary.nestedColumnIsNullable())
+        {
+            /// Every key is written to one bucket, so the dictionaries of the buckets have no common values
+            /// except the default value at position 0, and they are concatenated without hashing.
+            auto values = column_dictionary.getNestedNotNullableColumn()->cloneResized(1);
+            for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+            {
+                const auto & bucket_values = *bucket_columns[bucket]->getDictionary().getNestedNotNullableColumn();
+                auto positions = ColumnUInt64::create(bucket_values.size());
+                auto & positions_data = positions->getData();
+                positions_data[0] = 0;
+                for (size_t i = 1; i < bucket_values.size(); ++i)
+                    positions_data[i] = values->size() + i - 1;
+                values->insertRangeFrom(bucket_values, 1, bucket_values.size() - 1);
+                bucket_positions[bucket] = std::move(positions);
+            }
+            dictionary = column_dictionary.cloneWithUniqueValues(std::move(values));
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            auto check = column_dictionary.cloneEmpty();
+            const auto & dictionary_values = *assert_cast<const IColumnUnique &>(*dictionary).getNestedColumn();
+            assert_cast<IColumnUnique &>(*check).uniqueInsertRangeFrom(dictionary_values, 0, dictionary_values.size());
+            if (check->size() != dictionary->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionaries of the keys of the buckets of a Map have common values");
+#endif
+        }
+        else
+        {
+            dictionary = column_dictionary.cloneEmpty();
+            auto & dictionary_unique = assert_cast<IColumnUnique &>(*dictionary);
+            for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+            {
+                const auto & bucket_dictionary = *bucket_columns[bucket]->getDictionary().getNestedColumn();
+                bucket_positions[bucket] = dictionary_unique.uniqueInsertRangeFrom(bucket_dictionary, 0, bucket_dictionary.size());
+            }
+        }
+
+        merged_dictionary.dictionary = std::move(dictionary);
+        merged_dictionary.bucket_dictionaries.clear();
+        if (all_shared)
+            for (const auto * bucket_column : bucket_columns)
+                merged_dictionary.bucket_dictionaries.push_back(bucket_column->getDictionaryPtr());
+    }
+
+    callForLowCardinalityIndexType(merged_dictionary.dictionary->size(), [&]<typename Index>()
+    {
+        /// The positions returned by `uniqueInsertRangeFrom` have different types, convert them to the index type once.
+        if (rebuild)
+        {
+            merged_dictionary.bucket_positions.resize(num_buckets);
+            for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+            {
+                const auto & positions = *bucket_positions[bucket];
+                auto converted = ColumnVector<Index>::create(positions.size());
+                auto & converted_data = converted->getData();
+                for (size_t i = 0; i != positions.size(); ++i)
+                    converted_data[i] = static_cast<Index>(positions.getUInt(i));
+                merged_dictionary.bucket_positions[bucket] = std::move(converted);
+            }
+        }
+
+        std::vector<ColumnPtr> bucket_indexes(num_buckets);
+        std::vector<const PaddedPODArray<Index> *> bucket_indexes_data(num_buckets);
+        for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+        {
+            bucket_indexes[bucket] = merged_dictionary.bucket_positions[bucket]->index(bucket_columns[bucket]->getIndexes(), 0);
+            bucket_indexes_data[bucket] = &assert_cast<const ColumnVector<Index> &>(*bucket_indexes[bucket]).getData();
+        }
+
+        auto indexes = ColumnVector<Index>::create();
+        gatherLowCardinalityIndexesFromBucketsDispatch(bucket_indexes_data, bucket_index_column, indexes->getData());
+        column.insertRangeFrom(*ColumnLowCardinality::create(merged_dictionary.dictionary, std::move(indexes), /*is_shared=*/ true), 0, total_elements);
+    });
 }
 
 void SerializationMap::serializeBinaryBulkWithMultipleStreams(
@@ -1462,7 +1659,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
                 *bucket_index_column, total_kv_pairs, settings, map_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
+            collectMapFromBucketsWithOrder(
+                map_buckets, *bucket_index_column, column_map,
+                map_state->keys_low_cardinality_dictionary, map_state->values_low_cardinality_dictionary);
         }
         else
         {

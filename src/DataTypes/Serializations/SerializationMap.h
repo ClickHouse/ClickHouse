@@ -10,6 +10,18 @@ class SerializationMapSize;
 class SerializationMapKeysOrValues;
 class SerializationMapKeyValue;
 
+/// Dictionary of `LowCardinality` keys or values of a `Map` merged from the dictionaries of all buckets.
+/// The buckets of a part usually keep the same shared dictionaries for many reads,
+/// so the merged dictionary is reused while the dictionaries of the buckets do not change.
+struct MapBucketsLowCardinalityDictionary
+{
+    ColumnPtr dictionary;
+    /// Shared dictionaries of the buckets `dictionary` is built from. Empty if it cannot be reused.
+    std::vector<ColumnPtr> bucket_dictionaries;
+    /// For every bucket, the positions in `dictionary` of the elements of the bucket dictionary.
+    std::vector<ColumnPtr> bucket_positions;
+};
+
 class SerializationMap final : public SimpleTextSerialization
 {
 private:
@@ -52,6 +64,15 @@ public:
 
     /// Whether a resolved subcolumn is really the value stored under one key (`m.key_<key>`).
     static bool isKeyValueSubcolumn(const SubstreamPath & path);
+
+    /// Inserts the elements of the `LowCardinality` columns `buckets` into `column` in the order of `bucket_index_column`.
+    /// `disjoint_dictionaries` means that the buckets hold keys, so a value can be only in one bucket.
+    static void collectLowCardinalityFromBucketsWithOrder(
+        const VectorWithMemoryTracking<ColumnPtr> & buckets,
+        const IColumn & bucket_index_column,
+        IColumn & column,
+        MapBucketsLowCardinalityDictionary & merged_dictionary,
+        bool disjoint_dictionaries);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -155,7 +176,9 @@ private:
     void collectMapFromBucketsWithOrder(
         const VectorWithMemoryTracking<ColumnPtr> & map_buckets,
         const IColumn & bucket_index_column,
-        IColumn & map_column) const;
+        IColumn & map_column,
+        MapBucketsLowCardinalityDictionary & keys_dictionary,
+        MapBucketsLowCardinalityDictionary & values_dictionary) const;
 };
 
 }
