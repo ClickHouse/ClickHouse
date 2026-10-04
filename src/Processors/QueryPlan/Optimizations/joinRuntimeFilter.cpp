@@ -203,13 +203,15 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
+static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash)
 {
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
+    /// A `grace_hash` that the join pickers pass over for lack of a spill threshold does not count: the list is cut down to
+    /// these algorithms below, and `grace_hash` left alone in it is no longer passed over but refused.
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        join_algorithm == JoinAlgorithm::GRACE_HASH;
+        (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash);
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -292,7 +294,14 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Check if join can do runtime filtering on left table
     const auto & join_operator = join_step->getJoinOperator();
-    auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
+    auto & join_settings = join_step->getJoinSettings();
+    auto & join_algorithms = join_settings.join_algorithms;
+    /// Decided on the list as the user gave it, before it is cut down below.
+    const bool can_run_grace_hash = join_settings.canRunGraceHash();
+    const auto supports_runtime_filter = [can_run_grace_hash](JoinAlgorithm join_algorithm)
+    {
+        return supportsRuntimeFilter(join_algorithm, can_run_grace_hash);
+    };
     const bool can_use_runtime_filter =
         (
             (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
@@ -301,7 +310,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
-        std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
+        std::ranges::any_of(join_algorithms, supports_runtime_filter);
 
     if (!can_use_runtime_filter)
         return false;
@@ -639,7 +648,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     node.children = {apply_filter_node, build_filter_node};
 
     /// Remove algorithms that are not compatible with runtime filters
-    std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
+    std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
     return true;
 }

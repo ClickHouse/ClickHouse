@@ -156,6 +156,16 @@ struct JoinSettings
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
 
+    /// Whether `grace_hash` in `join_algorithms` is an algorithm the join pickers run on every node rather than
+    /// pass over for the next entry of the preference list: in legacy mode, with an absolute spill threshold, or
+    /// listed alone (and then refused with a message if it has no threshold). A threshold given only by
+    /// `max_bytes_ratio_before_external_join` does not count: every server resolves it against its own memory
+    /// limits, and one without them resolves it to 0, so the answer here would depend on the node.
+    bool canRunGraceHash() const
+    {
+        return legacy_join_size_limits_trigger_spilling || max_bytes_before_external_join > 0 || join_algorithms.size() == 1;
+    }
+
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.
     UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
