@@ -1,5 +1,8 @@
 #include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
-#include <Common/CoroutineStack.h>
+
+#include <boost/context/protected_fixedsize_stack.hpp>
+
+#include <memory>
 
 namespace DB::Runtime::Wyrd
 {
@@ -7,28 +10,29 @@ namespace DB::Runtime::Wyrd
 SimulatedThread::SimulatedThread(UInt32 id_, size_t stack_size, std::function<void()> body_)
     : id(id_)
 {
-    auto routine = [this, body = std::move(body_)](auto & suspend_callback)
+    auto routine = [this, body = std::move(body_)](boost::context::fiber && caller)
     {
-        suspend_to_kernel = [&suspend_callback] { suspend_callback(); };
+        kernel = std::move(caller);
         body();
+        return std::move(kernel);
     };
 
-    coroutine = StackfulCoroutine(CoroutineStack(stack_size), std::move(routine));
+    fiber = boost::context::fiber(std::allocator_arg, boost::context::protected_fixedsize_stack(stack_size), std::move(routine));
 }
 
 void SimulatedThread::resume()
 {
-    coroutine.resume();
+    fiber = std::move(fiber).resume();
 }
 
 void SimulatedThread::suspend()
 {
-    suspend_to_kernel();
+    kernel = std::move(kernel).resume();
 }
 
 bool SimulatedThread::finished() const
 {
-    return !coroutine;
+    return !fiber;
 }
 
 }

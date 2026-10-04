@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/StackfulCoroutine.h>
 #include <base/types.h>
+
+#include <boost/context/fiber.hpp>
 
 #include <functional>
 
@@ -19,8 +20,8 @@ struct SimulatedThread
     const UInt32 id;
 
 private:
-    std::function<void()> suspend_to_kernel;
-    StackfulCoroutine coroutine;
+    boost::context::fiber fiber;
+    boost::context::fiber kernel;
 };
 
 }
