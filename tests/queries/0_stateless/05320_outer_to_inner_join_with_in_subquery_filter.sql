@@ -1,5 +1,5 @@
 -- An outer JOIN becomes INNER when a WHERE conjunct rejects the not-matched rows, also if the WHERE has an IN (subquery).
--- Random settings limits: query_plan_convert_outer_join_to_inner_join=(1, None)
+-- Random settings limits: query_plan_convert_outer_join_to_inner_join=(1, None); query_plan_convert_any_join_to_semi_or_anti_join=(1, None)
 
 DROP TABLE IF EXISTS t1_05320;
 DROP TABLE IF EXISTS t2_05320;
@@ -57,6 +57,12 @@ SELECT count() FROM t1_05320 AS x1 LEFT JOIN t3_05320 AS x2 ON x1.c1 + 1000 = x2
 WHERE x2.c4 = 1 OR x2.c1 NOT IN (SELECT c1 + 1 FROM t4_05320);
 
 SELECT 'any';
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT count(), sum(x2.c1) FROM t1_05320 AS x1 ANY LEFT JOIN t3_05320 AS x2 ON x1.c1 = x2.c1
+    WHERE x2.c4 = 1 AND x2.c1 IN (SELECT c1 FROM t4_05320)
+    SETTINGS enable_parallel_replicas = 0
+) WHERE explain ILIKE '%Strictness: semi%';
 SELECT count(), sum(x2.c1) FROM t1_05320 AS x1 ANY LEFT JOIN t3_05320 AS x2 ON x1.c1 = x2.c1
 WHERE x2.c4 = 1 AND x2.c1 IN (SELECT c1 FROM t4_05320);
 SELECT count(), sum(x2.c1) FROM t1_05320 AS x1 ANY LEFT JOIN t3_05320 AS x2 ON x1.c1 = x2.c1
