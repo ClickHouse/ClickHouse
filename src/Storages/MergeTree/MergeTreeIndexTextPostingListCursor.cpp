@@ -828,12 +828,12 @@ bool intersectLeapfrogImpl(UInt8 * out, const std::vector<PostingListCursorPtr> 
     const size_t n = num_cursors ? num_cursors : cursor_ptrs.size();
     chassert(cursor_ptrs.size() == n);
 
+    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
     using CursorsType = std::conditional_t<num_cursors != 0,
         std::array<PostingListCursor *, num_cursors>,
         std::vector<PostingListCursor *>>;
 
-    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
-    std::conditional_t<num_cursors != 0, std::array<PostingListCursor *, num_cursors>, std::vector<PostingListCursor *>> cursors{};
+    CursorsType cursors{};
     if constexpr (num_cursors == 0)
         cursors.resize(n);
 
