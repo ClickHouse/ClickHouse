@@ -3,6 +3,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
 
+#include <algorithm>
+
+#include "config.h"
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -16,10 +24,30 @@ struct ValidUTF8Impl
 
     static constexpr bool is_fixed_to_constant = false;
 
+    static size_t asciiPrefixLength([[maybe_unused]] const UInt8 * data, [[maybe_unused]] size_t len)
+    {
+#if USE_SIMDUTF
+        return simdutf::validate_ascii_with_errors(reinterpret_cast<const char *>(data), len).count;
+#else
+        return 0;
+#endif
+    }
+
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (input_rows_count == 0)
+            return;
+
+        /// A row that ends inside the column's leading run of ASCII bytes is valid UTF-8.
+        const size_t prefix = asciiPrefixLength(data.data(), offsets[input_rows_count - 1]);
+        const size_t ascii_rows = std::upper_bound(offsets.begin(), offsets.begin() + input_rows_count, prefix) - offsets.begin();
+        std::fill(res.begin(), res.begin() + ascii_rows, 1);
+        if (ascii_rows == input_rows_count)
+            return;
+
+        res[ascii_rows] = isValidUTF8(data.data() + prefix, offsets[ascii_rows] - prefix);
+        size_t prev_offset = offsets[ascii_rows];
+        for (size_t i = ascii_rows + 1; i < input_rows_count; ++i)
         {
             res[i] = isValidUTF8(data.data() + prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
@@ -32,7 +60,14 @@ struct ValidUTF8Impl
 
     static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        for (size_t i = 0; i < input_rows_count; ++i)
+        const size_t prefix = asciiPrefixLength(data.data(), n * input_rows_count);
+        const size_t ascii_rows = prefix / n;
+        std::fill(res.begin(), res.begin() + ascii_rows, 1);
+        if (ascii_rows == input_rows_count)
+            return;
+
+        res[ascii_rows] = isValidUTF8(data.data() + prefix, (ascii_rows + 1) * n - prefix);
+        for (size_t i = ascii_rows + 1; i < input_rows_count; ++i)
             res[i] = isValidUTF8(data.data() + i * n, n);
     }
 
