@@ -1,0 +1,28 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The hub's own nodes. A Cloud instance always has a cluster named `default`, so that is the
+             cluster the inner `Distributed` table reads. The same name on the spoke resolves to the
+             spoke's own nodes, which is what makes each entry point read its own data. -->
+        <default>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+            </shard>
+        </default>
+        <!-- Only the hub has this one: it is the entry point that fans the query out, with one shard per
+             instance and a single replica each, pointing at that instance's entry-point server. Every
+             shard having one replica means parallel replicas cannot be used for this hop - but the hop
+             below it reads a two-replica cluster and must still use them. -->
+        <outer_cluster>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+        </outer_cluster>
+    </remote_servers>
+</clickhouse>
