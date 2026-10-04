@@ -79,6 +79,8 @@ private:
     void removeFilterIfNeed(Columns & columns) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
+    /// For a chunk that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
+    void writeMarksWithoutMatchesIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description);
 };
 
 }
