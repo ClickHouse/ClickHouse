@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -46,6 +47,7 @@ struct PostgreSQLSettings
     void loadFromQueryContext(const Context & context);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

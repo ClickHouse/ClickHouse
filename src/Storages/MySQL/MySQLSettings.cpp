@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -136,4 +137,6 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
 {
     return MySQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MySQLSettings)
 }

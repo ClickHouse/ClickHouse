@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
@@ -244,4 +245,6 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
 }

@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ExecutableSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -81,4 +82,6 @@ bool ExecutableSettings::hasBuiltin(std::string_view name)
 {
     return ExecutableSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ExecutableSettings)
 }

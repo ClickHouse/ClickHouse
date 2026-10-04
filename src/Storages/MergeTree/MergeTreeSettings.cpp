@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
@@ -17,6 +18,7 @@
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -3442,46 +3444,66 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool backgroun
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
 {
-    const auto & constraints = params.constraints;
     MutableColumns & res_columns = params.res_columns;
 
-    for (const auto & setting : impl->all())
+    for (const auto & setting : enumerateSettingsWithConstraints(params.constraints))
     {
-        const auto & setting_name = setting.getName();
+        Array disallowed_values;
+        for (const auto & value : setting.disallowed_values)
+            disallowed_values.emplace_back(value);
+
         size_t col = 0;
-        res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.isValueChanged());
-        res_columns[col++]->insert(setting.getDescription());
+        res_columns[col++]->insert(setting.name);
+        res_columns[col++]->insert(setting.value);
+        res_columns[col++]->insert(setting.default_value);
+        res_columns[col++]->insert(setting.changed);
+        res_columns[col++]->insert(setting.comment);
+        res_columns[col++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
+        res_columns[col++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
+        res_columns[col++]->insert(disallowed_values);
+        res_columns[col++]->insert(setting.readonly);
+        res_columns[col++]->insert(setting.type);
+        res_columns[col++]->insert(setting.tier == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.tier);
+    }
+}
+
+SettingDescriptions MergeTreeSettings::enumerateSettingsWithConstraints(const SettingsConstraints & constraints) const
+{
+    auto settings = enumerateSettings();
+    for (auto & setting : settings)
+    {
         Field min;
         Field max;
         std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+        constraints.get(*this, setting.name, min, max, disallowed_values, writability);
 
         /// Certain merge tree settings are unconditionally read-only
-        if (isReadonlySetting(setting_name))
+        if (isReadonlySetting(setting.name))
             writability = SettingConstraintWritability::CONST;
 
-        /// These two columns can accept strings only.
         if (!min.isNull())
-            min = MergeTreeSettings::valueToStringUtil(setting_name, min);
+            setting.min_value = valueToStringUtil(setting.name, min);
         if (!max.isNull())
-            max = MergeTreeSettings::valueToStringUtil(setting_name, max);
-
-        Array disallowed_array;
+            setting.max_value = valueToStringUtil(setting.name, max);
         for (const auto & value : disallowed_values)
-                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
-
-        res_columns[col++]->insert(min);
-        res_columns[col++]->insert(max);
-        res_columns[col++]->insert(disallowed_array);
-        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[col++]->insert(setting.getTypeName());
-        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[col++]->insert(setting.getTier());
+            setting.disallowed_values.push_back(valueToStringUtil(setting.name, value));
+        setting.readonly = writability == SettingConstraintWritability::CONST;
     }
+    return settings;
+}
+
+SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
+{
+    return context->getMergeTreeSettings().enumerateSettingsWithConstraints(
+        context->getSettingsConstraintsAndCurrentProfiles()->constraints);
+}
+
+SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
+{
+    return context->getReplicatedMergeTreeSettings().enumerateSettingsWithConstraints(
+        context->getSettingsConstraintsAndCurrentProfiles()->constraints);
 }
 
 void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
@@ -3613,4 +3635,6 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
 }

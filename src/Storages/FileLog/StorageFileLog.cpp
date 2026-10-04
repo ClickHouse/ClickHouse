@@ -983,6 +983,7 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<FileLogSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(
