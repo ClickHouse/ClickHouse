@@ -15,7 +15,7 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## primary_key_compress_block_size {#primary_key_compress_block_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Primary compress block size, the actual size of the block to compress.
+Size, in uncompressed bytes, of blocks used when writing a compressed primary-key index for new or rewritten data parts. Applies only when `compress_primary_key` is enabled. This controls compression framing and buffering; it does not change the primary key or index granularity.
 
 ## primary_key_compression_codec {#primary_key_compression_codec}
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
