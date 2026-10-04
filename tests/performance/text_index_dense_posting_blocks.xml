@@ -1,0 +1,39 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>codec</name>
+           <values>
+               <value>none</value>
+               <value>bitpacking</value>
+               <value>pfor</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+        <text_index_posting_list_apply_mode>materialize</text_index_posting_list_apply_mode>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_dense_blocks_{codec}
+        (
+            id UInt64,
+            s String,
+            INDEX idx s TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- `thread` is in every row, `near` in all rows but about one in a thousand, `k17` in one row of 64. -->
+    <fill_query>INSERT INTO text_index_dense_blocks_{codec} SELECT number, concat(if(cityHash64(number) % 1000 != 0, 'near ', ''), 'thread k', toString(number % 64)) FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_dense_blocks_{codec} FINAL</fill_query>
+
+    <query>SELECT count() FROM text_index_dense_blocks_{codec} WHERE hasAllTokens(s, ['thread', 'k17'])</query>
+    <query>SELECT count() FROM text_index_dense_blocks_{codec} WHERE hasAllTokens(s, ['thread', 'k17']) SETTINGS query_plan_optimize_count_from_text_index = 0</query>
+    <query>SELECT count() FROM text_index_dense_blocks_{codec} WHERE hasAllTokens(s, ['near', 'k17']) SETTINGS query_plan_optimize_count_from_text_index = 0</query>
+    <query>SELECT sum(id) FROM text_index_dense_blocks_{codec} WHERE hasToken(s, 'near')</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_dense_blocks_{codec}</drop_query>
+</test>
