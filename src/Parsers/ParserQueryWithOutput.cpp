@@ -31,8 +31,6 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -268,14 +266,11 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserQueryWithOutput::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementQueryWithOutput(StatementFactory & factory)
-{
-    factory.registerStatement("FORMAT",
+    documentation["FORMAT"] =
     {
         .description = R"DOCS_MD(
 ClickHouse supports a wide range of [serialization formats](/reference/formats/index) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
@@ -295,9 +290,9 @@ SELECT ... FORMAT format
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
-    });
+    };
 
-    factory.registerStatement("INTO OUTFILE",
+    documentation["INTO OUTFILE"] =
     {
         .description = R"DOCS_MD(
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
@@ -343,7 +338,9 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FORMAT", "INSERT INTO"},
-    });
+    };
+
+    return documentation;
 }
 
 }

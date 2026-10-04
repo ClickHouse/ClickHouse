@@ -55,11 +55,13 @@ CREATE TABLE largestTriangleTreeBucketsBucketSizeTest
 
 INSERT INTO largestTriangleTreeBucketsBucketSizeTest (x, y) SELECT (number + 1) AS x, (x % 1000) AS y FROM numbers(9999);
 
+-- neighbor needs the whole expansion
 SELECT
   arrayJoin(lttb(1000)(x, y)) AS point,
   tupleElement(point, 1) AS point_x,
   point_x - neighbor(point_x, -1) AS point_x_diff_with_previous_row
-FROM largestTriangleTreeBucketsBucketSizeTest LIMIT 990, 10;
+FROM largestTriangleTreeBucketsBucketSizeTest LIMIT 990, 10
+SETTINGS legacy_array_join_function_nondeterministic_evaluation = 1;
 
 SELECT largestTriangleThreeBuckets(1)(0, '1900-01-01 00:00:00'::DateTime64);
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
-#include <IO/IntervalSet.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FileCache/FileCache.h>
 

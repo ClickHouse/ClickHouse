@@ -16,6 +16,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <QueryPipeline/BlockIO.h>
@@ -293,7 +294,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
                 .secure = secure,
             });
         }
@@ -319,7 +320,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
                 .secure = secure,
             });
         }
@@ -368,8 +369,8 @@ Example of settings:
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
-    user 'default'
-    password ''
+    user 'dict_reader'
+    password 'dict_reader_password'
     db 'default'
     table 'ids'
     where 'id=10'
@@ -386,8 +387,8 @@ SOURCE(CLICKHOUSE(
     <clickhouse>
         <host>example01-01-1</host>
         <port>9000</port>
-        <user>default</user>
-        <password></password>
+        <user>dict_reader</user>
+        <password>dict_reader_password</password>
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
@@ -419,8 +420,12 @@ Setting fields:
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 </Note>
+
+<Note>
+In ClickHouse Cloud, when a user other than `default` creates the dictionary, the source must specify both `user` and `password`, and `user` cannot be `default`. Otherwise `CREATE DICTIONARY` fails with a `BAD_ARGUMENTS` error. Use a dedicated user that has `SELECT` on the source table.
+</Note>
 )DOCS_MD",
-        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
+        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'user' password 'password' db 'db' table 'table'))",
         .related = {"mysql", "postgresql"}});
 }
 
