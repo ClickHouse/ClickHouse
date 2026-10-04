@@ -196,7 +196,7 @@ def test_bucketed_schema(start_cluster):
 
 
 def test_bucketed_schema_is_rejected_without_alias_columns(start_cluster):
-    # With `default_system_log_flush_policy.skip_alias_columns` the per-metric columns of the
+    # With `system_tables.skip_alias_columns` the per-metric columns of the
     # bucketed schema cannot be created, so the server must refuse to start instead of
     # silently exposing a table without the `ProfileEvent_*` / `CurrentMetric_*` columns.
     node5.query("SYSTEM FLUSH LOGS")

@@ -51,6 +51,8 @@ class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 {
 public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
+
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY DELETE"; }
 };
 
 VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);

@@ -733,7 +733,7 @@ operation_name:   DB::Block DB::InterpreterSelectQuery::getSampleBlockImpl()
 kind:             INTERNAL
 start_time_us:    1612374594529090
 finish_time_us:   1612374594529108
-finish_date:      2021-02-03
+event_date:       2021-02-03
 attribute.names:  []
 attribute.values: []
 ```

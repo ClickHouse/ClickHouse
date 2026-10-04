@@ -49,8 +49,10 @@ class AsynchronousInsertLog : public SystemLog<AsynchronousInsertLogElement>
 public:
     using SystemLog<AsynchronousInsertLogElement>::SystemLog;
 
+    static const char * getDefaultPartitionBy() { return "event_date"; }
     /// This table is usually queried for fixed table name.
     static const char * getDefaultOrderBy() { return "database, table, event_date, event_time"; }
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 3 DAY"; }
 };
 
 }

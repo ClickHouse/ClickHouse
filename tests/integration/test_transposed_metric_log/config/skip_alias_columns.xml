@@ -1,5 +1,5 @@
 <clickhouse>
-    <default_system_log_flush_policy>
+    <system_tables>
         <skip_alias_columns>true</skip_alias_columns>
-    </default_system_log_flush_policy>
+    </system_tables>
 </clickhouse>
