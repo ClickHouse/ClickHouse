@@ -2434,13 +2434,11 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
-            /// The `_table` and `_database` values of the rows are stamped by the table that
-            /// actually produces the rows. If the child table reads from other tables, its rows
-            /// carry those tables' names, not the child's own name, so pruning the child by its
-            /// name could incorrectly discard the rows the predicate selects. Such children are
-            /// always read, and the predicate is applied to the rows.
+            /// The `_table` and `_database` values of the rows always carry the name of the child
+            /// (the `Merge` engine produces these columns itself, even if the child reads from
+            /// other tables), so the child can be pruned by its own name.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
