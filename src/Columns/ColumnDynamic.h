@@ -190,10 +190,8 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    /// Used for deduplication: hashes the raw in-memory representation of the variant column.
-    /// The hash is the same for the same INSERT data, but NOT necessarily the same for
-    /// logically equivalent data with different variant layouts (e.g. value stored in a typed
-    /// variant vs the shared variant).
+    /// Used for deduplication. Does not depend on which other types the column holds, but a value in the
+    /// shared variant hashes differently than the same value in a typed variant.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
