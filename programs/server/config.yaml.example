@@ -663,6 +663,31 @@ default_session_timeout: 60
 #     events: true
 #     asynchronous_metrics: true
 
+# Create all_... union tables next to the system log tables:
+# system.all_query_log for system.query_log, system.all_text_log for system.text_log, and so on.
+# Such a table is a union of the corresponding log table, its rotated versions
+# (query_log_0, query_log_1, ...) and/or the same tables across all replicas of a cluster,
+# and allows querying them all at once without remembering constructs like
+# clusterAllReplicas(default, merge(system, '^query_log')).
+# The option applies to all system log tables at once.
+# The tables have no state of their own, so it is safe to drop them at any time:
+# they will be recreated at the next flush of the corresponding log.
+# A pre-existing table under one of these names that was not created by this option
+# is never replaced: it is left intact and a warning is written to the log;
+# the union table is created at the next flush after the table is dropped or renamed.
+create_union_system_log_tables:
+    # Select from the log table and its rotated versions with the merge table function.
+    merge_rotated_tables: true
+
+    # Select from the corresponding tables across all replicas of the specified cluster
+    # with the clusterAllReplicas table function (with SETTINGS skip_unavailable_shards = 1,
+    # so that unavailable replicas do not fail the queries).
+    # Note: the definitions of the all_... tables will reference the cluster,
+    # so the cluster has to exist for the tables to be loaded. If you remove the cluster
+    # from the configuration, also drop the all_... tables: they will be recreated
+    # according to the new configuration at the next flush.
+    # cluster: default
+
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:
     # What table to insert data. If table is not exist, it will be created.
@@ -806,17 +831,20 @@ top_level_domains_lists: ''
 # https://clickhouse.com/docs/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
-# Uncomment if you want data to be compressed 30-100% better.
+# By default the codec is chosen by part size: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
+# Uncomment if you want to compress large parts even better than the ZSTD(3) default.
 # Don't do that if you just started using ClickHouse.
+# Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
 
 # compression:
-#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used.
+#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, the size-aware built-in default is used: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
 #     case:
 #         Conditions. All must be satisfied. Some conditions may be omitted.
 #         # min_part_size: 10000000000    # Min part size in bytes.
 #         # min_part_size_ratio: 0.01     # Min size of part relative to whole table size.
-#         # What compression method to use.
+#         # What compression method to use. Use a level above the ZSTD(3) default so this case actually improves compression for large parts.
 #         method: zstd
+#         level: 10
 
 # Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
 # Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.

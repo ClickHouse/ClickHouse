@@ -97,7 +97,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false, false>(needle);
         const size_t groups_count = Regexps::getCapturingGroupsCount(holder, needle);
         const auto & regexp = holder.getRE2();
 

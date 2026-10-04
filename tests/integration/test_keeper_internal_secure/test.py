@@ -14,6 +14,7 @@ RAFT_PEER_VERIFICATION_DISABLED_LOG = (
     r"Keeper Raft peer certificate verification is disabled because "
     r"`openSSL\.client\.verificationMode` is set to `none`"
 )
+CIPHER_LIST_REJECTED_LOG = r"Cannot set cipher list"
 
 cluster = ClickHouseCluster(__file__)
 nodes = [
@@ -239,6 +240,70 @@ def check_peer_verification_failure(ssl_conf_file):
         ku.wait_until_connected(cluster, nodes[0], timeout=5)
 
 
+def offer_single_cipher(node, cipher):
+    """Hand the Raft port exactly one TLS 1.2 cipher and report whether it was accepted.
+
+    Reads the negotiated cipher rather than the exit status, because s_client also
+    reports a verification failure for the self-signed peer certificate.
+    """
+    result = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -connect 127.0.0.1:9234 -tls1_2 -cipher {cipher} "
+            f"</dev/null 2>&1 || true",
+        ]
+    )
+    return f"Cipher is {cipher}" in result
+
+
+def check_cipher_list_is_enforced(ssl_conf_file, allowed_cipher, excluded_cipher):
+    stop_all_clickhouse()
+    for node in nodes:
+        setupSsl(node, "WithoutPassPhrase", None, ssl_conf_file)
+
+    log_anchors = get_log_anchors()
+    start_all_clickhouse()
+    wait_for_raft_ssl_listener(nodes[0], log_anchors[nodes[0].name])
+
+    # The configured value keeps its surrounding whitespace all the way to OpenSSL, so this
+    # arm only means something if it is still padded here. The bytes are compared as hex
+    # because a newline is rendered as a two-character escape sequence in TSV output, and
+    # because the client appends a record separator of its own.
+    configured_hex = nodes[0].query(
+        "SELECT hex(value) FROM system.server_settings "
+        "WHERE name = 'openSSL.server.cipherList'"
+    )
+    configured_hex = configured_hex.strip()
+    assert configured_hex.startswith("0A") and configured_hex.endswith("20"), (
+        "fixture is not armed: cipherList reached the server without the surrounding "
+        f"whitespace this arm needs: {configured_hex}"
+    )
+
+    assert offer_single_cipher(nodes[0], allowed_cipher)
+    assert not offer_single_cipher(nodes[0], excluded_cipher)
+
+    run_test()
+
+
+def check_rejected_cipher_list(ssl_conf_file):
+    stop_all_clickhouse()
+    for node in nodes:
+        setupSsl(node, "WithoutPassPhrase", None, ssl_conf_file)
+
+    log_anchors = get_log_anchors()
+    nodes[0].start_clickhouse(expected_to_fail=True)
+
+    nodes[0].wait_for_log_line(
+        CIPHER_LIST_REJECTED_LOG, look_behind_lines=f"+{log_anchors[nodes[0].name]}"
+    )
+
+    # The listener is never brought up, so the Keeper port stays closed.
+    assert not nodes[0].contains_in_log(
+        RAFT_SSL_LISTENER_LOG, from_host=True, filename="clickhouse-server.log"
+    )
+
+
 def test_secure_raft_works(started_cluster):
     check_valid_configuration("WithoutPassPhrase", None)
 
@@ -269,4 +334,26 @@ def test_secure_raft_works_with_password(started_cluster):
 def test_secure_raft_works_with_cipher_list(started_cluster):
     check_valid_configuration(
         "WithoutPassPhrase", None, ssl_conf_file="configs/ssl_conf_cipher.yml"
+    )
+
+
+def test_secure_raft_works_with_padded_cipher_list(started_cluster):
+    check_cipher_list_is_enforced(
+        ssl_conf_file="configs/ssl_conf_cipher_padded.yml",
+        allowed_cipher="ECDHE-RSA-AES256-GCM-SHA384",
+        excluded_cipher="AES128-SHA",
+    )
+
+
+def test_secure_raft_works_with_tls13_only_cipher_list(started_cluster):
+    check_valid_configuration(
+        "WithoutPassPhrase",
+        None,
+        ssl_conf_file="configs/ssl_conf_cipher_tls13_only.yml",
+    )
+
+
+def test_secure_raft_rejects_unlexable_cipher_list(started_cluster):
+    check_rejected_cipher_list(
+        ssl_conf_file="configs/ssl_conf_cipher_unlexable.yml",
     )

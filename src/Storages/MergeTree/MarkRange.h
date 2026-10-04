@@ -52,6 +52,8 @@ struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMe
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
 
+using MarkRangesPtr = std::shared_ptr<const MarkRanges>;
+
 /** Get max range.end from ranges.
  */
 size_t getLastMark(const MarkRanges & ranges);

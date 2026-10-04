@@ -1,0 +1,107 @@
+#!/usr/bin/expect -f
+
+# The `psql`-style `\d` of the interactive client expands to a listing of the tables when it is used
+# without an argument, and to a description of a table when a table name is given - which is how
+# `\d` behaves in `psql`, and used to be a syntax error here (issue #118180).
+# An argument that continues the listing query instead - `\d FROM system`, `\d LIKE 'on%'` - is
+# still a listing.
+# In interactive mode the client echoes the query it is about to run, so what each `\d` expanded to
+# is asserted directly, and the output of the query proves it ran.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+# `match_max` without `-d` sets the buffer of the *current* spawn id, and nothing is spawned yet,
+# so without it the client below keeps expect's 2000-byte default - far less than one `\l` listing
+# of a shared server, whose oldest part expect then discards while matching.
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# `replxx` treats a `\r` that arrives in the same read as the characters before it as a newline
+# inside one input instead of as a submission - on a loaded machine the whole `send` is waiting in
+# the terminal by the time the client reads it - and the next input would then be appended to this
+# one. Every input is therefore typed first, awaited in its echo, which is the proof that the line
+# editor has consumed it, and only then submitted with a `\r` of its own. Awaiting the echo also
+# separates the input from the output: what is asserted afterwards is the answer of the client.
+proc type_and_submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+type_and_submit {CREATE TABLE d_command (col_alpha UInt64, col_beta String) ENGINE = Memory}
+expect ":) "
+
+# ─── A bare `\d` lists the tables, with and without the `;` of a ClickHouse user ───
+type_and_submit {\d}
+expect -ex "SHOW TABLES"
+expect "d_command"
+expect ":) "
+
+type_and_submit {\d;}
+expect -ex "SHOW TABLES"
+expect "d_command"
+expect ":) "
+
+# ─── `\d <table>` describes that table ───
+type_and_submit {\d d_command}
+expect -ex "DESCRIBE TABLE d_command"
+expect "col_alpha"
+expect "UInt64"
+expect ":) "
+
+type_and_submit {\d d_command;}
+expect -ex "DESCRIBE TABLE d_command"
+expect "col_beta"
+expect ":) "
+
+# A name that has to be quoted - because it is spelled as one of the clauses of the listing query -
+# is a table name all the same.
+type_and_submit {CREATE TABLE `format` (col_gamma UInt64) ENGINE = Memory}
+expect ":) "
+type_and_submit {\d `format`}
+expect "col_gamma"
+expect ":) "
+
+# The table is described by the server, so a missing one is reported as such instead of being a
+# syntax error in a listing query.
+type_and_submit {\d no_such_table_05098}
+expect -ex "(UNKNOWN_TABLE)"
+expect ":) "
+
+# ─── An argument that continues the listing query keeps the listing ───
+type_and_submit {\d FROM system LIKE 'on%'}
+expect -ex "SHOW TABLES FROM system LIKE 'on%'"
+expect "one"
+expect ":) "
+
+# ─── The other `psql`-style commands are unaffected ───
+type_and_submit {\l}
+expect -ex "SHOW DATABASES"
+expect "system"
+expect ":) "
+
+type_and_submit {\c system}
+expect -ex "USE system"
+expect ":) "
+type_and_submit {SELECT currentDatabase()}
+expect "system"
+expect ":) "
+
+send -- "\4"
+expect eof

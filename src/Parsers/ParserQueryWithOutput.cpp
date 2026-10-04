@@ -25,13 +25,12 @@
 #include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
+#include <Parsers/Access/ParserCreateTokenQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -48,6 +47,7 @@ namespace DB
 
 static bool parseShowCreateAccessEntityQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
 static bool parseShowAccessQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+static bool parseCreateTokenQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
 
 #else
 
@@ -68,6 +68,12 @@ static bool parseShowAccessQuery(IParser::Pos & pos, ASTPtr & query, Expected & 
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected);
+}
+
+static bool parseCreateTokenQuery(IParser::Pos & pos, ASTPtr & query, Expected & expected)
+{
+    ParserCreateTokenQuery create_token_p;
+    return create_token_p.parse(pos, query, expected);
 }
 
 #endif
@@ -113,6 +119,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || describe_cache_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
         || show_processlist_p.parse(pos, query, expected)
+        || parseCreateTokenQuery(pos, query, expected) /// should be before `create_p`
         || create_p.parse(pos, query, expected)
         || alter_p.parse(pos, query, expected)
         || rename_p.parse(pos, query, expected)
@@ -259,14 +266,11 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserQueryWithOutput::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementQueryWithOutput(StatementFactory & factory)
-{
-    factory.registerStatement("FORMAT",
+    documentation["FORMAT"] =
     {
         .description = R"DOCS_MD(
 ClickHouse supports a wide range of [serialization formats](/reference/formats/index) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
@@ -286,9 +290,9 @@ SELECT ... FORMAT format
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
-    });
+    };
 
-    factory.registerStatement("INTO OUTFILE",
+    documentation["INTO OUTFILE"] =
     {
         .description = R"DOCS_MD(
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
@@ -332,7 +336,9 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FORMAT", "INSERT INTO"},
-    });
+    };
+
+    return documentation;
 }
 
 }

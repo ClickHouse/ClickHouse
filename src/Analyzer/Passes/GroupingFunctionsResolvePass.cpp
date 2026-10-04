@@ -14,6 +14,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/HashUtils.h>
@@ -181,8 +182,11 @@ public:
 
         if (group_by_kind != GroupByKind::ORDINARY)
         {
+            /// This column is materialized by the aggregation step, it does not originate from any table
+            /// expression, so its source is intentionally left empty. It is the only column node allowed
+            /// to have no source; see `ColumnNode::mayHaveNoSource`.
             TableExpressionNodeWeakPtr column_source;
-            auto grouping_set_column = NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()};
+            auto grouping_set_column = NameAndTypePair{String(ColumnNode::GROUPING_SET_COLUMN_NAME), std::make_shared<DataTypeUInt64>()};
             auto grouping_set_argument_column = std::make_shared<ColumnNode>(std::move(grouping_set_column), std::move(column_source));
             function_arguments.insert(function_arguments.begin(), std::move(grouping_set_argument_column));
         }
@@ -221,8 +225,12 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
-            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
-            query_node_typed.setIsGroupByWithGroupingSets(false);
+            /// Without aggregate functions, flattening `GROUPING SETS (())` would leave no GROUP BY, so the query would not aggregate at all.
+            if (!grouping_set_list_node_typed.getNodes().empty() || hasAggregateFunctionNodes(query_node))
+            {
+                query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
+                query_node_typed.setIsGroupByWithGroupingSets(false);
+            }
         }
 
         if (query_node_typed.isGroupByWithGroupingSets())
