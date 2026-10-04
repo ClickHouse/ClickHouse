@@ -801,15 +801,30 @@ class Runner:
                     uid = os.getuid()
                     gid = os.getgid()
                     chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                    Shell.run(chown_cmd)
+                    if Shell.run(chown_cmd) != 0:
+                        # The docker daemon can go away together with the job container.
+                        Shell.run(f"sudo -n chown -R {uid}:{gid} {Settings.TEMP_DIR}")
 
-                self._finalize_job_result(
+                result = self._finalize_job_result(
                     job,
                     process,
                     exit_code,
                     host_metrics,
                     workflow.enable_exit_code_result,
                 )
+                if (
+                    result.is_ok()
+                    and result.is_completed_by_job()
+                    and not process.timeout_exceeded
+                    and self._is_docker_daemon_death(
+                        exit_code, process.get_latest_log(max_lines=20)
+                    )
+                ):
+                    # `complete_job` exits 0 on an OK verdict; the CLI lost that exit code with the daemon.
+                    print(
+                        "NOTE: docker daemon went away after the job completed - keep its result"
+                    )
+                    exit_code = 0
         finally:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.
