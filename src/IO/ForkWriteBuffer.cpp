@@ -30,11 +30,15 @@ void ForkWriteBuffer::nextImpl()
         for (auto it = sources.begin() + 1; it != sources.end(); ++it)
         {
             auto & buffer = *it;
-            buffer->write(source_buffer->buffer().begin(), source_buffer->offset());
+            buffer->write(
+                source_buffer->buffer().begin() + secondary_buffer_offset,
+                source_buffer->offset() - secondary_buffer_offset);
             buffer->next();
         }
         source_buffer->next();
         set(sources.front()->buffer().begin(), sources.front()->buffer().size());
+        secondary_buffer_offset = source_buffer->offset();
+        nextimpl_working_buffer_offset = secondary_buffer_offset;
     }
     catch (Exception & exception)
     {

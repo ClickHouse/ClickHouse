@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -65,6 +66,11 @@ private:
     QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;
+
+    /// Set by cancel(). Execution starts lazily on the first pull(), so a cancellation that
+    /// arrives before that must be remembered - otherwise a later pull() would start the
+    /// already-cancelled query.
+    std::atomic_bool is_cancelled = false;
 
     std::function<bool()> cancel_callback;
     uint64_t interactive_timeout_ms = 0;
