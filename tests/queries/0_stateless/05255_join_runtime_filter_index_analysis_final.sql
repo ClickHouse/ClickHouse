@@ -2,8 +2,7 @@
 -- describes the rows stored in it, not the rows that survive the merge, so pruning by the
 -- probe key would let a superseded row win.
 
-DROP TABLE IF EXISTS final_fact;
-DROP TABLE IF EXISTS final_dim;
+SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -33,8 +32,20 @@ INSERT INTO final_fact SELECT number + 1000, 1, 99999 FROM numbers(1000);
 INSERT INTO final_fact SELECT number + 1000, 2, 7 FROM numbers(1000);
 INSERT INTO final_dim VALUES (7);
 
-SELECT count() FROM final_fact AS f FINAL INNER JOIN final_dim AS d ON f.k = d.k;
-SELECT count() FROM final_fact AS f INNER JOIN final_dim AS d ON f.k = d.k;
+SELECT count() FROM final_fact AS f FINAL INNER JOIN final_dim AS d ON f.k = d.k SETTINGS log_comment = '05255_final';
+SELECT count() FROM final_fact AS f INNER JOIN final_dim AS d ON f.k = d.k SETTINGS log_comment = '05255_no_final';
+
+-- Control: the non-FINAL read of the same data must prune, otherwise the FINAL count proves nothing.
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    log_comment,
+    ProfileEvents['RuntimeFilterGranulesConsidered'] > 0 AS granules_considered,
+    ProfileEvents['RuntimeFilterGranulesDropped'] > 0 AS granules_dropped
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05255_final', '05255_no_final')
+    AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
+ORDER BY log_comment;
 
 DROP TABLE final_fact;
 DROP TABLE final_dim;
