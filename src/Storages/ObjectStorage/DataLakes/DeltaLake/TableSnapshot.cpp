@@ -1060,6 +1060,13 @@ Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
     return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
 }
 
+DB::NameSet TableSnapshot::getUtcAdjustedTimestampColumns(const DB::Names & columns) const
+{
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    return DeltaLake::getUtcAdjustedTimestampColumns(state->snapshot.get(), columns);
+}
+
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
     std::lock_guard lock(mutex);
