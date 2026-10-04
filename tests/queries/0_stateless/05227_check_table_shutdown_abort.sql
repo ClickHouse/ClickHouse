@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest
 -- A replica that has lost its Keeper session enters partial shutdown, and `checkDataNext` then throws
 -- `ABORTED` without reading anything. That was turned into a failed check result with an empty part
 -- path, so `CHECK TABLE ... SETTINGS check_query_single_value_result = 1` answered 0 - the value that
