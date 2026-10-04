@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include <Core/Block_fwd.h>
@@ -91,6 +92,22 @@ public:
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
 
+    /// Whether this format can deliver query result previews (see `QueryResultPreview.h`) to the
+    /// client. Preview emitters stay dormant when the format cannot (see
+    /// `QueryPipeline::complete`); preview chunks reaching a format anyway are dropped.
+    /// By default previews can be written only under a framing format, as `preview` packets, and
+    /// only when a creator of preview formatters is set (see `setQueryResultPreviewFormatCreator`).
+    virtual bool canWriteQueryResultPreviews() const { return framing != nullptr && query_result_preview_format_creator != nullptr; }
+
+    /// Creates a fresh instance of this output format (the same format, header and settings) over
+    /// the given buffer. Every query result preview is rendered by its own fresh instance, which is
+    /// finalized before the `preview` packet boundary: many formats complete their document only in
+    /// `finalizeImpl` (e.g. the closing brace of `JSON`, the footer of `Parquet`, the last batch of
+    /// `Arrow`) or accumulate state across chunks (e.g. `Hash`), so rendering a preview with this
+    /// instance would either produce an incomplete document or leak the preview into the main output.
+    using QueryResultPreviewFormatCreator = std::function<std::shared_ptr<IOutputFormat>(WriteBuffer &)>;
+    void setQueryResultPreviewFormatCreator(QueryResultPreviewFormatCreator creator) { query_result_preview_format_creator = std::move(creator); }
+
     virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
 
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
@@ -179,6 +196,14 @@ protected:
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
+
+    /// Handles a chunk annotated as a query result preview (see `QueryResultPreview.h`) out of
+    /// band: previews must not affect `result_rows`/`result_bytes` or the main output. The default
+    /// implementation renders the preview as a self-contained document, with a fresh formatter (see
+    /// `setQueryResultPreviewFormatCreator`), into a `preview` packet of the framing format, and
+    /// drops the chunk when previews cannot be written or the main output has already started (a
+    /// late preview is stale anyway - previews are best effort).
+    virtual void consumeQueryResultPreview(Chunk chunk);
     virtual void finalizeImpl() {}
     virtual void finalizeBuffers() {}
     virtual void writePrefix() {}
@@ -263,6 +288,8 @@ protected:
     std::mutex writing_mutex;
 
     std::shared_ptr<IFramingFormat> framing;
+
+    QueryResultPreviewFormatCreator query_result_preview_format_creator;
 
 private:
     /// Write the postponed progress update (to the framing format if it is set), under the writing mutex.

@@ -1,0 +1,8 @@
+--- the preview can be cleared without waiting for the real result
+1
+--- an empty preview packet clears the previous preview
+1
+--- an exception clears the preview left by the failed query
+1
+--- the real result is never cleared as a preview
+1

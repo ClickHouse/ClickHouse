@@ -30,7 +30,9 @@ struct FormatSettings;
 /// Packet that could be received from server.
 struct Packet
 {
-    UInt64 type = Protocol::Server::MAX; // default value has to be invalid
+    /// The default value has to be invalid: `MAX` itself is the highest valid packet type
+    /// (which some packet switches ignore silently), so one past it is used.
+    UInt64 type = Protocol::Server::MAX + 1;
 
     Block block;
     std::unique_ptr<Exception> exception;

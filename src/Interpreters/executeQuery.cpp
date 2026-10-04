@@ -4516,6 +4516,14 @@ void executeQuery(
                     output_format_settings);
 
                 output_format->setFraming(framing);
+
+                /// Every query result preview is rendered by a fresh, finalized instance of the format
+                /// (see `IOutputFormat::setQueryResultPreviewFormatCreator`).
+                output_format->setQueryResultPreviewFormatCreator(
+                    [format_name, preview_header = materializeBlock(header), context, output_format_settings](WriteBuffer & buf)
+                    {
+                        return FormatFactory::instance().getOutputFormat(format_name, buf, preview_header, context, output_format_settings);
+                    });
                 setFramingQueues(*framing, context, framing_queues);
 
                 /// Finalize the framing format ourselves after the query-finish logging (below),

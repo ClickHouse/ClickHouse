@@ -38,6 +38,9 @@ public:
 
     String getName() const override { return "ExpressionTransform"; }
 
+    /// Stateless with respect to preview chunks (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:

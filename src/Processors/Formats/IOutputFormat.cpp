@@ -5,6 +5,7 @@
 #include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include <Processors/QueryResultPreview.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
@@ -117,9 +118,35 @@ void IOutputFormat::writeFramingPayloadBoundary(FramedPacketKind kind)
     reattachBuffers();
 }
 
+void IOutputFormat::consumeQueryResultPreview(Chunk chunk)
+{
+    /// A preview can be rendered only under a framing format, and only while the main output has
+    /// not started yet: after the main prefix is written, a preview packet would interleave with the
+    /// main document, and such a preview is stale anyway (previews precede the result).
+    if (!framing || !query_result_preview_format_creator || finalized || !need_write_prefix)
+        return;
+
+    framing->beginPayload(FramedPacketKind::Preview);
+
+    /// The preview is rendered by a fresh formatter, which is finalized so that the payload is a
+    /// complete document of the format; this formatter and its state are not touched.
+    auto preview_format = query_result_preview_format_creator(out);
+    preview_format->write(getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns()));
+    preview_format->finalize();
+
+    writeFramingPayloadBoundary(FramedPacketKind::Preview);
+}
+
 void IOutputFormat::work()
 {
     std::lock_guard lock(writing_mutex);
+
+    if (has_input && current_block_kind == Main && isQueryResultPreview(current_chunk))
+    {
+        consumeQueryResultPreview(std::move(current_chunk));
+        has_input = false;
+        return;
+    }
 
     writeProgressIfNeededUnlocked();
 

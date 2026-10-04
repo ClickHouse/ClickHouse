@@ -1,0 +1,10 @@
+--- max_bytes_before_external_distinct = 10737418240
+ExternalDistinctTransform
+has previews
+previews are deduplicated
+{"packet":"data","data":"[250000]\n"}
+--- max_bytes_before_external_distinct = 1
+ExternalDistinctTransform
+has previews
+previews are deduplicated
+{"packet":"data","data":"[250000]\n"}
