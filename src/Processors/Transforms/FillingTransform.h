@@ -79,7 +79,8 @@ private:
         MutableColumnRawPtrs res_fill_columns,
         MutableColumnRawPtrs res_interpolate_columns,
         MutableColumnRawPtrs res_sort_prefix_columns,
-        MutableColumnRawPtrs res_other_columns);
+        MutableColumnRawPtrs res_other_columns,
+        bool no_original_rows_seen);
     bool generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns);
 
     void insertFromFillingRow(
@@ -109,6 +110,7 @@ private:
     Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
     const bool use_with_fill_by_sorting_prefix;
+    const bool null_placement_decidable;
 
     /// Used to enforce max_execution_time (and observe KILL QUERY) while generating filling rows,
     /// because a single WITH FILL range can expand into billions of rows within one transform() call
