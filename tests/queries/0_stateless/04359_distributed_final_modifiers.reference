@@ -7,3 +7,15 @@ PREWHERE read distributes	1
 delete local	64000	2560320000
 delete distributed	64000	2560320000
 delete read distributes	1
+lazy WHERE local	133334	26667400003
+lazy WHERE distributed buckets 2	133334	26667400003
+lazy WHERE distributed buckets 4	133334	26667400003
+lazy WHERE distributed buckets 8	133334	26667400003
+lazy WHERE read distributes	1
+lazy PREWHERE distributed	133334	26667400003
+lazy PREWHERE read distributes	1
+lazy no filter local	400000	80001800000
+lazy no filter distributed	400000	80001800000
+lazy off distributed	133334	26667400003
+lazy local still rewrites	1
+lazy local result	26667	1066786668

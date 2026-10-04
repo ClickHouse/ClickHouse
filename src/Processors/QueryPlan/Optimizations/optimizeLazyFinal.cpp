@@ -389,6 +389,16 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (!reading_step->isQueryWithFinal())
         return;
 
+    /// A distributed read (make_distributed_plan) was already pinned to the coordinator's per-bucket
+    /// mark ranges by an earlier optimization pass. Those ranges are chosen so that a deduplication
+    /// group stays inside one bucket, they travel in the `read_bucket` task parameter rather than
+    /// inside the step, and initializePipeline only consumes them while distributed_read_bucket_count
+    /// is non-zero. The replacement reads built below carry no bucket state, so every task would read
+    /// all parts and return the whole deduplicated result. Keep the read whole; the same reasoning
+    /// already disables the projection optimizations for distributed reads.
+    if (reading_step->getDistributedReadBucketCount() > 0)
+        return;
+
     /// Only ReplacingMergeTree is supported.
     const auto & data = reading_step->getMergeTreeData();
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
