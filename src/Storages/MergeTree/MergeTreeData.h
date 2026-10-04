@@ -44,6 +44,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -714,6 +715,9 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// Taken no later than `parts`. Null for a table without a unique key.
+        ReadSnapshotPtr uk_read_snapshot;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -1103,6 +1107,8 @@ public:
     size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes);
 
     size_t clearEmptyParts();
+
+    ReadSnapshotPtr makeUniqueKeyReadSnapshot(const ContextPtr & local_context) const;
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
@@ -1916,7 +1922,7 @@ protected:
     }
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const ReadSnapshot * uk_read_snapshot = nullptr) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -2270,6 +2276,8 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    ReadSnapshotPtr makeUniqueKeyReadSnapshot(CSN snapshot_csn) const;
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;
