@@ -2,6 +2,7 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -29,6 +31,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -1501,6 +1504,13 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
     SCOPE_EXIT({ in_insert_select_suitability_probe = false; });
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
+
+    /// Each replica runs the whole SELECT, so its FROM must be a table the replicas read in coordination.
+    const auto * query_node = interpreter.getQueryTree()->as<QueryNode>();
+    const auto * table_node = query_node ? query_node->getJoinTreeNode()->as<TableNode>() : nullptr;
+    if (!table_node || !canUseTableForParallelReplicas(*table_node, query_node->getContext()))
+        return false;
+
     auto & plan = interpreter.getQueryPlan();
 
     /// Only the query-based step is looked for. The caller pins `parallel_replicas_plan_based` off
@@ -1684,8 +1694,13 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
-        const auto & query_tree = analyzer.getQueryTree();
-        auto select_ast = query_tree->toAST();
+        auto query_tree = analyzer.getQueryTree()->clone();
+        removeGroupingFunctionSpecializations(query_tree);
+        /// The analyzed tree has no `WITH` clause, so CTE references are written out with their definitions.
+        auto select_ast = query_tree->toAST({.set_subquery_cte_name = false});
+        /// The replicas run the query in their own default database.
+        AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).substituteDatabaseInTableFunctions(*select_ast);
+        deduplicateProjectionAliasesRecursive(select_ast);
 
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
