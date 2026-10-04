@@ -19,9 +19,7 @@ Antes de partir para a configuração do acesso seguro ao S3, é importante ente
 Essa abordagem permite que os clientes gerenciem todo o acesso aos seus buckets do S3 em um único lugar (a política do IAM da função assumida), sem precisar revisar todas as políticas de bucket para adicionar ou remover acessos.
 Na seção abaixo, você aprenderá a configurar isso.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## Obtenha o ARN da função do IAM do seu serviço ClickHouse
-</div>
+## Obtenha o ARN da função do IAM do seu serviço ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
 
 1. Faça login na sua conta do ClickHouse Cloud.
 
@@ -36,7 +34,7 @@ Na seção abaixo, você aprenderá a configurar isso.
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtendo o ARN da função do IAM do serviço ClickHouse" border />
 
 <div id="setting-up-iam-assume-role">
-  ## Configurar a assunção de função do IAM
+  ## Configurar a assunção de função do IAM {#setting-up-iam-assume-role}
 </div>
 
 A assunção de função do IAM pode ser configurada de duas maneiras:
@@ -45,7 +43,7 @@ A assunção de função do IAM pode ser configurada de duas maneiras:
 * [Criando manualmente uma função do IAM](#option-2-manually-create-iam-role)
 
 <div id="option-1-deploying-with-cloudformation-stack">
-  ### Implantação com stack do CloudFormation
+  ### Implantação com stack do CloudFormation {#option-1-deploying-with-cloudformation-stack}
 </div>
 
 1. Faça login na sua conta da AWS no navegador com um usuário do IAM que tenha permissão para criar e gerenciar função do IAM.
@@ -84,7 +82,7 @@ A assunção de função do IAM pode ser configurada de duas maneiras:
 <Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Saída da stack do CloudFormation mostrando o ARN da função do IAM" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### Criar função do IAM manualmente
+  ### Criar função do IAM manualmente {#option-2-manually-create-iam-role}
 </div>
 
 1. Faça login na sua conta da AWS no navegador com um usuário do IAM que tenha permissão para criar e gerenciar funções do IAM.
@@ -140,12 +138,10 @@ A assunção de função do IAM pode ser configurada de duas maneiras:
 
 4. Copie o novo **ARN da função do IAM** após a criação, pois ele é necessário para acessar seu bucket do S3.
 
-<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
-  ## Acesse seu bucket do S3 com a role ClickHouseAccess
-</div>
+## Acesse seu bucket do S3 com a Função ClickHouseAccess {#access-your-s3-bucket-with-the-clickhouseaccess-role}
 
 O ClickHouse Cloud permite especificar `extra_credentials` como parte da função de tabela S3.
-Abaixo está um exemplo de como executar uma consulta usando a role recém-criada, copiada acima.
+Abaixo está um exemplo de como executar uma consulta usando a Função recém-criada, copiada acima.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'))
@@ -153,6 +149,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 Abaixo está um exemplo de consulta que usa `role_session_name` como segredo compartilhado para consultar dados de um bucket.
 Se `role_session_name` não estiver correto, essa operação falhará.
+Como pode atuar como um segredo compartilhado, o ClickHouse mascara o valor de `role_session_name` como `[HIDDEN]` em `system.query_log`, em `SHOW CREATE TABLE` e em qualquer outro lugar onde o texto da consulta seja exibido, da mesma forma que faz com `external_id`.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
@@ -163,9 +160,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   Para mais informações, consulte [os preços do S3](https://aws.amazon.com/s3/pricing/)
 </Note>
 
-<div id="advanced-action-control">
-  ## Controle avançado de ações
-</div>
+## Controle avançado de ações {#advanced-action-control}
 
 Para um controle de acesso mais rigoroso, é possível restringir a política do bucket para aceitar apenas solicitações originadas dos endpoints da VPC do ClickHouse Cloud usando a [condição `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obter os endpoints da VPC da sua região do ClickHouse Cloud, abra um terminal e execute:
 

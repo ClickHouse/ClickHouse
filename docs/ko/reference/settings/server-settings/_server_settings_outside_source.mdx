@@ -852,9 +852,9 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 </logger>
 ```
 
-**수준별 재정의**
+**레벨별 재정의**
 
-개별 로그 이름의 로그 수준은 별도로 재정의할 수 있습니다. 예를 들어, 로거 &quot;Backup&quot;과 &quot;RBAC&quot;의 모든 메시지가 출력되지 않도록 설정할 수 있습니다.
+개별 로그 이름의 로그 레벨은 별도로 재정의할 수 있습니다. 예를 들어, 로거 &quot;Backup&quot;과 &quot;RBAC&quot;의 모든 메시지가 출력되지 않도록 설정할 수 있습니다.
 
 ```xml
 <logger>
@@ -879,6 +879,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 
 `<syslog>`의 키:
 
-| Key        | Description                                                                                                                                                                                                       |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` 포맷의 syslog 주소입니다. 생략하면 로컬 데몬을 사용합니다.                                                                                                                                                              |
-| `hostname` | 로그를 전송하는 호스트의 호스트명입니다(선택 사항).                                                                                                                                                                                     |
-| `facility` | syslog [facility 키워드](https://en.wikipedia.org/wiki/Syslog#Facility)입니다. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` 등과 같이 `LOG_` 접두사를 붙인 대문자로 지정해야 합니다. 기본값은 `address`를 지정한 경우 `LOG_USER`이고, 그렇지 않으면 `LOG_DAEMON`입니다. |
-| `format`   | 로그 메시지 포맷입니다. 가능한 값은 `bsd` 및 `syslog`입니다.                                                                                                                                                                         |
+| Key           | Description                                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` 포맷의 syslog 주소입니다. 생략하면 로컬 데몬을 사용합니다.                                                                                                                                                                            |
+| `hostname`    | 로그를 전송하는 호스트의 호스트명입니다(선택 사항).                                                                                                                                                                                                   |
+| `facility`    | syslog [facility 키워드](https://en.wikipedia.org/wiki/Syslog#Facility)입니다. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` 등과 같이 &quot;LOG&#95;&quot; 접두사를 붙인 대문자로 지정해야 합니다. 기본값은 `address`를 지정한 경우 `LOG_USER`이고, 그렇지 않으면 `LOG_DAEMON`입니다. |
+| `format`      | 로그 메시지 포맷입니다. 가능한 값은 `bsd` 및 `syslog`입니다.                                                                                                                                                                                       |
+| `programname` | syslog 메시지에 사용되는 프로그램 이름입니다. 로컬 syslog에서는 ident로, `format=syslog`인 원격 syslog에서는 `APP-NAME`으로 사용됩니다. `format=bsd`에서는 적용되지 않습니다. 공백 없이 출력 가능한 ASCII 문자 1~48자로 지정해야 합니다. 기본값은 로컬 syslog의 경우 명령 이름이며, 원격 syslog의 경우 설정되지 않습니다.      |
 
 **로그 포맷**
 
@@ -925,7 +927,7 @@ JSON 로깅 지원을 활성화하려면 다음 코드 조각을 사용하십시
 <logger>
     <formatting>
         <type>json</type>
-        <!-- 채널별(log, errorlog, console, syslog)로 설정하거나, 모든 채널에 전역으로 적용할 수 있습니다(전역 적용 시에는 생략하십시오). -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
@@ -1264,6 +1266,33 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+서버가 실행되는 클라우드 가용 영역(availability zone)과 리전입니다. 가용 영역은 ZooKeeper 클라이언트가 동일한 영역의 호스트를 우선 선택하는 데 사용되며([zookeeper](#zookeeper) 섹션의 `prefer_local_availability_zone`), ClickHouse Keeper에서도 사용되어 `/keeper/availability_zone` 노드에 게시됩니다.
+
+`placement` 섹션이 없으면 가용 영역과 리전은 빈 값이 됩니다.
+
+다음 설정을 사용할 수 있습니다.
+
+| 설정                            | 설명                                                                                                     | 기본값                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `use_imds`                    | 클라우드 제공업체의 인스턴스 메타데이터 서비스에서 가용 영역을 가져옵니다. AWS를 먼저 시도한 후 GCP를 시도합니다. 활성화하면 다른 모든 설정은 무시되며 리전은 빈 값이 됩니다. | `false`                              |
+| `availability_zone`           | 가용 영역입니다.                                                                                              | 빈 값                                  |
+| `availability_zone_from_file` | `availability_zone`이 비어 있을 때 가용 영역을 읽어올 파일입니다. 파일이 없으면 가용 영역은 빈 값이 됩니다.                                | `/run/instance-metadata/node-zone`   |
+| `region`                      | 리전입니다.                                                                                                 | 빈 값                                  |
+| `region_from_file`            | `region`이 비어 있을 때 리전을 읽어올 파일입니다. 파일이 없으면 리전은 빈 값이 됩니다.                                                 | `/run/instance-metadata/node-region` |
+
+placement 설정은 서버 시작 시 한 번만 읽습니다.
+
+**예시**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1612,7 +1641,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 
 시스템 로그 테이블과 함께 `all_...` 테이블(`system.query_log`에는 `system.all_query_log`, `system.text_log`에는 `system.all_text_log` 등)을 생성하도록 요청합니다. 이러한 테이블은 해당 로그 테이블과 그 교체된 버전(`query_log_0`, `query_log_1`, ...) 및/또는 클러스터 내 모든 레플리카의 동일한 테이블을 통합하며, `clusterAllReplicas(default, merge(system, '^query_log'))` 같은 구문을 기억하지 않아도 한 번에 모두 쿼리할 수 있습니다.
 
-이 섹션은 선택 사항입니다. 지정하는 경우 다음 설정 중 하나 이상을 지정해야 합니다.
+이 섹션은 선택 사항입니다. 기본 서버 설정 파일 `config.xml`에는 `merge_rotated_tables`가 활성화된 상태로 이 섹션이 포함되어 있으므로, 기본 서버에서는 각 로그가 처음 플러시될 때(또는 `prepare_system_log_tables_on_startup`이 활성화된 경우 서버 시작 시) `all_...` 테이블이 자동으로 생성됩니다. 단, `cluster` 설정은 명시적으로 구성해야 합니다. `all_...` 이름 중 하나로 이미 존재하지만 이 기능으로 생성되지 않은 테이블(예: 데이터가 들어 있는 수동 생성 테이블)은 절대 대체되지 않습니다. 해당 테이블은 그대로 유지되고 서버 로그에 경고가 기록되며, 그 테이블이 삭제되거나 이름이 변경되면 다음 로그 플러시 시 통합 테이블이 생성됩니다. 이 기능으로 생성된 테이블은 주석 끝에 있는 표식 문장 `It is safe to drop this table at any time: it will be recreated automatically.`로 식별됩니다. 이 섹션이 있는 경우 다음 설정 중 하나 이상을 지정해야 합니다.
 
 | 설정                     | 설명                                                                                                                                                                 |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1627,9 +1656,9 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
   `cluster` 설정을 사용하면 테이블 정의에서 클러스터를 참조하므로 테이블을 로드하려면 해당 클러스터가 존재해야 합니다. 구성에서 클러스터를 제거하는 경우 `all_...` 테이블도 삭제하십시오(다음 플러시 시 새 구성에 따라 다시 생성됩니다).
 </Note>
 
-<Warning>
-  이 섹션을 활성화하면 `system` 데이터베이스의 `all_...` 이름은 이 기능 전용으로 예약됩니다. 이러한 이름의 사용자 테이블을 두지 마십시오. 섹션을 활성화하기 전에 해당 테이블의 이름을 변경하십시오.
-</Warning>
+<Note>
+  `all_...` 이름 중 하나를 가진 테이블은 `merge` 또는 `clusterAllReplicas` 테이블 함수에서 데이터를 선택하고 주석에 위의 표식 문장이 포함된 경우에만 이 기능으로 생성된 것으로 간주되며, 이때 정의가 예상과 다르면 대체될 수 있습니다. 이 문장을 사용자 테이블의 주석에 복사하지 마십시오.
+</Note>
 
 **예시**
 

@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## join_algorithm
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -23,7 +23,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 여러 알고리즘을 지정할 수 있으며, 특정 쿼리에서는 Kind/엄격성 및 테이블 엔진에 따라 사용 가능한 알고리즘이 선택됩니다.
 
-해시 기반 알고리즘이 디스크로 스필되는지 여부는 이 선택의 일부가 아닙니다. [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)은 모두의 스필 임계값이며(둘 중 하나가 0이 아니면 `enable_adaptive_memory_spill_scheduler`가 메모리 압박 상황에서 조인을 더 일찍 스필할 수 있음), [`max_rows_in_join`](/ko/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_join)은 모두의 하드 한도입니다. 단, `legacy_join_size_limits_trigger_spilling`이 두 한도를 다시 디스크 스필 트리거로 전환하는 경우는 예외입니다. 선택한 값에 따라 조인의 스필 방식이 결정됩니다. `grace_hash`는 첫 번째 블록부터 오른쪽 테이블을 파티션으로 나누며, `hash`와 `parallel_hash`는 메모리에 수집한 뒤 임계값을 초과하면 전환합니다.
+해시 기반 알고리즘의 스필은 `join_algorithm`과 별도로 설정합니다. 모든 해시 기반 알고리즘은 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 및 [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)을 스필 임계값으로 사용합니다.
 
 대부분의 알고리즘은 선택된 경우에만 쿼리에 영향을 줍니다. 그러나 일부 알고리즘은 최종적으로 선택되지 않는 낮은 우선순위의 대체 옵션으로 나열되기만 해도 계획을 변경합니다. 알고리즘을 선택하기 전에 해당 결정이 내려지기 때문입니다. 이러한 영향은 다음 2가지입니다:
 
@@ -37,6 +37,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * grace&#95;hash
 
 [Grace hash 조인](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join)을 사용합니다. Grace hash는 메모리 사용을 제한하면서도 복잡한 조인을 고성능으로 처리할 수 있는 알고리즘 옵션입니다.
+`grace_hash`를 명시적으로 선택하는 것은 주로 진단 용도입니다. 조인 스필을 활성화하려면 대신 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 또는 [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)을 설정하십시오.
 
 `grace_hash`는 첫 번째 블록부터 외부 처리됩니다. `hash`와 `parallel_hash`가 먼저 메모리에 수집한 후 스필 임계값을 초과할 때만 파티션으로 나누는 것과 달리, 오른쪽 테이블을 즉시 파티션으로 나눕니다. 오른쪽 측이 메모리에 맞지 않을 것을 이미 알고 있고 메모리 내 단계를 건너뛰려면 이를 선택하십시오. 스필 임계값 자체는 모든 해시 알고리즘이 사용하는 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)와 동일하며, `legacy_join_size_limits_trigger_spilling`이 켜져 있지 않다면 둘 중 하나가 0이 아니어야 합니다. 임계값이 없으면 `grace_hash`는 목록의 다음 알고리즘으로 넘어가며, 이것만 지정된 경우 거부됩니다.
 
@@ -110,7 +111,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 레거시 값이므로 더 이상 사용하지 마십시오.
 `direct,hash`와 같습니다. 즉, direct 조인과 해시 조인을 이 순서대로 사용하려 시도합니다.
 
-## join_any_take_last_row
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +134,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 * [Join 테이블 엔진](/ko/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ko/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +147,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 * `ASOF` — 정확히 일치하지 않는 시퀀스를 조인할 때 사용합니다.
 * `빈 문자열` — 쿼리에서 `ALL` 또는 `ANY`를 지정하지 않으면 ClickHouse가 예외를 발생시킵니다.
 
-## join_on_disk_max_files_to_merge
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +159,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 
 * 2 이상의 모든 양의 정수.
 
-## join_output_by_rowlist_perkey_rows_threshold
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +167,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 
 해시 조인에서 행 목록으로 출력할지 결정할 때 사용하는, 오른쪽 테이블의 키별 평균 행 수 하한값입니다.
 
-## join_overflow_mode
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +197,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 * [JOIN 절](/ko/reference/statements/select/join)
 * [Join 테이블 엔진](/ko/reference/engines/table-engines/special/join)
 
-## join_use_nulls
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

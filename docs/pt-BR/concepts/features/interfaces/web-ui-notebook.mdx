@@ -1,0 +1,73 @@
+---
+description: 'Documentação do modo notebook da Web SQL UI integrada (`/play`), que transforma uma aba em uma sequência de células de consulta e de texto'
+sidebarTitle: 'Modo notebook da interface web'
+slug: /interfaces/web-ui-notebook
+title: 'Modo notebook da interface web'
+doc_type: 'reference'
+sidebar: false
+---
+
+A Web SQL UI integrada (`play.html`, servida no caminho [`/play`](/pt-BR/concepts/features/interfaces/http) de qualquer porta HTTP do ClickHouse) pode transformar uma aba em um notebook: uma sequência ordenada de células, cada uma contendo uma consulta com seu próprio resultado ou um bloco de texto em Markdown. É o mesmo formato de documento usado pelo Jupyter, Observable, Hex ou Deepnote, com a mesma finalidade: reunir uma cadeia de consultas, e o raciocínio entre elas, em uma única página.
+
+O modo notebook funciona por aba. Uma aba pode ser um notebook enquanto outra continua sendo um editor simples de consulta única, e cada aba mantém seu próprio notebook mesmo após a página ser recarregada.
+
+## Adicionando células {#adding-cells}
+
+Uma aba começa com exatamente uma célula de consulta e tem a mesma aparência do editor simples: sem cabeçalhos, sem a moldura das células e sem nenhum notebook visível. Depois que uma consulta gera um resultado, um botão grande `[+]` aparece logo abaixo dele, propositalmente discreto para não disputar a atenção com o resultado. Ao clicar nele, são exibidos os dois tipos de célula que podem ser adicionados:
+
+* **Query** — uma nova célula de consulta. Ela assume o editor imediatamente, para que você possa começar a digitar.
+* **Text** — uma nova célula Markdown, que abre no modo de edição.
+
+É a adição da segunda célula que ativa o modo notebook nessa aba.
+
+## Cabeçalhos de células {#cell-headers}
+
+A partir da segunda célula, cada célula recebe um cabeçalho que indica sua posição e seu tipo, como `1. Query` ou `2. Text`. As células de consulta também exibem um ponto de status enquanto uma execução está em andamento, e um ponto vermelho se ela falhar; uma célula concluída não recebe nenhuma marcação, já que seu resultado aparece logo abaixo dela.
+
+As ações do cabeçalho aparecem quando o cursor passa sobre a célula ou quando ela está em foco:
+
+| Ação      | Significado                                                                          |
+| --------- | ------------------------------------------------------------------------------------ |
+| `▶`       | Executa esta célula (somente células de consulta)                                    |
+| `✎`       | Edita esta célula: assume o editor ou faz uma célula de texto voltar ao código-fonte |
+| `＋`       | Insere uma nova célula antes desta; a mesma opção entre Query/Text aparece em linha  |
+| `↑` / `↓` | Move a célula para cima ou para baixo                                                |
+| `✕`       | Exclui a célula                                                                      |
+
+Uma aba sempre mantém pelo menos uma célula de consulta, pois é nela que fica o editor compartilhado; por isso, `✕` fica desabilitado na última célula de consulta restante.
+
+## Células de consulta {#query-cells}
+
+Há sempre um único editor de consultas na página — o editor completo, com realce de sintaxe, autocompletar e campos de parâmetros de consulta. No modo notebook, ele fica acoplado à célula de consulta que estiver ativa e só é exibido enquanto estiver com o foco: assim que o foco sai dele, a célula também é recolhida, de modo que um notebook que você está lendo não exibe nenhuma área de texto aberta. Clicar em uma consulta recolhida devolve o editor a ela (movendo-o para lá, caso estivesse em outra célula). Mover o foco dentro do editor — para um campo de parâmetro de consulta ou para uma sugestão de autocompletar — não o recolhe.
+
+Uma célula de consulta recolhida exibe sua consulta em uma única linha: com realce de sintaxe, com sequências de espaços em branco (incluindo indentação e quebras de linha) reduzidas a um único espaço e com o final esmaecido à direita quando não couber. Ela não tem fundo próprio, de modo que uma célula recolhida aparece como texto na página, e não como mais uma caixa de entrada.
+
+O botão `Run`, a linha de progresso e as ações de copiar/baixar saem do cabeçalho da página e ficam acoplados abaixo da consulta em edição, entre ela e seu resultado — junto à execução que descrevem e onde fica evidente como executar aquela célula. Eles pertencem ao editor, portanto aparecem e desaparecem com ele conforme a célula recebe e perde o foco.
+
+No modo notebook, os resultados são exibidos de forma mais compacta: uma fonte menor, com o espaçamento das células ajustado proporcionalmente, e uma tabela com no máximo um quarto da altura da janela de visualização. Arraste a borda inferior de um resultado para aumentar ou diminuir o espaço dele, exatamente como se redimensiona o editor de consultas; o editor Markdown de uma célula de texto tem a mesma alça. A própria tabela é o contêiner de rolagem — vertical e horizontal —, de modo que suas barras de rolagem finas ficam nas próprias bordas da tabela, um resultado longo ou largo não empurra o restante do notebook para baixo na página nem o alarga, e os cabeçalhos de coluna permanecem fixos no topo da tabela durante a rolagem. Como o cabeçalho passa a ficar bem no topo da tabela, o tipo de cada coluna aparece logo abaixo dele, sobre as primeiras linhas, em vez de acima dele, como ocorre em uma tabela rolada junto com a página.
+
+A execução funciona como sempre: `Ctrl/Cmd+Enter` (ou o botão `Run`) executa a consulta que está no editor, ou seja, a da célula ativa. Apenas uma consulta é executada por vez em cada aba; iniciar uma execução em outra célula da mesma aba, ou pressionar `Stop`, encerra a anterior.
+
+As visualizações `Logs` e `Metrics` e os medidores de recursos na linha de progresso pertencem à célula cujo resultado descrevem: cada célula mantém sua própria seleção e seus próprios medidores, e os botões de alternância compartilhados mostram o que a célula ativa produziu. Ao trocar de célula, os logs, as métricas e os medidores daquela célula voltam a ser exibidos. Enquanto uma consulta está em execução, a linha permanece com a célula em que ela está sendo executada — mover o editor para outra célula para escrever a próxima consulta não apaga o progresso em tempo real nem redireciona esses botões de alternância para o resultado da outra célula.
+
+A codificação por cores das colunas, as colunas fixadas e a [estrutura do resultado](/pt-BR/concepts/features/interfaces/web-ui-result-shaping) — a ordenação, os filtros e a página — também pertencem a uma célula: como são definidas sobre um resultado, acompanham esse resultado. Ordenar ou filtrar o resultado de uma célula executa essa célula novamente, levando o editor para ela antes, caso ele estivesse em outra. Uma célula cujo `Run all` produziu várias tabelas compartilha uma única escolha entre elas, e cada célula mantém a sua; o link compartilhado e o histórico do navegador guardam a escolha da célula ativa, enquanto as das demais acompanham suas respectivas células.
+
+## Células de texto {#text-cells}
+
+Uma célula de texto contém Markdown. Enquanto você a edita, a área de texto exibe o código-fonte com os marcadores destacados — títulos, ênfase, trechos de código, links, marcadores de lista e citações em bloco aparecem coloridos, mas não são renderizados —, de modo que você sempre edita o código-fonte. A área de texto se expande conforme o conteúdo.
+
+Sair da área de texto (clicando em outro lugar ou pressionando `Escape` ou `Ctrl/Cmd+Enter`) encerra a edição e a substitui pelo Markdown renderizado. Clicar no texto renderizado retorna ao modo de edição.
+
+As células de texto usam a mesma fonte monoespaçada das consultas nos dois estados, para que o notebook seja lido como um único documento e a fonte não mude bruscamente quando uma célula alterna entre o código-fonte e o resultado renderizado.
+
+Há suporte a títulos, ênfase, código em linha e em blocos delimitados, links e imagens, URLs convertidas automaticamente em links, listas ordenadas e não ordenadas, citações em bloco, linhas horizontais e tabelas com barras verticais. HTML bruto em uma célula de texto é escapado em vez de renderizado, e as URLs de links e imagens ficam restritas a `http`, `https`, `mailto` e destinos relativos — um link relativo comum como `[guide](guide.md)` ou `![pic](images/pic.png)` funciona, enquanto esquemas como `javascript:` ou `data:` e um `//host/...` relativo ao protocolo (que aponta para outra origem, e não para um destino relativo) são mantidos como texto simples.
+
+## Persistência {#persistence}
+
+Todo o notebook de uma aba — cada célula, seu conteúdo e os pequenos snapshots de resultados — é armazenado no IndexedDB junto com o restante do espaço de trabalho e restaurado ao recarregar a página, com o mesmo comportamento de melhor esforço e os mesmos limites de tamanho de resultado descritos em [Web SQL UI](/pt-BR/concepts/features/interfaces/web-sql).
+
+A URL e o histórico do navegador acompanham a célula ATIVA: o fragmento `#` contém a consulta dessa célula, e os botões voltar e avançar navegam entre as células (e abas) que você visitou. Ao compartilhar a URL de um notebook, você compartilha a consulta da célula ativa, e não o notebook inteiro.
+
+Duplicar uma aba duplica o notebook inteiro, sem os resultados.
+
+Salvar as abas como Markdown (pelo botão de salvar na barra de abas) grava todas as células de um notebook, na ordem: cada célula de consulta como um bloco de código delimitado, seguido de seus parâmetros e tabelas de resultados, e cada célula de texto como um bloco de código delimitado com a info string `markdown`. Ao carregar um documento desse tipo, todas as abas são restauradas com todas as suas células; os resultados não são restaurados, portanto as células de consulta carregadas começam sem execução.

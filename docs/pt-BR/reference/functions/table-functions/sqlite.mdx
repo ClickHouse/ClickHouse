@@ -10,31 +10,33 @@ doc_type: 'reference'
 
 Permite consultar dados armazenados em um banco de dados [SQLite](/pt-BR/reference/engines/database-engines/sqlite).
 
-## Sintaxe
+## Sintaxe {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-## Argumentos
+## Argumentos {#arguments}
 
 * `db_path` — Caminho para um arquivo de banco de dados SQLite. [String](/pt-BR/reference/data-types/string).
 * `table_name` — Nome de uma tabela no banco de dados SQLite ou uma consulta passada ao SQLite como está (consulte [Passando uma consulta em vez de um nome de tabela](#passing-a-query)). [String](/pt-BR/reference/data-types/string).
 
-## Valor retornado
+## Valor retornado {#returned-value}
 
 * Um objeto de tabela com as mesmas colunas da tabela `SQLite` original.
 
-## Passando uma consulta em vez de um nome de tabela
+## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
 
-Em vez de um nome de tabela, o segundo argumento pode ser uma consulta `SELECT` passada ao SQLite como está. A estrutura da tabela resultante é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
+Em vez de um nome de tabela, o segundo argumento pode ser uma consulta `SELECT`, que é repassada ao SQLite sem alterações. A estrutura da tabela resultante é inferida a partir do resultado da consulta. O SQLite informa um tipo declarado apenas para uma coluna de resultado que seja uma coluna direta de uma tabela; para uma expressão, um literal ou uma agregação, ele não informa nada. Um tipo declarado que seja mapeado para `String` (veja o [mapeamento de tipos](/pt-BR/reference/engines/database-engines/sqlite#data_types-support)) é usado sem alterações. Uma coluna sem tipo declarado tem seu tipo definido pela classe de armazenamento do seu valor na primeira linha do resultado da consulta: um valor `INTEGER` resulta em `Int64`, um valor `REAL` resulta em `Float64` e qualquer outro valor (`TEXT`, `BLOB`, `NULL`), assim como um resultado vazio, resulta em `String`. Um tipo numérico declarado também é verificado em relação a essa primeira linha, porque o SQLite informa um tipo declarado inclusive para um `SELECT` composto, obtido de um de seus ramos, embora as linhas venham de todos eles. Ele é mantido quando a classe de armazenamento do valor é compatível com ele (`INTEGER` para um tipo inteiro, `INTEGER` ou `REAL` para um tipo de ponto flutuante), e também quando o valor é `NULL` ou o resultado está vazio, já que nenhum dos dois carrega informações de tipo que possam contradizê-lo; caso contrário, o tipo da coluna é definido pela classe de armazenamento, como acontece com uma coluna sem tipo declarado. Portanto, o tipo inferido só pode ser ampliado, nunca reduzido. Inferir uma coluna desse tipo inicia a execução da consulta no SQLite. A primeira linha não é representativa das demais: o SQLite pode retornar uma classe de armazenamento diferente em cada linha (por exemplo, `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`), de modo que uma leitura baseada em consulta é fail-closed para toda coluna lida por meio de um tipo numérico — e não apenas para as que não têm tipo declarado. Um valor cuja classe de armazenamento não corresponda a esse tipo, ou que não possa ser representado exatamente nele (uma célula `INTEGER` com `300` em uma coluna `UInt8`, uma célula `REAL` com `16777217` em uma coluna `Float32`), faz a leitura falhar em vez de ser convertido silenciosamente. Para ler uma coluna com valores de classes de armazenamento mistas, declare-a como `String` ou converta-a para texto na consulta do SQLite. Toda coluna inferida é `Nullable`. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-Essa tabela é somente leitura: não é permitido fazer `INSERT` nela. A mesma sintaxe também é aceita pelo motor de tabela [`SQLite`](/pt-BR/reference/engines/table-engines/integrations/sqlite).
+A passagem de uma consulta é compatível a partir da versão 26.7. O ClickHouse encapsula a consulta em `SELECT ... FROM (<query>)` antes de enviá-la ao SQLite, portanto ela não deve terminar com ponto e vírgula.
+
+Uma tabela desse tipo é read-only: não é permitido executar `INSERT` nela. A mesma sintaxe também é compatível com o motor de tabela [`SQLite`](/pt-BR/reference/engines/table-engines/integrations/sqlite).
 
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um SQL válido do ClickHouse. Para usar uma sintaxe específica do SQLite que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
@@ -42,7 +44,7 @@ Essa tabela é somente leitura: não é permitido fazer `INSERT` nela. A mesma s
   Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é aplicado à consulta fornecida — ele é aplicado no ClickHouse depois que o resultado completo da consulta é buscado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo nas colunas da função de tabela é rejeitado com uma exceção, em vez de ser aplicado localmente, pois não pode ser aplicado à consulta fornecida. A verificação abrange o predicado `WHERE` de nível superior e cada conjunção de um `AND` de nível superior. Um `PREWHERE` nas colunas desta tabela não é um caso para essa configuração: este motor de tabela não oferece suporte a `PREWHERE`, e essa consulta é rejeitada com `ILLEGAL_PREWHERE` independentemente da configuração. A verificação é executada apenas onde um filtro poderia ser aplicado: quando esta tabela é a única tabela da consulta, em qualquer lado de um `INNER JOIN` ou no lado preservado de uma junção externa (o lado esquerdo de um `LEFT JOIN`, o lado direito de um `RIGHT JOIN`). No lado não preservado de um `LEFT`/`RIGHT JOIN` e em qualquer lado de um `FULL JOIN`, nada é aplicado e nada é verificado; portanto, um filtro nas colunas desta tabela é aplicado localmente após a junção mesmo no modo estrito. Onde a verificação é executada, um predicado que referencia outras tabelas unidas na consulta circundante não é aplicado e é excluído da verificação, independentemente de referenciar apenas o lado unido ou de misturá-lo com esta tabela em uma expressão que não seja `AND` (por exemplo, um `OR`); tal predicado mantém seu ponto usual de avaliação no ClickHouse (`WHERE` após a junção, `PREWHERE` antes dela) e não é rejeitado.
 </Note>
 
-## Exemplo
+## Exemplo {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -56,7 +58,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-## Relacionados
+## Relacionados {#related}
 
 * [SQLite](/pt-BR/reference/engines/table-engines/integrations/sqlite) motor de tabela
 * [Mecanismo de banco de dados SQLite](/pt-BR/reference/engines/database-engines/sqlite) — seção de suporte a tipos de dados

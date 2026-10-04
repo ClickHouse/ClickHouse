@@ -16,6 +16,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * `clickhouse`: Диалект [SQL](/ru/chdb/reference/sql-reference), используемый в ClickHouse по умолчанию
 * `prql`: [конвейерный реляционный язык запросов (PRQL)](https://prql-lang.org/)
 * `kusto`: [язык запросов Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `logsql`: [LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/) — язык запросов VictoriaLogs
 * `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 Используемый язык запросов задаётся параметром `dialect`.
@@ -82,6 +83,29 @@ numbers(10) | project number
 ```
 
 Обратите внимание, что KQL-запросы могут не поддерживать все функции, определённые в ClickHouse.
+
+## LogsQL {#logsql}
+
+<ExperimentalBadge />
+
+LogsQL — это язык запросов [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/).
+ClickHouse преобразует запрос LogsQL в `SELECT`-запрос к заданной в настройках таблице журналов.
+Чтобы включить эту возможность и указать таблицу со столбцом времени и столбцом сообщения, выполните следующее:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+Поддерживаемое подмножество и отличия от VictoriaLogs описаны в [руководстве по диалекту LogsQL](/ru/guides/clickhouse/logsql).
 
 ## Trino SQL {#trino-sql}
 

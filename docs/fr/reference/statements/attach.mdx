@@ -20,7 +20,7 @@ La requête ne crée pas de données sur le disque, mais suppose que les donnée
 
 Si une table a été précédemment détachée (requête [DETACH](/fr/reference/statements/detach)), c’est-à-dire que sa structure est connue, vous pouvez utiliser la forme abrégée sans définir la structure.
 
-## Attacher une table existante
+## Attacher une table existante {#attach-existing-table}
 
 **Syntaxe**
 
@@ -32,9 +32,9 @@ Cette requête est utilisée au démarrage du serveur. Le serveur stocke les mé
 
 Si la table a été détachée de façon permanente, elle ne sera pas attachée au démarrage du serveur ; vous devez donc exécuter explicitement la requête `ATTACH`.
 
-## Créer une nouvelle table et y attacher des données
+## Créer une nouvelle table et y attacher des données {#create-new-table-and-attach-data}
 
-### Avec un chemin spécifié pour les données de la table
+### Avec un chemin spécifié pour les données de la table {#with-specified-path-to-table-data}
 
 La requête crée une nouvelle table avec la structure fournie et y attache les données de la table à partir du répertoire indiqué dans `user_files`.
 L&#39;utilisateur doit disposer des privilèges `READ ON FILE` et `WRITE ON FILE` pour cette requête : elle lit le répertoire et le déplace vers le data path de la nouvelle table.
@@ -60,7 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### Avec l’UUID de la table spécifié
+### Avec l’UUID de la table spécifié {#with-specified-table-uuid}
 
 Cette requête crée une nouvelle table avec la structure fournie et y attache les données de la table ayant l’UUID spécifié.
 Elle est prise en charge par le moteur de base de données [Atomic](/fr/reference/engines/database-engines/atomic).
@@ -71,11 +71,13 @@ Elle est prise en charge par le moteur de base de données [Atomic](/fr/referenc
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Attacher une table MergeTree en ReplicatedMergeTree
+## Rattacher une table MergeTree en ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
-Permet d’attacher une table MergeTree non répliquée en tant que ReplicatedMergeTree. La table ReplicatedMergeTree sera créée avec les valeurs des paramètres `default_replica_path` et `default_replica_name`. Il est également possible d’attacher une table répliquée en tant que table MergeTree classique.
+Permet de rattacher une table MergeTree non répliquée en tant que ReplicatedMergeTree. La table ReplicatedMergeTree sera créée avec les valeurs des paramètres `default_replica_path` et `default_replica_name`. Il est également possible de rattacher une table répliquée en tant que table MergeTree classique.
 
-Notez que les données de la table dans ZooKeeper ne sont pas modifiées par cette requête. Cela signifie que vous devez ajouter les métadonnées dans ZooKeeper à l’aide de `SYSTEM RESTORE REPLICA` ou les supprimer avec `SYSTEM DROP REPLICA ... FROM ZKPATH ...` après l’attachement.
+La conversion est prise en charge pour les tables des bases de données `Atomic` et `Ordinary`. Une table d’une base de données `Ordinary` n’a pas d’UUID : la conversion en génère donc un, l’utilise une seule fois pour développer `default_replica_path` et enregistre explicitement le path obtenu dans les arguments du moteur de la table convertie. Pour ajouter d’autres répliques d’une telle table, indiquez explicitement ce path comme premier argument du moteur `ReplicatedMergeTree` ; vous le trouverez dans la colonne `zookeeper_path` de `system.replicas`. Comme le path enregistré ne contient plus la macro `{uuid}`, le znode appartenant à une telle table est retrouvé à chaque chargement en comparant de nouveau ce path à `default_replica_path` ; la conversion est refusée lorsqu’il est impossible de faire correspondre le path à ce modèle (par exemple, lorsque celui-ci développe `{uuid}` plus d’une fois). L’utilisation de `{uuid}` dans `default_replica_name` n’est prise en charge pour aucune conversion.
+
+Notez que les données de la table dans ZooKeeper ne sont pas modifiées par cette requête. Cela signifie que vous devez ajouter les métadonnées dans ZooKeeper à l’aide de `SYSTEM RESTORE REPLICA` ou les supprimer avec `SYSTEM DROP REPLICA ... FROM ZKPATH ...` après le rattachement.
 
 Si vous essayez d’ajouter une réplique à une table ReplicatedMergeTree existante, gardez à l’esprit que toutes les données locales de la table MergeTree convertie seront détachées.
 
@@ -95,7 +97,7 @@ SYSTEM RESTORE REPLICA test;
 
 **Convertir une table en table non répliquée**
 
-Récupérez le chemin ZooKeeper et le nom de la réplique de la table :
+Récupérez le path ZooKeeper et le nom de la réplique de la table :
 
 ```sql title="Query"
 SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
@@ -107,7 +109,7 @@ SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-Attacher la table comme non répliquée et supprimer les données de la réplique dans ZooKeeper :
+Rattacher la table comme non répliquée et supprimer les données de la réplique dans ZooKeeper :
 
 ```sql title="Query"
 DETACH TABLE test;
@@ -115,7 +117,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Attacher un dictionnaire existant
+## Attacher un dictionnaire existant {#attach-existing-dictionary}
 
 Rattache un dictionnaire précédemment détaché.
 
@@ -125,7 +127,7 @@ Rattache un dictionnaire précédemment détaché.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Attacher une base de données existante
+## Attacher une base de données existante {#attach-existing-database}
 
 Permet de rattacher une base de données précédemment détachée.
 

@@ -13,21 +13,23 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 데이터베이스 백업은 마지막으로 성공한 백업을 통해 서비스를 이전 상태로 복원할 수 있도록 설계되었습니다.
 
 <div id="backups">
-  ## 백업
+  ## 백업 {#backups}
 </div>
 
-### ClickHouse Cloud에서 백업이 작동하는 방식 {#how-backups-work-in-clickhouse-cloud}
+### ClickHouse Cloud에서 Backup이 작동하는 방식 {#how-backups-work-in-clickhouse-cloud}
 
-ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백업을 조합해 하나의 백업 체인을 구성합니다. 체인은 전체 백업으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 백업이 수행되어 연속된 백업 시퀀스가 만들어집니다. 백업 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 백업 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 백업이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
+ClickHouse Cloud Backup은 &quot;전체&quot; Backup과 &quot;증분&quot; Backup을 조합해 하나의 Backup 체인을 구성합니다. 체인은 전체 Backup으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 Backup이 수행되어 연속된 Backup 시퀀스가 만들어집니다. Backup 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 Backup 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 Backup이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
 
-아래 스크린샷에서 실선 사각형은 전체 백업을, 점선 사각형은 체인에 포함된 증분 백업을 나타냅니다.
+복원 가능한 시점의 수는 물리적 Backup 객체의 수와 일치하지 않습니다. 각 복원 시점이 의존하는 전체 Backup과 증분 Backup은 하나의 체인으로 묶여 함께 보존됩니다.
 
-1일 차에는 백업 체인을 시작하기 위해 전체 백업이 수행됩니다. 2일 차에는 증분 백업이 수행되며, 전체 백업과 증분 백업 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 백업 1개와 증분 백업 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 백업이 수행되고, 9일 차에는 새 체인에 백업 2개가 쌓이면 이전 체인이 폐기됩니다.
+아래 스크린샷에서 실선 사각형은 전체 Backup을, 점선 사각형은 체인에 포함된 증분 Backup을 나타냅니다.
 
-<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud의 백업 체인 예시" />
+1일 차에는 Backup 체인을 시작하기 위해 전체 Backup이 수행됩니다. 2일 차에는 증분 Backup이 수행되며, 전체 Backup과 증분 Backup 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 Backup 1개와 증분 Backup 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 Backup이 수행되고, 9일 차에는 새 체인에 Backup 2개가 쌓이면 이전 체인이 폐기됩니다.
+
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud의 Backup 체인 예시" />
 
 <div id="default-backup-policy">
-  ### 기본 백업 정책
+  ### 기본 백업 정책 {#default-backup-policy}
 </div>
 
 백업은 Basic, Scale, Enterprise 티어에서 스토리지와 별도로 사용량이 측정되며 청구됩니다.
@@ -35,23 +37,25 @@ ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백�
 
 자세한 내용은 [&quot;백업 검토 및 복원&quot;](/ko/products/cloud/guides/backups/review-and-restore-backups)을 참조하십시오.
 
-## 설정 가능한 백업 {#configurable-backups}
+## 설정 가능한 Backup {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
-ClickHouse Cloud에서는 **Scale** 및 **Enterprise** 티어 서비스의 백업 일정을 설정할 수 있습니다. 백업은 비즈니스 요구 사항에 따라 다음 항목을 기준으로 설정할 수 있습니다.
+ClickHouse Cloud에서는 **Scale** 및 **Enterprise** 티어 서비스의 Backup 일정을 설정할 수 있습니다. Backup은 비즈니스 요구 사항에 따라 다음 항목을 기준으로 설정할 수 있습니다.
 
-* **보존 기간**: 각 백업을 보관할 기간(일)입니다. 보존 기간은 최소 1일부터 최대 45일까지 지정할 수 있으며, 그 사이에서 여러 값을 선택할 수 있습니다.
-* **빈도**: 빈도를 사용하면 연속된 백업 사이의 시간 간격을 지정할 수 있습니다. 예를 들어 &quot;12시간마다&quot;로 설정하면 백업은 12시간 간격으로 수행됩니다. 빈도는 &quot;6시간마다&quot;부터 &quot;48시간마다&quot;까지 지정할 수 있으며, 선택 가능한 시간별 간격은 다음과 같습니다: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
-* **시작 시간**: 매일 백업을 예약할 시작 시간입니다. 시작 시간을 지정하면 백업 &quot;빈도&quot;는 기본적으로 24시간마다 1회로 설정됩니다. ClickHouse Cloud는 지정된 시작 시간으로부터 1시간 이내에 백업을 시작합니다.
+* **보존 기간**: 각 Backup을 보관할 기간(일)입니다. 보존 기간은 최소 1일부터 최대 45일까지 지정할 수 있으며, 그 사이에서 여러 값을 선택할 수 있습니다.
+* **빈도**: 빈도를 사용하면 연속된 Backup 사이의 시간 간격을 지정할 수 있습니다. 예를 들어 &quot;12시간마다&quot;로 설정하면 Backup은 12시간 간격으로 수행됩니다. 빈도는 &quot;6시간마다&quot;부터 &quot;48시간마다&quot;까지 지정할 수 있으며, 선택 가능한 시간별 간격은 다음과 같습니다: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
+* **시작 시간**: 매일 Backup을 예약할 시작 시간입니다. 시작 시간을 지정하면 Backup &quot;빈도&quot;는 기본적으로 24시간마다 1회로 설정됩니다. ClickHouse Cloud는 지정된 시작 시간으로부터 1시간 이내에 Backup을 시작합니다.
+
+보존 기간은 Backup 데이터를 얼마나 오래 보관할지를 결정하고, 빈도는 가장 최근 복원 지점이 얼마나 오래되었는지, 즉 복구 시점 목표(RPO)를 결정합니다. 예를 들어 보존 기간을 1일, 빈도를 48시간으로 설정하면 일반적으로 복원 가능한 Backup이 최소 1개 이상 존재합니다. 가장 최근의 복원 가능한 Backup은 생성된 지 48시간 가까이 지났을 수 있으며, 서비스에는 복원에 필요한 Backup 체인이 유지되면서 복원 가능한 지점이 1개 또는 2개 존재할 수 있습니다.
 
 <Note>
-  사용자 지정 일정은 해당 서비스에 적용되는 ClickHouse Cloud의 기본 백업 정책보다 우선합니다.
+  사용자 지정 일정은 해당 서비스에 적용되는 ClickHouse Cloud의 기본 Backup 정책보다 우선합니다.
 
-  드문 경우 백업 스케줄러가 백업에 지정된 **시작 시간**을 따르지 않을 수 있습니다. 구체적으로는 현재 예약된 백업 시점으로부터 24시간 이내에 성공한 백업이 트리거된 경우 이런 현상이 발생합니다. 이는 백업에 적용되는 재시도 메커니즘 때문에 발생할 수 있습니다. 이런 경우 스케줄러는 해당 날짜의 백업을 건너뛰고, 다음 날 예약된 시간에 백업을 다시 시도합니다.
+  드문 경우 Backup 스케줄러가 Backup에 지정된 **시작 시간**을 따르지 않을 수 있습니다. 구체적으로는 현재 예약된 Backup 시점으로부터 24시간 이내에 성공한 Backup이 트리거된 경우 이런 현상이 발생합니다. 이는 Backup에 적용되는 재시도 메커니즘 때문에 발생할 수 있습니다. 이런 경우 스케줄러는 해당 날짜의 Backup을 건너뛰고, 다음 날 예약된 시간에 Backup을 다시 시도합니다.
 </Note>
 
-백업 설정 단계는 [&quot;백업 일정 설정&quot;](/ko/products/cloud/guides/backups/configurable-backups)을 참조하십시오.
+Backup 설정 단계는 [&quot;Backup 일정 설정&quot;](/ko/products/cloud/guides/backups/configurable-backups)을 참조하십시오.
 
 ## Bring Your Own Bucket (BYOB) 백업 {#byob}
 

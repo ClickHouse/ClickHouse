@@ -10,9 +10,7 @@ doc_type: 'مرجع'
 
 تتناول هذه الصفحة ماهية الإسقاطات، وكيفية استخدامها، والخيارات المختلفة لإدارتها.
 
-<div id="overview">
-  ## نظرة عامة على الإسقاطات
-</div>
+## نظرة عامة على الإسقاطات {#overview}
 
 تخزّن الإسقاطات البيانات بصيغة تُحسّن تنفيذ الاستعلامات، وتكون هذه الميزة مفيدة في الحالات التالية:
 
@@ -30,13 +28,9 @@ doc_type: 'مرجع'
 
 يمكنك الاطلاع على مزيد من التفاصيل التقنية حول كيفية عمل الإسقاطات داخليًا في هذه [الصفحة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections).
 
-<div id="examples">
-  ## استخدام الإسقاطات
-</div>
+## استخدام الإسقاطات {#examples}
 
-<div id="example-filtering-without-using-primary-keys">
-  ### مثال على التصفية دون استخدام المفاتيح الأساسية
-</div>
+### مثال على التصفية دون استخدام المفاتيح الأساسية {#example-filtering-without-using-primary-keys}
 
 إنشاء الجدول:
 
@@ -91,9 +85,7 @@ LIMIT 2
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="example-pre-aggregation-query">
-  ### مثال على استعلام التجميع المسبق
-</div>
+### مثال على استعلام التجميع المسبق {#example-pre-aggregation-query}
 
 أنشئ الجدول باستخدام الإسقاط `projection_visits_by_user`:
 
@@ -173,9 +165,7 @@ GROUP BY user_agent
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="projection-indexes">
-  ### إنشاء فهارس الإسقاط واستخدامها
-</div>
+### إنشاء فهارس الإسقاط واستخدامها {#projection-indexes}
 
 إنشاء [فهرس إسقاط](/ar/reference/engines/table-engines/mergetree-family/mergetree#projection-index):
 
@@ -236,9 +226,7 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### مثال على إسقاط مع عبارة `WHERE`
-</div>
+### مثال على إسقاط مع عبارة `WHERE` {#example-projection-with-where}
 
 يمكن أن تتضمن الـ إسقاطات عبارة `WHERE` لتخزين مجموعة فرعية فقط من الصفوف. ويكون ذلك مفيدًا عندما تُصفّي الاستعلامات كثيرًا باستخدام شرط معروف، إذ لا تُخزِّن الـ إسقاط إلا الصفوف المطابقة، مما يقلل التخزين ويحسّن أداء الاستعلامات.
 
@@ -287,15 +275,11 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 فحص الاستلزام متحفّظ — إذ يعتمد على المطابقة الدقيقة لأجزاء الاقتران في الصيغة المعيارية للتعبير. وقد تفوته بعض فرص التحسين الصحيحة (مثل استلزام النطاقات)، لكنه لن يُنتج أبدًا نتائج غير صحيحة.
 
-<div id="manipulating-projections">
-  ## إدارة الإسقاطات
-</div>
+## إدارة الإسقاطات {#manipulating-projections}
 
 تتوفّر العمليات التالية على [الإسقاطات](/ar/reference/engines/table-engines/mergetree-family/mergetree#projections):
 
-<div id="add-projection">
-  ### ADD PROJECTION
-</div>
+### ADD PROJECTION {#add-projection}
 
 استخدم تعليمة SQL التالية لإضافة وصف لإسقاط إلى البيانات الوصفية لجدول:
 
@@ -311,9 +295,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (
   عندما يحدِّد الإسقاط عبارة `WHERE`، لا تُجسَّد إلا الصفوف التي تطابق الشرط. ويمكن للمُحسِّن استخدام هذا الإسقاط عندما يستلزم `WHERE` الخاص بالاستعلام منطقيًا `WHERE` الخاص بالإسقاط، وكان الإسقاط مفيدًا لخطة الاستعلام. وينطبق ذلك على كلٍّ من الإسقاطات العادية والإسقاطات التجميعية.
 </Note>
 
-<div id="with-settings">
-  #### عبارة `WITH SETTINGS`
-</div>
+#### عبارة `WITH SETTINGS` {#with-settings}
 
 تُعرِّف `WITH SETTINGS` **إعدادات على مستوى الإسقاط**، والتي تُخصِّص كيفية تخزين البيانات في الإسقاط (على سبيل المثال، `index_granularity` أو `index_granularity_bytes`).
 وتقابل هذه الإعدادات مباشرةً **إعدادات جدول MergeTree**، لكنها تنطبق **على هذا الإسقاط فقط**.
@@ -332,9 +314,7 @@ ADD PROJECTION p (
 
 تحلّ إعدادات الإسقاط محل إعدادات الجدول المطبَّقة فعليًا على الإسقاط، مع مراعاة قواعد التحقق (على سبيل المثال، سيُرفض أي تجاوز غير صالح أو غير متوافق).
 
-<div id="modify-projection">
-  ### MODIFY PROJECTION
-</div>
+### MODIFY PROJECTION {#modify-projection}
 
 استخدم العبارة التالية لتعديل عبارة [`WITH SETTINGS`](#with-settings) في إسقاط موجود دون إعادة بناء بياناته:
 
@@ -348,11 +328,12 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( 
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
-تعيد التعليمة ذكر تعريف الإسقاط كاملًا، لكن يجوز أن تختلف عن التعريف الحالي عبارة `WITH SETTINGS` فقط.
+تعيد العبارة ذكر تعريف الإسقاط كاملًا، لكن يجوز أن تختلف عن التعريف الحالي عبارة `WITH SETTINGS` فقط.
 يجب أن يظل استعلام الإسقاط نفسه (أو، بالنسبة إلى فهرس الإسقاط، تعبير الفهرس ونوعه) دون تغيير، لأن أجزاء الإسقاط الحالية تخزّن بيانات مُنشأة منه؛ ولتغييره، استخدم [`DROP PROJECTION`](#drop-projection) ثم [`ADD PROJECTION`](#add-projection).
 
 لا تغيّر التعليمة سوى البيانات الوصفية للجدول ولا تعيد كتابة أي بيانات: تحتفظ أجزاء الإسقاط الحالية بالإعدادات التي كُتبت بها، بينما تستخدم أجزاء الإسقاط التي تُنشئها عمليات الإدراج والدمج المستقبلية الإعدادات الجديدة.
-لإعادة بناء الأجزاء الحالية بالإعدادات الجديدة، شغّل [`MATERIALIZE PROJECTION`](#materialize-projection).
+ولا تطبّق [`MATERIALIZE PROJECTION`](#materialize-projection) أيضًا الإعدادات الجديدة على الأجزاء الحالية، إذ تقتصر على بناء الإسقاط في الأجزاء التي يكون فيها مفقودًا أو تالفًا، وتترك أجزاء الإسقاط الموجودة مسبقًا كما هي.
+لإعادة بناء الأجزاء الحالية بالإعدادات الجديدة، شغّل [`CLEAR PROJECTION`](#clear-projection) ثم [`MATERIALIZE PROJECTION`](#materialize-projection)، أو ادمج الأجزاء، على سبيل المثال باستخدام [`OPTIMIZE TABLE ... FINAL`](/ar/reference/statements/optimize).
 
 مثال:
 
@@ -365,9 +346,7 @@ MODIFY PROJECTION p (
 );
 ```
 
-<div id="drop-projection">
-  ### DROP PROJECTION
-</div>
+### DROP PROJECTION {#drop-projection}
 
 استخدم التعليمة التالية لإزالة وصف الإسقاط من البيانات الوصفية للجداول وحذف ملفات الإسقاط من القرص.
 يُنفَّذ هذا على شكل [mutation](/ar/reference/statements/alter/index#mutations).
@@ -376,20 +355,17 @@ MODIFY PROJECTION p (
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ```
 
-<div id="materialize-projection">
-  ### MATERIALIZE PROJECTION
-</div>
+### MATERIALIZE PROJECTION {#materialize-projection}
 
-استخدم التعليمة أدناه لإعادة بناء الإسقاط `name` في القسم `partition_name`.
-يُنفَّذ ذلك على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
+استخدم العبارة أدناه لبناء الإسقاط `name` في أجزاء البيانات التي يكون فيها مفقودًا أو تالفًا، مع إمكانية قصر ذلك على القسم `partition_name` فقط.
+تبقى أجزاء البيانات التي تحتوي على الإسقاط مسبقًا دون تغيير، حتى لو عُدِّلت إعدادات الإسقاط باستخدام [`MODIFY PROJECTION`](#modify-projection) بعد كتابتها؛ ولإعادة بنائها، نفِّذ [`CLEAR PROJECTION`](#clear-projection) أولًا.
+يُنفَّذ ذلك على هيئة [تعديل](/ar/reference/statements/alter/index#mutations).
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-<div id="clear-projection">
-  ### CLEAR PROJECTION
-</div>
+### CLEAR PROJECTION {#clear-projection}
 
 استخدم التعليمة أدناه لحذف ملفات الإسقاط من القرص من دون إزالة التعريف.
 يُنفَّذ ذلك على شكل [mutation](/ar/reference/statements/alter/index#mutations).
@@ -405,9 +381,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
   لا يُدعَم التعامل مع الإسقاطات إلا في الجداول التي تستخدم محرك [`*MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك المتغيرات [ذات النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication)).
 </Note>
 
-<div id="control-projections-merges">
-  ### التحكم في سلوك دمج الإسقاطات
-</div>
+### التحكم في سلوك دمج الإسقاطات {#control-projections-merges}
 
 عند تنفيذ استعلام، يختار ClickHouse بين القراءة من الجدول الأصلي أو من أحد الإسقاطات التابعة له.
 ويُتخذ قرار القراءة من الجدول الأصلي أو من أحد إسقاطاته بشكل منفصل لكل جزء بيانات.
@@ -435,9 +409,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 * `drop`: تُسقَط أجزاء جدول الإسقاط المتأثرة. وستعود الاستعلامات إلى جزء الجدول الأصلي بالنسبة إلى أجزاء الإسقاط المتأثرة.
 * `rebuild`: يُعاد بناء جزء الإسقاط المتأثر ليظل متسقًا مع البيانات الموجودة في جزء الجدول الأصلي.
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
 لا يمكن استخدام عمود `ALIAS` ضمن عبارة `ORDER BY` الخاصة بالإسقاط. على سبيل المثال:
 
@@ -478,9 +450,7 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## انظر أيضًا {#see-also}
 
 * [&quot;التحكم في الإسقاطات أثناء عمليات الدمج&quot; (مقالة مدونة)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 * [&quot;الإسقاطات&quot; (دليل)](/ar/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)

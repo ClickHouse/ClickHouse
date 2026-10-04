@@ -17,9 +17,7 @@ Dictionary は、次のような用途で役立ちます。
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse における Dictionary のユースケース" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## Dictionary を使用した JOIN の高速化
-</div>
+## Dictionary を使用した JOIN の高速化 {#speeding-up-joins-using-a-dictionary}
 
 Dictionary は、特定の種類の `JOIN` を高速化するために使用できます。具体的には、結合キーが基盤となるキー・バリュー ストレージのキー属性と一致している必要がある [`LEFT ANY` 型](/ja/reference/statements/select/join#supported-types-of-join) です。
 
@@ -30,7 +28,7 @@ Dictionary は、特定の種類の `JOIN` を高速化するために使用で�
 Direct Join アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの JOIN 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
 
 <div id="example">
-  ### 例
+  ### 例 {#example}
 </div>
 
 [Stack Overflow データセット](/ja/get-started/sample-datasets/stackoverflow)を使って、次の問いに答えてみましょう。
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 このクエリは高速ですが、高いパフォーマンスを得るには、`JOIN` を注意深く記述する必要があります。理想的には、まず投稿のうち &quot;SQL&quot; を含むものだけに絞り込み、そのうえで、その投稿の部分集合について `UpVote` と `DownVote` の件数を確認し、メトリクスを計算できるのが望ましいです。
 
 <div id="applying-a-dictionary">
-  #### Dictionary の適用
+  #### Dictionary の適用 {#applying-a-dictionary}
 </div>
 
 これらの概念を説明するために、投票データに Dictionary を使用します。Dictionary は通常メモリ上に保持されるため (例外は [ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache) です) 、データサイズを意識する必要があります。まず、`votes` テーブルのサイズを確認します。
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 このクエリはかなりシンプルになるだけでなく、速度も2倍以上に向上します！ さらに、賛成票と反対票がそれぞれ10票を超える投稿だけをDictionaryに読み込み、事前計算した `controversial` の値だけを保存するようにすれば、さらに最適化できます。
 
 <div id="query-time-enrichment">
-  ## クエリ時エンリッチメント
+  ## クエリ時エンリッチメント {#query-time-enrichment}
 </div>
 
 Dictionariesを使用すると、クエリ時に値を参照できます。これらの値は結果として返したり、集計に使用したりできます。たとえば、ユーザーIDを所在地に対応付けるDictionaryを作成するとします。
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## インデックス時のエンリッチメント
-</div>
+## インデックス時のエンリッチメント {#index-time-enrichment}
 
-上の例では、クエリ時に Dictionary を使って join を不要にしました。Dictionary は、insert 時に行をエンリッチするためにも使用できます。これは通常、エンリッチメントに使う値が変化せず、かつ Dictionary の投入元として使える外部ソースに存在する場合に適しています。この場合、insert 時に行をエンリッチしておけば、クエリ時に Dictionary へのルックアップを行う必要がなくなります。
+上の例では、クエリ時に Dictionary を使って 結合 を不要にしました。Dictionary は、挿入 時に行をエンリッチするためにも使用できます。これは通常、エンリッチメントに使う値が変化せず、かつ Dictionary の投入元として使える外部ソースに存在する場合に適しています。この場合、挿入 時に行をエンリッチしておけば、クエリ時に Dictionary へのルックアップを行う必要がなくなります。
+
+<Note>
+  レイテンシの予測可能性やソースの可用性が重要な場合は、挿入 時のエンリッチメントに cache ベースの Dictionary レイアウトを使用しないでください。各サーバーはそれぞれ独立したローカルキャッシュを保持しており、再起動や置き換えが発生するとキャッシュは空になります。その結果、挿入処理はコールドキャッシュ状態での Dictionary ソースへのルックアップに依存することになります。ClickHouse Cloud では、オートスケーリングやマネージドなノードの置き換えによって、こうした状況がより発生しやすくなります。各サーバー上に Dictionary 全体を読み込むレイアウトを選択してください。詳しくは [インジェスト経路における cache Dictionary](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を参照してください。
+</Note>
 
 Stack Overflow のユーザーの `Location` は変わらないと仮定しましょう (実際には変わります) 。具体的には、`users` テーブルの `Location` カラムです。location ごとに `posts` テーブルを分析するクエリを実行したいとします。このテーブルには `UserId` が含まれています。
 
@@ -290,7 +290,7 @@ LAYOUT(HASHED())
 
 > `Id < 0` のユーザーは除外します。これにより、`Hashed` Dictionary 型を使用できます。`Id < 0` のユーザーはシステムユーザーです。
 
-posts テーブルでこの辞書をデータ挿入時に利用するには、スキーマを変更する必要があります。
+posts テーブルでこのDictionaryをデータ挿入時に利用するには、スキーマを変更する必要があります。
 
 ```sql
 CREATE TABLE posts_with_location
@@ -306,7 +306,7 @@ ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 
 上記の例では、`Location` は `MATERIALIZED` カラムとして宣言されています。これは、値を `INSERT` クエリの一部として指定でき、その場合でも常に計算されることを意味します。
 
-> ClickHouse は [`DEFAULT` columns](/ja/reference/statements/create/table#default_values) もサポートしています (この場合、値は挿入することも、指定されていない場合は計算させることもできます) 。
+> ClickHouse は [`DEFAULT` カラム](/ja/reference/statements/create/table#default_values) もサポートしています (この場合、値は挿入することも、指定されていない場合は計算させることもできます) 。
 
 テーブルにデータを投入するには、通常どおり S3 からの `INSERT INTO SELECT` を使用できます:
 
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Dictionary の高度なトピック
+  ## Dictionary の高度なトピック {#advanced-dictionary-topics}
 </div>
 
 Dictionary レイアウトの選び方、Dictionary と JOIN の使い分け、Dictionary の使用状況の監視については、[Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices)を参照してください。
 
 <div id="refreshing-dictionaries">
-  ### Dictionary の更新
+  ### Dictionary の更新 {#refreshing-dictionaries}
 </div>
 
 Dictionary に `MIN 600 MAX 900` の `LIFETIME` を指定しました。LIFETIME はDictionaryの更新間隔で、ここでの値を指定すると、600〜900 秒のランダムな間隔で定期的に再読み込みされます。このランダムな間隔は、多数のサーバーで更新する際に Dictionary ソースへの負荷を分散するために必要です。更新中もDictionaryの古いバージョンに対して引き続きクエリを実行できますが、クエリがブロックされるのは初期ロード時だけです。なお、`(LIFETIME(0))` を設定するとDictionaryは更新されなくなります。
@@ -357,14 +357,12 @@ Dictionary は `SYSTEM RELOAD DICTIONARY` コマンドを使って強制的に�
 ClickHouse や Postgres などのデータベースソースでは、一定間隔で更新する代わりに、Dictionary が実際に変更された場合にのみ更新するクエリを設定できます (これを判定するのはそのクエリの応答です) 。詳しくは [こちら](/ja/reference/statements/create/dictionary/lifetime) を参照してください。
 
 <div id="other-dictionary-types">
-  ### その他の Dictionary の種類
+  ### その他の Dictionary の種類 {#other-dictionary-types}
 </div>
 
 ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/ja/reference/statements/create/dictionary/layouts/polygon)、[Regular Expression](/ja/reference/statements/create/dictionary/layouts/regexp-tree) の Dictionary にも対応しています。
 
-<div id="more-reading">
-  ### 参考資料
-</div>
+### 参考資料 {#more-reading}
 
 * [Dictionaryのベストプラクティス](/ja/concepts/features/dictionaries/best-practices) — レイアウトの選択、DictionaryとJOINの比較、監視
 * [Dictionaryを使ってクエリを高速化する](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

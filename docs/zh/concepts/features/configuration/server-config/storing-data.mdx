@@ -616,7 +616,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 从 22.3 版本开始，可以在存储配置中为磁盘配置本地缓存。
 对于 22.3 - 22.7 版本，仅 `s3` 磁盘类型支持缓存。对于 &gt;= 22.8 版本，所有磁盘类型都支持缓存：S3、Azure、Local、Encrypted 等。
 对于 &gt;= 23.5 版本，仅远程磁盘类型支持缓存：S3、Azure、HDFS (不支持) 。
-缓存使用 `LRU` 缓存策略。
+缓存根据 `cache_policy` 设置 (默认为 `SLRU`) 执行淘汰，该设置可在 [`system.filesystem_cache_settings`](/zh/operations/system-tables/filesystem_cache_settings) 中查看。缓存磁盘设置的完整列表请参见 [`system.filesystem_cache_settings`](/zh/operations/system-tables/filesystem_cache_settings)。
 
 22.8 及以上版本的配置示例：
 
@@ -676,24 +676,33 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-File Cache **磁盘配置设置**：
+File Cache **磁盘配置设置** (常用设置)：
 
-这些设置应在磁盘配置部分中定义。
+这些设置应在磁盘配置部分中定义。下表仅列出缓存磁盘的常用配置项，并未涵盖配置中可接受的所有键。运行时的值及完整的设置列表请参见 [`system.filesystem_cache_settings`](/zh/operations/system-tables/filesystem_cache_settings)。
 
-| Parameter                             | Type    | Default    | Description                                                                                       |
-| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------- |
-| `path`                                | String  | -          | **必填**。用于存储缓存的目录路径。                                                                               |
-| `max_size`                            | Size    | -          | **必填**。缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。达到限制时，文件会按 LRU 策略被逐出。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
-| `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用写穿缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `filesystem_cache_max_download_size` 启用按查询的缓存大小限制。                                             |
-| `cache_hits_threshold`                | Integer | `0`        | 已弃用；无作用。                                                                                          |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 对较大的读取范围跳过缓存。                                                                                     |
-| `bypass_cache_threshold`              | Size    | `256Mi`    | 触发绕过缓存的读取范围大小 (需要 `enable_bypass_cache_with_threshold`) 。                                         |
-| `max_file_segment_size`               | Size    | `8Mi`      | 单个缓存文件段的最大大小，单位可以是字节或可读格式。                                                                        |
-| `max_elements`                        | Integer | `10000000` | 缓存文件的最大数量。                                                                                        |
-| `load_metadata_threads`               | Integer | `16`       | 启动时用于加载缓存元数据的线程数。                                                                                 |
-| `use_split_cache`                     | Boolean | `false`    | 将文件拆分为 system/data 两类。                                                                            |
-| `split_cache_ratio`                   | Double  | `0.1`      | `split&#95;cache` 中 system 部分占缓存总大小的比例。                                                           |
+| 参数                                   | Type    | Default    | Description                                                                                                                                                                      |
+| ------------------------------------------- | ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                      | String  | -          | **必填**。用于存储缓存的目录路径。                                                                                                                                                              |
+| `max_size`                                  | Size    | -          | 缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。**除非**已设置 `max_size_ratio_to_total_space`，**否则必填**；两者不能同时设置。达到限制时，文件会按 `cache_policy` 指定的策略 (默认为 SLRU) 被淘汰。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
+| `max_size_ratio_to_total_space`             | Double  | -          | `max_size` 的替代项：以磁盘总空间的占比来指定缓存大小，取值范围为 `(0, 1]`。**除非**已设置 `max_size`，**否则必填**。不能与 `max_size` 同时指定。                                                                               |
+| `cache_policy`                              | 枚举    | `SLRU`     | 缓存淘汰策略。可选值：`LRU`、`SLRU` (默认) 、`SLRU_OVERCOMMIT`、`LRU_OVERCOMMIT`。overcommit 策略要求构建版本支持分布式缓存，且不能与 `use_split_cache` 同时使用 (以上两种情况均会导致启动失败) 。                                       |
+| `slru_size_ratio`                           | Double  | `0.6`      | 适用于 `SLRU` / `SLRU_OVERCOMMIT`，表示受保护缓存与试用缓存的比例。                                                                                                                                  |
+| `reserve_granularity`                       | Size    | `4Mi`      | 为下载 File 段预留空间时，至少预先预留该字节数 (不超过 File 段大小) 。设为 `0` 时仅预留实际请求的大小。                                                                                                                   |
+| `cache_on_write_operations`                 | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用写穿缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                                                                                                |
+| `enable_filesystem_query_cache_limit`       | Boolean | `false`    | 基于 `filesystem_cache_max_download_size` 启用按查询的缓存大小限制。                                                                                                                            |
+| `cache_hits_threshold`                      | Integer | `0`        | 已弃用；无作用。                                                                                                                                                                         |
+| `enable_bypass_cache_with_threshold`        | Boolean | `false`    | 对较大的读取范围跳过缓存。                                                                                                                                                                    |
+| `bypass_cache_threshold`                    | Size    | `256Mi`    | 触发绕过缓存的读取范围大小 (需要 `enable_bypass_cache_with_threshold`) 。                                                                                                                        |
+| `max_file_segment_size`                     | Size    | `32Mi`     | 单个缓存文件段的最大大小，单位可以是字节或可读格式。                                                                                                                                                       |
+| `boundary_alignment`                        | Size    | `4Mi`      | 缓存中 File 段边界的对齐大小。不得超过 `max_file_segment_size` (若设置更大的值，启动时会报错) 。                                                                                                                |
+| `max_elements`                              | Integer | `10000000` | 缓存文件的最大数量。                                                                                                                                                                       |
+| `load_metadata_threads`                     | Integer | `16`       | 启动时用于加载缓存元数据的线程数。                                                                                                                                                                |
+| `background_download_threads`               | UInt64  | `5`        | 用于在后台下载 File 段的线程数。设为 `0` 时禁用后台下载。                                                                                                                                               |
+| `background_download_queue_size_limit`      | UInt64  | `5000`     | 后台下载队列中等待分段的最大数量。`0` 表示不限制 (而非禁用队列) 。只有当 `background_download_threads` 为 `0` 时，才会禁用后台下载。                                                                                         |
+| `background_download_max_file_segment_size` | Size    | `4Mi`      | 后台预取分段的范围阈值，会按对齐大小取整。下载大小会向上取整到 `boundary_alignment`，因此并非硬性上限 (例如，设为 `1Mi` 而 `boundary_alignment` 为 `4Mi` 时，仍会下载 `4Mi`) 。                                                        |
+| `load_metadata_asynchronously`              | Boolean | `false`    | 在服务器启动时异步加载缓存元数据。                                                                                                                                                                |
+| `use_split_cache`                           | Boolean | `false`    | 将文件拆分为 system/data 两类。不支持与 `SLRU_OVERCOMMIT` 或 `LRU_OVERCOMMIT` 同时使用。                                                                                                            |
+| `split_cache_ratio`                         | Double  | `0.1`      | split&#95;cache 中 system 部分占缓存总大小的比例。                                                                                                                                            |
 
 > **注意**：Size 值支持 `ki`、`Mi`、`Gi` 等单位 (例如 `10Gi`) 。
 

@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد وُلِّدت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_async_executor_for_materialized_views">
-  ## use_async_executor_for_materialized_views
-</div>
+## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,9 +22,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يستخدم تنفيذًا غير متزامن، وربما متعدد الخيوط، لاستعلام العرض المادي، ما قد يسرّع معالجة العروض أثناء INSERT، لكنه يستهلك أيضًا مزيدًا من الذاكرة.
 
-<div id="use_cache_for_count_from_files">
-  ## use_cache_for_count_from_files
-</div>
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,37 +30,13 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يكون مفعّلًا افتراضيًا.
 
-<div id="use_client_time_zone">
-  ## use_client_time_zone
-</div>
+## use_client_time_zone {#use_client_time_zone}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 استخدم المنطقة الزمنية للعميل لتفسير قيم السلاسل النصية من نوع DateTime بدلًا من استخدام المنطقة الزمنية للخادم.
 
-<div id="use_compact_format_in_distributed_parts_names">
-  ## use_compact_format_in_distributed_parts_names
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "استخدام التنسيق المضغوط افتراضيًا لعمليات INSERT غير المتزامنة إلى جداول Distributed"}]}]} />
-
-يستخدم التنسيق المضغوط لتخزين الكتل الخاصة بعمليات INSERT في الخلفية (`distributed_foreground_insert`) إلى الجداول التي تستخدم المحرك `Distributed`.
-
-القيم الممكنة:
-
-* 0 — يستخدم تنسيق الدليل `user[:password]@host:port#default_database`.
-* 1 — يستخدم تنسيق الدليل `[shard{shard_index}[_replica{replica_index}]]`.
-
-<Note>
-  - عند استخدام `use_compact_format_in_distributed_parts_names=0`، لن تُطبَّق التغييرات في تعريف العنقود على عمليات INSERT في الخلفية.
-  - عند استخدام `use_compact_format_in_distributed_parts_names=1`، فإن تغيير ترتيب العُقد في تعريف العنقود سيؤدي إلى تغيير `shard_index`/`replica_index`، لذا انتبه.
-</Note>
-
-<div id="use_concurrency_control">
-  ## use_concurrency_control
-</div>
+## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -72,9 +44,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يراعي التحكم في التزامن على مستوى الخادم (راجع إعدادات الخادم العامة `concurrent_threads_soft_limit_num` و `concurrent_threads_soft_limit_ratio_to_cores`). وإذا كان معطّلًا، فسيتيح استخدام عدد أكبر من الخيوط حتى إذا كان الخادم مثقَلًا بالأحمال (وهذا غير موصى به للاستخدام العادي، ويُحتاج إليه غالبًا في الاختبارات).
 
-<div id="use_constant_folding_in_index_analysis">
-  ## use_constant_folding_in_index_analysis
-</div>
+## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +65,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — معطّل.
 * 1 — مفعّل.
 
-<div id="use_hash_table_stats_for_join_reordering">
-  ## use_hash_table_stats_for_join_reordering
-</div>
+## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -105,9 +73,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 تمكين استخدام إحصاءات جدول التجزئة المجمّعة لتقدير الكاردينالية أثناء إعادة ترتيب عمليات JOIN
 
-<div id="use_hedged_requests">
-  ## use_hedged_requests
-</div>
+## use_hedged_requests {#use_hedged_requests}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,9 +88,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 القيمة الافتراضية في Cloud: `0`.
 
-<div id="use_hive_partitioning">
-  ## use_hive_partitioning
-</div>
+## use_hive_partitioning {#use_hive_partitioning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -132,9 +96,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 عند تمكين هذا الإعداد، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`) في محركات الجداول الشبيهة بالملفات [File](/ar/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/ar/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/ar/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/ar/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning)، وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستحمل هذه الأعمدة الافتراضية الأسماء نفسها الموجودة في المسار المُقسَّم، لكنها ستبدأ بالبادئة `_`.
 
-<div id="use_indexes_refiner_in_read_pools">
-  ## use_indexes_refiner_in_read_pools
-</div>
+## use_indexes_refiner_in_read_pools {#use_indexes_refiner_in_read_pools}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -144,9 +106,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 في مجموعة القراءة ذات الجلب المسبق، لا تُجلب النطاقات المستبعدة مسبقاً مطلقاً، لكن حدود المهام والسماح بالجلب المسبق وفقاً لـ `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit` يحددان قبل التصفية. لذلك، عند استخدام عوامل تصفية عالية الانتقائية، قد تكون المهام المتبقية أصغر من حجم المهمة المقصود، وقد يكون السماح متحفظاً.
 
-<div id="use_join_disjunctions_push_down">
-  ## use_join_disjunctions_push_down
-</div>
+## use_join_disjunctions_push_down {#use_join_disjunctions_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,9 +117,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 لا يغيّر هذا التحسين الدلالة، ولا يُطبَّق إلا عندما يوفّر كل فرع OR من المستوى الأعلى شرطًا حتميًا واحدًا على الأقل
 للجهة المستهدفة.
 
-<div id="use_legacy_to_time">
-  ## use_legacy_to_time
-</div>
+## use_legacy_to_time {#use_legacy_to_time}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -173,9 +131,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 تظل الدالة القديمة متاحة دائمًا باسم `toTimeWithFixedDate`، بغض النظر عن هذا الإعداد.
 أثناء تمكين هذا الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
 
-<div id="use_lightweight_primary_key_index_analysis">
-  ## use_lightweight_primary_key_index_analysis
-</div>
+## use_lightweight_primary_key_index_analysis {#use_lightweight_primary_key_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -190,9 +146,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — معطّل. تُعالَج جميع أعمدة المفتاح الأساسي أثناء تحليل الفهرس.
 * 1 — مُمكّن.
 
-<div id="use_parquet_metadata_cache">
-  ## use_parquet_metadata_cache
-</div>
+## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -205,9 +159,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="use_primary_key">
-  ## use_primary_key
-</div>
+## use_primary_key {#use_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +172,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 * 0 — معطّل.
 * 1 — مفعّل.
 
-<div id="use_reader_executor">
-  ## use_reader_executor
-</div>
+## use_reader_executor {#use_reader_executor}
 
 <ExperimentalBadge />
 
@@ -232,9 +182,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 تجريبي. تُوجَّه عمليات القراءة عبر خط الأنابيب الجديد `ReaderExecutor` بدلًا من البنية المتداخلة القديمة لمخازن القراءة المؤقتة. ويعود إلى المسار القديم في التهيئات التي لا يزال المنفّذ لا يدعمها.
 
-<div id="use_roaring_bitmap_iceberg_positional_deletes">
-  ## use_roaring_bitmap_iceberg_positional_deletes
-</div>
+## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -242,9 +190,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 استخدم roaring bitmap لعمليات الحذف الموضعي في Iceberg.
 
-<div id="use_streaming_marks_compression">
-  ## use_streaming_marks_compression
-</div>
+## use_streaming_marks_compression {#use_streaming_marks_compression}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -252,9 +198,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 عند تحميل العلامات لأجزاء MergeTree، اضغطها إلى تمثيلها داخل الذاكرة كتلةً واحدة في كل مرة (streaming) بدلًا من إنشاء مصفوفة العلامات العادية الكاملة أولًا. يقلل هذا بشكل كبير من ذروة استخدام الذاكرة أثناء تحميل العلامات للأجزاء compact التي تحتوي على العديد من التدفقات الفرعية (مثل الجداول التي تحتوي على أعمدة JSON مع تفعيل write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts).
 
-<div id="use_strict_insert_block_limits">
-  ## use_strict_insert_block_limits
-</div>
+## use_strict_insert_block_limits {#use_strict_insert_block_limits}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -277,9 +221,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 معطّل افتراضيًا.
 
-<div id="use_structure_from_insertion_table_in_table_functions">
-  ## use_structure_from_insertion_table_in_table_functions
-</div>
+## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -287,9 +229,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 استخدم البنية من جدول الإدراج بدلًا من استدلال المخطط من البيانات. القيم الممكنة: 0 - معطّل، 1 - مُمكّن، 2 - تلقائي
 
-<div id="use_uncompressed_cache">
-  ## use_uncompressed_cache
-</div>
+## use_uncompressed_cache {#use_uncompressed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -298,9 +238,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 بالنسبة إلى الاستعلامات التي تقرأ حجمًا كبيرًا نسبيًا من data (مليون row أو أكثر)، يُعطَّل uncompressed cache تلقائيًا لتوفير المساحة للاستعلامات الصغيرة فعلًا. وهذا يعني أنه يمكنك إبقاء الإعداد &#39;use&#95;uncompressed&#95;cache&#39; مضبوطًا دائمًا على 1.
 
-<div id="use_with_fill_by_sorting_prefix">
-  ## use_with_fill_by_sorting_prefix
-</div>
+## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

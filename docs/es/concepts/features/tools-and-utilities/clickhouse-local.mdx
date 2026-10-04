@@ -201,7 +201,16 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## Uso {#usage}
 
-De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Para los datos temporales, se crea por defecto un directorio temporal de datos único.
+De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor de ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Para los datos temporales, se crea por defecto un directorio temporal de datos único.
+
+Si no se especifica `--config-file`, `clickhouse-local` busca un archivo de configuración en las siguientes ubicaciones y utiliza el primero que encuentre:
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+El archivo de configuración puede escribirse en XML o en YAML, con el mismo formato que el del servidor de ClickHouse; consulte [&quot;Archivos de configuración&quot;](/es/operations/configuration-files).
 
 Uso básico (Linux):
 
@@ -236,13 +245,13 @@ Argumentos:
 * `--echo-query-id [ <bool> ]` — imprime el `query_id` antes de la ejecución. Acepta un valor booleano opcional. Está habilitado de forma predeterminada en modo interactivo y deshabilitado en modo por lotes.
 * `--echo-query-separator <string>` — imprime este separador antes de la consulta mostrada por `echo` ya formateada (requiere `--echo-formatted`), lo que facilita distinguir la consulta escrita de su eco reformateado. Vacío de forma predeterminada (deshabilitado).
 * `--highlight`, `--hilite` `<bool>` — alterna el resaltado de sintaxis del prompt de comandos y de las consultas mostradas por `echo`. Está habilitado de forma predeterminada. El resaltado se aplica solo cuando se escribe en un terminal.
-* `--hints <bool>` — muestra sugerencias de autocompletado mientras escribe (texto &quot;fantasma&quot; en línea) para la sugerencia coincidente más adecuada cuando el cursor está al final de la entrada. Navegue por las sugerencias con Arriba/Abajo (o Ctrl-Arriba/Ctrl-Abajo); acepte la sugerencia en línea con Tab o Flecha derecha; `Enter` acepta una sugerencia solo después de que se haya seleccionado explícitamente una y, en caso contrario, ejecuta la consulta; `Tab` también abre la lista clásica de autocompletado. Requiere `--highlight` (las sugerencias necesitan color). Las sugerencias también necesitan el mecanismo de sugerencias, por lo que `--disable_suggestion` las desactiva; los [`comandos /`](/es/interfaces/client#slash-commands) del client son una lista estática y siguen mostrándose como sugerencias mientras `--hints` y `--highlight` estén activados. `Tab` completa los comandos `/` incluso cuando las sugerencias están desactivadas. Está habilitado de forma predeterminada.
+* `--hints <bool>` — muestra sugerencias de autocompletado mientras escribe (texto &quot;fantasma&quot; en línea) para la sugerencia coincidente más adecuada cuando el cursor está al final de la entrada. Navegue por las sugerencias con Arriba/Abajo (o Ctrl-Arriba/Ctrl-Abajo); acepte la sugerencia en línea con Tab o Flecha derecha; `Enter` acepta una sugerencia solo después de que se haya seleccionado explícitamente una y, en caso contrario, ejecuta la consulta; `Tab` también abre la lista clásica de autocompletado. Requiere `--highlight` (las sugerencias necesitan color). Las sugerencias también necesitan el mecanismo de sugerencias, por lo que `--disable_suggestion` las desactiva; los [`comandos /`](/es/interfaces/client#slash-commands) del Client son una lista estática y siguen mostrándose como sugerencias mientras `--hints` y `--highlight` estén activados. `Tab` completa los comandos `/` incluso cuando las sugerencias están desactivadas. Está habilitado de forma predeterminada.
 * `--verbose` — muestra más detalles sobre la ejecución de la consulta.
 * `--logger.console` — registrar en la consola.
 * `--logger.log` — nombre del archivo de registro.
 * `--logger.level` — nivel de registro.
-* `--ignore-error` — no detener el procesamiento si falla una consulta.
-* `-c`, `--config-file` — ruta al archivo de configuración en el mismo formato que el del servidor ClickHouse; de forma predeterminada, la configuración está vacía.
+* `--ignore-error` — no detener el procesamiento si falla una consulta: el error se notifica en `stderr` y se procesa la siguiente consulta. Como los errores se ignoran, el proceso finaliza con un código de éxito aunque algunas consultas hayan fallado.
+* `-c`, `--config-file` — ruta al archivo de configuración en el mismo formato que el del servidor de ClickHouse. Si no se indica, `clickhouse-local` busca por sí mismo su archivo de configuración principal (consulte [&quot;Archivos de configuración&quot;](#configuration-files)); la configuración solo queda vacía cuando no existe ninguno de los archivos buscados.
 * `--no-system-tables` — no adjuntar las tablas del sistema.
 * `--help` — referencia de argumentos para `clickhouse-local`.
 * `-V`, `--version` — imprime la información de la versión y sale.
@@ -251,11 +260,11 @@ Además, hay argumentos para cada variable de configuración de ClickHouse que s
 
 ### Archivos de configuración {#configuration-files}
 
-`clickhouse-local` no utiliza la configuración de un servidor ClickHouse instalado en el mismo
+`clickhouse-local` no utiliza la configuración de un servidor de ClickHouse instalado en el mismo
 host: busca su propio archivo de configuración principal y usa el primero de estos que exista:
 
 1. la ruta indicada con `--config-file`;
-2. `./config.xml`;
+2. `./config.xml`, `./config.yaml` o `./config.yml`;
 3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` o `./clickhouse-local.yml`;
 4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` o `~/.clickhouse-local/config.yml`;
 5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` o `/etc/clickhouse-local/config.yml`.

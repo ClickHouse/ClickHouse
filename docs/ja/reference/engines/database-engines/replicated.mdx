@@ -13,9 +13,7 @@ doc_type: 'reference'
 
 1 台の ClickHouse server で、複数の Replicated データベースを同時に実行・更新できます。ただし、同じ Replicated データベースのレプリカを複数持つことはできません。
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 ```sql
 CREATE DATABASE testdb [UUID '...'] ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
@@ -39,9 +37,7 @@ CREATE DATABASE testdb [UUID '...'] ENGINE = Replicated('zoo_path', 'shard_name'
 CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'shard_name', 'replica_name')
 ```
 
-<div id="specifics-and-recommendations">
-  ## 特有の動作と推奨事項
-</div>
+## 特有の動作と推奨事項 {#specifics-and-recommendations}
 
 `Replicated` データベースでの DDL クエリは、[ON CLUSTER](/ja/reference/statements/distributed-ddl) クエリとほぼ同様に動作しますが、いくつか細かな違いがあります。
 
@@ -57,9 +53,7 @@ CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_
 
 テーブルのレプリケーションを維持せずにクラスターだけを構成したい場合は、[Cluster Discovery](/ja/guides/oss/deployment-and-scaling/cluster-discovery) 機能を参照してください。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 3 台のホストでクラスターを作成します：
 
@@ -156,26 +150,24 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 └───────┴───────────────┘
 ```
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
 以下の設定がサポートされています:
 
-| 設定                                                                           | デフォルト                          | 説明                                                                                                                                                                                                              |
-| ---------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_broken_tables_ratio`                                                    | 1                              | 古くなったテーブルの比率が全テーブルに対してこの値を超える場合、レプリカは自動復旧されません                                                                                                                                                                  |
-| `max_replication_lag_to_enqueue`                                             | 50                             | レプリケーション遅延がこの値を超えているレプリカでクエリを実行しようとすると、例外がスローされます。`0` より大きい必要があります。`0` は `BAD_ARGUMENTS` で拒否されます (最小値は `1`)                                                                                                     |
-| `wait_entry_commited_timeout_sec`                                            | 3600                           | タイムアウトを超過してもイニシエーターホストがまだそのクエリを実行していない場合、レプリカはクエリのキャンセルを試みます                                                                                                                                                    |
-| `collection_name`                                                            |                                | クラスター認証に関するすべての情報が定義されている、サーバーの設定内のコレクション名                                                                                                                                                                      |
-| `check_consistency`                                                          | true                           | ローカルメタデータと Keeper 内のメタデータの整合性を確認し、不整合がある場合はレプリカの復旧を行います                                                                                                                                                         |
-| `max_retries_before_automatic_recovery`                                      | 10                             | キューエントリの実行試行回数の上限です。これを超えると、レプリカは失われたものと見なされ、スナップショットから復旧されます (0 は無制限を意味します)                                                                                                                                    |
-| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | 有効な場合、Replicatedデータベースで DDL を処理する際に、可能であればリフレッシュ可能なマテリアライズドビューの一時テーブルに対する DDL の作成および入れ替えをスキップします                                                                                                                |
-| `logs_to_keep`                                                               | 1000                           | Replicatedデータベース用に ZooKeeper に保持するログのデフォルト数です。                                                                                                                                                                  |
-| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | ZooKeeper 内のデータベースへのパスです。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                           |
-| `default_replica_shard_name`                                                 | `{shard}`                      | データベース内のレプリカの分片名です。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                                 |
-| `default_replica_name`                                                       | `{replica}`                    | データベース内のレプリカ名です。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                                    |
-| `internal_replication`                                                       | false                          | この Replicatedデータベースのクラスターで作成された 分散テーブルが、データをいずれか 1 つのレプリカに送信するか (internal replication はクラスター内のレプリカ自身がレプリケーションを行うことを意味します) 、またはすべてのレプリカに送信するかを指定します (internal replication が無効な場合、分散テーブルは挿入されたデータをすべてのレプリカに送信します) |
+| 設定                                                                           | デフォルト                          | 説明                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_broken_tables_ratio`                                                    | 1                              | 古くなったテーブルの比率が全テーブルに対してこの値を超える場合、レプリカは自動復旧されません                                                                                                                                                                       |
+| `max_replication_lag_to_enqueue`                                             | 50                             | レプリケーション遅延がこの値を超えているレプリカでクエリを実行しようとすると、例外がスローされます。`0` より大きい必要があります。`0` は `BAD_ARGUMENTS` で拒否されます (最小値は `1`)                                                                                                          |
+| `wait_entry_commited_timeout_sec`                                            | 3600                           | タイムアウトを超過してもイニシエーターホストがまだそのクエリを実行していない場合、レプリカはクエリのキャンセルを試みます                                                                                                                                                         |
+| `collection_name`                                                            |                                | クラスター認証に関するすべての情報が定義されている、サーバーの設定内のコレクション名                                                                                                                                                                           |
+| `check_consistency`                                                          | true                           | ローカルメタデータと Keeper 内のメタデータの整合性を確認し、不整合がある場合はレプリカの復旧を行います                                                                                                                                                              |
+| `max_retries_before_automatic_recovery`                                      | 10                             | キューエントリの実行試行回数の上限です。これを超えると、レプリカは失われたものと見なされ、スナップショットから復旧されます (0 は無制限を意味します)                                                                                                                                         |
+| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | 有効な場合、Replicatedデータベースで DDL を処理する際に、可能であればリフレッシュ可能なマテリアライズドビューの一時テーブルに対する DDL の作成および入れ替えをスキップします                                                                                                                     |
+| `logs_to_keep`                                                               | 1000                           | Replicatedデータベース用に ZooKeeper に保持するログのデフォルト数です。DDL ログカウンターは 32 ビットであるため、この値は `4294967295` を超えてはなりません。これより大きい値は、ユーザーが指定した定義 (`CREATE` または完全な構文による `ATTACH`) では `BAD_ARGUMENTS` で拒否され、既存のメタデータを再適用する際には警告とともに上限値に制限されます |
+| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | ZooKeeper 内のデータベースへのパスです。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                                |
+| `default_replica_shard_name`                                                 | `{shard}`                      | データベース内のレプリカの分片名です。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                                      |
+| `default_replica_name`                                                       | `{replica}`                    | データベース内のレプリカ名です。引数が省略された場合、データベース作成時に使用されます。                                                                                                                                                                         |
+| `internal_replication`                                                       | false                          | この Replicatedデータベースのクラスターで作成された 分散テーブルが、データをいずれか 1 つのレプリカに送信するか (internal replication はクラスター内のレプリカ自身がレプリケーションを行うことを意味します) 、またはすべてのレプリカに送信するかを指定します (internal replication が無効な場合、分散テーブルは挿入されたデータをすべてのレプリカに送信します)      |
 
 デフォルト値は設定ファイルで上書きできます
 

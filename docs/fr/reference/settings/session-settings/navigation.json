@@ -115,6 +115,7 @@
     "fr/reference/settings/session-settings/log",
     "fr/reference/settings/session-settings/log-queries",
     "fr/reference/settings/session-settings/log-query",
+    "fr/reference/settings/session-settings/logsql",
     "fr/reference/settings/session-settings/low-cardinality",
     "fr/reference/settings/session-settings/materialize",
     "fr/reference/settings/session-settings/materialize-statistics-on-insert",

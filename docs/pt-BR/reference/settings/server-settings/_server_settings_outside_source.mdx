@@ -879,6 +879,7 @@ Para também gravar mensagens de log no syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ Para também gravar mensagens de log no syslog:
 
 Chaves para `<syslog>`:
 
-| Chave      | Descrição                                                                                                                                                                                                                                                                                                       |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | O endereço do syslog no formato `host\[:port\]`. Se for omitido, o daemon local será usado.                                                                                                                                                                                                                     |
-| `hostname` | O nome do host a partir do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                |
-| `facility` | A [palavra-chave de facility](https://en.wikipedia.org/wiki/Syslog#Facility) do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
-| `format`   | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| Chave         | Descrição                                                                                                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | O endereço do syslog no formato `host\[:port\]`. Se for omitido, o daemon local será usado.                                                                                                                                                                                                                     |
+| `hostname`    | O nome do host a partir do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                |
+| `facility`    | A [palavra-chave de facility](https://en.wikipedia.org/wiki/Syslog#Facility) do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
+| `format`      | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| `programname` | Nome do programa usado nas mensagens do syslog: o ident do syslog local ou o `APP-NAME` para syslog remoto com `format=syslog`. Não tem efeito com `format=bsd`. De 1 a 48 caracteres ASCII imprimíveis, sem espaços. Padrão: o nome do comando para o syslog local; não definido para o syslog remoto.         |
 
 **Formatos de log**
 
@@ -925,7 +927,7 @@ Para ativar o suporte a logs em JSON, use o snippet a seguir:
 <logger>
     <formatting>
         <type>json</type>
-        <!-- Pode ser configurado por canal (log, errorlog, console, syslog) ou globalmente para todos os canais (nesse caso, basta omiti-lo). -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
@@ -1264,6 +1266,33 @@ Chaves das configurações de servidor/cliente:
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+A zona de disponibilidade e a região de nuvem em que o servidor é executado. A zona de disponibilidade é usada pelo cliente do ZooKeeper para dar preferência a hosts na mesma zona (`prefer_local_availability_zone` na seção [zookeeper](#zookeeper)) e pelo ClickHouse Keeper, que a publica no nó `/keeper/availability_zone`.
+
+Se a seção `placement` não estiver presente, a zona de disponibilidade e a região ficam vazias.
+
+As seguintes configurações estão disponíveis:
+
+| Configuração                  | Descrição                                                                                                                                                                                                                    | Valor default                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Obtém a zona de disponibilidade a partir do serviço de metadados de instância do provedor de nuvem: primeiro da AWS e, depois, do GCP. Quando habilitada, todas as outras configurações são ignoradas e a região fica vazia. | `false`                              |
+| `availability_zone`           | A zona de disponibilidade.                                                                                                                                                                                                   | Vazio                                |
+| `availability_zone_from_file` | O arquivo de onde a zona de disponibilidade é lida quando `availability_zone` está vazio. Se o arquivo não existir, a zona de disponibilidade fica vazia.                                                                    | `/run/instance-metadata/node-zone`   |
+| `region`                      | A região.                                                                                                                                                                                                                    | Vazio                                |
+| `region_from_file`            | O arquivo de onde a região é lida quando `region` está vazio. Se o arquivo não existir, a região fica vazia.                                                                                                                 | `/run/instance-metadata/node-region` |
+
+O placement é lido uma única vez, na inicialização do servidor.
+
+**Exemplo**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1612,7 +1641,7 @@ O arquivo de configuração padrão do servidor, `config.xml`, contém a seguint
 
 Solicita a criação de tabelas `all_...` ao lado das tabelas de log do sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log` e assim por diante). Essa tabela é uma união da tabela de log correspondente, de suas versões rotacionadas (`query_log_0`, `query_log_1`, ...) e/ou das mesmas tabelas em todas as réplicas de um cluster, permitindo consultá-las de uma só vez sem precisar se lembrar de construções como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-A seção é opcional. Se estiver presente, pelo menos uma das seguintes configurações deve ser especificada:
+A seção é opcional. O arquivo de configuração padrão do servidor, `config.xml`, contém esta seção com `merge_rotated_tables` habilitado, de modo que as tabelas `all_...` são criadas automaticamente em um servidor com a configuração padrão: no primeiro flush de cada log ou na inicialização, se `prepare_system_log_tables_on_startup` estiver habilitado; a configuração `cluster` precisa ser definida explicitamente. Uma tabela que já exista com um dos nomes `all_...` e que não tenha sido criada por este recurso (por exemplo, uma tabela criada manualmente e com dados) nunca é substituída: ela é mantida intacta, um aviso é gravado no log do servidor e a tabela de união é criada no próximo flush do log, assim que essa tabela for removida ou renomeada. As tabelas criadas por este recurso são identificadas pela frase marcadora no final de seu comentário: `It is safe to drop this table at any time: it will be recreated automatically.` Se a seção estiver presente, pelo menos uma das seguintes configurações deve ser especificada:
 
 | Configuração           | Descrição                                                                                                                                                                                                                                  |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1627,9 +1656,9 @@ A opção se aplica a todas as tabelas de log do sistema; não permite configura
   Quando a configuração `cluster` é usada, a definição da tabela faz referência ao cluster, que precisa existir para que a tabela seja carregada. Se você remover o cluster da configuração, remova também as tabelas `all_...` (elas serão recriadas de acordo com a nova configuração no próximo flush).
 </Note>
 
-<Warning>
-  Depois que esta seção é habilitada, os nomes `all_...` no banco de dados `system` ficam reservados para este recurso. Não mantenha suas próprias tabelas com esses nomes: renomeie qualquer tabela desse tipo antes de habilitar a seção.
-</Warning>
+<Note>
+  Uma tabela com um dos nomes `all_...` só é considerada criada por este recurso — e, portanto, pode ser substituída quando sua definição diferir da esperada — se consultar a função de tabela `merge` ou `clusterAllReplicas` e se seu comentário contiver a frase marcadora acima. Não copie essa frase para os comentários de suas próprias tabelas.
+</Note>
 
 **Exemplo**
 

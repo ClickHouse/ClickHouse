@@ -14,16 +14,14 @@ Esta é a versão web do nosso [artigo científico da VLDB 2024](https://www.vld
 </Frame>
 
 <div id="abstract">
-  ## RESUMO
+  ## RESUMO {#abstract}
 </div>
 
 Nas últimas décadas, a quantidade de dados armazenados e analisados aumentou exponencialmente. Empresas de diferentes indústrias e setores passaram a depender desses dados para aprimorar produtos, avaliar desempenho e tomar decisões críticas para o negócio. No entanto, à medida que os volumes de dados passaram a atingir escala de internet, as empresas precisaram gerenciar dados históricos e novos de forma econômica e escalável, ao mesmo tempo em que os analisavam com um grande número de consultas simultâneas e com exigência de latências em tempo real (por exemplo, menos de um segundo, dependendo do caso de uso).
 
 Este artigo apresenta uma visão geral do ClickHouse, um popular banco de dados OLAP de código aberto projetado para análises de alto desempenho sobre conjuntos de dados em escala de petabytes com altas taxas de ingestão. Sua camada de armazenamento combina um formato de dados baseado em árvores log-structured merge (LSM) tradicionais com técnicas inovadoras para a transformação contínua (por exemplo, agregação, arquivamento) de dados históricos em segundo plano. As consultas são escritas em um dialeto SQL prático e processadas por um mecanismo de execução vetorizada de consultas de última geração com compilação de código opcional. O ClickHouse faz uso intensivo de técnicas de poda para evitar o processamento de dados irrelevantes nas consultas. Outros sistemas de gerenciamento de dados podem ser integrados no nível de função de tabela, mecanismo de tabela ou mecanismo de banco de dados. Benchmarks em cenários reais demonstram que o ClickHouse está entre os bancos de dados analíticos mais rápidos do mercado.
 
-<div id="1-introduction">
-  ## 1 INTRODUÇÃO
-</div>
+## 1 INTRODUÇÃO {#1-introduction}
 
 Este artigo descreve o ClickHouse, um banco de dados OLAP colunar projetado para consultas analíticas de alto desempenho em tabelas com trilhões de linhas e centenas de colunas. O ClickHouse [começou](https://clickhou.se/evolution) em 2009 como um operador de filtro e agregação para dados de arquivos de log em escala web e se tornou open source em 2016. A [Figura 1](#page-1-0) ilustra quando os principais recursos descritos neste artigo foram introduzidos no ClickHouse.
 
@@ -45,9 +43,7 @@ O ClickHouse foi projetado para enfrentar cinco desafios centrais do gerenciamen
   <img src="/images/managing-data/core-concepts/_vldb2024_1_Figure_0.webp" alt="Figura 1: Linha do tempo do ClickHouse." />
 </Frame>
 
-<div id="2-architecture">
-  ## 2 ARQUITETURA
-</div>
+## 2 ARQUITETURA {#2-architecture}
 
 <a id="page-2-0" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -69,11 +65,11 @@ ClickHouse oferece suporte a sharding e replicação de tabelas em vários nós 
 
 Por fim, o mecanismo de banco de dados ClickHouse pode ser operado nos modos on-premise, cloud, standalone ou in-process. No modo on-premise, os usuários configuram o ClickHouse localmente como um único servidor ou cluster multinó com sharding e/ou replicação. Os clientes se comunicam com o banco de dados por meio dos wire protocols binários nativo, do MySQL e do PostgreSQL, ou de uma API HTTP REST. O modo cloud é representado pelo ClickHouse Cloud, uma oferta de DBaaS totalmente gerenciada e com autoscaling. Embora este artigo se concentre no modo on-premise, planejamos descrever a arquitetura do ClickHouse Cloud em uma publicação futura. O [modo standalone](https://clickhou.se/local-fastest-tool) transforma o ClickHouse em um utilitário de linha de comando para analisar e transformar arquivos, tornando-o uma alternativa baseada em SQL a ferramentas Unix como cat e grep. Embora isso não exija configuração prévia, o modo standalone é restrito a um único servidor. Recentemente, foi desenvolvido um modo in-process chamado chDB <sup>[[15]](#page-12-3)</sup> para casos de uso de análise interativa de dados, como Jupyter notebooks <sup>[[37]](#page-12-4)</sup> com DataFrames do Pandas <sup>[[61]](#page-13-5)</sup>. Inspirado pelo DuckDB <sup>[[67]](#page-13-6)</sup>, o [chDB](https://clickhou.se/chdb-rocket-engine) incorpora o ClickHouse como um mecanismo OLAP de alto desempenho em um processo hospedeiro. Em comparação com os outros modos, isso permite transferir dados de origem e de resultado entre o mecanismo de banco de dados e a aplicação com eficiência, sem cópia, já que ambos são executados no mesmo espaço de endereçamento.
 
-## <a id="page-1-1" style={{display:"block",scrollMarginTop:"80px"}} />3 CAMADA DE ARMAZENAMENTO
+## <a id="page-1-1" style={{display:"block",scrollMarginTop:"80px"}} />3 CAMADA DE ARMAZENAMENTO {#3-storage-layer}
 
 Esta seção aborda os motores de tabela MergeTree* como o formato de armazenamento nativo do ClickHouse. Descrevemos sua representação em disco e discutimos três técnicas de poda de dados no ClickHouse. Em seguida, apresentamos estratégias de merge que transformam continuamente os dados sem afetar as inserções simultâneas. Por fim, explicamos como atualizações e exclusões são implementadas, bem como a desduplicação de dados, a replicação de dados e a conformidade com ACID.
 
-### <a id="page-2-2" style={{display:"block",scrollMarginTop:"80px"}} />3.1 Formato em disco
+### <a id="page-2-2" style={{display:"block",scrollMarginTop:"80px"}} />3.1 Formato em disco {#3-1-on-disk-format}
 
 Cada tabela com motor de tabela MergeTree* é organizada como uma coleção de partes imutáveis da tabela. Uma parte é criada sempre que um conjunto de linhas é inserido na tabela. As partes são autocontidas no sentido de que incluem todos os metadados necessários para interpretar seu conteúdo sem consultas adicionais a um catálogo central. Para manter baixo o número de partes por tabela, um processo de mesclagem em segundo plano combina periodicamente várias partes menores em uma parte maior até atingir um tamanho de parte configurável (150 GB por padrão). Como as partes são ordenadas pelas colunas da chave primária da tabela (consulte a Seção [3.2)](#page-3-0), usa-se uma ordenação por intercalação k-way eficiente <sup>[&#91;40&#93;](#page-12-5)</sup> para a mesclagem. As partes de origem são marcadas como inativas e acabam sendo excluídas assim que sua contagem de referências cai para zero, ou seja, quando nenhuma consulta mais as lê.
 
@@ -95,7 +91,7 @@ As colunas também podem ser codificadas por dicionário <sup>[[2,](#page-12-10)
 
 Por fim, as tabelas podem ser particionadas por intervalo, hash ou round-robin usando expressões de particionamento arbitrárias. Para permitir partition pruning, o ClickHouse também armazena os valores mínimo e máximo da expressão de particionamento para cada partição. Os usuários podem, opcionalmente, criar column statistics mais avançadas (por exemplo, estatísticas de HyperLogLog <sup>[[30]](#page-12-11)</sup> ou t-digest <sup>[[28]](#page-12-12)</sup>) que também fornecem estimativas de cardinalidade.
 
-### <a id="page-3-0" style={{display:"block",scrollMarginTop:"80px"}} />3.2 Poda de dados
+### <a id="page-3-0" style={{display:"block",scrollMarginTop:"80px"}} />3.2 Poda de dados {#3-2-data-pruning}
 
 Na maioria dos casos de uso, varrer petabytes de dados apenas para responder a uma única consulta é lento e caro demais. O ClickHouse oferece suporte a três técnicas de poda de dados que permitem ignorar a maior parte das linhas durante as buscas e, assim, acelerar significativamente as consultas.
 
@@ -113,7 +109,7 @@ Segundo, os usuários podem criar **projeções de tabela**, ou seja, versões a
 
 Terceiro, os **índices de skipping** oferecem uma alternativa leve às projeções. A ideia dos índices de skipping é armazenar pequenas quantidades de metadados no nível de vários grânulos consecutivos, o que permite evitar a varredura de linhas irrelevantes. Índices de skipping podem ser criados para expressões de índice arbitrárias e com granularidade configurável, ou seja, o número de grânulos em um bloco de índice de skipping. Os tipos de índice de skipping disponíveis incluem: 1. Índices min-max <sup>[&#91;51&#93;](#page-13-14)</sup>, que armazenam os valores mínimo e máximo da expressão de índice para cada bloco de índice. Esse tipo de índice funciona bem para dados clusterizados localmente com pequenos intervalos absolutos, por exemplo, dados pouco ordenados. 2. Índices Set, que armazenam um número configurável de valores únicos por bloco de índice. Esses índices são mais adequados para dados com baixa cardinalidade local, ou seja, valores &quot;agrupados&quot;. 3. Índices de filtro de Bloom <sup>[&#91;9&#93;](#page-12-14)</sup> criados para valores de linha, token ou n-gram com uma taxa de falso positivo configurável. Esses índices oferecem suporte à busca textual <sup>[&#91;73&#93;](#page-13-15)</sup>, mas, diferentemente dos índices min-max e Set, não podem ser usados para predicados de intervalo ou negativos.
 
-### <a id="page-4-3" style={{display:"block",scrollMarginTop:"80px"}} />3.3 Transformação de dados durante a mesclagem
+### <a id="page-4-3" style={{display:"block",scrollMarginTop:"80px"}} />3.3 Transformação de dados durante a mesclagem {#3-3-merge-time-data-transformation}
 
 Casos de uso de inteligência de negócios e observabilidade frequentemente precisam lidar com dados gerados em taxas constantemente altas ou em picos. Além disso, dados gerados recentemente costumam ser mais relevantes para obter insights significativos em tempo real do que dados históricos. Esses casos de uso exigem que os bancos de dados sustentem altas taxas de ingestão de dados enquanto reduzem continuamente o volume de dados históricos por meio de técnicas como agregação ou expiração de dados. O ClickHouse permite a transformação incremental contínua dos dados existentes usando diferentes estratégias de mesclagem. A transformação de dados durante a mesclagem não compromete o desempenho das instruções INSERT, mas não pode garantir que as tabelas nunca contenham valores indesejados (por exemplo, desatualizados ou não agregados). Se necessário, todas as transformações durante a mesclagem podem ser aplicadas no momento da consulta especificando a palavra-chave FINAL em instruções SELECT.
 
@@ -143,7 +139,7 @@ Como exemplo, considere a definição da tabela de logging na [Listagem 1.](#pag
 
 Listagem 1: Mover a parte para o armazenamento de objetos após uma semana.
 
-### <a id="page-4-0" style={{display:"block",scrollMarginTop:"80px"}} />3.4 Atualizações e Exclusões
+### <a id="page-4-0" style={{display:"block",scrollMarginTop:"80px"}} />3.4 Atualizações e Exclusões {#3-4-updates-and-deletes}
 
 O design dos motores de tabela MergeTree* favorece cargas de trabalho append-only, mas alguns casos de uso exigem modificar dados existentes ocasionalmente, por exemplo, para conformidade regulatória. Existem duas abordagens para atualizar ou excluir dados, e nenhuma delas bloqueia inserções paralelas.
 
@@ -153,19 +149,19 @@ Como alternativa, **exclusões leves** atualizam apenas uma coluna interna de bi
 
 Espera-se que operações de atualização e exclusão na mesma tabela sejam raras e serializadas para evitar conflitos lógicos.
 
-### <a id="page-5-2" style={{display:"block",scrollMarginTop:"80px"}} />3.5 Inserções idempotentes
+### <a id="page-5-2" style={{display:"block",scrollMarginTop:"80px"}} />3.5 Inserções idempotentes {#3-5-idempotent-inserts}
 
 Um problema que ocorre com frequência na prática é como os clientes devem lidar com timeouts de conexão após enviar dados ao servidor para inserção em uma tabela. Nessa situação, é difícil para os clientes determinar se os dados foram inseridos com sucesso ou não. Tradicionalmente, esse problema é resolvido reenviando os dados do cliente para o servidor e contando com a chave primária ou com restrições de unicidade para rejeitar inserts duplicados. Os bancos de dados realizam rapidamente as consultas pontuais necessárias usando estruturas de índice baseadas em árvores binárias <sup>[[39,](#page-12-15)</sup> <sup>[68]](#page-13-16)</sup>, árvores radix <sup>[[45]](#page-13-17)</sup> ou tabelas hash <sup>[[29]](#page-12-16)</sup>. Como essas estruturas de dados indexam cada tupla, sua sobrecarga de espaço e de atualização se torna proibitiva para grandes volumes de dados e altas taxas de ingestão.
 
 O ClickHouse oferece uma alternativa mais leve baseada no fato de que cada insert acaba criando uma parte. Mais especificamente, o servidor mantém hashes das N últimas partes inseridas (por exemplo, N=100) e ignora reinserções de partes com hash conhecido. Os hashes de tabelas não replicadas e replicadas são armazenados localmente e no Keeper, respectivamente. Como resultado, os inserts se tornam idempotentes, ou seja, os clientes podem simplesmente reenviar o mesmo lote de linhas após um timeout e presumir que o servidor cuida da desduplicação. Para ter mais controle sobre o processo de desduplicação, os clientes podem, opcionalmente, fornecer um token de insert que atua como hash da parte. Embora a desduplicação baseada em hash gere uma sobrecarga associada ao cálculo do hash das novas linhas, o custo de armazenar e comparar hashes é insignificante.
 
-### <a id="page-5-0" style={{display:"block",scrollMarginTop:"80px"}} />3.6 Replicação de dados
+### <a id="page-5-0" style={{display:"block",scrollMarginTop:"80px"}} />3.6 Replicação de dados {#3-6-data-replication}
 
-A replicação é um pré-requisito para alta disponibilidade (tolerância a falhas de nós), mas também é usada para balanceamento de carga e upgrades sem indisponibilidade <sup>[&#91;14&#93;](#page-12-17)</sup>. No ClickHouse, a replicação se baseia no conceito de estados da tabela, que consistem em um conjunto de partes da tabela (Seção [3.1)](#page-2-2) e metadados da tabela, como nomes de colunas e tipos. Os nós fazem o estado de uma tabela avançar usando três operações: 1. inserções adicionam uma nova parte ao estado, 2. mesclagens adicionam uma nova parte e removem partes existentes do estado, 3. mutações e instruções DDL adicionam partes, e/ou removem partes, e/ou alteram os metadados da tabela, dependendo da operação específica. As operações são executadas localmente em um único nó e registradas como uma sequência de transições de estado em um log global de replicação.
+A replicação é um pré-requisito para alta disponibilidade (tolerância a falhas de nós), mas também é usada para balanceamento de carga e upgrades sem indisponibilidade <sup>[&#91;14&#93;](#page-12-17)</sup>. No ClickHouse, a replicação se baseia no conceito de estados da tabela, que consistem em um conjunto de partes da tabela (Seção [3.1)](#page-2-2) e metadados da tabela, como nomes de colunas e tipos. Os nós fazem o estado de uma tabela avançar usando três operações: 1. inserts adicionam uma nova parte ao estado, 2. mesclagens adicionam uma nova parte e removem partes existentes do estado, 3. mutações e instruções DDL adicionam partes, e/ou removem partes, e/ou alteram os metadados da tabela, dependendo da operação específica. As operações são executadas localmente em um único nó e registradas como uma sequência de transições de estado em um log global de replicação.
 
-O log de replicação é mantido por um conjunto de, normalmente, três processos do ClickHouse Keeper, que usam o algoritmo de consenso Raft <sup>[&#91;59&#93;](#page-13-4)</sup> para fornecer uma camada de coordenação distribuída e tolerante a falhas para um cluster de nós do ClickHouse. Inicialmente, todos os nós do cluster apontam para a mesma posição no log de replicação. Enquanto os nós executam localmente inserções, mesclagens, mutações e instruções DDL, o log de replicação é reproduzido de forma assíncrona em todos os outros nós. Como resultado, tabelas replicadas são apenas eventualmente consistentes, ou seja, os nós podem temporariamente ler estados antigos da tabela enquanto convergem para o estado mais recente. A maioria das operações mencionadas acima também pode ser executada de forma síncrona até que um quórum de nós (por exemplo, a maioria dos nós ou todos os nós) adote o novo estado.
+O log de replicação é mantido por um conjunto de, normalmente, três processos do ClickHouse Keeper, que usam o algoritmo de consenso Raft <sup>[&#91;59&#93;](#page-13-4)</sup> para fornecer uma camada de coordenação distribuída e tolerante a falhas para um cluster de nós do ClickHouse. Inicialmente, todos os nós do cluster apontam para a mesma posição no log de replicação. Enquanto os nós executam localmente inserts, mesclagens, mutações e instruções DDL, o log de replicação é reproduzido de forma assíncrona em todos os outros nós. Como resultado, tabelas replicadas são apenas eventualmente consistentes, ou seja, os nós podem temporariamente ler estados antigos da tabela enquanto convergem para o estado mais recente. A maioria das operações mencionadas acima também pode ser executada de forma síncrona até que um quórum de nós (por exemplo, a maioria dos nós ou todos os nós) adote o novo estado.
 
-Como exemplo, a [Figura 6](#page-5-3) mostra uma tabela replicada inicialmente vazia em um cluster de três nós do ClickHouse. O Nó 1 primeiro recebe duas instruções de inserção e as registra ( 1 2 ) no log de replicação armazenado no conjunto do Keeper. Em seguida, o Nó 2 reproduz a primeira entrada do log buscando-a ( 3 ) e baixando a nova parte do Nó 1 ( 4 ), enquanto o Nó 3 reproduz ambas as entradas do log ( 3 4 5 6 ). Por fim, o Nó 3 faz merge das duas partes em uma nova parte, remove as partes de entrada e registra uma entrada de merge no log de replicação ( 7 ).
+Como exemplo, a [Figura 6](#page-5-3) mostra uma tabela replicada inicialmente vazia em um cluster de três nós do ClickHouse. O Nó 1 primeiro recebe duas instruções de insert e as registra ( 1 2 ) no log de replicação armazenado no conjunto do Keeper. Em seguida, o Nó 2 reproduz a primeira entrada do log buscando-a ( 3 ) e baixando a nova parte do Nó 1 ( 4 ), enquanto o Nó 3 reproduz ambas as entradas do log ( 3 4 5 6 ). Por fim, o Nó 3 faz a mesclagem das duas partes em uma nova parte, remove as partes de entrada e registra uma entrada de mesclagem no log de replicação ( 7 ).
 
 <a id="page-5-3" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -173,15 +169,15 @@ Como exemplo, a [Figura 6](#page-5-3) mostra uma tabela replicada inicialmente v
   <img src="/images/managing-data/core-concepts/_vldb2024_5_Figure_8.webp" alt="Figura 6: Replicação em um cluster de três nós." />
 </Frame>
 
-Existem três otimizações para acelerar a sincronização: primeiro, novos nós adicionados ao cluster não reproduzem o log de replicação do zero; em vez disso, eles simplesmente copiam o estado do nó que gravou a última entrada do log de replicação. Segundo, as mesclagens são reproduzidas repetindo-as localmente ou buscando a parte resultante em outro nó. O comportamento exato é configurável e permite equilibrar o consumo de CPU e a E/S de rede. Por exemplo, a replicação entre data centers normalmente prefere mesclagens locais para minimizar os custos operacionais. Terceiro, os nós reproduzem em paralelo entradas mutuamente independentes do log de replicação. Isso inclui, por exemplo, fetches de novas partes inseridas consecutivamente na mesma tabela ou operações em tabelas diferentes.
+Existem três otimizações para acelerar a sincronização: primeiro, novos nós adicionados ao cluster não reproduzem o log de replicação do zero; em vez disso, eles simplesmente copiam o estado de uma réplica atualizada. Segundo, as mesclagens são reproduzidas repetindo-as localmente ou buscando a parte resultante em outro nó. O comportamento exato é configurável e permite equilibrar o consumo de CPU e a E/S de rede. Por exemplo, a replicação entre data centers normalmente prefere mesclagens locais para minimizar os custos operacionais. Terceiro, os nós reproduzem em paralelo entradas mutuamente independentes do log de replicação. Isso inclui, por exemplo, fetches de novas partes inseridas consecutivamente na mesma tabela ou operações em tabelas diferentes.
 
-### <a id="page-5-1" style={{display:"block",scrollMarginTop:"80px"}} />3.7 Conformidade com ACID
+### <a id="page-5-1" style={{display:"block",scrollMarginTop:"80px"}} />3.7 Conformidade com ACID {#3-7-acid-compliance}
 
 Para maximizar o desempenho de operações concorrentes de leitura e escrita, o ClickHouse evita ao máximo o uso de travas. As consultas são executadas sobre um snapshot de todas as partes de todas as tabelas envolvidas, criado no início da consulta. Isso garante que novas partes inseridas por INSERTs paralelos ou mesclagens (Seção [3.1)](#page-2-2) não participem da execução. Para evitar que as partes sejam modificadas ou removidas ao mesmo tempo (Seção [3.4)](#page-4-0), a contagem de referências das partes processadas é incrementada durante toda a consulta. Formalmente, isso corresponde ao isolamento por snapshot implementado por uma variante de MVCC <sup>[[6]](#page-12-18)</sup> baseada em partes versionadas. Como resultado, as instruções em geral não são compatíveis com ACID, exceto no caso raro em que escritas concorrentes, no momento em que o snapshot é obtido, afetam cada uma apenas uma única parte.
 
 Na prática, a maioria dos casos de uso do ClickHouse com alta intensidade de escrita para tomada de decisão tolera até mesmo um pequeno risco de perda de dados novos em caso de queda de energia. O banco de dados tira proveito disso ao não forçar, por padrão, um commit (fsync) das partes recém-inseridas em disco, permitindo que o kernel agrupe as gravações em lote, ao custo de abrir mão da atomicidade.
 
-## <a id="page-6-0" style={{display:"block",scrollMarginTop:"80px"}} />4 CAMADA DE PROCESSAMENTO DE CONSULTAS
+## <a id="page-6-0" style={{display:"block",scrollMarginTop:"80px"}} />4 CAMADA DE PROCESSAMENTO DE CONSULTAS {#4-query-processing-layer}
 
 <a id="page-6-1" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -194,14 +190,12 @@ Como ilustrado na [Figura 7,](#page-6-1) o ClickHouse paraleliza consultas no n�
 O restante desta seção primeiro descreve, em mais detalhes, o processamento paralelo na granularidade de elementos de dados, fragmentos de dados e shards. Em seguida, apresentamos algumas otimizações importantes para maximizar o desempenho das consultas. Por fim, discutimos como o ClickHouse gerencia recursos compartilhados do sistema na presença de consultas simultâneas.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 Paralelização SIMD
+  ### 4.1 Paralelização SIMD {#4-1-simd-parallelization}
 </div>
 
 A passagem de várias linhas entre operadores cria uma oportunidade para vetorização. A vetorização pode se basear em intrínsecos escritos manualmente <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup> ou na autovetorização do compilador <sup>[[25]](#page-12-19)</sup>. O código que se beneficia da vetorização é compilado em diferentes kernels de computação. Por exemplo, o loop interno mais crítico de um operador de consulta pode ser implementado em termos de um kernel não vetorizado, um kernel AVX2 autovetorizado e um kernel AVX-512 vetorizado manualmente. O kernel mais rápido é [selecionado em tempo de execução](https://clickhou.se/cpu-dispatch) com base na instrução cpuid. Essa abordagem permite que o ClickHouse rode em sistemas com até 15 anos de idade (exigindo SSE 4.2 como requisito mínimo), ao mesmo tempo que ainda oferece ganhos significativos de desempenho em hardware recente.
 
-<div id="4-2-multi-core-parallelization">
-  ### 4.2 Paralelização Multicore
-</div>
+### 4.2 Paralelização Multicore {#4-2-multi-core-parallelization}
 
 <a id="page-7-1" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -222,14 +216,14 @@ Os operadores também podem afetar a execução da consulta em tempo de execuç�
 O mecanismo de execução de consultas do ClickHouse e o paralelismo orientado por morsels <sup>[[44]](#page-12-20)</sup> são semelhantes no sentido de que as lanes normalmente são executadas em núcleos / sockets NUMA diferentes e de que threads de trabalho podem roubar tarefas de outras lanes. Além disso, não há um componente central de escalonamento; em vez disso, as threads de trabalho selecionam suas tarefas individualmente ao percorrer continuamente o plano de operadores. Diferentemente do paralelismo orientado por morsels, o ClickHouse incorpora o grau máximo de paralelismo ao plano e usa faixas muito maiores para particionar a tabela de origem, em comparação com os tamanhos padrão de morsel de aprox. 100.000 linhas. Embora isso possa, em alguns casos, causar bloqueios (por exemplo, quando o tempo de execução dos operadores de filtro em diferentes lanes varia muito), verificamos que o uso generoso de operadores exchange, como Repartition, ao menos evita que esses desequilíbrios se acumulem ao longo dos estágios.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 Paralelização em Múltiplos Nós
+  ### 4.3 Paralelização em Múltiplos Nós {#4-3-multi-node-parallelization}
 </div>
 
 Se a tabela de origem de uma consulta estiver distribuída em shards, o otimizador de consultas no nó que recebeu a consulta (nó iniciador) tenta executar o máximo possível do trabalho em outros nós. Os resultados desses outros nós podem ser integrados em diferentes pontos do plano da consulta. Dependendo da consulta, os nós remotos podem 1. transmitir colunas brutas da tabela de origem para o nó iniciador, 2. filtrar as colunas de origem e enviar as linhas restantes, 3. executar etapas de filtro e agregação e enviar grupos de resultados locais com estados de agregação parciais, ou 4. executar a consulta inteira, incluindo filtros, agregação e ordenação.
 
 Os nós 2 ... N na [Figura 8](#page-7-1) mostram fragmentos do plano executados em outros nós que armazenam shards da tabela hits. Esses nós filtram e agrupam os dados locais e enviam o resultado ao nó iniciador. O operador GroupStateMerge no nó 1 combina os resultados locais e remotos antes de os grupos de resultados serem finalmente ordenados.
 
-### <a id="page-7-0" style={{display:"block",scrollMarginTop:"80px"}} />4.4 Otimização Holística de Desempenho
+### <a id="page-7-0" style={{display:"block",scrollMarginTop:"80px"}} />4.4 Otimização Holística de Desempenho {#4-4-holistic-performance-optimization}
 
 Esta seção apresenta otimizações de desempenho importantes aplicadas a diferentes estágios da execução de consultas.
 
@@ -262,7 +256,7 @@ Como as junções estão entre as operações de banco de dados mais caras, é i
   <img src="/images/managing-data/core-concepts/_vldb2024_8_Figure_7.webp" alt="Figura 9: Hash join paralelo com três partições de tabela hash." />
 </Frame>
 
-### <a id="page-9-1" style={{display:"block",scrollMarginTop:"80px"}} />4.5 Isolamento de carga de trabalho
+### <a id="page-9-1" style={{display:"block",scrollMarginTop:"80px"}} />4.5 Isolamento de carga de trabalho {#4-5-workload-isolation}
 
 O ClickHouse oferece controle de concorrência, limites de uso de memória e escalonamento de I/O, permitindo que os usuários isolem consultas em classes de carga de trabalho. Ao definir limites para recursos compartilhados (núcleos de CPU, DRAM e I/O de disco e de rede) para classes específicas de carga de trabalho, ele garante que essas consultas não afetem outras consultas críticas para o negócio.
 
@@ -272,7 +266,7 @@ O ClickHouse rastreia os tamanhos, em bytes, das alocações de memória nos ní
 
 Por fim, o escalonamento de I/O permite que os usuários restrinjam acessos a discos locais e remotos para classes de carga de trabalho com base em largura de banda máxima, requisições em andamento e política (por exemplo, FIFO, SFC <sup>[[32]](#page-12-24)</sup>).
 
-### <a id="page-9-0" style={{display:"block",scrollMarginTop:"80px"}} />5 CAMADA DE INTEGRAÇÃO
+### <a id="page-9-0" style={{display:"block",scrollMarginTop:"80px"}} />5 CAMADA DE INTEGRAÇÃO {#5-integration-layer}
 
 Aplicações de tomada de decisão em tempo real frequentemente dependem de acesso eficiente e de baixa latência a dados distribuídos em vários locais. Existem duas abordagens para disponibilizar dados externos em um banco de dados OLAP. No acesso a dados baseado em envio, um componente de terceiros faz a ponte entre o banco de dados e armazenamentos de dados externos. Um exemplo disso são ferramentas especializadas de extract-transform-load (ETL), que enviam dados remotos para o sistema de destino. No modelo baseado em extração, o próprio banco de dados se conecta a fontes de dados remotas e extrai dados para consulta em tabelas locais ou exporta dados para sistemas remotos. Embora as abordagens baseadas em envio sejam mais versáteis e comuns, elas implicam maior complexidade arquitetural e um gargalo de escalabilidade. Em contraste, a conectividade remota diretamente no banco de dados oferece recursos interessantes, como junções entre dados locais e remotos, ao mesmo tempo em que mantém a arquitetura geral simples e reduz o tempo para obtenção de insights.
 
@@ -301,13 +295,13 @@ Formatos de dados. Para interagir com sistemas de terceiros, bancos de dados ana
 Interfaces de compatibilidade. Além de seu protocolo wire binário nativo e HTTP, os clientes podem interagir com o ClickHouse por meio de interfaces compatíveis com o wire protocol do MySQL ou PostgreSQL. Esse recurso de compatibilidade é útil para viabilizar o acesso a partir de aplicações proprietárias (por exemplo, certas ferramentas de inteligência de negócios), nas quais os fornecedores ainda não implementaram conectividade nativa com o ClickHouse.
 
 <div id="6-performance-as-a-feature">
-  ## 6 DESEMPENHO COMO RECURSO
+  ## 6 DESEMPENHO COMO RECURSO {#6-performance-as-a-feature}
 </div>
 
 Esta seção apresenta ferramentas integradas para análise de desempenho e avalia o desempenho com consultas de uso real e de benchmark.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 Ferramentas integradas de análise de desempenho
+  ### 6.1 Ferramentas integradas de análise de desempenho {#6-1-built-in-performance-analysis-tools}
 </div>
 
 Há uma ampla variedade de ferramentas disponível para investigar gargalos de desempenho em consultas individuais ou operações em segundo plano. Os usuários interagem com todas as ferramentas por meio de uma interface uniforme baseada em tabelas de sistema.
@@ -321,14 +315,12 @@ Há uma ampla variedade de ferramentas disponível para investigar gargalos de d
 **EXPLAIN da consulta**. Como em outros bancos de dados, consultas SELECT podem ser precedidas por EXPLAIN para fornecer insights detalhados sobre a AST de uma consulta, os planos lógicos e físicos dos operadores e o comportamento em tempo de execução.
 
 <div id="6-2-benchmarks">
-  ### 6.2 Benchmarks
+  ### 6.2 Benchmarks {#6-2-benchmarks}
 </div>
 
 Embora a prática de benchmarking tenha sido criticada por não ser realista o suficiente <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>, ela ainda é útil para identificar os pontos fortes e fracos dos bancos de dados. A seguir, discutimos como os benchmarks são usados para avaliar o desempenho do ClickHouse.
 
-<div id="6-2-1-denormalized-tables">
-  #### 6.2.1 Tabelas desnormalizadas
-</div>
+#### 6.2.1 Tabelas desnormalizadas {#6-2-1-denormalized-tables}
 
 Consultas de filtro e agregação em tabelas de fatos desnormalizadas representam historicamente o principal caso de uso do ClickHouse. Apresentamos os tempos de execução do ClickBench, uma carga de trabalho típica desse tipo que simula consultas ad hoc e periódicas de relatórios usadas em análise de clickstream e tráfego. O benchmark consiste em 43 consultas sobre uma tabela com 100 milhões de acessos de página anonimizados, oriundos de uma das maiores plataformas de analytics da web. Um dashboard online <sup>[&#91;17&#93;](#page-12-28)</sup> mostra medições (tempos de execução a frio/com cache aquecido, tempo de importação de dados, tamanho em disco) para mais de 45 bancos de dados comerciais e de pesquisa até junho de 2024. Os resultados são enviados por colaboradores independentes com base no conjunto de dados e nas consultas disponíveis publicamente <sup>[&#91;16&#93;](#page-12-29)</sup>. As consultas testam caminhos de acesso por varredura sequencial e por índice e expõem rotineiramente operadores relacionais limitados por CPU, IO ou memória.
 
@@ -350,9 +342,7 @@ A [Figura 11](#page-10-5) mostra a evolução dos tempos de execução do Versio
   <img src="/images/managing-data/core-concepts/_vldb2024_10_Figure_12.webp" alt="Figura 11: tempos de execução relativos com cache aquecido do VersionsBench 2018-2024." />
 </Frame>
 
-<div id="6-2-2-normalized-tables">
-  #### 6.2.2 Tabelas normalizadas
-</div>
+#### 6.2.2 Tabelas normalizadas {#6-2-2-normalized-tables}
 
 No data warehousing clássico, os dados costumam ser modelados com esquemas estrela ou snowflake. Apresentamos os tempos de execução de consultas TPC-H (scale factor 100), mas observamos que tabelas normalizadas são um caso de uso emergente para o ClickHouse. A [Figura 12](#page-10-6) mostra os tempos de execução com cache aquecido das consultas TPC-H com base no algoritmo de hash join paralelo descrito na Seção [4.4.](#page-7-0) As medições foram realizadas em uma única instância AWS EC2 c6i.16xlarge com 64 vCPUs, 128 GB de RAM e disco de 5000 IOPS / 1000 MiB/s. Foi registrado o mais rápido entre cinco testes. Como referência, realizamos as mesmas medições em um sistema Snowflake de tamanho comparável (warehouse size L, 8x8 vCPUs, 8x16 GB de RAM). Os resultados de onze consultas foram excluídos da tabela: as consultas Q2, Q4, Q13, Q17 e Q20-22 incluem subconsultas correlacionadas, que ainda não têm suporte no ClickHouse v24.6. As consultas Q7-Q9 e Q19 dependem de otimizações estendidas no nível do plano para junções, como reordenação de junções e pushdown de predicados de join (ambas ausentes no ClickHouse v24.6), para alcançar tempos de execução viáveis. A descorrelação automática de subconsultas e um melhor suporte do otimizador para junções estão planejados para implementação em 2024 <sup>[&#91;18&#93;](#page-12-33)</sup>. Das 11 consultas restantes, 5 (6) foram executadas mais rapidamente no ClickHouse (Snowflake). Como as otimizações mencionadas são reconhecidamente críticas para o desempenho <sup>[&#91;27&#93;](#page-12-34)</sup>, esperamos que, quando implementadas, melhorem ainda mais os tempos de execução dessas consultas.
 
@@ -362,9 +352,7 @@ No data warehousing clássico, os dados costumam ser modelados com esquemas estr
   <img src="/images/managing-data/core-concepts/_vldb2024_10_Figure_13.webp" alt="Figura 12: Tempos de execução com cache aquecido (em segundos) para consultas TPC-H." />
 </Frame>
 
-<div id="7-related-work">
-  ## 7 TRABALHOS RELACIONADOS
-</div>
+## 7 TRABALHOS RELACIONADOS {#7-related-work}
 
 Bancos de dados analíticos têm despertado grande interesse acadêmico e comercial nas últimas décadas <sup>[&#91;1&#93;](#page-12-35)</sup>. Sistemas iniciais como Sybase IQ <sup>[&#91;48&#93;](#page-13-28)</sup>, Teradata <sup>[&#91;72&#93;](#page-13-29)</sup>, Vertica <sup>[&#91;42&#93;](#page-12-36)</sup> e Greenplum <sup>[&#91;47&#93;](#page-13-30)</sup> eram caracterizados por jobs de ETL em lote caros e elasticidade limitada devido à sua natureza on-premise. No início da década de 2010, o surgimento de data warehouses nativos da nuvem e de ofertas de banco de dados como serviço (DBaaS), como Snowflake <sup>[&#91;22&#93;](#page-12-37)</sup>, BigQuery <sup>[&#91;49&#93;](#page-13-31)</sup> e Redshift <sup>[&#91;4&#93;](#page-12-38)</sup>, reduziu drasticamente o custo e a complexidade de analytics para organizações, ao mesmo tempo em que se beneficiavam de alta disponibilidade e dimensionamento automático de recursos. Mais recentemente, kernels de execução analítica (por exemplo, Photon <sup>[&#91;5&#93;](#page-12-39)</sup> e Velox <sup>[&#91;62&#93;](#page-13-32)</sup>) oferecem processamento de dados reutilizável para uso em diferentes aplicações analíticas, de streaming e de aprendizado de máquina.
 
@@ -379,7 +367,7 @@ podem criar outros operadores em tempo de execução, principalmente para altern
 DuckDB <sup>[[67]](#page-13-6)</sup> também foi projetado para ser incorporado por um processo hospedeiro, mas, além disso, oferece otimização de consultas e transações. Ele foi desenvolvido para consultas OLAP combinadas com instruções OLTP ocasionais. Assim, o DuckDB escolheu o formato de armazenamento DataBlocks <sup>[[43]](#page-12-43)</sup>, que emprega métodos de compressão leves, como dicionários que preservam a ordem ou frame-of-reference <sup>[[2]](#page-12-10)</sup>, para obter bom desempenho em workloads híbridos. Em contraste, o ClickHouse é otimizado para casos de uso append-only, isto é, sem atualizações e exclusões, ou com elas apenas raramente. Os blocos são comprimidos com técnicas mais pesadas, como LZ4, partindo do pressuposto de que os usuários fazem uso extensivo de pruning de dados para acelerar consultas frequentes e de que os custos de I/O superam os custos de descompressão nas consultas restantes. O DuckDB também oferece transações serializáveis baseadas no esquema MVCC do Hyper <sup>[[55]](#page-13-35)</sup>, enquanto o ClickHouse oferece apenas isolamento por snapshot.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 CONCLUSÃO E PERSPECTIVAS
+  ## 8 CONCLUSÃO E PERSPECTIVAS {#8-conclusion-and-outlook}
 </div>
 
 Apresentamos a arquitetura do ClickHouse, um banco de dados OLAP de código aberto e alto desempenho. Com uma camada de armazenamento otimizada para gravação e um mecanismo vetorizado de consultas de última geração em sua base, o ClickHouse viabiliza analytics em tempo real sobre conjuntos de dados na escala de petabytes, com altas taxas de ingestão. Ao mesclar e transformar dados de forma assíncrona em segundo plano, o ClickHouse desacopla com eficiência a manutenção dos dados das inserções paralelas. Sua camada de armazenamento permite uma poda agressiva de dados usando índices primários esparsos, índices de skipping e tabelas de projeção. Descrevemos a implementação, no ClickHouse, de atualizações e exclusões, inserções idempotentes e replicação de dados entre nós para alta disponibilidade. A camada de processamento de consultas otimiza as consultas com uma ampla variedade de técnicas e paraleliza a execução em todos os recursos do servidor e do cluster. Motores de tabela de integração e funções oferecem uma forma conveniente de interagir com outros sistemas de gerenciamento e formatos de dados de maneira transparente. Por meio de benchmarks, demonstramos que o ClickHouse está entre os bancos de dados analíticos mais rápidos do mercado e mostramos melhorias significativas no desempenho de consultas típicas em implantações reais do ClickHouse ao longo dos anos.
@@ -387,13 +375,13 @@ Apresentamos a arquitetura do ClickHouse, um banco de dados OLAP de código aber
 Todos os recursos e aprimoramentos planejados para 2024 podem ser encontrados no roadmap público <sup>[[18]](#page-12-33)</sup>. As melhorias planejadas incluem suporte a transações de usuário, PromQL <sup>[[69]](#page-13-36)</sup> como linguagem de consulta alternativa, um novo tipo de dado para dados semi-estruturados (por exemplo, JSON), melhores otimizações de junções no nível do plano, bem como uma implementação de atualizações leves para complementar exclusões leves.
 
 <div id="acknowledgements">
-  ## AGRADECIMENTOS
+  ## AGRADECIMENTOS {#acknowledgements}
 </div>
 
 A partir da versão 24.6, SELECT * FROM system.contributors retorna 1994 pessoas que contribuíram para ClickHouse. Gostaríamos de agradecer a toda a equipe de engenharia da ClickHouse Inc. e à incrível comunidade de código aberto do ClickHouse pelo trabalho árduo e pela dedicação na construção conjunta deste banco de dados.
 
 <div id="references">
-  ## REFERÊNCIAS
+  ## REFERÊNCIAS {#references}
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

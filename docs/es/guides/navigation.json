@@ -5,6 +5,7 @@
       "pages": [
         "es/guides/clickhouse/index",
         "es/guides/clickhouse/kusto-query-language",
+        "es/guides/clickhouse/logsql",
         {
           "group": "Formatos de datos",
           "pages": [

@@ -17,22 +17,26 @@ Crée une nouvelle collection nommée.
 **Syntaxe**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` et `IF NOT EXISTS` ne peuvent pas être utilisés ensemble. `CREATE OR REPLACE` appliqué à une collection existante
+la remplace entièrement : les clés et les indicateurs autorisant leur remplacement qui ne figurent pas dans la nouvelle définition sont supprimés.
+
 **Exemple**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Instructions connexes**
 
-* [CREATE NAMED COLLECTION](/fr/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/fr/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/fr/reference/statements/drop#drop-function)
 
 **Voir aussi**

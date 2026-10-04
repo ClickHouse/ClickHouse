@@ -10,16 +10,15 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-本指南介绍如何启用 ClickHouse Cloud Remote MCP Server，并将其配置为可与常见的开发者工具配合使用。
+本指南介绍如何启用 ClickHouse Cloud Remote MCP 服务器，并将其配置为可与常见的开发者工具配合使用。
 
 **前置条件**
 
 * 一个正在运行的 [ClickHouse Cloud 服务](/zh/get-started/setup/cloud)
 * 你选择的 IDE 或智能体开发工具
+* 如需进行无头 (headless) 身份验证，还需要一个有权访问所需组织和服务的 [ClickHouse Cloud API key](/zh/cloud/manage/openapi)
 
-<div id="enable-remote-mcp-server">
-  ## 为 Cloud 启用远程 MCP 服务器
-</div>
+## 为 Cloud 启用远程 MCP 服务器 {#enable-remote-mcp-server}
 
 连接到要为其启用远程 MCP 服务器的 ClickHouse Cloud 服务。
 在左侧菜单中，点击 **Connect**。此时会打开一个显示连接详情的对话框。
@@ -28,7 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="在 Connect 对话框中选择 MCP" size="md" />
 
-打开切换开关，为该服务启用 MCP：
+打开切换开关，为该服务启用 MCP。启用或禁用 MCP 需要具备 `control-plane:service:manage-mcp` 权限 (参见[控制台角色和权限](/zh/products/cloud/reference/security/console-roles#console-permissions)) ：
 
 <Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="启用 MCP 服务器" size="md" />
 
@@ -39,13 +38,96 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## 为开发配置远程 MCP
+  ## 为开发配置远程 MCP {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 请选择下方的 IDE 或工具，并按相应说明完成设置。
 
+### 在无头环境中进行身份验证 {#headless-mcp-client-authentication}
+
+如果您的 MCP 客户端运行在远程主机或无头主机上，不便使用基于浏览器的 OAuth 流程，请改用 [ClickHouse Cloud API key](/zh/cloud/manage/openapi) 进行身份验证。
+
+1. 在 ClickHouse Cloud 控制台中，打开您的组织并选择 **API Keys**。
+2. 创建一个 key，仅授予 MCP 客户端访问相关组织和服务所需的最小角色和权限，然后下载 key ID 和 secret。
+3. 在远程主机上，通过您的机密信息管理系统提供这些凭证，并生成 HTTP Basic 授权值：
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
+export CLICKHOUSE_CLOUD_API_SECRET="<key_secret>"
+
+export CH_AUTH="Basic $(
+  printf '%s:%s' \
+    "$CLICKHOUSE_CLOUD_API_KEY" \
+    "$CLICKHOUSE_CLOUD_API_SECRET" |
+  base64 | tr -d '\n'
+)"
+```
+
+4. 选择您的 MCP 客户端,并添加远程 MCP 服务器:
+
+<Tabs>
+  <Tab title="Claude Code" id="headless-auth-claude-code">
+    ```bash
+    claude mcp add \
+      --scope user \
+      --transport http \
+      clickhouse-cloud \
+      https://mcp.clickhouse.cloud/mcp \
+      --header 'Authorization: ${CH_AUTH}'
+    ```
+
+    Claude Code 在建立连接时会从环境变量中展开 `CH_AUTH`。启动 Claude Code 并运行 `/mcp`,确认 `clickhouse-cloud` 已连接。
+
+    有关远程 HTTP 服务器和请求头配置的详细信息,请参阅 [Claude Code MCP 文档](https://code.claude.com/docs/en/mcp#option-1-add-a-remote-http-server)。
+  </Tab>
+
+  <Tab title="Codex" id="headless-auth-codex">
+    在 `~/.codex/config.toml` 中添加以下条目:
+
+    ```toml
+    [mcp_servers.clickhouse-cloud]
+    url = "https://mcp.clickhouse.cloud/mcp"
+    env_http_headers = { Authorization = "CH_AUTH" }
+    ```
+
+    运行 `codex mcp list`,确认 `clickhouse-cloud` 已完成配置。
+
+    有关 `mcp_servers.<id>.env_http_headers` 的详细信息,请参阅 [Codex 配置参考文档](https://developers.openai.com/codex/config-reference)。
+  </Tab>
+
+  <Tab title="OpenCode" id="headless-auth-opencode">
+    在您的 `opencode.jsonc` 配置中添加以下条目:
+
+    ```jsonc
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "clickhouse-cloud": {
+            "type": "remote",
+            "url": "https://mcp.clickhouse.cloud/mcp",
+            "oauth": false,
+            "headers": {
+              "Authorization": "{env:CH_AUTH}"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    运行 `opencode mcp list`,确认 `clickhouse-cloud` 已连接。
+
+    有关远程服务器、请求头以及环境变量替换的详细信息,请参阅 [OpenCode MCP 文档](https://opencode.ai/v2/docs/mcp-servers#remote)。
+  </Tab>
+</Tabs>
+
+请确保 `CH_AUTH` 在每个客户端会话中均可用,切勿将 API key、机密信息或 `CH_AUTH` 的值提交到源代码管理系统。Base64 编码并不会对凭证进行加密。
+
+使用这种 API key 方式,既不需要浏览器,也无需另行通过 `clickhousectl` 登录。
+
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 在工作目录中，运行以下命令，将 ClickHouse Cloud MCP Server 配置添加到 Claude Code 中：
@@ -69,7 +151,7 @@ claude
 选择 `clickhouse-cloud`，然后使用 ClickHouse Cloud 凭据通过 OAuth 完成身份验证。
 
 <div id="claude-web">
-  ### Claude web UI
+  ### Claude web UI {#claude-web}
 </div>
 
 1. 前往 **Customize** &gt; **Connectors**
@@ -79,7 +161,7 @@ claude
 5. 通过 OAuth 使用你的 ClickHouse Cloud 凭据进行身份验证
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. 在 [Cursor 市场](https://cursor.com/marketplace)中浏览并安装 MCP 服务器。
@@ -87,7 +169,7 @@ claude
 3. 通过 OAuth 进行身份验证。
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 将以下配置添加到 `.vscode/mcp.json` 中：
@@ -106,7 +188,7 @@ claude
 更多详情请参阅 [Visual Studio Code 文档](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)。
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 按以下配置编辑 `mcp_config.json` 文件：
@@ -125,7 +207,7 @@ claude
 更多详细信息请参阅 [Windsurf 文档](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)。
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 将 ClickHouse 添加为自定义服务器。
@@ -145,7 +227,7 @@ claude
 更多信息请参阅 [Zed 文档](https://zed.dev/docs/ai/mcp#as-custom-servers)。
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 运行以下命令，通过 CLI 添加 ClickHouse Cloud MCP 服务器：
@@ -155,7 +237,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## 示例用法
+  ## 示例用法 {#example-usage}
 </div>
 
 连接完成后，您就可以通过自然语言提示词与 ClickHouse Cloud 交互。
@@ -163,7 +245,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 如需查看可用工具的完整列表，请参阅[工具参考](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)。
 
 <div id="exploring-data">
-  ### 探索你的数据
+  ### 探索你的数据 {#exploring-data}
 </div>
 
 先查看有哪些可用内容：
@@ -176,7 +258,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;列出所有名称以 `events_` 开头的表&quot; | `list_tables` (使用 `like` 过滤器)  |
 
 <div id="running-queries">
-  ### 执行分析查询
+  ### 执行分析查询 {#running-queries}
 </div>
 
 用自然语言提问，agent 会将其转换为 SQL：
@@ -190,7 +272,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 `run_select_query` 工具只允许执行 `SELECT` 语句。所有查询均为只读。
 
 <div id="managing-services">
-  ### 管理服务和基础设施
+  ### 管理服务和基础设施 {#managing-services}
 </div>
 
 查看你的 ClickHouse Cloud 资源信息：
@@ -204,7 +286,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;此服务上配置了哪些 ClickPipes？&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### 监控成本
+  ### 监控成本 {#monitoring-costs}
 </div>
 
 | 提示词                         | 调用的工具                                                 |
@@ -213,7 +295,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | “显示 3 月 1 日至 3 月 15 日的每日成本” | `get_organization_cost` (使用 `from_date` 和 `to_date`)  |
 
 <div id="related-content">
-  ## 相关内容
+  ## 相关内容 {#related-content}
 </div>
 
 * [ClickHouse agent 技能](https://github.com/ClickHouse/agent-skills)

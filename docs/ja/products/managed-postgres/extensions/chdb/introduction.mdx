@@ -76,10 +76,11 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_p
 (18 rows)
 ```
 
-[CREATE TABLE] でも、そのような URL からカラムを導出し、行を読み込むことができます:
+[CREATE TABLE] でも、そのような URL からカラムを導出し、行を読み込むことができます (注意: この公開データファイルには 4,100 万行が含まれています):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -137,6 +138,13 @@ chdb および chdb&#95;hook 拡張機能は、[chDB] クエリの実行に `chd
 curl -sL https://lib.chdb.io | bash
 ```
 
+macOS では、拡張機能をビルドする前にライブラリへの署名が必要になる場合があります。
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
+```
+
 [chDB] をヘルパーアプリに静的にコンパイルするには、[インストール](#compile-from-source) の
 `make` コマンドを実行する前に、以下の変数を設定してください。
 
@@ -178,7 +186,7 @@ gmake installcheck
 make: pg_config: Command not found
 ```
 
-`pg_config` がインストールされ、path に含まれていることを確認してください。RPM などの package management system を使用して PostgreSQL をインストールした場合は、`-devel` package もインストールされているか確認してください。必要に応じて、build プロセスに対してその場所を指定します:
+`pg_config` がインストールされ、path に含まれていることを確認してください。RPM などの package management system を使用して PostgreSQL をインストールした場合は、`-devel` package もインストールされているか確認してください。必要に応じて、ビルド プロセスに対してその場所を指定します:
 
 ```sh
 env PG_CONFIG=/path/to/pg_config make && make installcheck && make install
@@ -208,6 +216,12 @@ test suite は super user で実行する必要があります。たとえば、
 
 ```sh
 make installcheck PGUSER=postgres
+```
+
+`COPY` フックで `file://` スキームを無効にするには、`NO_FILE_SCHEME` を定義します:
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 PostgreSQL 18 以降でカスタムプレフィックスに拡張機能をインストールするには、`install` に `prefix` 引数を渡します (他の `make` ターゲットには渡しません) :

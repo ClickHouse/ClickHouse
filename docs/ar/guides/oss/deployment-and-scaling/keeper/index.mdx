@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 يوفّر ClickHouse Keeper نظام التنسيق اللازم للنسخ المتماثل للبيانات وتنفيذ استعلامات [replication](/ar/reference/engines/table-engines/mergetree-family/replication) و[distributed DDL](/ar/reference/statements/distributed-ddl). كما أن ClickHouse Keeper متوافق مع ZooKeeper.
 
 <div id="implementation-details">
-  ### تفاصيل التنفيذ
+  ### تفاصيل التنفيذ {#implementation-details}
 </div>
 
 يُعد ZooKeeper من أوائل أنظمة التنسيق المفتوحة المصدر المعروفة على نطاق واسع. وهو مكتوب بلغة Java ويعتمد نموذج بيانات بسيطًا وقويًا. ولا توفّر خوارزمية التنسيق في ZooKeeper، وهي ZooKeeper Atomic Broadcast ‏(ZAB)، ضمانات الاتساق الخطي لعمليات القراءة، لأن كل عقدة في ZooKeeper تخدم عمليات القراءة محليًا. وعلى عكس ZooKeeper، فإن ClickHouse Keeper مكتوب بلغة C++ ويستخدم [تنفيذًا](https://github.com/eBay/NuRaft) لخوارزمية [RAFT](https://raft.github.io/). وتتيح هذه الخوارزمية الاتساق الخطي لعمليات القراءة والكتابة، كما تتوفر لها عدة تطبيقات مفتوحة المصدر بلغات مختلفة.
@@ -29,36 +29,37 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 </Note>
 
 <div id="configuration">
-  ### التهيئة
+  ### التهيئة {#configuration}
 </div>
 
 يمكن استخدام ClickHouse Keeper كبديل مستقل لـ ZooKeeper أو كجزء داخلي من ClickHouse server. وفي كلتا الحالتين، تكون التهيئة في ملف `.xml` متطابقة تقريبًا.
 
 <div id="keeper-configuration-settings">
-  #### إعدادات تهيئة Keeper
+  #### إعدادات تهيئة Keeper {#keeper-configuration-settings}
 </div>
 
 وسم التهيئة الرئيسي لـ ClickHouse Keeper هو `<keeper_server>`، ويتضمن المعلمات التالية:
 
-| Parameter                           | Description                                                                                                                                                                                                                    | Default                                                                                                                                                                                                                         |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tcp_port`                          | المنفذ الذي يتصل من خلاله العميل.                                                                                                                                                                                              | `2181`                                                                                                                                                                                                                          |
-| `tcp_port_secure`                   | منفذ آمن لاتصال SSL بين العميل وkeeper-server.                                                                                                                                                                                 | -                                                                                                                                                                                                                               |
-| `server_id`                         | معرّف server فريد؛ ويجب أن يكون لكل مشارك في ClickHouse Keeper عنقود رقم فريد (1، 2، 3...).                                                                                                                                    | -                                                                                                                                                                                                                               |
-| `log_storage_path`                  | path إلى سجلات الخاصة بـ coordination. وكما هو الحال في ZooKeeper، من الأفضل تخزين السجلات على عقد غير مثقلة بالعمل.                                                                                                            | -                                                                                                                                                                                                                               |
-| `snapshot_storage_path`             | path إلى لقطات الخاصة بـ coordination.                                                                                                                                                                                         | -                                                                                                                                                                                                                               |
-| `enable_reconfiguration`            | تمكين reconfiguration الديناميكية للـ عنقود عبر [`reconfig`](#reconfiguration).                                                                                                                                                | `False`                                                                                                                                                                                                                         |
-| `max_memory_usage_soft_limit`       | soft limit بالبايت للحد الأقصى من memory usage في Keeper.                                                                                                                                                                      | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                                                  |
-| `max_memory_usage_soft_limit_ratio` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى الصفر، تُستخدم هذه القيمة لتحديد soft limit الافتراضي.                                                                                                         | `0.9`                                                                                                                                                                                                                           |
-| `cgroups_memory_observer_wait_time` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى `0`، نستخدم هذا interval لمراقبة حجم الذاكرة الفعلية. وعند تغيّر حجم الذاكرة، نعيد حساب soft limit لذاكرة Keeper باستخدام `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                                                                                                                                            |
-| `http_control`                      | تهيئة واجهة [HTTP control](#http-control).                                                                                                                                                                                     | -                                                                                                                                                                                                                               |
-| `digest_enabled`                    | تمكين التحقق من اتساق البيانات في الوقت الفعلي                                                                                                                                                                                 | `True`                                                                                                                                                                                                                          |
-| `create_snapshot_on_exit`           | إنشاء لقطة عند إيقاف التشغيل                                                                                                                                                                                                   | -                                                                                                                                                                                                                               |
-| `hostname_checks_enabled`           | تمكين عمليات التحقق من صحة hostname لتهيئة عنقود (على سبيل المثال، عند استخدام localhost مع endpoints بعيدة)                                                                                                                   | `True`                                                                                                                                                                                                                          |
-| `four_letter_word_white_list`       | white list لأوامر 4lw.                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`، إضافةً إلى `jmst, jmfp, jmep, jmdp` في builds المبنية باستخدام jemalloc |
-| `enable_ipv6`                       | تمكين IPv6                                                                                                                                                                                                                     | `True`                                                                                                                                                                                                                          |
+| Parameter                           | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Default                                                                                                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tcp_port`                          | المنفذ الذي يتصل من خلاله العميل.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `2181`                                                                                                                                                                                                                          |
+| `tcp_port_secure`                   | منفذ آمن لاتصال SSL بين العميل وخادم Keeper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                                                                                                                                                                               |
+| `server_id`                         | معرّف خادم فريد؛ ويجب أن يكون لكل مشارك في ClickHouse Keeper عنقود رقم فريد (1، 2، 3...).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                                                                                                                                                                                               |
+| `log_storage_path`                  | path إلى سجلات الخاصة بالتنسيق. وكما هو الحال في ZooKeeper، من الأفضل تخزين السجلات على عقد غير مثقلة بالعمل.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | -                                                                                                                                                                                                                               |
+| `snapshot_storage_path`             | path إلى لقطات الخاصة بالتنسيق.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                                                               |
+| `enable_reconfiguration`            | تمكين reconfiguration الديناميكية للـ عنقود عبر [`reconfig`](#reconfiguration).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `False`                                                                                                                                                                                                                         |
+| `max_memory_usage_soft_limit`       | soft limit بالبايت للحد الأقصى من memory usage في Keeper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                                                  |
+| `max_memory_usage_soft_limit_ratio` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى الصفر، تُستخدم هذه القيمة لتحديد soft limit الافتراضي.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `0.9`                                                                                                                                                                                                                           |
+| `cgroups_memory_observer_wait_time` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى `0`، نستخدم هذا interval لمراقبة حجم الذاكرة الفعلية. وعند تغيّر حجم الذاكرة، نعيد حساب soft limit لذاكرة Keeper باستخدام `max_memory_usage_soft_limit_ratio`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `15`                                                                                                                                                                                                                            |
+| `http_control`                      | تهيئة واجهة [HTTP control](#http-control).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | -                                                                                                                                                                                                                               |
+| `digest_enabled`                    | تمكين التحقق من اتساق البيانات في الوقت الفعلي                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `True`                                                                                                                                                                                                                          |
+| `create_snapshot_on_exit`           | إنشاء لقطة عند إيقاف التشغيل                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | -                                                                                                                                                                                                                               |
+| `remove_orphaned_nodes_on_startup`  | استرداد لقطة تالفة عند بدء التشغيل: إزالة العقد التي لا توجد عقدتها الأم في اللقطة بدلاً من رفض بدء التشغيل. يتطلب ضبط `digest_enabled` على `False`. ينطبق فقط على اللقطة المحلية التي تُقرأ عند بدء التشغيل، ولا ينطبق أبداً على لقطة مستلمة من عقدة أخرى. يقتصر الإصلاح على الحالة المحلية، لذا فإن العقدة التي تُصلَح بهذه الطريقة تصبح مختلفة عن نظيراتها التي لا تزال تحتفظ بالعقد المُزالة — لذا تعامل معه على أنه استرداد لعقدة واحدة، أو أصلح جميع العقد. غير مدعوم مع `use_lsmt_storage`: إذ يرفض Keeper بدء التشغيل إذا فُعّل كلاهما. كما يرفض Keeper بدء التشغيل إذا كان أحد إدخالات السجل المحلية اللاحقة للقطة يمس المنطقة التالفة: أي عقدة مُزالة، أو أي شيء أسفلها، أو العقدة الأم المباشرة لشجرة فرعية مُزالة؛ أما الأسلاف الأعلى فلا تتعارض إلا مع الإدخالات التي تجتاز شجرتها الفرعية بالكامل، مثل الإزالة العودية أو الاستعراض. راجع [الاسترداد من لقطة Keeper تالفة](/ar/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot). | `False`                                                                                                                                                                                                                         |
+| `hostname_checks_enabled`           | تمكين عمليات التحقق من صحة hostname لتهيئة عنقود (على سبيل المثال، عند استخدام localhost مع نقاط نهاية بعيدة)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `True`                                                                                                                                                                                                                          |
+| `four_letter_word_white_list`       | white list لأوامر 4lw.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`، إضافةً إلى `jmst, jmfp, jmep, jmdp` في builds المبنية باستخدام jemalloc |
+| `enable_ipv6`                       | تمكين IPv6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `True`                                                                                                                                                                                                                          |
 
-تُورَّث المعلمات الشائعة الأخرى من config الخاص بـ ClickHouse server (`listen_host` و`logger` وما إلى ذلك).
+تُورَّث المعلمات الشائعة الأخرى من config الخاص بـ خادم ClickHouse (`listen_host` و`logger` وما إلى ذلك).
 
 #### إعدادات التنسيق الداخلية {#internal-coordination-settings}
 
@@ -166,7 +167,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 ```
 
 <div id="how-to-run">
-  ### كيفية التشغيل
+  ### كيفية التشغيل {#how-to-run}
 </div>
 
 يأتي ClickHouse Keeper مضمّنًا في حزمة ClickHouse server؛ ما عليك سوى إضافة إعدادات `<keeper_server>` إلى `/etc/your_path_to_config/clickhouse-server/config.xml` وتشغيل ClickHouse server كالمعتاد. وإذا أردت تشغيل standalone ClickHouse Keeper، فيمكنك تشغيله بطريقة مماثلة باستخدام:
@@ -468,7 +469,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### HTTP control
+  ### HTTP control {#http-control}
 </div>
 
 يوفّر ClickHouse Keeper واجهة HTTP للتحقق مما إذا كانت النسخة المتماثلة جاهزة لاستقبال حركة المرور. ويمكن استخدام ذلك في البيئات السحابية، مثل [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -489,7 +490,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="feature-flags">
-  ### علامات الميزات
+  ### علامات الميزات {#feature-flags}
 </div>
 
 يتوافق Keeper توافقًا كاملًا مع ZooKeeper وعملائه، لكنه يقدّم أيضًا بعض الميزات وأنواع الطلبات الفريدة التي يمكن لعميل ClickHouse استخدامها.
@@ -526,13 +527,13 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### الترحيل من ZooKeeper
+  ### الترحيل من ZooKeeper {#migration-from-zookeeper}
 </div>
 
 لا يمكن إجراء ترحيل سلس من ZooKeeper إلى ClickHouse Keeper. يجب عليك إيقاف عنقود ZooKeeper، وتحويل البيانات، ثم تشغيل ClickHouse Keeper. تحوّل أداة `clickhouse-keeper-converter` السجلات ولقطات الخاصة بـ ZooKeeper إلى لقطة لـ ClickHouse Keeper. وتتطلب ZooKeeper 3.4 أو إصدارًا أحدث.
 
 <div id="pre-migration-preparation">
-  #### التحضير قبل الترحيل
+  #### التحضير قبل الترحيل {#pre-migration-preparation}
 </div>
 
 يتطلّب الترحيل إيقاف استيعاب البيانات. حدّد فترة صيانة قبل البدء.
@@ -575,7 +576,7 @@ clickhouse-keeper-converter \
 10. استأنف المهام الخلفية، وأعد تشغيل استيعاب البيانات.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### دمج عدة عناقيد ZooKeeper
+  #### دمج عدة عناقيد ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 إذا كنت تشغّل عدة عناقيد ZooKeeper — على سبيل المثال، مجموعة واحدة لكل مجموعة shard — فيمكنك دمجها في عنقود ClickHouse Keeper واحد. لا تدعم أداة `clickhouse-keeper-converter` الرسمية سوى التحويلات من واحد إلى واحد (عنقود ZooKeeper واحد إلى لقطة Keeper واحدة)، لذلك يتطلب الدمج تعديل الشيفرة المصدرية للمحوّل لدمج عدة لقطات:
@@ -585,7 +586,7 @@ clickhouse-keeper-converter \
 3. اكتب الناتج المدمج في دليل لقطات ClickHouse Keeper الهدف.
 
 <div id="handling-encryption-and-acls">
-  #### التعامل مع التشفير وقوائم ACL
+  #### التعامل مع التشفير وقوائم ACL {#handling-encryption-and-acls}
 </div>
 
 يدعم ClickHouse Keeper مخططات ACL نفسها التي يدعمها ZooKeeper (`world`, `auth`, `digest`). وتعتمد طريقة التعامل مع قوائم ACL أثناء التحويل على إعداد ZooKeeper لديك:
@@ -594,7 +595,7 @@ clickhouse-keeper-converter \
 * **مشفَّر جزئيًا**: قبل التحويل، امنح حساب مسؤول فائق الصلاحيات وامسح قوائم ACL باستخدام `setAcl -R` على المسارات المتأثرة. حوِّل، ثم أعد تمكين التشفير في ClickHouse Keeper إذا لزم الأمر.
 
 <div id="verifying-the-migration">
-  #### التحقق من الترحيل
+  #### التحقق من الترحيل {#verifying-the-migration}
 </div>
 
 بعد تشغيل ClickHouse Keeper وإعادة تشغيل ClickHouse، قارن المقاييس الرئيسية لديك بخط الأساس السابق للترحيل للتأكد من نجاح الترحيل.
@@ -607,7 +608,7 @@ clickhouse-keeper-converter \
 تجنّب استعراض أشجار ZooKeeper الكبيرة مباشرةً لأغراض المقارنة. وبدلاً من ذلك، اطبع جميع المسارات المحوّلة إلى ملف أثناء التحويل.
 
 <div id="post-migration-tuning">
-  #### الضبط بعد الترحيل
+  #### الضبط بعد الترحيل {#post-migration-tuning}
 </div>
 
 بعد الترحيل، فكّر في ضبط هذه الإعدادات للعناقيد الأكبر أو لتحقيق إنتاجية أعلى:
@@ -623,7 +624,7 @@ clickhouse-keeper-converter \
 تُضبط هذه الإعدادات ضمن `coordination_settings` في [تهيئة Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### الاستعادة بعد فقدان النصاب
+  ### الاستعادة بعد فقدان النصاب {#recovering-after-losing-quorum}
 </div>
 
 نظرًا لأن ClickHouse Keeper يستخدم Raft، فإنه يستطيع تحمّل عدد معيّن من تعطل العُقد بحسب حجم العنقود.
@@ -652,7 +653,7 @@ clickhouse-keeper-converter \
 7. بعد تحقيق النصاب، ستعود عقدة القائد إلى وضع التشغيل العادي، وتبدأ في قبول جميع الطلبات باستخدام Raft — ويمكنك التحقق من ذلك عبر `mntr`، إذ ينبغي أن يعيد `leader` في `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## استخدام الأقراص مع Keeper
+  ## استخدام الأقراص مع Keeper {#using-disks-with-keeper}
 </div>
 
 يدعم Keeper مجموعة فرعية من [الأقراص الخارجية](/ar/concepts/features/configuration/server-config/storing-data) لتخزين اللقطات وملفات السجل وملف الحالة.
@@ -733,7 +734,7 @@ clickhouse-keeper-converter \
 وينطبق المنطق نفسه على اللقطات؛ إذ ستُخزَّن جميع اللقطات ما عدا أحدث اللقطات على `snapshot_s3_plain`، بينما سيُحفَظ أحدث لقطة على القرص `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### تغيير إعداد الأقراص
+  ### تغيير إعداد الأقراص {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -801,7 +802,7 @@ clickhouse-keeper-converter \
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 يمكن لـ Keeper كشف بيانات المقاييس ليتمكّن [Prometheus](https://prometheus.io) من سحبها.
@@ -840,7 +841,7 @@ curl 127.0.0.1:9363/metrics
 راجع أيضًا [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus) في ClickHouse Cloud.
 
 <div id="clickhouse-keeper-user-guide">
-  ## دليل المستخدم لـ ClickHouse Keeper
+  ## دليل المستخدم لـ ClickHouse Keeper {#clickhouse-keeper-user-guide}
 </div>
 
 يوفّر هذا الدليل إعدادات بسيطة ومختصرة لتهيئة ClickHouse Keeper، مع مثال يوضّح كيفية اختبار العمليات الموزعة. يُنفَّذ هذا المثال باستخدام 3 عقد على Linux.
@@ -1107,19 +1108,19 @@ curl 127.0.0.1:9363/metrics
 </Steps>
 
 <div id="summary">
-  ### الملخص
+  ### الملخص {#summary}
 </div>
 
 يشرح هذا الدليل كيفية إعداد عنقود باستخدام ClickHouse Keeper. وباستخدام ClickHouse Keeper، يمكنك تهيئة العناقيد وتعريف الجداول الموزعة التي يمكن نسخها متماثلًا عبر الشوارد.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## تهيئة ClickHouse Keeper بمسارات فريدة
+  ## تهيئة ClickHouse Keeper بمسارات فريدة {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف
+  ### الوصف {#description}
 </div>
 
 تشرح هذه المقالة كيفية استخدام إعداد الماكرو المضمّن `{uuid}`
@@ -1130,7 +1131,7 @@ curl 127.0.0.1:9363/metrics
 في كل مرة يُنشأ فيها مسار؛ ولا يُعاد استخدام المسارات مطلقًا.
 
 <div id="example-environment">
-  ### بيئة مثال
+  ### بيئة مثال {#example-environment}
 </div>
 
 عنقود مكوّن من ثلاث عقد سيُهيَّأ بحيث يعمل ClickHouse Keeper
@@ -1170,7 +1171,7 @@ curl 127.0.0.1:9363/metrics
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### إجراءات إعداد الجداول لاستخدام `{uuid}`
+  ### إجراءات إعداد الجداول لاستخدام `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. اضبط وحدات الماكرو على كل خادم
@@ -1264,7 +1265,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### الاختبار
+  ### الاختبار {#testing}
 </div>
 
 1. أدرِج البيانات في العقدة الأولى (مثل `chnode1`)
@@ -1328,7 +1329,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### بدائل
+  ### بدائل {#alternatives}
 </div>
 
 يمكن تحديد مسار النسخ المتماثل الافتراضي مسبقًا باستخدام وحدات الماكرو و`{uuid}` أيضًا
@@ -1396,7 +1397,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها
+  ### استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 مثال لأمر يعرض معلومات الجدول ومعرّف UUID الخاص به:
@@ -1443,13 +1444,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper
+  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف
+  ### الوصف {#description-1}
 </div>
 
 يدعم ClickHouse Keeper جزئيًا أمر ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1541,7 +1542,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
   قد طُبِّق.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## تحويل Keeper أحادي العقدة إلى عنقود
+  ## تحويل Keeper أحادي العقدة إلى عنقود {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 أحيانًا تكون هناك حاجة إلى توسيع عقدة Keeper تجريبية لتصبح عنقودًا. فيما يلي مخطط يوضح كيفية القيام بذلك خطوة بخطوة لعنقود من 3 عقد:
@@ -1557,7 +1558,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
 ولفهم العملية عمليًا بشكل أفضل، إليك [sandbox repository](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## الميزات غير المدعومة
+  ## الميزات غير المدعومة {#unsupported-features}
 </div>
 
 مع أن ClickHouse Keeper يهدف إلى تحقيق توافق كامل مع ZooKeeper، فلا تزال هناك بعض الميزات غير المُنفَّذة حتى الآن (مع استمرار العمل على تطويرها):

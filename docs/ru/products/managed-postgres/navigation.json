@@ -43,6 +43,26 @@
       ]
     },
     {
+      "group": "Руководства",
+      "pages": [
+        "ru/products/managed-postgres/guides/bun",
+        "ru/products/managed-postgres/guides/cloudflare-workers",
+        "ru/products/managed-postgres/guides/django",
+        "ru/products/managed-postgres/guides/dotnet",
+        "ru/products/managed-postgres/guides/drizzle",
+        "ru/products/managed-postgres/guides/fastapi",
+        "ru/products/managed-postgres/guides/go",
+        "ru/products/managed-postgres/guides/kysely",
+        "ru/products/managed-postgres/guides/laravel",
+        "ru/products/managed-postgres/guides/nodejs",
+        "ru/products/managed-postgres/guides/phoenix",
+        "ru/products/managed-postgres/guides/prisma",
+        "ru/products/managed-postgres/guides/ruby-on-rails",
+        "ru/products/managed-postgres/guides/rust",
+        "ru/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
       "group": "Цены",
       "pages": [
         "ru/products/managed-postgres/pricing"

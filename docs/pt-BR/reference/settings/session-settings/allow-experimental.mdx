@@ -14,19 +14,19 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_experimental_analyzer
+## allow_experimental_analyzer {#allow_experimental_analyzer}
 
 **Aliases**: `enable_analyzer`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "A configuração está obsoleta: o analisador é obrigatório e a antiga análise de consultas não é mais compatível. Desabilitá-lo é recusado em vez de ignorado, e a `compatibility` com uma versão anterior à 24.3 não o reverte mais."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita o analisador e o planner por padrão."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "A configuração está obsoleta: o analisador é obrigatório e a antiga análise de consultas não é mais compatível. Uma alteração que o desabilitaria é aceita e substituída por `1`, e a `compatibility` com uma versão anterior à 24.3 não o reverte mais."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "1"},{"label": "Adicionado o alias `enable_analyzer`."}]}, {"id": "row-3","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita o analisador e o planner por padrão."}]}]} />
 
 Obsoleto desde a v26.9: o analisador não pode mais ser desabilitado.
 
-O analisador é a infraestrutura de análise e planejamento de consultas adotada por padrão desde a v24.3. Na v26.9, esta configuração foi congelada em seu único valor compatível, `1`: qualquer tentativa de defini-la como `0` é rejeitada, e a configuração `compatibility` não a reverte mais. Na v26.10, a análise de consultas para a qual ela alternava foi removida. Remova `enable_analyzer = 0` de consultas, configurações de sessão, settings profiles e configurações de client. Para comparar o comportamento ou o desempenho de uma consulta com a antiga análise de consultas, use uma versão do ClickHouse anterior à v26.9.
+O analisador é a infraestrutura de análise e planejamento de consultas adotada por padrão desde a v24.3. Na v26.9, esta configuração foi congelada em seu único valor compatível, `1`, e a configuração `compatibility` não a reverte mais. Na v26.10, a análise de consultas para a qual ela alternava foi removida. Por compatibilidade retroativa, o valor `0` ainda é aceito e substituído por `1`, de modo que consultas, configurações de sessão, settings profiles e configurações de client que ainda definem `enable_analyzer = 0` continuam funcionando, agora com o analisador. Para comparar o comportamento ou o desempenho de uma consulta com a antiga análise de consultas, use uma versão do ClickHouse anterior à v26.9.
 
-## allow_experimental_cleanup_old_data_files_compaction
+## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ O analisador é a infraestrutura de análise e planejamento de consultas adotada
 
 Permite a limpeza de arquivos de dados antigos durante a compactação do Iceberg.
 
-## allow_experimental_database_hms_catalog
+## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ Permite a limpeza de arquivos de dados antigos durante a compactação do Iceber
 
 Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;hms&#39;
 
-## allow_experimental_database_materialized_postgresql
+## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#
 
 Permite a criação de um database com Engine=MaterializedPostgreSQL(...).
 
-## allow_experimental_database_paimon_rest_catalog
+## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ Permite a criação de um database com Engine=MaterializedPostgreSQL(...).
 
 Permite usar o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;paimon&#95;rest&#39;
 
-## allow_experimental_eval_table_function
+## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ Permite usar o mecanismo de banco de dados experimental DataLakeCatalog com cata
 
 Ativa a função de tabela experimental `eval`.
 
-## allow_experimental_expire_snapshots
+## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ Ativa a função de tabela experimental `eval`.
 
 Permite a execução do comando experimental do Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_hash_functions
+## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ Permite a execução do comando experimental do Iceberg `ALTER TABLE ... EXECUTE
 
 Ativa funções de hash experimentais
 
-## allow_experimental_iceberg_compaction
+## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ Ativa funções de hash experimentais
 
 Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
 
-## allow_experimental_kusto_dialect
+## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
 
@@ -112,7 +112,41 @@ Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
 
 Habilita o dialeto Kusto Query Language (KQL), uma alternativa ao SQL.
 
-## allow_experimental_nlp_functions
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o dialect LogsQL (a linguagem de consulta de logs do VictoriaLogs)."}]}]} />
+
+Habilita o LogsQL, a linguagem de consulta de logs do VictoriaLogs. As consultas nesse dialect são convertidas em consultas SELECT sobre a tabela especificada pela configuração `logsql_table`.
+
+Uso:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+Uma consulta `SET` completa e independente continua sendo interpretada como SQL simples, para que seja possível
+voltar ao dialect anterior; uma consulta LogsQL que apenas começa com a palavra `set` mantém seu significado.
+As configurações `logsql_time_column` e `logsql_message_column` definem as colunas
+referenciadas pelo campo `_time` e pelo campo padrão (mensagem).
+
+Diferentemente do VictoriaLogs, que armazena todos os campos como string, as consultas traduzidas são executadas
+sobre o schema de tabela existente. As principais divergências de contrato decorrentes disso são:
+
+* Filtros de texto (palavras, frases, prefixos, expressões regulares) esperam colunas do tipo `String` e não convertem colunas numéricas em texto.
+* Filtros de comparação numérica comparam colunas numéricas nativamente (de forma exata para valores inteiros e decimais, desde que o literal comparado caiba em `Int128` ou `Decimal256(38)`; um valor maior, por exemplo, um inteiro acima de 1e38 em um campo `UInt256`, é comparado com precisão `Float64`, assim como os passos inteiros de bucket de `stats by (<field>:<step>)`). Para colunas `String`, apenas texto numérico simples é interpretado linha a linha; valores na gramática numérica do LogsQL (por exemplo, `10KiB`, `1h30m`) não são interpretados linha a linha.
+* As funções estatísticas numéricas (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) interpretam o valor numérico de cada campo, ignorando os valores que não são números, assim como o VictoriaLogs. Os valores são `Float64`; portanto, uma coluna numérica é agregada com precisão `Float64`, e não de forma exata.
+* O pipe `math` exige colunas numéricas como operandos; colunas `String` não são convertidas implicitamente.
+* Os resultados das consultas são retornados com os tipos das colunas subjacentes, e não como strings.
+
+## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
 
@@ -120,7 +154,7 @@ Habilita o dialeto Kusto Query Language (KQL), uma alternativa ao SQL.
 
 Ativa funções experimentais de processamento de linguagem natural.
 
-## allow_experimental_object_storage_queue_hive_partitioning
+## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
 <ExperimentalBadge />
 
@@ -130,7 +164,7 @@ Ativa funções experimentais de processamento de linguagem natural.
 
 Permite usar o particionamento Hive com os motores S3Queue/AzureQueue
 
-## allow_experimental_paimon_storage_engine
+## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
 
 <ExperimentalBadge />
 
@@ -140,15 +174,17 @@ Permite usar o particionamento Hive com os motores S3Queue/AzureQueue
 
 Permite criar tabelas com os motores de tabela Paimon*.
 
-## allow_experimental_parallel_reading_from_replicas
+## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
 
 **Aliases**: `enable_parallel_replicas`
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Réplicas paralelas com tarefas de leitura passaram a ser um recurso do nível Beta. A configuração também é conhecida pelo alias `enable_parallel_replicas`."}]}]} />
+
 Use até `max_parallel_replicas` réplicas de cada shard para a execução de consultas SELECT. A leitura é paralelizada e coordenada dinamicamente. 0 - desabilitado, 1 - habilitado, desabilita silenciosamente em caso de falha, 2 - habilitado, gera uma exceção em caso de falha
 
-## allow_experimental_polyglot_dialect
+## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -158,7 +194,7 @@ Use até `max_parallel_replicas` réplicas de cada shard para a execução de co
 
 Ativa o transpilador SQL poliglota - transpila SQL de mais de 30 dialetos (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB etc.) para ClickHouse SQL.
 
-## allow_experimental_prql_dialect
+## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
 
 <ExperimentalBadge />
 
@@ -168,7 +204,7 @@ Ativa o transpilador SQL poliglota - transpila SQL de mais de 30 dialetos (MySQL
 
 Habilita o PRQL — uma alternativa ao SQL.
 
-## allow_experimental_ytsaurus_dictionary_source
+## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
@@ -178,7 +214,7 @@ Habilita o PRQL — uma alternativa ao SQL.
 
 Fonte de dicionário experimental para integração com o YTsaurus.
 
-## allow_experimental_ytsaurus_table_engine
+## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
 
 <ExperimentalBadge />
 
@@ -188,7 +224,7 @@ Fonte de dicionário experimental para integração com o YTsaurus.
 
 Motor de tabela experimental para integração com o YTsaurus.
 
-## allow_experimental_ytsaurus_table_function
+## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
 
 <ExperimentalBadge />
 

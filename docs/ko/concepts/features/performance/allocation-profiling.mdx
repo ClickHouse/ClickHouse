@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### 예시: 단편화 플레임 그래프 생성 {#example-fragmentation-flamegraph}
 
-동일한 쿼리로 각 크기 클래스의 낭비량을 오래된 할당 수에 비례하여 백트레이스별로 나누고, 그 결과를 `flamegraph.pl`용 `collapsed` 포맷으로 출력할 수 있습니다. 낭비는 있지만 충분히 오래된 샘플이 없는 크기 클래스는 `[unattributed]` 프레임에 포함되므로, 플레임 그래프의 총합은 전체 낭비량과 같습니다. `system.jemalloc_sampled_allocations`는 쿼리당 한 번만 읽으십시오. 읽을 때마다 새로운 profile이 플러시되므로 서브쿼리를 두 개 사용하면 서로 다른 데이터를 보게 됩니다.
+동일한 쿼리로 각 크기 클래스의 낭비량을 오래된 할당 수에 비례하여 백트레이스별로 나누고, 그 결과를 `flamegraph.pl`용 `collapsed` 포맷으로 출력할 수 있습니다. 낭비는 있지만 충분히 오래된 샘플이 없는 크기 클래스는 `[unattributed]` 프레임에 포함되므로, 플레임 그래프의 총합은 전체 낭비량과 같습니다. `system.jemalloc_sampled_allocations`는 쿼리당 한 번만 읽으십시오. 읽을 때마다 새로운 프로필이 플러시되므로 서브쿼리를 두 개 사용하면 서로 다른 데이터를 보게 됩니다.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (

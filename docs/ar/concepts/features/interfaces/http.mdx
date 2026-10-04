@@ -9,7 +9,7 @@ doc_type: 'مرجع'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisites}
 </div>
 
 ستحتاج إلى ما يلي للأمثلة الواردة في هذه المقالة:
@@ -17,9 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * أن يكون لديك مثيل عامل من ClickHouse server
 * أن يكون `curl` مثبّتًا لديك. على Ubuntu أو Debian، شغّل `sudo apt install curl` أو راجع هذه [الوثائق](https://curl.se/download.html) للحصول على إرشادات التثبيت.
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
 تتيح لك واجهة HTTP استخدام ClickHouse على أي منصة ومن أي لغة برمجة عبر واجهة برمجة تطبيقات REST. وتُعد واجهة HTTP أكثر محدودية من الواجهة الأصلية، لكنها توفر دعماً أفضل للغات البرمجة.
 
@@ -39,9 +37,7 @@ Ok.
 
 راجع أيضًا: [محاذير رموز استجابة HTTP](#http_response_codes_caveats).
 
-<div id="web-ui">
-  ## واجهة مستخدم الويب
-</div>
+## واجهة مستخدم الويب {#web-ui}
 
 يتضمن ClickHouse واجهة مستخدم عبر الويب، ويمكن الوصول إليها من العنوان التالي:
 
@@ -68,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## الاستعلام عبر HTTP/HTTPS
+  ## الاستعلام عبر HTTP/HTTPS {#querying}
 </div>
 
 للاستعلام عبر HTTP/HTTPS، توجد ثلاثة خيارات:
@@ -200,7 +196,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-يمكنك استخدام معلمة URL ‏`default_format` لتحديد تنسيق افتراضي بدلاً من `TabSeparated`. تحدد ترويسة `X-ClickHouse-Format` تنسيق الاستجابة صراحةً: فهي اسم مستعار للإعداد `output_format`، لذا تتجاوز أيضاً عبارة `FORMAT` في الاستعلام. ولا تغيّر مطلقاً كيفية تحليل نص طلب `INSERT` — استخدم `input_format` أو `format` لهذا الغرض.
+يمكنك استخدام معلمة URL ‏`default_format` لتحديد تنسيق افتراضي بدلاً من `TabSeparated`. تحدد ترويسة `X-ClickHouse-Format` تنسيق الاستجابة صراحةً: فهي اسم بديل للإعداد `output_format`، لذا تتجاوز أيضاً عبارة `FORMAT` في الاستعلام. ولا تغيّر مطلقاً كيفية تحليل نص طلب `INSERT` — استخدم `input_format` أو `format` لهذا الغرض. لاستعادة سلوك الإصدارات السابقة لـ 26.8، حيث كانت الترويسة اسماً بديلاً لـ `default_format` ولم تكن تتجاوز عبارة `FORMAT`، عطّل الإعداد `http_x_clickhouse_format_overrides_output_format` (ضمن ملف تعريف مستخدم أو بوصفه معلمة URL؛ ويمكن تغييره في وضع القراءة فقط، شأنه شأن إعدادات الصيغة نفسها).
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,46 +215,44 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 7
 ```
 
-<div id="tables-as-files">
-  ## الوصول إلى الجداول عبر مسارات URL وإنشاء الاستعلامات
-</div>
+## الوصول إلى الجداول عبر مسارات URL وإنشاء الاستعلامات {#tables-as-files}
 
 متاح في ClickHouse 26.8 والإصدارات الأحدث.
 
-يمكن لواجهة HTTP تفسير مسار URL باعتباره قاعدة بيانات أو جدولًا أو تنسيق إخراج أو طريقة ضغط. ويمكن لمعلمات URL بعد ذلك تحديد شكل النتيجة، بحيث لا تتطلب طلبات القراءة البسيطة استخدام SQL. تكون هذه الميزات معطّلة افتراضيًا ويجب تمكينها صراحةً.
+يمكن لواجهة HTTP تفسير مسار URL باعتباره قاعدة بيانات أو جدولًا أو تنسيق إخراج أو طريقة ضغط. ويمكن لمعلمات URL بعد ذلك تحديد شكل النتيجة، بحيث لا تتطلب طلبات القراءة البسيطة استخدام SQL. تكون هذه الميزات مُمكّنة افتراضيًا بدءًا من ClickHouse 26.10؛ أما في الإصدارين 26.8 و26.9، فكان يجب تمكينها صراحةً.
 
-<div id="enabling-path-routing">
-  ### تفعيل التوجيه عبر المسارات
-</div>
+### إعدادات التوجيه عبر المسارات {#enabling-path-routing}
 
 يُفعَّل تفسير المسارات على مستويين:
 
-1. فعِّل إعداد التكوين `http_allow_path_requests` على مستوى الخادم، الذي يتيح لواجهة HTTP توجيه الطلبات ذات نمط المسار إلى معالج الاستعلامات:
+1. يتيح إعداد التكوين `http_allow_path_requests` على مستوى الخادم لواجهة HTTP توجيه الطلبات ذات نمط المسار إلى معالج الاستعلامات. وهو مفعّل افتراضيًا؛ اضبطه على `0` ليُرجع كل مسار لا يطابق معالجًا مهيأً رمز `404` مجددًا:
 
 ```xml
 <clickhouse>
-    <http_allow_path_requests>1</http_allow_path_requests>
+    <http_allow_path_requests>0</http_allow_path_requests>
 </clickhouse>
 ```
 
-2. فعّل الإعدادات المطلوبة لكل مستخدم:
+2. تحدد الإعدادات التالية الخاصة بكل مستخدم كيفية تفسير المسار بعد توجيهه. جميعها مفعّلة افتراضيًا باستثناء `http_allow_filters_as_unrecognized_url_parameters`، ويمكن تفعيل كل منها أو تعطيله لكل مستخدم أو دور أو ملف تعريف:
 
 | الإعداد                                             | التأثير                                                                                    |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `http_allow_table_as_file`                          | يفسّر آخر مكوّن في المسار على أنه `table` أو `table.format` أو `table.format.compression`. |
 | `http_allow_database_as_path`                       | يفسّر مكوّن المسار البادئ `/database/` على أنه قاعدة البيانات الحالية.                     |
 | `http_allow_filters_as_path`                        | يفسّر مكوّنات المسار `/name=value/` بنمط Hive على أنها عوامل تصفية `WHERE`.                |
-| `http_allow_filters_as_unrecognized_url_parameters` | يفسّر معلمات URL غير المعروفة على أنها عوامل تصفية `WHERE`.                               |
+| `http_allow_filters_as_unrecognized_url_parameters` | يفسّر معلمات URL غير المعروفة على أنها عوامل تصفية `WHERE`. وهو معطّل افتراضيًا.           |
 
 <Note>
-  يحدث التوجيه قبل المصادقة، لذا لا يمكن أن يعتمد على إعداد خاص بكل مستخدم. عند تعطيل `http_allow_path_requests`، يُرجع المسار غير المعروف رمز `404` قبل المصادقة. بعد التوجيه والمصادقة، تحدد الإعدادات الخاصة بكل مستخدم كيفية تفسير المسار، مما يتيح لك تمكين الميزة بشكل انتقائي لمستخدم أو دور أو ملف تعريف.
+  يحدث التوجيه قبل المصادقة، لذا لا يمكن أن يعتمد على إعداد خاص بكل مستخدم. عند تعطيل `http_allow_path_requests`، يُرجع المسار غير المعروف رمز `404` قبل المصادقة. بعد التوجيه والمصادقة، تحدد الإعدادات الخاصة بكل مستخدم كيفية تفسير المسار، مما يتيح لك تمكين الميزة أو تعطيلها بشكل انتقائي لمستخدم أو دور أو ملف تعريف.
 </Note>
 
-<div id="table-as-file-examples">
-  ### الوصول إلى الجداول كملفات
-</div>
+<Note>
+  يظل `http_allow_filters_as_unrecognized_url_parameters` معطّلًا افتراضيًا لأنه ينطبق على كل طلب إلى واجهة HTTP، بما في ذلك نقطة النهاية `/?query=...`: عند تفعيله، تتحول أي معلمة URL غير معروفة يضيفها العميل إلى عامل تصفية للاستعلام. وعندئذٍ لا يُبلَّغ عن اسم إعداد كُتب خطأً بوصفه `UNKNOWN_SETTING`، بل ينتج عنه الخطأ `UNKNOWN_IDENTIFIER` — أو تُصفّى النتائج دون تنبيه إذا صادف أن الاسم يطابق عمودًا في الجدول المستعلَم عنه.
+</Note>
 
-عند تمكين `http_allow_table_as_file`، يُعالَج الطلب الموجّه إلى `/table.format.compression` على أنه `SELECT * FROM table`. فعّل `http_allow_database_as_path` لاستخدام `/database/table.format.compression`.
+### الوصول إلى الجداول كملفات {#table-as-file-examples}
+
+عند تمكين `http_allow_table_as_file`، يُعالَج الطلب الموجّه إلى `/table.format.compression` على أنه `SELECT * FROM table`. يتيح `http_allow_database_as_path` أيضًا استخدام `/database/table.format.compression`.
 
 ```bash
 # SELECT * FROM my_db.hits, formatted as CSV
@@ -272,9 +266,7 @@ curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
 
 تتجاوز معلمة URL الصريحة `format` أو `output_format` التنسيق المحدد في المسار. أما `default_format` فلا يتجاوزه، إذ يوفّر التنسيق المستخدم فقط عندما لا يحدد أي شيء آخر تنسيقًا، ويكون امتداد المسار أكثر تحديدًا. يجب أن تتطابق معلمة `compression` الصريحة مع الضغط المحدد في المسار؛ وتؤدي القيم المتعارضة إلى استثناء.
 
-<div id="query-construction">
-  ### إنشاء استعلام
-</div>
+### إنشاء استعلام {#query-construction}
 
 تُغلّف الإعدادات التالية الاستعلام الأساسي في صورة جدول مشتق. ويمكن استخدامها معًا أو مع استعلام موجود. يمكنك تمريرها كمعلمات URL عبر HTTP، أو ضمن عبارة `SETTINGS` في الاستعلام، أو عبر ملف تعريف المستخدم.
 
@@ -295,9 +287,7 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-<div id="modify-an-existing-query">
-  #### تعديل استعلام موجود
-</div>
+#### تعديل استعلام موجود {#modify-an-existing-query}
 
 لا تقتصر إعدادات الإنشاء على طلبات المسار، بل تؤثر أيضًا في الاستعلام الذي تكتبه بنفسك. يصبح الاستعلام جدولًا مشتقًا، لذا تُطبَّق الإعدادات على نتيجته بدلًا من دمجها فيه. على سبيل المثال، يُنفَّذ `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` على النحو التالي:
 
@@ -332,17 +322,15 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   لا يُعد `filter` آلية للتحكم بالوصول. فهو يضيف عبارة `WHERE` إلى استعلام فرعي مُغلِّف، مما يعني أنه يمكن قراءة البيانات الأساسية ومعالجتها قبل تطبيق عامل التصفية. ولتقييد الصفوف التي يمكن للمستخدم الوصول إليها، استخدم [سياسات الصفوف](/ar/concepts/features/security/access-rights#row-policy-management) أو [`additional_table_filters`](/ar/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
 
-<div id="format-and-compression-overrides">
-  ### تجاوز التنسيقات والضغط
-</div>
+### تجاوز التنسيقات والضغط {#format-and-compression-overrides}
 
-| الإعداد          | التأثير                                                                                                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `output_format`  | يتجاوز تنسيق الإخراج. وتكون له أولوية على عبارة `FORMAT` في الاستعلام وامتداد المسار و`format` و`default_format`. ويمكن أيضًا ضبطه باستخدام الترويسة `X-ClickHouse-Format`. |
-| `input_format`   | يتجاوز تنسيق الإدخال لعملية `INSERT`. وتكون له أولوية على عبارة `FORMAT` في الاستعلام و`format`.                                                                            |
-| `format`         | يتجاوز التنسيق في كلا الاتجاهين، ما لم يُوفَّر إعداد خاص باتجاه محدد.                                                                                                       |
-| `default_format` | يحدد تنسيق الإخراج عندما لا يتضمن الاستعلام عبارة `FORMAT` أو امتداد مسار أو أي تجاوز آخر للتنسيق.                                                                          |
-| `compression`    | يضغط جسم الاستجابة، مثلًا باستخدام `compression=gz`. وهو مستقل عن `Content-Encoding` في HTTP وعن المعلَمة الأصلية `compress` في ClickHouse.                                 |
+| الإعداد          | التأثير                                                                                                                                                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `output_format`  | يتجاوز تنسيق الإخراج. وتكون له أولوية على عبارة `FORMAT` في الاستعلام وامتداد المسار و`format` و`default_format`. ويمكن أيضًا ضبطه باستخدام الترويسة `X-ClickHouse-Format`. وعند ضبط `http_x_clickhouse_format_overrides_output_format = 0`، تضبط الترويسة `default_format` بدلًا من ذلك، كما كان الحال في الإصدارات السابقة للإصدار 26.8. |
+| `input_format`   | يتجاوز تنسيق الإدخال لعملية `INSERT`. وتكون له أولوية على عبارة `FORMAT` في الاستعلام و`format`.                                                                                                                                                                                                                                           |
+| `format`         | يتجاوز التنسيق في كلا الاتجاهين، ما لم يُوفَّر إعداد خاص باتجاه محدد.                                                                                                                                                                                                                                                                      |
+| `default_format` | يحدد تنسيق الإخراج عندما لا يتضمن الاستعلام عبارة `FORMAT` أو امتداد مسار أو أي تجاوز آخر للتنسيق.                                                                                                                                                                                                                                         |
+| `compression`    | يضغط جسم الاستجابة، مثلًا باستخدام `compression=gz`. وهو مستقل عن `Content-Encoding` في HTTP وعن المعلَمة الأصلية `compress` في ClickHouse.                                                                                                                                                                                                |
 
 تعمل إعدادات التنسيق أيضًا مع بروتوكولات أخرى، بما فيها العميل الأصلي و`clickhouse-local`. ويتوافق `input_format` و`output_format` مع الخيارين `--input-format` و`--output-format`. ويرتبط الخيار `--format` بإعداد `format` ثنائي الاتجاه في `clickhouse-local`، بينما يحتفظ في `clickhouse-client` بمعناه التاريخي المقتصر على الإخراج ويرتبط بـ `output_format`.
 
@@ -350,9 +338,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 تتضمن استجابات HTTP الثنائية والمضغوطة ترويسة `Content-Disposition: attachment; filename=…`. ويُشتق اسم الملف من مسار URL، أو يُستخدم `result.<format>.<compression>` إذا لم يوفر المسار اسمًا.
 
-<div id="implicit-table">
-  ### استخدام جدول مسار مع استعلام
-</div>
+### استخدام جدول مسار مع استعلام {#implicit-table}
 
 عندما يشير المسار إلى جدول وتوفّر أيضًا المعلَمة `query`، يُتاح جدول المسار عبر [`implicit_table_at_top_level`](/ar/reference/settings/session-settings/implicit#implicit_table_at_top_level). تقرأ عبارة `SELECT` التي لا تحتوي على عبارة `FROM` من جدول المسار:
 
@@ -364,14 +350,12 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 إذا كان الاستعلام يتضمن بالفعل عبارة `FROM`، فلا يحدد مكوّن المسار سوى اسم ملف التنزيل.
 
 <div id="insert-queries">
-  ## استعلامات `INSERT` عبر HTTP/HTTPS
+  ## استعلامات `INSERT` عبر HTTP/HTTPS {#insert-queries}
 </div>
 
 تُعد طريقة `POST` لنقل البيانات ضرورية لاستعلامات `INSERT`. في هذه الحالة، يمكنك كتابة بداية الاستعلام في معلمة `URL`، واستخدام `POST` لتمرير البيانات المراد إدراجها. ويمكن أن تكون هذه البيانات، على سبيل المثال، ملف تفريغ من MySQL مفصولًا بعلامات جدولة. وبهذه الطريقة، يحل استعلام `INSERT` محل `LOAD DATA LOCAL INFILE` في MySQL.
 
-<div id="examples">
-  ### أمثلة
-</div>
+### أمثلة {#examples}
 
 لإنشاء جدول:
 
@@ -397,11 +381,29 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
-لإدراج البيانات من ملف تفريغ مفصول بعلامات جدولة، حدِّد التنسيق المقابل:
+لإدراج البيانات من ملف تفريغ مفصول بعلامات جدولة، حدِّد الصيغة المقابلة:
 
 ```bash
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
+
+ينطبق الأمر نفسه على أي [صيغة إدخال](/ar/reference/formats) أخرى، مثل CSV مع صف عناوين، أو كائن JSON واحد في كل صف:
+
+```bash
+$ echo -ne 'a\n13\n14\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSVWithNames' --data-binary @-
+$ echo '{"a":15} {"a":16}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+لإدراج محتويات ملف، مرِّر اسمه إلى `--data-binary` مسبوقًا بالبادئة `@`:
+
+```bash
+$ echo -ne '17\n18\n' > data.csv
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20CSV' --data-binary @data.csv
+```
+
+<Warning>
+  استخدم `--data-binary` بدلًا من `-d` (`--data`)، إذ يحذف الخيار `-d @file` في curl محارف الأسطر الجديدة من الملف، فيصل الصفّان أعلاه على هيئة قيمة واحدة هي `1718`.
+</Warning>
 
 لقراءة محتويات الجدول:
 
@@ -413,6 +415,12 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 10
 11
 12
+13
+14
+15
+16
+17
+18
 1
 2
 3
@@ -431,11 +439,66 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-في الطلبات الناجحة التي لا تُرجع جدول بيانات، يُعاد جسم الاستجابة فارغًا.
+في الطلبات الناجحة التي لا تُرجع جدول بيانات، يُعاد متن الاستجابة فارغًا.
 
-<div id="compression">
-  ## الضغط
-</div>
+### إدراج بيانات Protobuf {#insert-protobuf}
+
+تُرسَل الصيغ الثنائية مثل [`Protobuf`](/ar/reference/formats/Protobuf/Protobuf) بالطريقة نفسها، إذ يمرّر `--data-binary` البايتات كما هي دون تعديل.
+أما الإعدادات التي تتطلبها الصيغة، مثل [`format_schema`](/ar/reference/settings/formats/format-schema#format_schema)، فتُمرَّر على هيئة معلمات URL إلى جانب `query`، شأنها شأن أي إعداد آخر.
+
+تستخدم الأمثلة أدناه هذا الجدول وملف المخطط `message.proto` الموجود في دليل [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path) على الخادم:
+
+```bash
+$ echo 'CREATE TABLE protobuf_messages (name String, surname String, birthDate UInt32, phoneNumbers Array(String)) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+}
+```
+
+للحصول على ملف يحتوي على رسائل Protobuf لإدراجها، نستخدم في هذا المثال ClickHouse لإنشاء هذا الملف:
+
+```bash
+$ echo "SELECT 'Aisha' AS name, 'Khan' AS surname, 19920815 AS birthDate, ['(555) 247-8903', '(555) 612-3457'] AS phoneNumbers FORMAT Protobuf" | curl 'http://localhost:8123/?format_schema=message:MessageType' --data-binary @- > messages.bin
+```
+
+لإدراج الملف، حدِّد اسم ملف المخطط ونوع الرسالة في `format_schema`:
+
+```bash
+$ curl 'http://localhost:8123/?query=INSERT%20INTO%20protobuf_messages%20FORMAT%20Protobuf&format_schema=message:MessageType' --data-binary @messages.bin
+```
+
+عندما يتعذّر وضع ملف المخطط على الخادم، كما هو الحال في ClickHouse Cloud، أرسل المخطط نفسه مع ضبط [`format_schema_source`](/ar/reference/settings/formats/format-schema#format_schema_source) على `string`، وحدّد اسم نوع الرسالة في [`format_schema_message_name`](/ar/reference/settings/formats/format-schema#format_schema_message_name).
+يُرمِّز الخيار `--url-query` في curl (الإصدار 7.87 وما بعده) كل معلمة بترميز URL، ولذلك يمكن كتابة الاستعلام والمخطط كما هما:
+
+```bash
+$ curl 'http://localhost:8123/' \
+    --url-query 'query=INSERT INTO protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=string' \
+    --url-query 'format_schema=syntax = "proto3"; message MessageType { string name = 1; string surname = 2; uint32 birthDate = 3; repeated string phoneNumbers = 4; }' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @messages.bin
+```
+
+لقراءة محتويات الجدول:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20*%20FROM%20protobuf_messages'
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
+```
+
+تتوقّع صيغة `Protobuf` أن تُسبَق كل رسالة بطولها مُرمَّزًا بصيغة varint.
+لرسالة واحدة دون هذه البادئة، استخدم [`ProtobufSingle`](/ar/reference/formats/Protobuf/ProtobufSingle)؛ أما الصفوف المُرسَلة كرسائل فرعية ضمن رسالة `Envelope` واحدة، فاستخدم لها [`ProtobufList`](/ar/reference/formats/Protobuf/ProtobufList).
+
+## الضغط {#compression}
 
 يمكن استخدام الضغط لتقليل حركة مرور الشبكة عند نقل كميات كبيرة من البيانات، أو لإنشاء ملفات تفريغ مضغوطة مباشرةً.
 
@@ -467,7 +530,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 </Info>
 
 <div id="examples-compression">
-  ## أمثلة
+  ## أمثلة {#examples-compression}
 </div>
 
 لإرسال البيانات المضغوطة إلى الخادم:
@@ -500,7 +563,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## قاعدة البيانات الافتراضية
+  ## قاعدة البيانات الافتراضية {#default-database}
 </div>
 
 يمكنك استخدام المعلمة `database` في URL أو الترويسة `X-ClickHouse-Database` لتحديد قاعدة البيانات الافتراضية.
@@ -522,7 +585,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 افتراضيًا، تُستخدم قاعدة البيانات المسجَّلة في إعدادات الخادم كقاعدة البيانات الافتراضية. وبشكل افتراضي عند التثبيت، تكون هذه هي قاعدة البيانات المسماة `default`. أو يمكنك دائمًا تحديد قاعدة البيانات بوضع نقطة قبل اسم الجدول.
 
 <div id="authentication">
-  ## المصادقة
+  ## المصادقة {#authentication}
 </div>
 
 يمكن إدخال اسم المستخدم وكلمة المرور بإحدى الطرق الثلاث التالية:
@@ -583,9 +646,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [الإعدادات](/ar/reference/settings/session-settings)
 * [SET](/ar/reference/statements/set)
 
-<div id="using-clickhouse-sessions-in-the-http-protocol">
-  ## استخدام جلسات ClickHouse في بروتوكول HTTP
-</div>
+## استخدام جلسات ClickHouse في بروتوكول HTTP {#using-clickhouse-sessions-in-the-http-protocol}
 
 يمكنك أيضًا استخدام جلسات ClickHouse ضمن بروتوكول HTTP. للقيام بذلك، عليك إضافة معلمة `GET` ‏`session_id` إلى الطلب. ويمكنك استخدام أي سلسلة نصية كمعرّف للجلسة.
 
@@ -626,9 +687,7 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 تتيح واجهة HTTP تمرير بيانات خارجية (جداول مؤقتة خارجية) لاستخدامها في الاستعلام. لمزيد من المعلومات، راجع [&quot;البيانات الخارجية لمعالجة الاستعلامات&quot;](/ar/reference/engines/table-engines/special/external-data).
 
-<div id="response-buffering">
-  ## تخزين الاستجابة مؤقتًا
-</div>
+## تخزين الاستجابة مؤقتًا {#response-buffering}
 
 يمكن تمكين تخزين الاستجابة مؤقتًا على جانب الخادم. تُوفَّر معلمات URL التالية لهذا الغرض:
 
@@ -655,7 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## تعيين دور باستخدام معلمات الاستعلام
+  ## تعيين دور باستخدام معلمات الاستعلام {#setting-role-with-query-parameters}
 </div>
 
 أُضيفت هذه الميزة في ClickHouse 24.4.
@@ -689,9 +748,7 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 في هذه الحالة، يعمل `?role=my_role&role=my_other_role` بشكل مماثل لتنفيذ `SET ROLE my_role, my_other_role` قبل العبارة.
 
-<div id="http_response_codes_caveats">
-  ## محاذير رموز استجابة HTTP
-</div>
+## محاذير رموز استجابة HTTP {#http_response_codes_caveats}
 
 نظرًا لقيود بروتوكول HTTP، فإن رمز الاستجابة HTTP 200 لا يضمن نجاح الاستعلام.
 
@@ -783,13 +840,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## استعلامات بمعلمات
+  ## استعلامات بمعلمات {#cli-queries-with-parameters}
 </div>
 
 يمكنك إنشاء استعلام بمعلمات وتمرير قيمها عبر معلمات طلب HTTP المقابلة. لمزيد من المعلومات، راجع [الاستعلامات بمعلمات في CLI](/ar/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### مثال
+  ### مثال {#example-3}
 </div>
 
 ```bash
@@ -797,7 +854,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### علامات الجدولة في معلمات URL
+  ### علامات الجدولة في معلمات URL {#tabs-in-url-parameters}
 </div>
 
 تُحلَّل معلمات الاستعلام من صيغة &quot;escaped&quot;. ولهذا بعض المزايا، مثل إمكانية تحليل قيم NULL دون لبس على أنها `\N`. وهذا يعني أن محرف الجدولة يجب ترميزه على هيئة `\t` (أو `\` ثم علامة جدولة). على سبيل المثال، يحتوي ما يلي على علامة جدولة فعلية بين `abc` و`123`، وتُقسَّم سلسلة الإدخال إلى قيمتين:
@@ -828,7 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## واجهة HTTP المُعرَّفة مسبقًا
+  ## واجهة HTTP المُعرَّفة مسبقًا {#predefined_http_interface}
 </div>
 
 يدعم ClickHouse استعلامات محددة عبر واجهة HTTP. على سبيل المثال، يمكنك إدخال البيانات في جدول كما يلي:
@@ -958,9 +1015,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 ستُناقش إعدادات الأنواع `type` المختلفة بعد ذلك.
 
-<div id="predefined_query_handler">
-  ### predefined_query_handler
-</div>
+### predefined_query_handler {#predefined_query_handler}
 
 يدعم `predefined_query_handler` تعيين قيم `Settings` و`query_params`. ويمكنك ضبط `query` ضمن النوع `predefined_query_handler`.
 
@@ -1002,7 +1057,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### المعلمة الافتراضية `_request_body`
+  #### المعلمة الافتراضية `_request_body` {#virtual-param-request-body}
 </div>
 
 بالإضافة إلى معلمات URL والترويسات ومعلمات الاستعلام، يدعم `predefined_query_handler` معلمة افتراضية خاصة باسم `_request_body`.
@@ -1040,9 +1095,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   في كل `predefined_query_handler`، لا يُدعَم إلا `query` واحد.
 </Note>
 
-<div id="dynamic_query_handler">
-  ### dynamic_query_handler
-</div>
+### dynamic_query_handler {#dynamic_query_handler}
 
 في `dynamic_query_handler`، يُكتب الاستعلام على شكل مُعامل في طلب HTTP. والفرق هو أنه في `predefined_query_handler`، يُكتب الاستعلام في ملف التهيئة. ويمكن تهيئة `query_param_name` في `dynamic_query_handler`.
 
@@ -1073,7 +1126,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static
+  ### static {#static}
 </div>
 
 يمكن لـ `static` إرجاع [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) و[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) و`response_content`. ويمكن أن يعيد `response_content` المحتوى المحدد.
@@ -1266,7 +1319,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 سيؤدي `redirect` إلى إعادة توجيه `302` إلى `location`
@@ -1289,7 +1342,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## ترويسات استجابة HTTP
+  ## ترويسات استجابة HTTP {#http-response-headers}
 </div>
 
 يتيح لك ClickHouse تهيئة ترويسات استجابة HTTP مخصّصة يمكن تطبيقها على أي نوع من المعالجات القابلة للتهيئة. ويمكن ضبط هذه الترويسات باستخدام الإعداد `http_response_headers`، الذي يقبل أزواج مفتاح-قيمة تمثل أسماء الترويسات وقيمها. وتُعد هذه الميزة مفيدة بشكل خاص لتطبيق ترويسات أمان مخصّصة، أو سياسات CORS، أو أي متطلبات أخرى خاصة بترويسات HTTP عبر واجهة ClickHouse HTTP.
@@ -1326,9 +1379,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 </clickhouse>
 ```
 
-<div id="valid-output-on-exception-http-streaming">
-  ## استجابة JSON/XML صالحة عند حدوث استثناء أثناء HTTP streaming
-</div>
+## استجابة JSON/XML صالحة عند حدوث استثناء أثناء HTTP streaming {#valid-output-on-exception-http-streaming}
 
 أثناء تنفيذ استعلام عبر HTTP، قد يحدث استثناء بعد إرسال جزء من البيانات بالفعل. وعادةً ما يُرسَل الاستثناء إلى client كنص عادي.
 وقد يحدث ذلك حتى عند استخدام format بيانات محدد لإخراج البيانات، مما قد يجعل الإخراج غير صالح وفقًا لتنسيق البيانات المحدد.

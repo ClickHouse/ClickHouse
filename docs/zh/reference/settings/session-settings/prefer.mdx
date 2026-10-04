@@ -80,7 +80,9 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "外部排序时优先使用最大块字节数，以减少合并期间的内存使用量。"}]}]} />
 
-外部排序时优先使用最大块字节数，以减少合并期间的内存使用量。
+外部 `ORDER BY` 和 `DISTINCT` 所用落盘文件的首选块大小 (字节) 。块越小，合并落盘文件时的内存使用量越低。
+
+块大小根据平均行大小估算，因此包含异常大行的块可能会超出该目标值。设置为 `0` 时，仅按行数上限确定块大小。
 
 ## prefer_global_in_and_join {#prefer_global_in_and_join}
 

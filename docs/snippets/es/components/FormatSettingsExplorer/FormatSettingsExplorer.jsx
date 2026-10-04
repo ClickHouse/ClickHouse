@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 129,
+      count: 132,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -182,6 +182,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_custom_skip_trailing_empty_lines", path: "/input-format#input_format_custom_skip_trailing_empty_lines", default: "0" },
         { name: "input_format_defaults_for_omitted_fields", path: "/input-format#input_format_defaults_for_omitted_fields", default: "1" },
         { name: "input_format_force_null_for_omitted_fields", path: "/input-format#input_format_force_null_for_omitted_fields", default: "0" },
+        { name: "input_format_freeform_max_search_steps", path: "/input-format#input_format_freeform_max_search_steps", default: "4096" },
         { name: "input_format_geojson_unsupported_geometry_handling", path: "/input-format#input_format_geojson_unsupported_geometry_handling", default: "throw" },
         { name: "input_format_hive_text_allow_variable_number_of_columns", path: "/input-format#input_format_hive_text_allow_variable_number_of_columns", default: "1" },
         { name: "input_format_hive_text_collection_items_delimiter", path: "/input-format#input_format_hive_text_collection_items_delimiter", default: "\u0002" },
@@ -246,6 +247,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_parquet_enable_json_parsing", path: "/input-format#input_format_parquet_enable_json_parsing", default: "1" },
         { name: "input_format_parquet_enable_row_group_prefetch", path: "/input-format#input_format_parquet_enable_row_group_prefetch", default: "1" },
         { name: "input_format_parquet_filter_push_down", path: "/input-format#input_format_parquet_filter_push_down", default: "1" },
+        { name: "input_format_parquet_footer_read_size", path: "/input-format#input_format_parquet_footer_read_size", default: "0" },
         { name: "input_format_parquet_local_file_min_bytes_for_seek", path: "/input-format#input_format_parquet_local_file_min_bytes_for_seek", default: "8192" },
         { name: "input_format_parquet_local_time_as_utc", path: "/input-format#input_format_parquet_local_time_as_utc", default: "1" },
         { name: "input_format_parquet_max_block_size", path: "/input-format#input_format_parquet_max_block_size", default: "65409" },
@@ -272,6 +274,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_read_datetime_number_as_raw_value", path: "/input-format#input_format_read_datetime_number_as_raw_value", default: "0" },
         { name: "input_format_record_errors_file_path", path: "/input-format#input_format_record_errors_file_path", default: '""' },
         { name: "input_format_skip_unknown_fields", path: "/input-format#input_format_skip_unknown_fields", default: "1" },
+        { name: "input_format_sqlite_table_name", path: "/input-format#input_format_sqlite_table_name", default: '""' },
         { name: "input_format_try_infer_dates", path: "/input-format#input_format_try_infer_dates", default: "1" },
         { name: "input_format_try_infer_datetimes", path: "/input-format#input_format_try_infer_datetimes", default: "1" },
         { name: "input_format_try_infer_datetimes_only_datetime64", path: "/input-format#input_format_try_infer_datetimes_only_datetime64", default: "0" },
@@ -296,7 +299,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 110,
+      count: 112,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -392,6 +395,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_pretty_max_value_width_apply_for_single_value", path: "/output-format#output_format_pretty_max_value_width_apply_for_single_value", default: "0" },
         { name: "output_format_pretty_multiline_fields", path: "/output-format#output_format_pretty_multiline_fields", default: "1" },
         { name: "output_format_pretty_named_tuples_as_json", path: "/output-format#output_format_pretty_named_tuples_as_json", default: "1" },
+        { name: "output_format_pretty_named_tuples_as_subcolumns", path: "/output-format#output_format_pretty_named_tuples_as_subcolumns", default: "1" },
         { name: "output_format_pretty_row_numbers", path: "/output-format#output_format_pretty_row_numbers", default: "1" },
         { name: "output_format_pretty_single_large_number_tip_threshold", path: "/output-format#output_format_pretty_single_large_number_tip_threshold", default: "1000000" },
         { name: "output_format_pretty_squash_consecutive_ms", path: "/output-format#output_format_pretty_squash_consecutive_ms", default: "50" },
@@ -404,6 +408,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_sql_insert_quote_names", path: "/output-format#output_format_sql_insert_quote_names", default: "1" },
         { name: "output_format_sql_insert_table_name", path: "/output-format#output_format_sql_insert_table_name", default: "table" },
         { name: "output_format_sql_insert_use_replace", path: "/output-format#output_format_sql_insert_use_replace", default: "0" },
+        { name: "output_format_sqlite_table_name", path: "/output-format#output_format_sqlite_table_name", default: "table" },
         { name: "output_format_trim_fixed_string", path: "/output-format#output_format_trim_fixed_string", default: "0" },
         { name: "output_format_tsv_crlf_end_of_line", path: "/output-format#output_format_tsv_crlf_end_of_line", default: "0" },
         { name: "output_format_values_escape_quote_with_quote", path: "/output-format#output_format_values_escape_quote_with_quote", default: "0" },

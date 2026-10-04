@@ -14,19 +14,19 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## allow_experimental_analyzer
+## allow_experimental_analyzer {#allow_experimental_analyzer}
 
 **別名**: `enable_analyzer`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "この設定は廃止されました。アナライザが必須となり、旧クエリ分析はサポートされなくなりました。無効化しようとすると無視されるのではなく拒否され、24.3 未満のバージョンとの `compatibility` によって元に戻ることもなくなりました。"}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "アナライザとプランナーをデフォルトで有効にします。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "この設定は廃止されました。アナライザが必須となり、旧クエリ分析はサポートされなくなりました。無効化しようとする変更はエラーにはならず、`1` に置き換えられます。また、24.3 未満のバージョンとの `compatibility` によって元に戻ることもなくなりました。"}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "1"},{"label": "別名 `enable_analyzer` を追加しました。"}]}, {"id": "row-3","items": [{"label": "24.3"},{"label": "1"},{"label": "アナライザとプランナーをデフォルトで有効にします。"}]}]} />
 
 v26.9 以降、この設定は廃止されています。アナライザは無効化できなくなりました。
 
-アナライザは、v24.3 以降デフォルトで使用されているクエリ分析およびプランニングのインフラストラクチャです。v26.9 でこの設定は唯一サポートされる値である `1` に固定されました。`0` に設定しようとすると拒否され、`compatibility` 設定でも元に戻せなくなりました。v26.10 では、この設定によって切り替えられていた旧クエリ分析が削除されました。クエリ、セッション設定、設定プロファイル、クライアント設定から `enable_analyzer = 0` を削除してください。旧クエリ分析でのクエリの動作やパフォーマンスと比較するには、v26.9 より前の ClickHouse バージョンを使用してください。
+アナライザは、v24.3 以降デフォルトで使用されているクエリ分析およびプランニングのインフラストラクチャです。v26.9 でこの設定は唯一サポートされる値である `1` に固定され、`compatibility` 設定でも元に戻せなくなりました。v26.10 では、この設定によって切り替えられていた旧クエリ分析が削除されました。後方互換性のため、`0` を設定してもエラーにはならず、`1` に置き換えられます。そのため、`enable_analyzer = 0` を設定したままのクエリ、セッション設定、設定プロファイル、クライアント設定も引き続き動作し、アナライザが使用されます。旧クエリ分析でのクエリの動作やパフォーマンスと比較するには、v26.9 より前の ClickHouse バージョンを使用してください。
 
-## allow_experimental_cleanup_old_data_files_compaction
+## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 Iceberg compaction 時に古い data files をクリーンアップできるようにします。
 
-## allow_experimental_database_hms_catalog
+## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ Iceberg compaction 時に古い data files をクリーンアップできるよ�
 
 catalog&#95;type = &#39;hms&#39; の場合に、実験的なデータベースエンジン DataLakeCatalog を有効にします
 
-## allow_experimental_database_materialized_postgresql
+## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ catalog&#95;type = &#39;hms&#39; の場合に、実験的なデータベース�
 
 Engine=MaterializedPostgreSQL(...) を指定したデータベースの作成を許可します。
 
-## allow_experimental_database_paimon_rest_catalog
+## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ Engine=MaterializedPostgreSQL(...) を指定したデータベースの作成を
 
 catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデータベースエンジン DataLakeCatalog の使用を許可します
 
-## allow_experimental_eval_table_function
+## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験的なテーブル関数 `eval` を有効にします。
 
-## allow_experimental_expire_snapshots
+## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験段階の Iceberg コマンド `ALTER TABLE ... EXECUTE expire_snapshots` を実行できるようにします。
 
-## allow_experimental_hash_functions
+## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験的なハッシュ関数を有効にする
 
-## allow_experimental_iceberg_compaction
+## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるようにします。
 
-## allow_experimental_kusto_dialect
+## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
 
@@ -112,7 +112,38 @@ Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるよう�
 
 SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
-## allow_experimental_nlp_functions
+## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "LogsQL ダイアレクト（VictoriaLogs のログクエリ言語）を有効にする新しい設定。"}]}]} />
+
+VictoriaLogs のログクエリ言語である LogsQL を有効にします。このダイアレクトで記述したクエリは、`logsql_table` 設定で指定したテーブルに対する SELECT クエリに変換されます。
+
+使用方法:
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+単独で完結した `SET` クエリは、ダイアレクトを元に戻せるよう、引き続き通常の SQL としてパースされます。一方、単に `set` という単語で始まるだけの LogsQL クエリは、本来の意味のまま扱われます。
+`logsql_time_column` および `logsql_message_column` 設定では、`_time` フィールドおよびデフォルト (メッセージ) フィールドが参照するカラムを指定します。
+
+すべてのフィールドを文字列として保存する VictoriaLogs とは異なり、変換後のクエリは既存のテーブルスキーマに対して実行されます。このため、主に以下の点で仕様が異なります。
+
+* テキストフィルタ (単語、フレーズ、プレフィックス、正規表現) は `String` 型のカラムを前提としており、数値カラムをテキストに変換することはありません。
+* 数値比較フィルタは数値カラムをネイティブに比較します (比較対象のリテラルが `Int128` または `Decimal256(38)` に収まる限り、整数値および小数値は厳密に比較されます。それを超える値、たとえば `UInt256` フィールド内の 1e38 を超える整数は `Float64` の精度で比較され、`stats by (<field>:<step>)` の整数バケットのステップも同様です) 。`String` カラムでは、単純な数値テキストのみが行ごとにパースされます。LogsQL の数値文法で表された値 (例: `10KiB`、`1h30m`) は行ごとにはパースされません。
+* 数値統計関数 (`sum`、`avg`、`median`、`quantile`、`stddev`、`rate_sum`) は、VictoriaLogs と同様に各フィールドの数値をパースし、数値でない値はスキップします。値は `Float64` として扱われるため、数値カラムは厳密な値ではなく `Float64` の精度で集計されます。
+* `math` パイプのオペランドには数値カラムが必要です。`String` カラムは型変換されません。
+* クエリ結果は文字列ではなく、基になるカラムの型のまま返されます。
+
+## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
 
@@ -120,7 +151,7 @@ SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
 自然言語処理向けの実験的な関数を有効にします。
 
-## allow_experimental_object_storage_queue_hive_partitioning
+## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
 <ExperimentalBadge />
 
@@ -130,7 +161,7 @@ SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
 S3Queue/AzureQueue エンジンで Hive パーティション化を使用できるようにします
 
-## allow_experimental_paimon_storage_engine
+## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
 
 <ExperimentalBadge />
 
@@ -140,15 +171,17 @@ S3Queue/AzureQueue エンジンで Hive パーティション化を使用でき�
 
 Paimon* テーブルエンジンでテーブルを作成できるようにします。
 
-## allow_experimental_parallel_reading_from_replicas
+## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
 
 **別名**: `enable_parallel_replicas`
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "読み取りタスクを用いる並列レプリカがベータ段階の機能になりました。この設定は別名 `enable_parallel_replicas` でも利用できます。"}]}]} />
+
 SELECT クエリ実行では、各分片から最大 `max_parallel_replicas` 個のレプリカを使用します。読み取りは並列化され、動的に調整されます。0 - 無効、1 - 有効 (障害時は自動的に無効化) 、2 - 有効 (障害時に例外をスロー)
 
-## allow_experimental_polyglot_dialect
+## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -158,7 +191,7 @@ SELECT クエリ実行では、各分片から最大 `max_parallel_replicas` 個
 
 polyglot SQL トランスパイラを有効にします。これにより、30種類以上のSQL方言 (MySQL、PostgreSQL、SQLite、Snowflake、DuckDB など) のSQLをClickHouse SQLに変換できます。
 
-## allow_experimental_prql_dialect
+## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
 
 <ExperimentalBadge />
 
@@ -168,7 +201,7 @@ polyglot SQL トランスパイラを有効にします。これにより、30�
 
 SQLの代替となるPRQLを有効にします。
 
-## allow_experimental_ytsaurus_dictionary_source
+## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
@@ -178,7 +211,7 @@ SQLの代替となるPRQLを有効にします。
 
 YTsaurus とのインテグレーション向けの実験的な Dictionary ソース。
 
-## allow_experimental_ytsaurus_table_engine
+## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
 
 <ExperimentalBadge />
 
@@ -188,7 +221,7 @@ YTsaurus とのインテグレーション向けの実験的な Dictionary ソ�
 
 YTsaurus とのインテグレーション用の実験的なテーブルエンジン。
 
-## allow_experimental_ytsaurus_table_function
+## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
 
 <ExperimentalBadge />
 

@@ -18,9 +18,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   このページでは、本番システムを Postgres に接続する方法を説明します。クエリを手早く実行したい場合は、ClickHouse インスタンスと同様に、[SQL Console](/ja/integrations/connectors/sql-clients/sql-console) 経由で接続できます。
 </Tip>
 
-<div id="accessing-connection-details">
-  ## 接続情報の確認
-</div>
+## 接続情報の確認 {#accessing-connection-details}
 
 アプリケーションを ClickHouse Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
 
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 ClickHouse Managed Postgres では、データベースへのスーパーユーザーアクセスが提供されます。これらの認証情報を使用してスーパーユーザーとして接続すると、追加のユーザーを作成したり、データベースオブジェクトを管理したりできます。
 
 <div id="connection-string">
-  ## 接続文字列のフォーマット
+  ## 接続文字列のフォーマット {#connection-string}
 </div>
 
 **Connect via** タブでは、アプリケーションの要件に合わせて、接続文字列を複数のフォーマットで確認できます。
@@ -55,9 +53,7 @@ ClickHouse Managed Postgres では、データベースへのスーパーユー�
 
 セキュリティ上の理由により、接続文字列内のパスワードはデフォルトでマスクされています。任意のフィールドまたは接続文字列の横にあるコピーアイコンをクリックすると、内容を直接クリップボードにコピーできます。
 
-<div id="pgbouncer">
-  ## PgBouncer 接続プーリング
-</div>
+## PgBouncer 接続プーリング {#pgbouncer}
 
 ClickHouse Managed Postgres には、サーバー側の接続プーリング用に [PgBouncer](https://www.pgbouncer.org/) インスタンスが付属しています。PgBouncer は、特に次のようなアプリケーションで、接続管理、パフォーマンス、リソース使用状況の改善に役立ちます。
 
@@ -70,19 +66,17 @@ ClickHouse Managed Postgres には、サーバー側の接続プーリング用�
 <Tip>
   **PgBouncer を使用するタイミング**
 
-  アプリケーションが短時間の接続を多数開く場合は、PgBouncer を使用してください。長時間維持される接続や、接続プーリングと互換性のない PostgreSQL 機能 (トランザクションをまたいだプリペアドステートメントなど) を使用するアプリケーションでは、直接接続してください。
+  アプリケーションが短時間の接続を多数開く場合は、PgBouncer を使用してください。プロトコルレベルのプリペアドステートメントは PgBouncer 経由でも利用できます。詳しくは [PgBouncer 経由のプリペアドステートメント](/ja/products/managed-postgres/faq#prepared-statement-errors) を参照してください。長時間維持される接続や移行を行う場合、またはトランザクションプーリングでは動作しないセッションレベルの機能 (セッションでの `SET` コマンド、セッションアドバイザリロック、`LISTEN`、SQL レベルの `PREPARE` など) に依存するアプリケーションでは、直接接続してください。
 
   PgBouncer 経由で ClickPipes を使用してデータを ClickHouse に移動することはサポートされていません。
 </Tip>
 
-<div id="tls">
-  ## TLS 設定
-</div>
+## TLS 設定 {#tls}
 
 すべての ClickHouse Managed Postgres インスタンスは TLS によって保護されています。サポートされる最小バージョンは **TLS 1.3** です。
 
 <div id="quick-connection">
-  ### クイック接続 (TLS で暗号化)
+  ### クイック接続 (TLS で暗号化) {#quick-connection}
 </div>
 
 デフォルトでは、接続には証明書の検証を行わない TLS 暗号化が使用されます。
@@ -91,9 +85,7 @@ ClickHouse Managed Postgres には、サーバー側の接続プーリング用�
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
 ```
 
-<div id="verified-tls">
-  ### 検証済み TLS 接続 (本番環境に推奨)
-</div>
+### 検証済み TLS 接続 (本番環境に推奨) {#verified-tls}
 
 本番ワークロードでは、正しいサーバーと通信していることを確実にするため、検証済み TLS 接続の使用を推奨します。これを行うには、**Settings** タブから CA 証明書バンドルをダウンロードし、データベースクライアントの信頼済み証明書に追加します。
 

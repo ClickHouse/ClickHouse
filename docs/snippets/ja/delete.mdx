@@ -15,61 +15,53 @@ DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE 
 
 これは、負荷の大きい [ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドと区別するために、「論理削除」と呼ばれます。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 ```sql
 -- `hits` テーブルから `Title` カラムに `hello` というテキストを含むすべての行を削除する
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## 論理削除 ではデータはすぐには削除されません
-</div>
+## 論理削除 ではデータはすぐには削除されません {#lightweight-delete-does-not-delete-data-immediately}
 
-論理削除 は、行を削除済みとしてマークするものの、ただちに物理的に削除はしない [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
+論理削除 は、行を削除済みとしてマークしますが、ストレージからはすぐに削除しません。デフォルトでは、[ミューテーション](/ja/reference/statements/alter/index#mutations) を使用します。[`lightweight_delete_mode`](#lightweight-delete-mode) の設定によっては、パッチパートを使用することもできます。
 
-デフォルトでは、`DELETE` ステートメントは、行を削除済みとしてマークする処理が完了するまで待機してから戻ります。データ量が多い場合、この処理には時間がかかることがあります。あるいは、設定 [`lightweight_deletes_sync`](/ja/reference/settings/session-settings/lightweight#lightweight_deletes_sync) を使用して、バックグラウンドで非同期に実行することもできます。これを無効にすると、`DELETE` ステートメントはすぐに戻りますが、バックグラウンドの ミューテーション が完了するまでは、データがクエリから見え続ける可能性があります。
+デフォルトのミューテーション方式では、`DELETE` ステートメントは、行を削除済みとしてマークする処理が完了するまで待機してから戻ります。データ量が多い場合、この処理には時間がかかることがあります。あるいは、設定 [`lightweight_deletes_sync`](/ja/reference/settings/session-settings/lightweight#lightweight_deletes_sync) を使用して、バックグラウンドで非同期に実行することもできます。これを無効にすると、`DELETE` ステートメントはすぐに戻りますが、バックグラウンドの ミューテーション が完了するまでは、データがクエリから見え続ける可能性があります。
 
-この ミューテーション では、削除済みとしてマークされた行は物理的には削除されません。実際に削除されるのは、次回の マージ 時のみです。そのため、一定期間のあいだ、データは実際にはストレージから削除されず、削除済みとしてマークされているだけの状態になる可能性があります。
+どちらの方式でも、削除済みの行はクリーンアップされるまでストレージに残ります。通常は、バックグラウンドマージによって、影響を受けるデータパーツから削除されます。削除マスクを明示的に適用するには、負荷の高いミューテーションを実行する [`ALTER TABLE ... APPLY DELETED MASK`](/ja/reference/statements/alter/apply-deleted-mask) を使用してください。
 
 データが予測可能な時間内にストレージから確実に削除されるようにしたい場合は、テーブル設定 [`min_age_to_force_merge_seconds`](/ja/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) の使用を検討してください。あるいは、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドを使用することもできます。`ALTER TABLE ... DELETE` によるデータ削除では、影響を受けるすべてのパーツを再作成するため、大量のリソースを消費する可能性がある点に注意してください。
 
-<div id="deleting-large-amounts-of-data">
-  ## 大量のデータの削除
-</div>
+## 削除モードを選択する {#lightweight-delete-mode}
+
+[`lightweight_delete_mode`](/ja/reference/settings/session-settings/lightweight#lightweight_delete_mode) 設定では、ミューテーションベースの削除 (デフォルト) か、削除対象の行について `_row_exists = 0` を含むパッチパートを書き込む論理更新を選択します。クエリでは、物理的なクリーンアップが行われる前に、これらのパッチが適用されます。
+
+利用可能なモードは設定のリファレンスを、前提条件は[論理更新の要件](/ja/reference/statements/update#lightweight-update-requirements)を参照してください。パッチパートを使用する場合、`lightweight_deletes_sync` は他のレプリカへの反映を待ちません。`ReplicatedMergeTree` では、他のレプリカがパッチを受信するまで、削除済みの行が返されることがあります。
+
+## 大量のデータの削除 {#deleting-large-amounts-of-data}
 
 大量の削除は ClickHouse のパフォーマンスに悪影響を与える可能性があります。テーブル内のすべての行を削除したい場合は、[`TRUNCATE TABLE`](/ja/reference/statements/truncate) コマンドの使用を検討してください。
 
 削除が頻繁に発生することが見込まれる場合は、[カスタムのパーティションキー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)の使用を検討してください。これにより、[`ALTER TABLE ... DROP PARTITION`](/ja/reference/statements/alter/partition#drop-partitionpart) コマンドを使って、そのパーティションに関連するすべての行をすばやく削除できます。
 
-<div id="limitations-of-lightweight-delete">
-  ## 論理削除 の制約
-</div>
+## 論理削除 の制約 {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### プロジェクションがある場合の論理削除
-</div>
+### プロジェクションがある場合の論理削除 {#lightweight-deletes-with-projections}
 
 デフォルトでは、`DELETE` はプロジェクションを持つテーブルでは使用できません。これは、プロジェクション内の行が `DELETE` 操作の影響を受ける可能性があるためです。ただし、この挙動は [MergeTree 設定](/ja/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` で変更できます。
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## 論理削除 使用時のパフォーマンスに関する考慮事項
-</div>
+## 論理削除 使用時のパフォーマンスに関する考慮事項 {#performance-considerations-when-using-lightweight-delete}
 
 **論理削除 ステートメントで大量のデータを削除すると、SELECT クエリのパフォーマンスに悪影響を及ぼす可能性があります。**
 
 また、次の要因も論理削除 のパフォーマンスに悪影響を与える可能性があります。
 
 * `DELETE` クエリ内の負荷の高い `WHERE` 条件。
-* ミューテーションキューが多数の他のミューテーションで埋まっている場合、テーブル上のすべてのミューテーションは順次実行されるため、パフォーマンスの問題につながる可能性があります。
+* ミューテーションベースの削除の場合、ミューテーションキューが大きいこと。テーブル上のミューテーションは順次実行されます。
 * 対象のテーブルに非常に多くのデータパーツがある。
-* compact パーツに大量のデータがあること。compact パーツでは、すべてのカラムが 1 つのファイルに格納されます。
+* ミューテーションベースの削除を使用する場合、compact パーツに大量のデータがあること。compact パーツでは、すべてのカラムが 1 つのファイルに格納されており、まとめて書き直す必要があります。
 
-<div id="delete-permissions">
-  ## DELETE 権限
-</div>
+## DELETE 権限 {#delete-permissions}
 
 `DELETE` を実行するには、`ALTER DELETE` 権限が必要です。特定のユーザーが特定のテーブルで `DELETE` ステートメントを実行できるようにするには、次のコマンドを実行します。
 
@@ -77,13 +69,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## ClickHouse における論理削除の内部的な仕組み
-</div>
+## ClickHouse における論理削除の内部的な仕組み {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **影響を受ける行に「マスク」が適用される**
 
-   `DELETE FROM table ...` クエリが実行されると、ClickHouse は各行が「existing」か「deleted」かを示すマスクを保存します。以降のクエリでは、「deleted」とマークされた行は除外されます。ただし、行が実際に削除されるのは、その後のマージ時です。このマスクの書き込みは、`ALTER TABLE ... DELETE` クエリで行われる処理に比べてはるかに軽量です。
+   `DELETE FROM table ...` クエリが実行されると、ClickHouse は各行が「existing」か「deleted」かを示すマスクを保存します。以降のクエリでは、「deleted」とマークされた行は除外されます。ただし、行が物理的に削除されるのは後で、通常はバックグラウンドマージ時です。このマスクの書き込みは、`ALTER TABLE ... DELETE` クエリで行われる処理に比べてはるかに軽量です。
 
    このマスクは、可視状態のすべての行に `True`、削除された行に `False` を格納する隠しシステムカラム `_row_exists` として実装されています。このカラムは、パーツ内で一部の行が削除されている場合にのみ存在します。パーツ内のすべての値が `True` の場合、このカラムは存在しません。
 
@@ -97,9 +87,11 @@ GRANT ALTER DELETE ON db.table to username;
 
    実行時には、返すべきでない行を判定するために `_row_exists` カラムが読み取られます。削除された行が多い場合、ClickHouse は残りのカラムを読む際に、どの granule を完全にスキップできるかを判断できます。
 
-3. **`DELETE` クエリは `ALTER TABLE ... UPDATE` クエリに変換される**
+3. **`DELETE` クエリは選択したモードに応じてマスクを更新する**
 
-   `DELETE FROM table WHERE condition` は、`ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` ミューテーションに変換されます。
+   パッチパートを使用する場合、`DELETE FROM table WHERE condition` は `UPDATE table SET _row_exists = 0 WHERE condition` に変換されます。生成されたパッチパートには削除された行のマスクの変更が格納され、データの読み取り時とマージ時に適用されます。
+
+   デフォルトの `alter_update` モードでは、`DELETE FROM table WHERE condition` は `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` ミューテーションに変換されます。
 
    内部的には、このミューテーションは次の 2 段階で実行されます。
 
@@ -109,8 +101,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    以上の手順から、マスキング手法を用いた論理削除の `DELETE` は、影響を受けるパーツに対してすべてのカラムファイルを書き直す必要がないため、従来の `ALTER TABLE ... DELETE` よりも高い性能を発揮することがわかります。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseにおける更新と削除の扱い](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+* ブログ: [論理削除がさらに軽量に](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#lightweight-deletes-are-now-even-lighter)

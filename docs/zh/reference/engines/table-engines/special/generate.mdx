@@ -15,24 +15,27 @@ GenerateRandom 表引擎可根据给定的表 schema 生成随机数据。
 * 用于测试中填充可复现的大型表。
 * 为模糊测试生成随机输入。
 
-<div id="usage-in-clickhouse-server">
-  ## 在 ClickHouse Server 中使用
-</div>
+## 在 ClickHouse 服务器中使用 {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
 `max_array_length` 和 `max_string_length` 参数分别指定生成数据中所有
-数组或 map 列以及字符串的最大长度。
+array 或 map 列以及字符串的最大长度。
+
+`SETTINGS` 子句用于控制 `Nullable`、`Variant`、`Dynamic` 和 `JSON` 值的生成方式：
+`null_ratio` (默认值为 `0.0625`) 表示值为 `NULL` 的概率，同时也是某个 `JSON` 键在一行中缺失的基础概率——少数稀疏键的缺失频率会高出数倍；`max_json_depth` (默认值为 `3`) 限制生成的 `JSON` 对象的最大嵌套深度；
+`max_json_keys_per_object` (默认值为 `8`) 限制对象每一层中生成的键数量上限。[`generateRandom`](/zh/reference/functions/table-functions/generate) 表函数同样支持
+这些设置。
 
 Generate 表引擎仅支持 `SELECT` 查询。
 
-它支持除 `AggregateFunction` 之外所有可存储在表中的 [数据类型](/zh/reference/data-types/index)。
+它支持所有可存储在表中的 [DataTypes](/zh/reference/data-types/index)，
+但 `AggregateFunction`、`Interval`、`Nothing` 和 `QBit` 除外。
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 **1.** 创建 `generate_engine_table` 表：
 
@@ -54,9 +57,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## 实现细节
-</div>
+## 实现细节 {#details-of-implementation}
 
 * 不支持：
   * `ALTER`

@@ -136,9 +136,7 @@ ZooKeeper는 복제가 `SELECT` 쿼리의 성능에 영향을 주지 않으므�
 
 시스템은 레플리카 간 데이터 동기 상태를 모니터링하며 장애 이후에도 복구할 수 있습니다. 장애 조치는 자동으로(데이터 차이가 작은 경우) 또는 반자동으로(데이터 차이가 너무 커서 구성 오류를 나타낼 수 있는 경우) 수행됩니다.
 
-<div id="creating-replicated-tables">
-  ## 복제된 테이블 생성
-</div>
+## 복제된 테이블 생성 {#creating-replicated-tables}
 
 <Note>
   ClickHouse Cloud에서는 복제가 자동으로 처리됩니다.
@@ -148,9 +146,7 @@ ZooKeeper는 복제가 `SELECT` 쿼리의 성능에 영향을 주지 않으므�
   복제는 플랫폼에서 관리되므로 `ReplicatedMergeTree`를 사용하거나 복제 매개변수를 지정하지 마십시오.
 </Note>
 
-<div id="replicatedmergetree-parameters">
-  ### Replicated*MergeTree 매개변수
-</div>
+### Replicated*MergeTree 매개변수 {#replicatedmergetree-parameters}
 
 | 매개변수               | 설명                                                                              |
 | ------------------ | ------------------------------------------------------------------------------- |
@@ -248,9 +244,7 @@ ORDER BY x;
 
 레플리카를 삭제하려면 `DROP TABLE`을 실행하세요. 다만 한 번에 삭제되는 것은 하나의 레플리카뿐이며, 쿼리를 실행한 서버에 있는 레플리카만 삭제됩니다.
 
-<div id="recovery-after-failures">
-  ## 장애 발생 후 복구
-</div>
+## 장애 발생 후 복구 {#recovery-after-failures}
 
 서버 시작 시 ClickHouse Keeper를 사용할 수 없으면 복제된 테이블은 읽기 전용 모드로 전환됩니다. 시스템은 주기적으로 ClickHouse Keeper 연결을 시도합니다.
 
@@ -274,9 +268,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 그런 다음 server를 다시 시작하십시오. 시작되면 server가 이 플래그를 삭제하고 복구를 시작합니다.
 
-<div id="recovery-after-complete-data-loss">
-  ## 전체 데이터 손실 후 복구
-</div>
+## 전체 데이터 손실 후 복구 {#recovery-after-complete-data-loss}
 
 서버 중 하나에서 모든 데이터와 메타데이터가 사라진 경우에는 다음 단계에 따라 복구하십시오.
 
@@ -291,9 +283,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 복구 중에는 네트워크 대역폭 제한이 없습니다. 한 번에 많은 레플리카를 복원하는 경우 이 점을 유의하십시오.
 
-<div id="converting-from-mergetree-to-replicatedmergetree">
-  ## MergeTree에서 ReplicatedMergeTree로 변환하기
-</div>
+## MergeTree에서 ReplicatedMergeTree로 변환하기 {#converting-from-mergetree-to-replicatedmergetree}
 
 여기서 `MergeTree`라는 용어는 `ReplicatedMergeTree`와 마찬가지로 `MergeTree 엔진 계열`에 속한 모든 테이블 엔진을 가리킵니다.
 
@@ -301,7 +291,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 [ATTACH TABLE ... AS REPLICATED](/ko/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) SQL 문을 사용하면 분리된 `MergeTree` 테이블을 `ReplicatedMergeTree`로 ATTACH할 수 있습니다.
 
-테이블의 데이터 디렉터리(`Atomic` 데이터베이스의 경우 `/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`)에 `convert_to_replicated` 플래그가 설정되어 있으면, 서버를 재시작할 때 `MergeTree` 테이블이 자동으로 변환될 수 있습니다.
+테이블의 데이터 디렉터리(`Atomic` 데이터베이스는 `/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, `Ordinary` 데이터베이스는 `/data/database_name/table_name/`)에 `convert_to_replicated` 플래그가 설정되어 있으면, 서버를 재시작할 때 `MergeTree` 테이블이 자동으로 변환될 수 있습니다.
 비어 있는 `convert_to_replicated` 파일을 생성하면 다음 서버 재시작 시 해당 테이블이 복제된 테이블로 로드됩니다.
 
 다음 쿼리를 사용하면 테이블의 데이터 경로를 확인할 수 있습니다. 테이블에 데이터 경로가 여러 개 있으면 첫 번째 경로를 사용해야 합니다.
@@ -311,6 +301,10 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 ReplicatedMergeTree 테이블은 `default_replica_path` 및 `default_replica_name` 설정 값을 사용해 생성됩니다.
+`Ordinary` 데이터베이스에서는 변환 시 UUID가 생성되고, 이 UUID로 `default_replica_path`가 한 번 전개됩니다.
+전개된 경로는 그대로 저장되며, 테이블을 로드할 때마다 이 경로를 현재 `default_replica_path`와 대조하여 `DROP TABLE` 실행 시 테이블과 함께 삭제할 UUID 이름의 znode를 찾습니다. 이후 `default_replica_path`를 변경하더라도 테이블은 정상적으로 로드되지만, `DROP TABLE`은 테이블 자체의 znode만 삭제하고 UUID 이름의 상위 znode는 ZooKeeper에 남겨 두므로 이 znode는 수동으로 삭제해야 합니다.
+`default_replica_name`의 `{database}` 및 `{table}`은 `CREATE TABLE`과 같은 방식으로 전개되어 레플리카 이름으로 저장되므로, 이후에도 테이블 이름을 변경할 수 있습니다.
+`default_replica_name`의 `{uuid}`는 어떤 변환에서도 지원되지 않습니다.
 다른 레플리카에 변환된 테이블을 생성하려면 `ReplicatedMergeTree` 엔진의 첫 번째 인수에 해당 경로를 명시적으로 지정해야 합니다. 다음 쿼리를 사용하면 해당 경로를 확인할 수 있습니다.
 
 ```sql
@@ -325,9 +319,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 이전 테이블의 데이터를 새 테이블 데이터가 있는 디렉터리(`/var/lib/clickhouse/data/db_name/table_name/`) 안의 `detached` 하위 디렉터리로 이동합니다.
 그런 다음 레플리카 중 하나에서 `ALTER TABLE ATTACH PARTITION`을 실행하여 해당 데이터 파트를 활성 세트에 추가합니다.
 
-<div id="converting-from-replicatedmergetree-to-mergetree">
-  ## ReplicatedMergeTree에서 MergeTree로 변환하기
-</div>
+## ReplicatedMergeTree에서 MergeTree로 변환하기 {#converting-from-replicatedmergetree-to-mergetree}
 
 단일 서버에서 분리된 `ReplicatedMergeTree` 테이블을 `MergeTree`로 ATTACH하려면 [ATTACH TABLE ... AS NOT REPLICATED](/ko/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) SQL 문을 사용합니다.
 
@@ -340,9 +332,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 
 이후 서버를 시작하고 `MergeTree` 테이블을 생성한 다음, 데이터를 해당 디렉터리로 이동한 후 서버를 다시 재시작할 수 있습니다.
 
-<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
-  ## ClickHouse Keeper 클러스터의 메타데이터가 유실되거나 손상되었을 때 복구
-</div>
+## ClickHouse Keeper 클러스터의 메타데이터가 유실되거나 손상되었을 때 복구 {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 ClickHouse Keeper의 데이터가 유실되거나 손상된 경우, 앞에서 설명한 대로 데이터를 복제되지 않은 테이블로 옮겨 보존할 수 있습니다.
 

@@ -28,9 +28,7 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[同期挿入](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
 
-<div id="choosing-a-return-mode">
-  ### 戻りモードの選択
-</div>
+### 戻りモードの選択 {#choosing-a-return-mode}
 
 非同期挿入の動作は、[`wait_for_async_insert`](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) 設定によってさらに細かく制御できます。
 
@@ -46,19 +44,17 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 非同期挿入を使用する場合は、`async_insert=1,wait_for_async_insert=1` を使うことを強く推奨します。`wait_for_async_insert=0` の使用は非常に危険です。error が発生しても INSERT クライアントがそれを認識できない可能性があるうえ、service の信頼性を確保するために ClickHouse server 側で書き込みを抑制し、backpressure をかける必要がある状況でも、クライアントが高速な書き込みを続けることで過負荷を引き起こすおそれがあるためです。
 
-<div id="adaptive-async-inserts">
-  ### 適応型非同期 INSERT
-</div>
+### 適応型非同期 INSERT {#adaptive-async-inserts}
 
 バージョン 24.2 以降、ClickHouse ではデフォルトで適応型のフラッシュタイムアウト ([`async_insert_use_adaptive_busy_timeout`](/ja/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)) が使用されます。固定のフラッシュ間隔ではなく、受信データのレートに応じて、タイムアウトが最小値 ([`async_insert_busy_timeout_min_ms`](/ja/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms)、デフォルトは 50 ms) から最大値 ([`async_insert_busy_timeout_max_ms`](/ja/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)、デフォルトは 200 ms、Cloud では 1000 ms) までの範囲で動的に調整されます。
 
 データが高頻度で到着する場合、より早くフラッシュしてエンドツーエンドのレイテンシを抑えるため、タイムアウトは最小値寄りに保たれます。データがスパースな場合は、より大きなバッチを蓄積できるよう、最大値に向かって長くなります。これは、固定の長いタイムアウトを設定すると、フラッシュ可能なデータがすでに揃っていてもクライアントがその間ずっと待たされてしまうデフォルトモード (`wait_for_async_insert=1`) で特に有効です。
 
-<div id="error-handling">
-  ### エラー処理
-</div>
+### エラー処理 {#error-handling}
 
 スキーマの検証とデータのパースは、insert の受信時ではなく、バッファのフラッシュ時に行われます。INSERT クエリ内のいずれかの行にパースまたは型のエラーがある場合、**そのクエリのデータは一切フラッシュされません** — クエリ全体のペイロードが拒否されます。デフォルトモード (`wait_for_async_insert=1`) では、エラーはクライアントに返されます。fire-and-forget モードでは、エラーはサーバーログと [`system.asynchronous_inserts`](/ja/reference/system-tables/asynchronous_inserts) テーブルに書き込まれます。
+
+宛先のルックアップと認可も、insert の受信時ではなく、バッファのフラッシュ時に再評価されます。評価には、その時点のカタログとアクセス制御の状態が使用されます。insert の受信からバッファのフラッシュまでの間に宛先に materialized view がアタッチされたり、権限が取り消されたりした場合は、フラッシュに影響します。
 
 フラッシュが実行されるたびに、バッファ内の異なる各パーティションキーの値ごとに少なくとも 1 つのパーツが作成されます。パーティションキーのないテーブルであっても、バッファされたデータが [`max_insert_block_size`](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) (デフォルトは約 100 万行) を超える場合、1 回のフラッシュで複数のパーツが生成されることがあります。
 
@@ -66,9 +62,7 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
   非同期 INSERT を使用していても、パーティション化キーのカーディナリティが高い場合は、[&quot;パーツが多すぎる&quot;](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) エラーが発生することがあります。
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### 重複排除と信頼性
-</div>
+### 重複排除と信頼性 {#deduplication-and-reliability}
 
 バージョン26.2以降、ClickHouseは同期挿入に加え、非同期挿入でも自動的に重複排除を行います。これにより、重複排除ログを保持するテーブルでは安全に再試行できます。`*ReplicatedMergeTree`エンジンはデフォルトで重複排除ログを保持します。通常の`MergeTree`テーブルでは、`non_replicated_deduplication_window`を正の値に設定する必要があります。どちらの挿入タイプも、デフォルトで`enable`に設定されている[`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)によって制御されます。依存するmaterialized viewもサポートされています。
 
@@ -76,20 +70,22 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 詳細と、非同期挿入におけるmaterialized viewに適用される唯一の制約については、[再試行時の挿入の重複排除](/ja/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts)を参照してください。
 
-<div id="enabling-asynchronous-inserts">
-  ### 非同期挿入の有効化
-</div>
+### 非同期挿入の有効化 {#enabling-asynchronous-inserts}
 
 非同期挿入は、特定のユーザーまたは特定のクエリに対して有効にできます。
 
 * ユーザーレベルで非同期挿入を有効にします。この例ではユーザー `default` を使用しています。別のユーザーを作成した場合は、そのユーザー名に置き換えてください。
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * INSERT クエリの SETTINGS 句を使用して、非同期挿入の設定を指定することもできます。
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * ClickHouse のプログラミング言語クライアントを使用する場合は、接続パラメーターとして非同期挿入の設定を指定することもできます。
 
   たとえば、ClickHouse Cloud への接続に ClickHouse Java JDBCドライバーを使用する場合、JDBC 接続文字列では次のように指定できます。
@@ -99,11 +95,11 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
   ```
 
 <Note>
-  非同期挿入は `INSERT INTO ... SELECT` クエリには適用されません。挿入に `SELECT` 句が含まれている場合、`async_insert` 設定に関係なく、クエリは常に同期的に実行されます。
+  `async_insert = 1` が設定され、結果全体が `async_insert_max_data_size` 以下の単一のブロックに収まる場合、`INSERT ... SELECT` も非同期挿入キューを経由できます。それ以外の場合は同期的に実行されます。この経路には、適用条件のほか、書き込みの計上方法とキャンセル時の動作について独自のルールがあります。詳細は[非同期 `INSERT ... SELECT`](/ja/concepts/features/operations/insert/async-insert-select)を参照してください。
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### シャットダウン時にバッファをフラッシュする
+  ### シャットダウン時にバッファをフラッシュする {#flushing-buffers-on-shutdown}
 </div>
 
 保留中のすべての非同期 INSERT バッファをフラッシュするには (たとえば、正常終了時やメンテナンス前) 、次を実行します。
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 これにより、サーバーが停止する前に、バッファリングされたデータがすべてストレージに書き込まれます。
 
 <div id="comparison-with-buffer-tables">
-  ### Bufferテーブルとの比較
+  ### Bufferテーブルとの比較 {#comparison-with-buffer-tables}
 </div>
 
 非同期挿入は、[Buffer tables](/ja/reference/engines/table-engines/special/buffer) に代わる現代的な方式です。主な違いは次のとおりです。

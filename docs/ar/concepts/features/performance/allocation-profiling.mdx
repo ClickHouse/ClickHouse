@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### مثال: توليد مخطط اللهب للتجزئة {#example-fragmentation-flamegraph}
 
-يمكن للـ query نفسه أن يوزّع الهدر في كل صنف حجم على تتبّعات المكدس الخاصة به، بالتناسب مع عدد allocations القديمة في كل منها، ثم يطبع النتيجة بتنسيق `collapsed` المخصص لـ `flamegraph.pl`. أما أصناف الحجم التي بها هدر لكن ليس لديها samples قديمة بما يكفي، فتُدرج تحت frame باسم `[unattributed]`، بحيث يكون مجموع مخطط اللهب هو إجمالي الهدر. واقرأ `system.jemalloc_sampled_allocations` مرة واحدة فقط لكل query، إذ إن كل عملية قراءة تُنفّذ flush لـ profile جديد، ومن ثمّ فإن استخدام subqueries اثنين سيؤدي إلى رؤية بيانات مختلفة.
+يمكن للاستعلام نفسه أن يوزّع الهدر في كل صنف حجم على تتبّعات المكدس الخاصة به، بالتناسب مع عدد التخصيصات القديمة في كل منها، ثم يطبع النتيجة بتنسيق `collapsed` المخصص لـ `flamegraph.pl`. أما أصناف الحجم التي بها هدر لكن ليس لديها samples قديمة بما يكفي، فتُدرج تحت frame باسم `[unattributed]`، بحيث يكون مجموع مخطط اللهب هو إجمالي الهدر. واقرأ `system.jemalloc_sampled_allocations` مرة واحدة فقط لكل استعلام، إذ إن كل عملية قراءة تُنفّذ تفريغًا لـ profile جديد، ومن ثمّ فإن استخدام استعلامين فرعيين سيؤدي إلى رؤية بيانات مختلفة.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (

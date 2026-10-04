@@ -16,7 +16,7 @@ Este motor permite processar arquivos de log de aplicativos como um fluxo de reg
 * Monitore arquivos de log.
 * Processe novos registros à medida que são adicionados aos arquivos de log monitorados.
 
-## Criando uma tabela
+## Criando uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Argumentos do motor:
 
-* `path_to_logs` – Caminho para os arquivos de log aos quais assinar. Pode ser o caminho para um diretório com arquivos de log ou para um único arquivo de log. Observe que o ClickHouse permite apenas caminhos dentro do diretório `user_files`.
+* `path_to_logs` – Caminho para os arquivos de log aos quais assinar. Pode ser o caminho para um diretório com arquivos de log ou para um único arquivo de log. Um caminho relativo é resolvido em relação ao diretório `user_files_path`, como na função de tabela [file](/pt-BR/reference/functions/table-functions/file); um caminho relativo que já esteja dentro de `user_files_path` a partir do diretório de trabalho do servidor (por exemplo, `user_files/my_app/app.log` quando o servidor é executado em seu diretório de dados, como na imagem Docker oficial) mantém esse significado. Observe que o ClickHouse permite apenas caminhos dentro do diretório `user_files`.
 * `format_name` - Formato do registro. Observe que o FileLog processa cada linha de um arquivo como um registro separado, e nem todos os formatos de dados são adequados para isso.
 
 Parâmetros opcionais:
@@ -51,9 +51,9 @@ Parâmetros opcionais:
 * `poll_directory_watch_events_backoff_factor` - Velocidade do backoff, exponencial por padrão. Padrão: `2`.
 * `handle_error_mode` — Como tratar erros no motor FileLog. Valores possíveis: default (uma exceção será lançada se não for possível analisar uma mensagem), stream (a mensagem da exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`).
 
-## Descrição
+## Descrição {#description}
 
-Os registros recebidos são rastreados automaticamente, portanto cada registro em um arquivo de log é contabilizado apenas uma vez.
+Os registros recebidos são rastreados automaticamente, portanto cada registro em um arquivo de log é contabilizado apenas uma vez. Se, na próxima leitura, um arquivo estiver menor do que o deslocamento registrado para ele, como ocorre após o `logrotate` com `copytruncate`, ele será lido novamente desde o início. Um truncamento não é detectado se o arquivo voltar a crescer até pelo menos esse deslocamento antes da próxima leitura.
 
 `SELECT` não é particularmente útil para ler registros (exceto para depuração), porque cada registro só pode ser lido uma vez. É mais prático criar fluxos em tempo real usando [visões materializadas](/pt-BR/reference/statements/create/view). Para fazer isso:
 
@@ -71,7 +71,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -97,7 +97,7 @@ ATTACH TABLE consumer;
 
 Se você quiser alterar a tabela de destino usando `ALTER`, recomendamos desativar a visão materializada para evitar discrepâncias entre a tabela de destino e os dados provenientes da view.
 
-## Colunas virtuais
+## Colunas virtuais {#virtual-columns}
 
 * `_filename` - Nome do arquivo de log. Tipo de dado: `LowCardinality(String)`.
 * `_offset` - Offset no arquivo de log. Tipo de dado: `UInt64`.
@@ -109,7 +109,7 @@ Colunas virtuais adicionais quando `handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_record` e `_error` são preenchidas apenas em caso de exceção durante o parsing; elas sempre são `NULL` quando a mensagem é processada com sucesso.
 
-## Durabilidade dos dados
+## Durabilidade dos dados {#data-durability}
 
 O motor `FileLog` registra o offset consumido de um fragmento antes que o insert ao qual ele pertence seja confirmado; portanto, a interrupção do servidor pode fazer com que o offset registrado fique adiantado em relação aos dados que chegaram à tabela de destino. Ao reiniciar, cada arquivo de log é retomado a partir do offset registrado em seu diretório de metadados, de modo que essas linhas nunca são lidas novamente: elas são perdidas sem gerar erro, e `count()` simplesmente retorna um valor menor. Uma falha comum de processo é suficiente para expor esse problema e não exige perda de energia, pois o offset é registrado em um arquivo de metadados renomeado para o local definitivo enquanto a parte de destino ainda está sendo gravada.
 

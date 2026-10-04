@@ -13,9 +13,7 @@ Plusieurs jeux de données d’exemple sont disponibles dans Playground.
 
 Vous pouvez envoyer des requêtes à Playground à l’aide de n’importe quel client HTTP, par exemple [curl](https://curl.haxx.se) ou [wget](https://www.gnu.org/software/wget/), ou établir une connexion à l’aide des pilotes [JDBC](/fr/integrations/language-clients/java/jdbc) ou [ODBC](/fr/concepts/features/interfaces/odbc). Vous trouverez [ici](/fr/integrations/home) plus d’informations sur les logiciels compatibles avec ClickHouse.
 
-<div id="credentials">
-  ## Identifiants
-</div>
+## Identifiants {#credentials}
 
 | Paramètre          | Valeur                             |
 | :----------------- | :--------------------------------- |
@@ -24,20 +22,18 @@ Vous pouvez envoyer des requêtes à Playground à l’aide de n’importe quel 
 | Utilisateur        | `explorer` ou `play`               |
 | Mot de passe       | (vide)                             |
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
-Les requêtes sont exécutées par un utilisateur en lecture seule. Cela implique certaines limitations :
+Les requêtes sont exécutées par un utilisateur en lecture seule, ce qui entraîne les limitations suivantes :
 
 * Les requêtes DDL ne sont pas autorisées
 * Les requêtes INSERT ne sont pas autorisées
 
-Le service dispose également de quotas d&#39;utilisation.
+Le service est également soumis à des quotas d&#39;utilisation.
 
-<div id="examples">
-  ## Exemples
-</div>
+Pour vous affranchir des limitations liées à la lecture seule et essayer de charger vos propres données, vous pouvez vous inscrire à un [essai gratuit de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) ou [installer ClickHouse](/fr/get-started/setup/install) en local.
+
+## Exemples {#examples}
 
 Exemple d’endpoint HTTPS avec `curl`:
 
@@ -51,12 +47,10 @@ Exemple d’endpoint TCP avec le [client ClickHouse](/fr/concepts/features/inter
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## Spécifications du Playground
-</div>
+## Spécifications du Playground {#specifications}
 
-notre ClickHouse Playground utilise la configuration suivante :
+Notre ClickHouse Playground utilise la configuration suivante :
 
 * Hébergé sur Google Cloud (GCE) dans la région US Central (US-Central-1)
 * Configuration avec 3 réplicas
-* 256 GiB de stockage et 59 CPU virtuels chacun.
+* 256 GiB de stockage et 59 CPU virtuels chacun.

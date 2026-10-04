@@ -37,7 +37,7 @@ Permitir o uso de visões materializadas com réplicas paralelas
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração que permite a leitura de uma tabela `Merge` com réplicas paralelas baseadas em plano, expandindo a leitura do `Merge` em uma union das leituras das tabelas `MergeTree` subjacentes. Só tem efeito em conjunto com `parallel_replicas_plan_based`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração que permite a leitura de uma tabela `Merge` com réplicas paralelas baseadas em plano, expandindo a leitura do `Merge` em uma union das leituras das tabelas `MergeTree` subjacentes. Só tem efeito em conjunto com `parallel_replicas_plan_based`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração que permite a leitura de uma tabela `Merge` com réplicas paralelas baseadas em plan, expandindo a leitura do `Merge` em uma union das leituras das tabelas `MergeTree` subjacentes. Só tem efeito em conjunto com `parallel_replicas_plan_based`."}]}]} />
 
 Permite a leitura de uma tabela `Merge` com réplicas paralelas. Só tem efeito em conjunto com [parallel&#95;replicas&#95;plan&#95;based](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): a leitura da tabela `Merge` é expandida em uma union das leituras das tabelas `MergeTree` subjacentes, que então é distribuída como qualquer outra union. Uma tabela `Merge` fica restrita a uma única réplica quando alguma de suas tabelas subjacentes não pode ser lida dessa forma (uma tabela que não seja `MergeTree`, uma leitura `FINAL`). Defina como `false` para ler cada tabela `Merge` em uma única réplica, como ocorria antes da adição desse suporte. Experimental.
 
@@ -133,6 +133,18 @@ Substitua os motores de funções de tabela por suas alternativas -Cluster
 
 Se true, o ClickHouse também usará o algoritmo de réplicas paralelas para tabelas MergeTree não replicadas
 
+## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para controlar se réplicas paralelas são usadas em consultas que fazem junção de várias tabelas (consultas com JOIN). Não afeta consultas UNION sem JOIN, nem ARRAY JOIN."}]}]} />
+
+Se habilitada, réplicas paralelas podem ser usadas em consultas que fazem junção de várias tabelas (consultas com `JOIN`). Se desabilitada, essas consultas são executadas sem réplicas paralelas.
+
+A configuração afeta apenas consultas com `JOIN`, nas quais os lados que não são o mais à esquerda são lidos integralmente em cada réplica. Consultas `UNION` sem `JOIN` não são afetadas: cada ramo do `UNION` é uma leitura independente de uma única tabela, portanto réplicas paralelas continuam aplicáveis. Um `UNION` usado como expressão de tabela em um `JOIN` faz parte de uma consulta com junção de várias tabelas e, portanto, é afetado. `ARRAY JOIN` não conta como junção entre tabelas.
+
 ## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -140,14 +152,6 @@ Se true, o ClickHouse também usará o algoritmo de réplicas paralelas para tab
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel_replicas_local_plan habilitado"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel_replicas_local_plan habilitado"}]}]} />
 
 A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel&#95;replicas&#95;local&#95;plan habilitado
-
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Usa pipeline local durante INSERT SELECT distribuído com réplicas paralelas. Atualmente desativado devido a problemas de desempenho"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Usa pipeline local durante INSERT SELECT distribuído com réplicas paralelas. Atualmente desativado devido a problemas de desempenho"}]}]} />
-
-Usa pipeline local durante INSERT SELECT distribuído com réplicas paralelas
 
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
@@ -189,6 +193,8 @@ Tipo de filtro a ser usado com chave personalizada para réplicas paralelas. def
 
 Decide se e onde usar réplicas paralelas analisando o plano da consulta, em vez de usar a análise baseada na árvore de consulta. Como resultado, um fragmento do plano é enviado às réplicas remotas em vez de uma consulta SQL. Experimental.
 
+Não tem efeito em um `INSERT SELECT` distribuído ([parallel&#95;distributed&#95;insert&#95;select](/pt-BR/reference/settings/session-settings/parallel#parallel_distributed_insert_select) = 2), que envia o `INSERT` inteiro como consulta para cada réplica: uma réplica que executa essa consulta faz a leitura usando a implementação baseada na árvore de consulta; por isso, o iniciador, que participa como mais uma réplica, também a utiliza.
+
 ## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -213,6 +219,6 @@ Isso permite que consultas com `max_parallel_replicas = 1` sejam direcionadas pa
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Nova configuração. A otimização de projeções pode ser aplicada em réplicas paralelas. Só tem efeito quando parallel_replicas_local_plan está habilitado e aggregation_in_order está inativo."}]}]} />
 
-A otimização de projeções pode ser aplicada em réplicas paralelas. Só tem efeito quando parallel&#95;replicas&#95;local&#95;plan está habilitado e aggregation&#95;in&#95;order está inativo.
+A otimização de projeções pode ser aplicada em réplicas paralelas. Só tem efeito quando parallel&#95;replicas&#95;local&#95;plan está habilitado.
 
 {/*AUTOGENERATED_END*/}

@@ -10,22 +10,18 @@ doc_type: 'guide'
 import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<div id="direct-datadog">
-  ## تكامل Datadog
-</div>
+## تكامل Datadog {#direct-datadog}
 
 لمراقبة نشر ClickHouse لديك في Datadog، يوفّر ClickHouse عدة تكاملات تناسب أوضاع النشر المختلفة. ولكل منها مزاياه وقيوده، وبعضها تطوره ClickHouse بينما يطوّر بعضها الآخر Datadog. تُسرد التكاملات بالترتيب الموصى به.
 
-| التكامل                                                                                                     | الوثائق                                                                                        | النشر       | الإشارات                          |
-| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
-| [تكامل ClickHouse Cloud Datadog واجهة برمجة تطبيقات](#clickhouse-cloud-datadog-api-integration) *(موصى به)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | المقاييس                          |
-| [تكامل ClickHouse Cloud Prometheus](#clickhouse-cloud-prometheus-integration)                               | [clickhouse.com/docs](/ar/products/cloud/features/monitoring/prometheus)                          | Cloud       | المقاييس                          |
-| [تكامل ClickHouse Datadog Agent](#clickhouse-datadog-agent-integration)                                     | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | السجلات، المقاييس                 |
-| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                           | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | السجلات، المقاييس، Query Insights |
+| التكامل                                                                                         | الوثائق                                                                                        | النشر       | الإشارات                          |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
+| [تكامل Prometheus في ClickHouse Cloud](#clickhouse-cloud-prometheus-integration) *(موصى به)*       | [clickhouse.com/docs](/ar/products/cloud/features/monitoring/prometheus)                          | Cloud       | المقاييس                          |
+| [تكامل Datadog واجهة برمجة تطبيقات مع ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration) | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | المقاييس                          |
+| [تكامل ClickHouse مع Datadog Agent](#clickhouse-datadog-agent-integration)                         | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | السجلات، المقاييس                 |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                               | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | السجلات، المقاييس، Query Insights |
 
-<div id="clickhouse-cloud-datadog-api-integration">
-  ### تكامل Datadog واجهة برمجة تطبيقات مع ClickHouse Cloud
-</div>
+### تكامل Datadog واجهة برمجة تطبيقات مع ClickHouse Cloud {#clickhouse-cloud-datadog-api-integration}
 
 <PrivatePreviewBadge />
 
@@ -40,9 +36,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 للاطلاع على خطوات الإعداد، راجع [دليل تكامل ClickHouse Cloud في Datadog](https://docs.datadoghq.com/integrations/clickhouse-cloud/).
 
-<div id="clickhouse-cloud-prometheus-integration">
-  ### تكامل Prometheus في ClickHouse Cloud
-</div>
+### تكامل Prometheus في ClickHouse Cloud {#clickhouse-cloud-prometheus-integration}
 
 الطريقة الأكثر شيوعًا والأوسع استخدامًا لجمع بيانات القياس عن بُعد على مستوى الخدمة وعلى مستوى المؤسسة من ClickHouse Cloud.
 
@@ -52,9 +46,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 * يتعامل Datadog مع المقاييس على أنها **مقاييس مخصصة**
 * **لا** يمنع الخدمة من الدخول في وضع الخمول
 
-<div id="clickhouse-datadog-agent-integration">
-  ### تكامل ClickHouse مع Datadog Agent
-</div>
+### تكامل ClickHouse مع Datadog Agent {#clickhouse-datadog-agent-integration}
 
 الطريقة الأكثر شيوعًا للحصول على البيانات من خدمات ClickHouse OSS إلى Datadog. كما يعمل أيضًا مع ClickHouse Cloud، مع بعض القيود.
 
@@ -68,9 +60,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 * يتطلب `datadog-cluster-agent` بدلًا من `datadog-agent`
 * **سيمنع الخدمة من الدخول في وضع الخمول**
 
-<div id="clickhouse-datadog-dbm">
-  ### ClickHouse Datadog DBM
-</div>
+### ClickHouse Datadog DBM {#clickhouse-datadog-dbm}
 
 تطوّر Datadog ميزة Database Monitoring (DBM) لـ ClickHouse وتتولى صيانتها. وتعمل عبر تهيئة Datadog Agent لجمع بيانات جداول النظام من مثيل ClickHouse، مما يوفّر رؤى عن الأداء على مستوى الاستعلام، مشابهة لما توفّره ClickHouse Cloud Console بشكل أصيل. ولا يشارك ClickHouse في هذا التكامل — لذا وجّه أي مشاكل إلى Datadog وليس إلى ClickHouse.
 
@@ -80,9 +70,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <CommunityMonitoring />
 
-<div id="billing-usage-api">
-  ## واجهة برمجة تطبيقات الفوترة والاستخدام
-</div>
+## واجهة برمجة تطبيقات الفوترة والاستخدام {#billing-usage-api}
 
 يمكن استخدام واجهة برمجة تطبيقات الفوترة والاستخدام للوصول برمجيًا إلى سجلات الفوترة والاستخدام الخاصة بمؤسستك على Cloud. ويُعد ذلك مفيدًا لإنشاء لوحات معلومات مخصصة لمراقبة التكاليف أو لدمج بيانات الفوترة في مسارات عمل إعداد التقارير المالية الحالية.
 

@@ -19,9 +19,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 采用这种方法后，客户可以在一个位置 (即所承担角色的 IAM 策略) 统一管理对其 S3 存储桶的所有访问，而不必逐个修改各个存储桶策略来添加或移除访问权限。
 在下文中，您将了解如何完成此设置。
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## 获取 ClickHouse 服务的 IAM 角色 ARN
-</div>
+## 获取 ClickHouse 服务的 IAM 角色 ARN {#obtaining-the-clickhouse-service-iam-role-arn}
 
 1. 登录到你的 ClickHouse Cloud 账户。
 
@@ -36,7 +34,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="获取 ClickHouse 服务的 IAM 角色 ARN" border />
 
 <div id="setting-up-iam-assume-role">
-  ## 配置 IAM Assume Role
+  ## 配置 IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 IAM Assume Role 可通过以下两种方式之一进行配置：
@@ -45,7 +43,7 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 * [手动创建 IAM 角色](#option-2-manually-create-iam-role)
 
 <div id="option-1-deploying-with-cloudformation-stack">
-  ### 通过 CloudFormation stack 部署
+  ### 通过 CloudFormation stack 部署 {#option-1-deploying-with-cloudformation-stack}
 </div>
 
 1. 在 Web 浏览器中，使用具有创建和管理 IAM 角色 权限的 IAM 用户登录您的 AWS 账户。
@@ -84,7 +82,7 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 <Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="显示 IAM Role ARN 的 CloudFormation stack 输出" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### 手动创建 IAM 角色
+  ### 手动创建 IAM 角色 {#option-2-manually-create-iam-role}
 </div>
 
 1. 使用具有创建和管理 IAM 角色 权限的 IAM 用户，在 Web 浏览器中登录你的 AWS 账户。
@@ -140,9 +138,7 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 
 4. 创建完成后，复制新的 **IAM Role Arn**，访问你的 S3 存储桶时需要用到它。
 
-<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
-  ## 使用 ClickHouseAccess 角色访问您的 S3 存储桶
-</div>
+## 使用 ClickHouseAccess 角色访问您的 S3 存储桶 {#access-your-s3-bucket-with-the-clickhouseaccess-role}
 
 ClickHouse Cloud 允许您在 S3 表函数中指定 `extra_credentials`。
 下面是一个示例，说明如何使用上文复制的新建角色运行查询。
@@ -153,6 +149,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 下面是一个示例查询，使用 `role_session_name` 作为共享密钥来查询存储桶中的数据。
 如果 `role_session_name` 不正确，此操作将失败。
+由于 `role_session_name` 可充当共享密钥，ClickHouse 会在 `system.query_log`、`SHOW CREATE TABLE` 以及其他所有显示查询文本的位置将其值屏蔽为 `[HIDDEN]`，处理方式与 `external_id` 相同。
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
@@ -163,9 +160,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   更多信息，请参阅 [S3 定价](https://aws.amazon.com/s3/pricing/)
 </Note>
 
-<div id="advanced-action-control">
-  ## 高级操作控制
-</div>
+## 高级操作控制 {#advanced-action-control}
 
 若要实施更严格的访问控制，可以使用 [`aws:SourceVpce` condition](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint)，将存储桶策略限制为仅接受来自 ClickHouse Cloud 的 VPC 端点的请求。要获取你所在 ClickHouse Cloud 区域的 VPC 端点，请打开终端并运行：
 

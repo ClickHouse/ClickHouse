@@ -10,23 +10,17 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="compression">
-  ## Compression des messages
-</div>
+## Compression des messages {#compression}
 
 Nous recommandons vivement d&#39;utiliser la compression pour vos topics Kafka. La compression peut permettre de réduire considérablement les coûts de transfert de données, pratiquement sans impact sur les performances.
 Pour en savoir plus sur la compression des messages dans Kafka, nous vous recommandons de commencer par ce [guide](https://www.confluent.io/blog/apache-kafka-message-compression/).
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
 * [`DEFAULT`](/fr/reference/statements/create/table#default) n&#39;est pas pris en charge.
 * Par défaut, la taille des messages individuels est limitée à 16 Mo (non compressés) avec la plus petite taille de réplique (XS), et à 32 Mo (non compressés) avec des répliques plus grandes.  Les messages qui dépassent cette limite seront rejetés avec une erreur.  Si vous avez besoin de messages plus volumineux, veuillez contacter l&#39;assistance.
 
-<div id="delivery-semantics">
-  ## Sémantique de livraison
-</div>
+## Sémantique de livraison {#delivery-semantics}
 
 Par défaut, ClickPipes for Kafka garantit une livraison au moins une fois et suit la progression de l’ingestion à l’aide des offsets du groupe de consommateurs Kafka. Il prend également en charge, en option, la sémantique exactement une fois, dans laquelle chaque enregistrement Kafka est inséré dans ClickHouse exactement une fois, même en cas de redémarrage de pods, de rééquilibrage des consommateurs ou d’échec d’insertion.
 
@@ -43,27 +37,29 @@ Chaque bloc d’insertion couvre une plage contiguë d’offsets et porte un [je
   La déduplication par jeton est limitée par [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) de la table cible (les 10 000 blocs d’insertion les plus récents par défaut) et par [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (une heure par défaut). Les pipelines à haut débit peuvent rapidement parcourir toute la fenêtre basée sur le nombre de blocs ; nous recommandons donc de vérifier et, si nécessaire, d’augmenter ces deux paramètres de la table cible afin de couvrir votre délai maximal de relecture. Les données rejouées après que leur jeton a quitté la fenêtre peuvent être insérées de nouveau ; la livraison exactement une fois n’est donc pas garantie dans ce cas.
 </Note>
 
+<Note>
+  **`from_beginning` est sans effet si le groupe de consommateurs possède déjà un offset validé**
+
+  La stratégie d’offset (`from_beginning`, `from_latest`, `from_timestamp`) ne s’applique que la première fois qu’un groupe de consommateurs lit une partition donnée. Elle est sans effet si le broker conserve déjà un offset validé pour ce groupe de consommateurs, ce qui se produit lorsque vous supprimez puis recréez un ClickPipe en conservant le même nom de groupe de consommateurs (que ce nom ait été généré automatiquement ou défini explicitement, par exemple dans Terraform). Le broker reprend la lecture à partir de son dernier offset validé au lieu de relire les messages depuis le début, et les messages produits ou conservés avant cet offset sont ignorés plutôt que réingérés.
+
+  Si vous devez relire l’intégralité du topic lors de la recréation, utilisez un nouveau nom de groupe de consommateurs (ou réinitialisez ou supprimez explicitement les offsets de l’ancien groupe de consommateurs sur le broker) plutôt que de vous fier uniquement à la stratégie d’offset.
+</Note>
+
 Le principal compromis concerne la taille des parts. Des blocs d’insertion plus volumineux produisent moins de [parts](/fr/concepts/core-concepts/parts), mais plus grandes, dans ClickHouse, ce qui réduit la surcharge liée aux fusions. ClickPipes conserve en mémoire les lignes d’une partition pendant la création d’un bloc. La taille de part qu’il peut atteindre dépend donc de la mémoire disponible pour le pipeline : lorsque la mémoire est limitée, il crée des blocs plus petits et la table accumule davantage de parts. Allouer davantage de mémoire au pipeline lui permet de créer des blocs plus volumineux et donc moins de parts.
 
 Un pipeline fonctionne de manière optimale lorsque le nombre de partitions est proche du nombre de « workers » d’insertion internes, car chaque worker gère alors approximativement une partition et dispose de suffisamment de mémoire pour créer de grands blocs. Le nombre de workers et la mémoire disponible évoluent avec la taille et le nombre de répliques, que vous configurez dans **Paramètres** -&gt; **Paramètres avancés** -&gt; **Mise à l’échelle**.
 
-<div id="authentication">
-  ## Authentification
-</div>
+## Authentification {#authentication}
 
 Pour les sources de données utilisant le protocole Apache Kafka, ClickPipes prend en charge l’authentification [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) avec chiffrement TLS, ainsi que `SASL/SCRAM-SHA-256` et `SASL/SCRAM-SHA-512`. Selon la source de streaming (Redpanda, MSK, etc.), tout ou partie de ces mécanismes d’authentification seront activés en fonction de la compatibilité. Si vos besoins en matière d’authentification sont différents, veuillez [nous faire part de vos retours](https://clickhouse.com/company/contact?loc=clickpipes).
 
-<div id="warpstream-settings">
-  ## Taille de récupération de Warpstream
-</div>
+## Taille de récupération de Warpstream {#warpstream-settings}
 
 ClickPipes s&#39;appuie sur le paramètre Kafka `max.fetch_bytes` pour limiter la taille des données traitées simultanément sur un seul nœud ClickPipes. Dans certaines circonstances,
 Warpstream ne respecte pas ce paramètre, ce qui peut provoquer des défaillances inattendues des pipelines. Nous recommandons vivement de définir le paramètre spécifique à Warpstream `kafkaMaxFetchPartitionBytesUncompressedOverride`
 sur 8 MB (ou moins) lors de la configuration de votre agent WarpStream afin d&#39;éviter des défaillances de ClickPipes.
 
-<div id="iam">
-  ### IAM
-</div>
+### IAM {#iam}
 
 ClickPipes prend en charge les mécanismes d’authentification AWS MSK suivants
 
@@ -110,9 +106,7 @@ Vous trouverez ci-dessous un exemple de la stratégie IAM requise pour les API A
 }
 ```
 
-<div id="configuring-a-trusted-relationship">
-  #### Configuration d’une relation de confiance
-</div>
+#### Configuration d’une relation de confiance {#configuring-a-trusted-relationship}
 
 Si vous vous authentifiez auprès de MSK avec un ARN de rôle IAM, vous devrez établir une relation de confiance pour votre instance ClickHouse Cloud afin que ce rôle puisse être assumé.
 
@@ -136,20 +130,14 @@ Si vous vous authentifiez auprès de MSK avec un ARN de rôle IAM, vous devrez �
 }
 ```
 
-<div id="custom-certificates">
-  ### Certificats personnalisés
-</div>
+### Certificats personnalisés {#custom-certificates}
 
 ClickPipes for Kafka prend en charge le téléversement de certificats personnalisés pour les brokers Kafka qui utilisent des certificats serveur non publics.
 Le téléversement de certificats client et de clés est également pris en charge pour l&#39;authentification basée sur le mutual TLS (mTLS).
 
-<div id="performance">
-  ## Performances
-</div>
+## Performances {#performance}
 
-<div id="batching">
-  ### Traitement par lots
-</div>
+### Traitement par lots {#batching}
 
 ClickPipes insère les données dans ClickHouse par lots. Cela permet d’éviter de créer trop de parts dans la base de données, ce qui peut entraîner des problèmes de performance dans le cluster.
 
@@ -158,17 +146,13 @@ Les lots sont insérés lorsque l’un des critères suivants est atteint :
 * La taille du lot a atteint la taille maximale (100 000 lignes ou 28 MB par 1 GB de mémoire de pod)
 * Le lot est resté ouvert pendant la durée maximale autorisée (5 secondes)
 
-<div id="latency">
-  ### Latence
-</div>
+### Latence {#latency}
 
 La latence (définie comme le temps écoulé entre la production d’un message Kafka et le moment où il devient disponible dans ClickHouse) dépend de plusieurs facteurs (par exemple, la latence du broker, la latence réseau, ainsi que la taille et le format du message). Le [traitement par lots](#batching) décrit dans la section ci-dessus a également un impact sur la latence. Nous recommandons toujours de tester votre cas d’utilisation avec des charges typiques afin de déterminer la latence attendue.
 
 ClickPipes ne fournit aucune garantie en matière de latence. Si vous avez des exigences particulières en matière de faible latence, veuillez [nous contacter](https://clickhouse.com/company/contact?loc=clickpipes).
 
-<div id="scaling">
-  ### Mise à l’échelle
-</div>
+### Mise à l’échelle {#scaling}
 
 ClickPipes for Kafka est conçu pour une mise à l’échelle horizontale et verticale. Par défaut, nous créons un groupe de consommateurs avec un seul consommateur. Ce paramètre peut être configuré lors de la création du ClickPipe, ou à tout moment dans **Paramètres** -&gt; **Paramètres avancés** -&gt; **Mise à l’échelle**.
 
@@ -179,9 +163,7 @@ Quel que soit le nombre de consommateurs actifs, la tolérance aux pannes est as
 Si un consommateur ou l’infrastructure sous-jacente tombe en panne,
 le ClickPipe redémarre automatiquement le consommateur et poursuit le traitement des messages.
 
-<div id="benchmarks">
-  ### Benchmarks
-</div>
+### Benchmarks {#benchmarks}
 
 Vous trouverez ci-dessous quelques benchmarks informels pour ClickPipes for Kafka, qui donnent un ordre d’idée général des performances de référence. Il est important de noter que de nombreux facteurs peuvent influer sur les performances, notamment la taille des messages, les types de données et le format des données. Les résultats peuvent varier, et ce que nous présentons ici ne garantit pas les performances réelles.
 

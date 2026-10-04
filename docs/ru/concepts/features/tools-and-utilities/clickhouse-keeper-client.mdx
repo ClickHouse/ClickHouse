@@ -8,16 +8,14 @@ doc_type: 'reference'
 
 Клиентское приложение для взаимодействия с ClickHouse Keeper по собственному протоколу.
 
-<div id="clickhouse-keeper-client">
-  ## Ключи
-</div>
+## Ключи {#clickhouse-keeper-client}
 
 * `-q QUERY`, `--query=QUERY` — Запрос для выполнения. Если этот параметр не указан, `clickhouse-keeper-client` запустится в интерактивном режиме.
 * `-h HOST`, `--host=HOST` — Хост сервера. Значение по умолчанию: `localhost`.
 * `-p N`, `--port=N` — Порт сервера. Значение по умолчанию: 9181
-* `-c FILE_PATH`, `--config-file=FILE_PATH` — Задаёт путь к файлу конфигурации, из которого берётся строка подключения. Значение по умолчанию: `config.xml`.
-* `--password=PASSWORD` — Пароль для аутентификации. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_PASSWORD` или в XML-файле конфигурации по пути `<zookeeper><password>`.
-* `--identity=IDENTITY` — Идентификатор для схемы аутентификации `digest`. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_IDENTITY` или в XML-файле конфигурации по пути `<zookeeper><identity>`.
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Задаёт путь к файлу конфигурации, из которого берётся строка подключения. По умолчанию используется первый из файлов `config.xml`, `config.yaml` и `config.yml`, найденный в текущем каталоге.
+* `--password=PASSWORD` — Пароль для аутентификации. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_PASSWORD` или в файле конфигурации по пути `<zookeeper><password>` (`zookeeper.password` в YAML).
+* `--identity=IDENTITY` — Идентификатор для схемы аутентификации `digest`. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_IDENTITY` или в файле конфигурации по пути `<zookeeper><identity>` (`zookeeper.identity` в YAML).
 * `--connection-timeout=TIMEOUT` — Задаёт тайм-аут подключения в секундах. Значение по умолчанию: 10s.
 * `--session-timeout=TIMEOUT` — Задаёт тайм-аут сеанса в секундах. Значение по умолчанию: 10s.
 * `--operation-timeout=TIMEOUT` — Задаёт тайм-аут операции в секундах. Значение по умолчанию: 10s.
@@ -26,26 +24,24 @@ doc_type: 'reference'
 * `--no-confirmation` — Если указан, не требует подтверждения для ряда команд. Значение по умолчанию: `false` в интерактивном режиме и `true` в режиме запроса
 * `--help` — Показывает справку.
 
-<div id="clickhouse-keeper-client-env">
-  ## Переменные окружения
-</div>
+## Переменные окружения {#clickhouse-keeper-client-env}
 
 * `CLICKHOUSE_KEEPER_PASSWORD` — Используется в качестве пароля по умолчанию, если `--password` не указан в командной строке.
 * `CLICKHOUSE_KEEPER_IDENTITY` — Используется в качестве идентификатора по умолчанию, если `--identity` не указан в командной строке.
 
-<div id="clickhouse-keeper-client-auth">
-  ## Аутентификация
-</div>
+## Аутентификация {#clickhouse-keeper-client-auth}
 
 При подключении к серверу Keeper, требующему аутентификации, пароль выбирается в следующем порядке приоритета (используется первое найденное значение):
 
 1. аргумент командной строки `--password`
 2. переменная окружения `CLICKHOUSE_KEEPER_PASSWORD`
-3. `<zookeeper><password>` в XML-файле конфигурации, указанном через `--config-file`
+3. `<zookeeper><password>` в загруженном файле конфигурации
+
+На шаге 3 используется файл конфигурации, указанный через `--config-file`, а если этот параметр не задан — первый из файлов `config.xml`, `config.yaml` и `config.yml`, найденный в текущем каталоге. Поддерживаются оба формата — XML и YAML, поэтому `zookeeper.password` в `config.yaml` работает точно так же, как `<zookeeper><password>` в `config.xml`.
 
 Тот же порядок приоритета действует для `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
 
-Пример XML-файла конфигурации с настройками аутентификации:
+Пример файла конфигурации с настройками аутентификации:
 
 ```xml
 <clickhouse>
@@ -59,9 +55,7 @@ doc_type: 'reference'
 </clickhouse>
 ```
 
-<div id="clickhouse-keeper-client-example">
-  ## Пример
-</div>
+## Пример {#clickhouse-keeper-client-example}
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -83,9 +77,7 @@ keeper foo bar
 2
 ```
 
-<div id="clickhouse-keeper-client-commands">
-  ## Команды
-</div>
+## Команды {#clickhouse-keeper-client-commands}
 
 * `ls '[path]' [watch_id]` -- Выводит список узлов для указанного пути (по умолчанию: cwd). При необходимости устанавливает наблюдение за дочерними узлами с идентификатором `watch_id`
 * `cd '[path]'` -- Изменяет рабочий путь (по умолчанию `.`)

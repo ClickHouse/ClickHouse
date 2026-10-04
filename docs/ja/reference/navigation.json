@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "演算子",
           "pages": [
-            "ja/reference/operators/index",
-            "ja/reference/operators/exists",
-            "ja/reference/operators/distributed-ddl"
+            "ja/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ja/reference/engines/database-engines/index",
             "ja/reference/engines/database-engines/atomic",
             "ja/reference/engines/database-engines/backup",
+            "ja/reference/engines/database-engines/cluster",
             "ja/reference/engines/database-engines/datalake",
             "ja/reference/engines/database-engines/dictionary",
             "ja/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "ja/reference/formats/SQLInsert",
+        "ja/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1020,6 +1020,7 @@
         "ja/reference/system-tables/codecs",
         "ja/reference/system-tables/collations",
         "ja/reference/system-tables/columns",
+        "ja/reference/system-tables/columns_cache",
         "ja/reference/system-tables/completions",
         "ja/reference/system-tables/constraints",
         "ja/reference/system-tables/contributors",

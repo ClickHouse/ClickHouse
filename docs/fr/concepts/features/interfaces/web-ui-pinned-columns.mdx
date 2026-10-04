@@ -9,40 +9,30 @@ sidebar: false
 
 La Web SQL UI intégrée (`play.html`, accessible via le chemin [`/play`](/fr/concepts/features/interfaces/http) sur n’importe quel port HTTP de ClickHouse) peut garder visibles les colonnes choisies d’un résultat pendant que le reste du tableau défile horizontalement. Une colonne épinglée reste fixée au bord proche de la zone de résultats au lieu de défiler hors de vue, de sorte qu’une colonne clé — un identifiant, un nom, une date — reste visible à côté des colonnes situées tout à droite que vous consultez.
 
-<div id="pinning-a-column">
-  ## Épingler une colonne
-</div>
+## Épingler une colonne {#pinning-a-column}
 
 Une icône en forme de punaise 📌 apparaît à gauche de chaque en-tête de colonne. Cliquez dessus pour épingler la colonne, puis cliquez de nouveau pour la désépingler. L’icône est un véritable bouton : les utilisateurs du clavier peuvent donc y accéder avec la touche Tab et l’actionner au clavier, et son état d’épinglage est exposé aux technologies d’assistance.
 
 Sur les appareils dotés d’un pointeur permettant le survol (une souris), l’icône n’est affichée que lorsque l’en-tête est survolé ou que le bouton a le focus, afin de rester discrète le reste du temps ; sur les appareils tactiles et autres appareils à pointeur imprécis, qui ne permettent pas le survol, l’icône est toujours affichée afin de pouvoir être touchée directement. Une colonne épinglée conserve son icône affichée à pleine intensité pour indiquer qu’elle est épinglée.
 
-<div id="when-pinning-is-available">
-  ## Quand l’épinglage est disponible
-</div>
+## Quand l’épinglage est disponible {#when-pinning-is-available}
 
 L’épinglage n’est proposé que lorsque la table est suffisamment large pour permettre un défilement horizontal. Lorsque la table entière tient dans la zone d’affichage, il n’y a rien à faire défiler horizontalement ; le bouton bascule d’épinglage est donc désactivé et retiré de l’ordre de tabulation au clavier. Dès que le résultat devient défilable horizontalement — résultat large, fenêtre étroite ou résultat diffusé en flux qui s’élargit horizontalement — les boutons bascule deviennent actifs.
 
-<div id="how-a-pinned-column-behaves-when-scrolling">
-  ## Comportement d’une colonne épinglée lors du défilement
-</div>
+## Comportement d’une colonne épinglée lors du défilement {#how-a-pinned-column-behaves-when-scrolling}
 
 Une colonne épinglée se déplace avec le contenu lors du défilement horizontal jusqu’à ce qu’elle soit sur le point de sortir de la zone d’affichage ; à ce moment-là, elle se fixe au bord le plus proche — le bord gauche pour les colonnes de gauche, le bord droit pour les colonnes de droite — et reste visible. Plusieurs colonnes épinglées s’empilent le long du bord dans leur ordre d’origine, chacune étant séparée du contenu défilant par une bordure. Une cellule épinglée s’affiche par-dessus les cellules ordinaires qui défilent en dessous, y compris une cellule sélectionnée, de sorte qu’elle reste toujours lisible.
 
-<div id="shared-across-results">
-  ## Partagé entre les résultats
-</div>
+## Partagé au sein d&#39;un résultat {#shared-across-a-result}
 
-Les épingles sont associées au nom de la colonne et partagées entre tous les tableaux de résultats de la page, de la même manière que les [modes de codage couleur](/fr/concepts/features/interfaces/web-ui-color-coding) par colonne. Si vous épinglez une colonne nommée `id` dans un résultat, une colonne nommée `id` restera épinglée dans les autres résultats ainsi que dans les requêtes suivantes qui renvoient la même colonne.
+Les épinglages sont suivis par nom de colonne et partagés entre les tables de résultats appartenant à un même résultat (une exécution `Run all` (multi-requêtes) produit une table par statement, et toutes partagent le même ensemble de colonnes épinglées), comme c&#39;est le cas pour les [modes de codage couleur](/fr/concepts/features/interfaces/web-ui-color-coding) par colonne. Épingler une colonne nommée `id` dans l&#39;une de ces tables maintient épinglée la colonne nommée `id` dans les autres, ainsi que lors des exécutions ultérieures de la même requête qui renvoient cette colonne.
 
-<div id="persistence">
-  ## Persistance
-</div>
+L&#39;ensemble des colonnes épinglées est propre au résultat auquel il s&#39;applique : à l&#39;onglet de requête et, dans un onglet de type [notebook](/fr/concepts/features/interfaces/web-ui-notebook), à chaque cellule. Épingler une colonne dans une cellule n&#39;affecte donc pas les autres cellules ni les autres onglets, qui conservent leurs propres épinglages.
 
-L’ensemble épinglé est mémorisé dans l’URL de la page, dans l’historique du navigateur et dans l’instantané des résultats propre à chaque onglet. Ainsi, le rechargement de la page, le partage du lien ou la navigation d’avant en arrière le conservent. Seules les colonnes épinglées sont stockées — un ensemble vide n’ajoute rien à l’URL ni à l’état de l’historique — afin de conserver un format compact.
+## Persistance {#persistence}
 
-<div id="limitations">
-  ## Limitations
-</div>
+L’ensemble de colonnes épinglées est mémorisé dans l’URL de la page, dans l’historique du navigateur et dans l’instantané des résultats de la cellule à laquelle il appartient. Ainsi, le rechargement de la page, le partage du lien ou la navigation d’avant en arrière le conservent. Épingler ou désépingler une colonne dans une cellule qui ne contient pas actuellement l’éditeur met également à jour la copie enregistrée de cette cellule, de sorte que l’état est conservé après un rechargement. Seules les colonnes épinglées sont stockées — un ensemble vide n’ajoute rien à l’URL ni à l’état de l’historique — afin de conserver un format compact.
+
+## Limitations {#limitations}
 
 * La présentation verticale (transposée) sur une seule ligne ne comporte pas de colonnes à défilement horizontal ; elle ne permet donc pas l’épinglage.

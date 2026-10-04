@@ -17,14 +17,10 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 有关版本发布时间，请参阅 [发布状态](/zh/resources/changelogs/cloud/release-status) 页面
 
 <Note>
-  我们正在引入一种新的升级机制，即我们称之为 &quot;make before break&quot; (简称 MBB) 的理念。采用这种新方法后，在升级过程中，我们会先添加更新后的副本，再移除旧副本。这样可以让升级更加平滑，并尽可能减少对正在运行的工作负载的影响。
-
-  作为这项变更的一部分，在升级事件中，历史系统表数据最多会保留 30 天。此外，对于 AWS 或 GCP 上的服务，早于 2024 年 12 月 19 日的任何系统表数据，以及对于 Azure 上的服务，早于 2025 年 1 月 14 日的任何系统表数据，在迁移到新的组织层级时都不会被保留。
+  借助 ClickHouse Cloud 中的 [MBB](/zh/products/cloud/features/autoscaling/make-before-break)，在升级事件中，历史系统表数据最多会保留 30 天。
 </Note>
 
-<div id="version-compatibility">
-  ## 版本兼容性
-</div>
+## 版本兼容性 {#version-compatibility}
 
 创建 服务 时，[`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置会被设为该 服务 初始预配时 ClickHouse Cloud 提供的最新 ClickHouse 版本。
 
@@ -33,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 你无法管理 服务 的 服务 级默认 `compatibility` 设置。如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在 query 中使用 `SETTINGS compatibility = '22.3'`。
 
 <div id="maintenance-mode">
-  ## 维护模式
+  ## 维护模式 {#maintenance-mode}
 </div>
 
 有时，我们可能需要更新您的服务，这可能需要暂时禁用某些功能，例如扩缩容或自动进入空闲状态。在极少数情况下，如果某个服务出现问题，我们可能需要采取措施使其恢复到健康状态。在此类维护期间，您会在服务页面上看到一条横幅，显示 *“维护进行中”*。在此期间，您仍可能可以使用该服务执行查询。
@@ -41,7 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 服务处于维护期间的时间不会计费。*维护模式* 极少出现，不应与常规的服务升级混淆。
 
 <div id="release-channels-upgrade-schedule">
-  ## 发布渠道 (升级安排)
+  ## 发布渠道 (升级安排) {#release-channels-upgrade-schedule}
 </div>
 
 用户可以通过订阅特定的发布渠道，为其 ClickHouse Cloud 服务指定升级安排。共有三种发布渠道，用户还可以使用 **计划升级** 功能来配置每周升级的星期和时间。
@@ -57,7 +53,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### 快速发布渠道 (提前升级)
+  ### 快速发布渠道 (提前升级) {#fast-release-channel-early-upgrades}
 </div>
 
 <ScalePlanFeatureBadge feature="快速发布渠道" />
@@ -80,7 +76,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 此 **快速发布** 渠道适合在非关键环境中测试新功能。**不建议将其用于对运行时间和可靠性有严格要求的生产工作负载。**
 
 <div id="regular-release-channel">
-  ### 常规发布渠道
+  ### 常规发布渠道 {#regular-release-channel}
 </div>
 
 对于所有未配置发布渠道或升级计划的 Scale 和 Enterprise 层级服务，系统将作为常规发布渠道的一部分进行升级。建议在生产环境中使用此渠道。
@@ -92,7 +88,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### 慢速发布渠道 (延后升级)
+  ### 慢速发布渠道 (延后升级) {#slow-release-channel-deferred-upgrades}
 </div>
 
 <EnterprisePlanFeatureBadge feature="The slow release channel" />
@@ -113,9 +109,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   * 切换到更慢的渠道不会将您的服务降级；您的服务会继续停留在当前版本，直到该渠道有更新版本可用。例如：从 Regular 切换到 Slow，或从 Fast 切换到 Regular 或 Slow
 </Note>
 
-<div id="scheduled-upgrades">
-  ## 计划升级
-</div>
+## 计划升级 {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="计划升级" linking_verb_are="true" />
 

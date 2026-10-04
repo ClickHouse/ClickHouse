@@ -17,22 +17,26 @@ doc_type: 'reference'
 **Синтаксис**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` и `IF NOT EXISTS` нельзя использовать вместе. `CREATE OR REPLACE` для существующей коллекции
+полностью заменяет её: ключи и флаги переопределяемости, которых нет в новом определении, удаляются.
+
 **Пример**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Связанные команды**
 
-* [CREATE NAMED COLLECTION](/ru/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/ru/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/ru/reference/statements/drop#drop-function)
 
 **См. также**

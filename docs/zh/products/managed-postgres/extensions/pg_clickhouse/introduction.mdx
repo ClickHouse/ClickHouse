@@ -7,22 +7,18 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickhouse', '扩展']
 ---
 
-<div id="introduction">
-  ## 简介
-</div>
+## 简介 {#introduction}
 
 [pg&#95;clickhouse] 是一个开源 PostgreSQL 扩展，无需重写任何 SQL，
 即可直接在 PostgreSQL 中对 ClickHouse 运行分析查询。它支持
-PostgreSQL 13 及更高版本，以及 ClickHouse v23 及更高版本。
+PostgreSQL 14 及更高版本，以及 ClickHouse v23 及更高版本。
 
 一旦 [ClickPipes](/zh/integrations/clickpipes/home) 开始将数据同步到 ClickHouse，
 即可使用 pg&#95;clickhouse 快速轻松地将 [导入外部表] 导入到
 PostgreSQL schema 中。然后，您就可以针对这些表运行现有的 PostgreSQL 查询，
 在保留现有代码库的同时，将执行下推到 ClickHouse。
 
-<div id="getting-started">
-  ## 快速开始
-</div>
+## 快速开始 {#getting-started}
 
 体验 pg&#95;clickhouse 的最简单方式是使用 [Docker image]，其中包含标准的 PostgreSQL Docker 镜像，以及 pg&#95;clickhouse 和 [re2] 扩展：
 
@@ -35,9 +31,7 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 请参阅[教程]，了解如何开始导入 ClickHouse 表并下推
 查询。
 
-<div id="test-case-tpc-h">
-  ## 测试用例：TPC-H
-</div>
+## 测试用例：TPC-H {#test-case-tpc-h}
 
 下表比较了常规 PostgreSQL 表与连接到 ClickHouse 的 pg&#95;clickhouse 在 TPC-H 查询上的性能，
 两者均加载了扩展因子为 1 的数据；✔︎ 表示以单次外部扫描实现完全下推，✼ 表示以
@@ -69,22 +63,16 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 | [Query 21] |    1145 ms |           4470 ms |     |
 | [Query 22] |     270 ms |             45 ms |  ✼  |
 
-<div id="compile-from-source">
-  ### 从源码编译
-</div>
+### 从源码编译 {#compile-from-source}
 
-<div id="general-unix">
-  #### 通用 Unix
-</div>
+#### 通用 Unix {#general-unix}
 
 PostgreSQL 和 curl 的开发包会将 `pg_config` 和
 `curl-config` 添加到路径中，因此你应该可以直接运行 `make` (或
 `gmake`) ，然后执行 `make install`，最后在数据库中运行
 `CREATE EXTENSION pg_clickhouse`。
 
-<div id="debian--ubuntu--apt">
-  #### Debian / Ubuntu / APT
-</div>
+#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
 
 有关从 PostgreSQL Apt 仓库获取的详细信息，请参阅 [PostgreSQL Apt]。
 
@@ -99,9 +87,7 @@ sudo apt install \
   g++
 ```
 
-<div id="redhat--centos--yum">
-  #### RedHat / CentOS / Yum
-</div>
+#### RedHat / CentOS / Yum {#redhat--centos--yum}
 
 ```sh
 sudo yum install \
@@ -116,9 +102,7 @@ sudo yum install \
 
 有关如何从 PostgreSQL Yum 仓库拉取的详细信息，请参阅 [PostgreSQL Yum]。
 
-<div id="install-from-pgxn">
-  #### 从 PGXN 安装
-</div>
+#### 从 PGXN 安装 {#install-from-pgxn}
 
 满足上述依赖项后，使用 [PGXN client] (可通过
 [Homebrew]、[Apt] 以及名为 `pgxnclient` 的 Yum 软件包获取) 下载、编译
@@ -128,9 +112,7 @@ sudo yum install \
 pgxn install pg_clickhouse
 ```
 
-<div id="compile-and-install">
-  #### 编译并安装
-</div>
+#### 编译并安装 {#compile-and-install}
 
 要编译并安装 ClickHouse 库和 `pg_clickhouse`，请运行：
 
@@ -203,9 +185,7 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-<div id="testing">
-  #### 测试
-</div>
+#### 测试 {#testing}
 
 安装好该扩展后，运行以下命令以执行测试套件
 
@@ -226,9 +206,7 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-<div id="loading">
-  ### 加载
-</div>
+### 加载 {#loading}
 
 安装 `pg_clickhouse` 后，使用超级用户连接到数据库，并运行以下命令即可将其添加到该数据库：
 
@@ -244,17 +222,13 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-<div id="dependencies">
-  ## 依赖项
-</div>
+## 依赖项 {#dependencies}
 
-`pg_clickhouse` 扩展要求使用 [PostgreSQL] 13 或更高版本，以及 [libcurl]、
+`pg_clickhouse` 扩展要求使用 [PostgreSQL] 14 或更高版本，以及 [libcurl]、
 [libuuid]。构建该扩展还需要 C 和 C++ 编译器、[libSSL]、[GNU
 make] 和 [CMake]。
 
-<div id="road-map">
-  ## 路线图
-</div>
+## 路线图 {#road-map}
 
 我们当前最重要的重点，是在添加 DML 功能之前完成分析工作负载的下推覆盖。路线图如下：
 
@@ -271,9 +245,7 @@ make] 和 [CMake]。
   结果以表的形式返回
 * 为所有都查询远程数据库的 UNION 查询添加下推支持
 
-<div id="authors">
-  ## 作者
-</div>
+## 作者 {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
@@ -281,9 +253,7 @@ make] 和 [CMake]。
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-<div id="copyright">
-  ## 版权
-</div>
+## 版权 {#copyright}
 
 * 版权所有 (c) 2025-2026，ClickHouse
 * 部分版权所有 (c) 2023-2025，Ildus Kurbangaliev

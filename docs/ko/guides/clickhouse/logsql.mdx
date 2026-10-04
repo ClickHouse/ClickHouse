@@ -1,0 +1,35 @@
+---
+title: 'ClickHouse의 LogsQL 방언'
+description: 'Experimental 기능인 LogsQL 방언(VictoriaLogs의 쿼리 언어)을 활성화하는 방법과 지원 기능'
+keywords: ['LogsQL', 'VictoriaLogs', 'dialect']
+sidebarTitle: 'LogsQL'
+slug: /guides/clickhouse/logsql
+doc_type: 'guide'
+---
+
+## 개요 {#overview}
+
+ClickHouse는 [VictoriaLogs LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/) 구문으로 로그 테이블을 쿼리할 수 있는 Experimental `logsql` 방언을
+제공합니다.
+이 방언은 LogsQL 쿼리를 ClickHouse `SELECT` 쿼리로 변환합니다.
+
+다음과 같이 세션에서 이 방언을 활성화하고 원본 테이블을 구성하십시오.
+
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql';
+```
+
+구성된 테이블에는 시간 컬럼과 메시지 컬럼이 반드시 포함되어야 합니다. LogsQL 필터,
+스트림 필터, 텍스트 및 숫자 비교, 시간 범위, 그리고 `fields`, `stats`, `sort`, `limit`, `format`, `extract`, `unpack_json` 등의
+파이프 연산이 지원됩니다. 텍스트 필터는 `String` 기반 로그 컬럼에서 동작하며, 타입이 지정된 필드는
+숫자 비교 및 숫자 통계에 사용할 수 있습니다.
+
+이 방언은 Experimental 기능이며 VictoriaLogs를 바이트 단위까지 동일하게 구현한 것이 아닙니다.
+지원되지 않는 구문은 `NOT_IMPLEMENTED` 오류와 함께 거부됩니다. 또한 ClickHouse 타입, 정규식, 시간대,
+SQL 집계 규칙의 차이로 인해 쿼리 의미가 달라질 수 있습니다. LogsQL 구문이 지원되지 않거나
+VictoriaLogs와 정확히 호환되어야 하는 경우에는 일반 ClickHouse SQL을 사용하십시오.

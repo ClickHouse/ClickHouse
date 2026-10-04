@@ -140,15 +140,17 @@ ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 Ne
 
 ClickHouseSettings는 ClickHouse 서버 설정 옵션을 정의합니다.
 
-| 필드                    | 유형                                                                                                            | 설명                                                                                                                                     | 필수 여부 | 기본값  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- |
-| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | `default` ClickHouse 사용자의 비밀번호 소스 및 유형을 지정합니다.                                                                                         | false |      |
-| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse 서버 로깅 구성입니다.                                                                                                                | false |      |
-| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 설정으로, ClickHouse 서버의 보안 엔드포인트 및 인증서 검증을 구성할 수 있습니다.                                                                                | false |      |
-| `encryption`          | [EncryptionSettings](#encryptionsettings)                                                                     | 암호화 설정입니다. 설정하면 전용 스토리지 정책을 통해 테이블 데이터 저장 시 암호화를 활성화합니다.<br />테이블별로 `SETTINGS storage_policy = '<policyName>'`를 사용하여 선택적으로 적용할 수 있습니다. | false |      |
-| `enableDatabaseSync`  | boolean                                                                                                       | 새로 생성된 레플리카로의 ClickHouse 데이터베이스 동기화 및 스케일 다운 후 오래된 레플리카 정리를 활성화합니다.<br />스케일 다운 후.<br />Replicated 및 통합(integration) 데이터베이스만 지원합니다.    | false | true |
-| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 기본 구성에 머지될 추가 ClickHouse 구성입니다.                                                                                                        | false |      |
-| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 기본 구성에 머지될 추가 ClickHouse 사용자 구성입니다.                                                                                                    | false |      |
+| 필드                      | 유형                                                                                                            | 설명                                                                                                                                                                                                                                                     | 필수 여부 | 기본값  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ---- |
+| `defaultUserPassword`   | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | `default` ClickHouse 사용자의 비밀번호 소스 및 유형을 지정합니다.                                                                                                                                                                                                         | false |      |
+| `logger`                | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse 서버 로깅 구성입니다.                                                                                                                                                                                                                                | false |      |
+| `systemLogsTTLDays`     | integer                                                                                                       | 시스템 로그 테이블(`query_log`, `part_log`, `text_log`, `metric_log`,<br />`asynchronous_metric_log`)의 보존 기간(일)입니다. 다음 서버 재시작 시 테이블 TTL로 적용됩니다. 새 클러스터에서만 기본값이 30일이며,<br />이 필드가 추가되기 전에 생성된 클러스터는 값을 설정할 때까지 테이블에 보존 기간 제한이 없습니다.<br />0으로 설정하면 TTL이 비활성화됩니다. | false |      |
+| `tls`                   | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 설정으로, ClickHouse 서버의 보안 엔드포인트 및 인증서 검증을 구성할 수 있습니다.                                                                                                                                                                                                | false |      |
+| `encryption`            | [EncryptionSettings](#encryptionsettings)                                                                     | 암호화 설정입니다. 설정하면 전용 스토리지 정책을 통해 테이블 데이터 저장 시 암호화를 활성화합니다.<br />테이블별로 `SETTINGS storage_policy = '<policyName>'`를 사용하여 선택적으로 적용할 수 있습니다.                                                                                                                 | false |      |
+| `enableDatabaseSync`    | boolean                                                                                                       | 새로 생성된 레플리카로의 ClickHouse 데이터베이스 동기화 및 스케일 다운 후 오래된 레플리카 정리를 활성화합니다.<br />스케일 다운 후.<br />Replicated 및 통합(integration) 데이터베이스만 지원합니다.                                                                                                                    | false | true |
+| `extraConfig`           | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 기본 구성에 머지될 추가 ClickHouse 구성입니다.                                                                                                                                                                                                                        | false |      |
+| `extraReloadableConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 기본 구성에 머지되며 Pod를 재시작하지 않고 구성을 다시 로드해 적용하는 추가 ClickHouse 구성입니다.<br />여기에 섹션을 추가하면 해당 섹션을 안전하게 다시 로드할 수 있다고 간주합니다.<br />재시작해야만 적용되는 설정을 여기에 추가해도 오류는 발생하지 않으며, 다음 재시작 시에만 적용됩니다.                                                                         | false |      |
+| `extraUsersConfig`      | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 기본 구성에 머지될 추가 ClickHouse 사용자 구성입니다.                                                                                                                                                                                                                    | false |      |
 
 다음에서 사용됩니다:
 
@@ -201,16 +203,18 @@ ContainerImage는 리포지토리, 태그 또는 해시를 포함하는 컨테�
 
 ContainerTemplateSpec는 클러스터의 컨테이너에 대한 구성 재정의 항목을 설명합니다.
 
-| Field             | Type                                                                                                                      | Description                                                                                                                                                                                                                          | Required | Default |
+| 필드                | 유형                                                                                                                        | 설명                                                                                                                                                                                                                                   | Required | Default |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
 | `image`           | [ContainerImage](#containerimage)                                                                                         | Image는 배포할 컨테이너 이미지입니다.                                                                                                                                                                                                              | true     |         |
 | `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core)                     | 이미지의 ImagePullPolicy이며, 기본값은 IfNotPresent입니다.                                                                                                                                                                                        | false    |         |
 | `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources는 서버 컨테이너의 리소스 요구 사항입니다.<br />전체에 적용됩니다. 모든 리소스 필드가 비어 있을 때만 연산자 기본값이 사용됩니다.                                                                                                                                                | false    |         |
-| `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | VolumeMounts는 컨테이너의 볼륨 마운트 목록입니다.<br />연산자가 생성한 마운트와 결합됩니다. 연산자 마운트와 `mountPath`를 공유하는 항목은<br />projected volume으로 머지됩니다.                                                                                                            | false    |         |
-| `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | Env는 컨테이너에 설정할 환경 변수 목록입니다.<br />이름을 기준으로 연산자 기본값과 머지됩니다.                                                                                                                                                                            | false    |         |
+| `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) 배열                | VolumeMounts는 컨테이너의 볼륨 마운트 목록입니다.<br />연산자가 생성한 마운트와 결합됩니다. 연산자 마운트와 `mountPath`를 공유하는 항목은<br />projected volume으로 머지됩니다.                                                                                                            | false    |         |
+| `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) 배열                          | Env는 컨테이너에 설정할 환경 변수 목록입니다.<br />이름을 기준으로 연산자 기본값과 머지됩니다.                                                                                                                                                                            | false    |         |
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext는 컨테이너 실행 시 적용할 보안 옵션을 정의합니다.<br />nil이 아닌 SecurityContext는 연산자 기본값을 완전히 대체하며, 사용자가<br />전체 구조체를 책임집니다. nil이면 연산자 기본값이 유지됩니다.<br />자세한 정보: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false    |         |
 | `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe는 연산자의 기본 liveness probe를 재정의합니다.                                                                                                                                                                                       | false    |         |
 | `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe는 연산자의 기본 준비 상태 프로브를 재정의합니다.                                                                                                                                                                                           | false    |         |
+| `startupProbe`    | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | StartupProbe는 성공할 때까지 liveness probe와 준비 상태 프로브의 실행을 보류하여, 시작이 느린<br />컨테이너가 구동될 시간을 확보합니다. 연산자는 기본적으로 startup probe를 설정하지 않습니다.                                                                                                     | false    |         |
+| `lifecycle`       | [Lifecycle](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#lifecycle-v1-core)                       | Lifecycle은 컨테이너 수명 주기 이벤트(PostStart/PreStop) 발생 시 큐블릿이 실행하는 동작을 정의합니다.<br />nil이 아닌 Lifecycle은 연산자 기본값을 완전히 대체하며, 사용자가 전체 구조체를 책임집니다.                                                                                                | false    |         |
 
 다음에 나타납니다:
 
@@ -396,15 +400,15 @@ KeeperSettings는 ClickHouse Keeper 서버 구성을 정의합니다.
 
 ## LoggerConfig {#loggerconfig}
 
-LoggerConfig는 server 로깅 구성을 정의합니다.
+LoggerConfig는 서버 로깅 구성을 정의합니다.
 
-| 필드          | 유형      | 설명                         | 필수    | 기본값   |
-| ----------- | ------- | -------------------------- | ----- | ----- |
-| `logToFile` | boolean | false이면 파일 로깅을 모두 비활성화합니다. | false | true  |
-| `jsonLogs`  | boolean | true이면 JSON 포맷으로 로깅합니다.    | false | false |
-| `level`     | string  | server 로거의 상세 수준입니다.       | false | trace |
-| `size`      | string  | 로그 파일의 최대 크기입니다.           | false | 1000M |
-| `count`     | integer | 유지할 로그 파일의 최대 개수입니다.       | false | 50    |
+| 필드          | 유형      | 설명                         | 필수    | 기본값         |
+| ----------- | ------- | -------------------------- | ----- | ----------- |
+| `logToFile` | boolean | false이면 파일 로깅을 모두 비활성화합니다. | false | true        |
+| `jsonLogs`  | boolean | true이면 JSON 포맷으로 로깅합니다.    | false | false       |
+| `level`     | string  | 서버 로거의 상세 수준입니다.       | false | information |
+| `size`      | string  | 로그 파일의 최대 크기입니다.           | false | 100M        |
+| `count`     | integer | 유지할 로그 파일의 최대 개수입니다.       | false | 10          |
 
 다음에 사용됩니다:
 

@@ -12,19 +12,13 @@ Snapshots corrompidos ou inválidos do ClickHouse Keeper podem causar instabilid
 * [Como o problema se manifesta](#symptoms)
 * [Possíveis estratégias de recuperação](#recovery-strategies) e o que cada uma significa
 
-<div id="overview">
-  ## Visão geral dos snapshots do Keeper
-</div>
+## Visão geral dos snapshots do Keeper {#overview}
 
-<div id="what-is-snapshot">
-  ### O que é um snapshot?
-</div>
+### O que é um snapshot? {#what-is-snapshot}
 
 Um snapshot é um estado serializado dos dados internos do Keeper (como metadados sobre clusters, caminhos de coordenação de tabelas e configurações) em um ponto específico no tempo. Snapshots são essenciais para ressincronizar nós do Keeper em um cluster, recuperar metadados durante falhas e dar suporte a processos de inicialização ou reinicialização que dependem de um estado conhecido e íntegro do Keeper.
 
-<div id="where-to-find-snapshots">
-  ### Onde posso encontrar snapshots?
-</div>
+### Onde posso encontrar snapshots? {#where-to-find-snapshots}
 
 Os snapshots são armazenados como arquivos no sistema de arquivos local dos nós do Keeper. Por padrão, eles ficam em `/var/lib/clickhouse/coordination/snapshots/` ou no caminho personalizado definido por `snapshot_storage_path` no arquivo `keeper_server.xml`. Os snapshots são nomeados sequencialmente (por exemplo, snapshot.23), e os mais recentes têm números maiores.
 
@@ -34,9 +28,7 @@ Em clusters com vários nós, cada nó do Keeper tem seu próprio diretório de 
   A consistência dos snapshots entre os nós é fundamental para a recuperação.
 </Note>
 
-<div id="symptoms">
-  ## Principais sintomas e manifestações de snapshots corrompidos do Keeper
-</div>
+## Principais sintomas e manifestações de snapshots corrompidos do Keeper {#symptoms}
 
 A tabela abaixo detalha alguns sintomas e manifestações comuns de snapshots corrompidos do Keeper:
 
@@ -62,9 +54,7 @@ Antes de diagnosticar corrupção de snapshot, verifique os **logs do Keeper** e
 | **Erros de corrupção de snapshot** | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• Falhas de serialização/carregamento de snapshot durante a inicialização |
 | **Outros problemas do Keeper**     | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• Problemas de sincronização ou eleição<br />• Condições de corrida na compactação de log                                                                                                                                                                                                   |
 
-<div id="recovery-strategies">
-  ## Recuperando snapshots corrompidos do Keeper
-</div>
+## Recuperando snapshots corrompidos do Keeper {#recovery-strategies}
 
 Antes de alterar qualquer arquivo, sempre:
 
@@ -74,9 +64,7 @@ Antes de alterar qualquer arquivo, sempre:
 
 ***
 
-<div id="restore-from-existing-backup">
-  ### 1. Restaurar a partir de um backup existente
-</div>
+### 1. Restaurar a partir de um backup existente {#restore-from-existing-backup}
 
 Você deve seguir este processo se:
 
@@ -98,9 +86,7 @@ Siga as etapas abaixo para restaurar um backup existente:
 
 ***
 
-<div id="rollback-to-older-snapshot">
-  ### 2. Reverter para um snapshot mais antigo
-</div>
+### 2. Reverter para um snapshot mais antigo {#rollback-to-older-snapshot}
 
 Você deve seguir este processo quando:
 
@@ -121,9 +107,7 @@ Siga as etapas abaixo para reverter para um snapshot mais antigo:
 
 ***
 
-<div id="restore-metadata-with-system-restore-replica">
-  ### 3. Restaure os metadados usando `SYSTEM RESTORE REPLICA`
-</div>
+### 3. Restaure os metadados usando `SYSTEM RESTORE REPLICA` {#restore-metadata-with-system-restore-replica}
 
 Você deve seguir este processo quando:
 
@@ -170,9 +154,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 
 ***
 
-<div id="drop-and-recreate-replica-metadata">
-  ### 4. Remover e recriar os metadados da réplica no Keeper
-</div>
+### 4. Remover e recriar os metadados da réplica no Keeper {#drop-and-recreate-replica-metadata}
 
 Você deve seguir este processo quando:
 
@@ -251,9 +233,7 @@ Essa abordagem é útil quando várias tabelas precisam ser recuperadas simultan
 
 ***
 
-<div id="rebuild-keeper-cluster">
-  ### 5. Reconstruir o cluster do Keeper
-</div>
+### 5. Reconstruir o cluster do Keeper {#rebuild-keeper-cluster}
 
 Você deve seguir este processo quando:
 
@@ -272,3 +252,68 @@ Siga as etapas abaixo para reconstruir o cluster do Keeper:
 
   Este processo é demorado e traz o risco de indisponibilidade prolongada. Será necessária a reconstrução total dos dados.
 </Warning>
+
+***
+
+### 6. Remover nós órfãos do snapshot na inicialização {#remove-orphaned-nodes-on-startup}
+
+Um nó *órfão* é um nó cujo pai não está presente no snapshot. O Keeper se recusa a carregar esse
+snapshot e registra no log `Failure to load from latest snapshot with index`.
+
+Siga este procedimento quando:
+
+* O snapshot estiver estruturalmente danificado exatamente dessa forma e
+* Não houver nenhum backup válido ou snapshot mais antigo disponível (as estratégias 1 e 2 são preferíveis sempre que forem aplicáveis).
+
+Defina as duas configurações a seguir em `<keeper_server>` e reinicie o nó:
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **Requer o armazenamento de nós em memória**
+
+  A limpeza só é implementada pelo armazenamento de nós em memória. Se `use_lsmt_storage` estiver habilitado em
+  `<coordination_settings>`, o Keeper se recusa a iniciar com `remove_orphaned_nodes_on_startup` definido: desative
+  `use_lsmt_storage` para a reinicialização de recuperação e habilite-o novamente após uma inicialização bem-sucedida.
+</Note>
+
+Em seguida, o Keeper descarta as subárvores órfãs e inicia. A remoção é registrada no log no nível `WARNING`
+em duas linhas: uma com o número total de nós removidos e as raízes das subárvores órfãs removidas,
+e outra com os caminhos ausentes do snapshot que delimitam a região danificada. Os descendentes
+abaixo dessas raízes também são removidos, mas não são listados individualmente.
+
+<Warning>
+  **Repara apenas o estado local**
+
+  Isso remove nós da cópia dos dados *deste* nó. Os peers que ainda mantêm esses nós passarão a divergir
+  dele e, com `digest_enabled` definido como `false`, nada detectará essa divergência depois. Trate isso
+  como uma recuperação de um único nó ou aplique-a a todos os nós do cluster. Restaure ambas as configurações para os
+  valores padrão assim que o nó estiver ativo.
+</Warning>
+
+O Keeper se recusa propositalmente a iniciar se uma entrada de log local acima do snapshot fizer referência à região
+danificada: um nó removido, qualquer coisa abaixo dele ou o pai direto de uma subárvore removida. O pai direto
+conta como conflito porque seu conjunto de filhos não corresponde mais à árvore sobre a qual o log foi gravado,
+de modo que mesmo uma entrada que apenas o afete — incluindo a criação ou remoção de um nó *irmão* sob ele, o que
+atualiza seus contadores de filhos reparados — poderia ser reaplicada de forma diferente. Entradas que consultam apenas a
+existência, a versão ou os ids de modificação do pai, como um `Check`, um `CheckNotExists`, um `CheckStat` que não compara `numChildren` nem `cversion`,
+um `Set` ou `SetACL` que reescreve apenas os próprios dados ou a ACL do pai, ou
+os watches de dados, de filhos e de existência que um cliente registra novamente após uma reconexão, não são afetadas e não
+bloqueiam a recuperação; watches persistentes registrados novamente por um cliente nunca consultam a árvore e nunca a bloqueiam.
+Os nós mais acima na cadeia não são
+afetados: eles mantêm exatamente os mesmos dados, versão e filhos que têm em um peer saudável, portanto uma entrada que
+afete apenas um desses nós é reaplicada de forma idêntica e não bloqueia a recuperação. A exceção é uma entrada que
+percorre toda a subárvore abaixo do seu caminho, como uma remoção recursiva ou uma listagem recursiva: essas entradas de fato
+enxergam os nós removidos e entram em conflito em qualquer nível, a menos que o Keeper rejeite a requisição antes de consultar
+a árvore (por exemplo, uma remoção recursiva de `/`). O mesmo vale para o encerramento de uma sessão
+(`Close`) no final do log quando essa sessão possuía um nó efêmero removido, ou possui um nó efêmero
+remanescente diretamente sob esse pai: encerrar a sessão remove seus nós efêmeros e atualiza os
+contadores dos respectivos pais. Reaplicar qualquer uma dessas entradas sobre a
+árvore reparada produziria silenciosamente um estado diferente. Nesse caso, recupere o nó a partir de um peer
+saudável: pare-o, limpe seu diretório de coordenação e deixe-o ressincronizar a partir do líder, ou use
+a estratégia 1 ou 2.

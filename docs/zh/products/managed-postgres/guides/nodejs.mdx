@@ -1,0 +1,370 @@
+---
+slug: /cloud/managed-postgres/guides/nodejs
+sidebarTitle: 'Node.js'
+title: '通过 Node.js 使用 ClickHouse Managed Postgres'
+description: '使用 node-postgres（pg）将 Node.js 应用连接到 ClickHouse Managed Postgres，内容涵盖连接池、TLS 证书验证、参数化查询和事务'
+keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'javascript', 'connection pool', 'tls', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
+[node-postgres](https://node-postgres.com/) (即 `pg` 包) 是 Node.js 生态中使用最广泛的 Postgres 驱动程序。在本指南中，您将通过启用完整 TLS 证书验证的 `pg.Pool` 连接到 ClickHouse Managed Postgres，创建两张表，在事务中完成账户间转账，并通过一个简单的 `node:http` 服务器对外提供数据。
+
+## 前置条件 {#prerequisites}
+
+* [Node.js](https://nodejs.org/) 20.6 或更高版本 (需使用其内置的 `--env-file` 标志) 。本指南已在 Node.js 24.21.0 和 `pg` 8.23.1 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。完整操作流程请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。选中 **Directly** 后，从 **url** 选项卡中复制连接 URL。保持 **Use SSL** 关闭：应用会在代码中传入 CA 证书，而不是通过 URL 传入 (请参阅[配置连接池](#configure-pool)) 。
+
+本指南通过端口 `5432` **直接**连接 Postgres。长期运行的 Node.js 服务器已通过 `pg.Pool` 维护自己的连接池，因此无需在 Postgres 前再加一层连接池器。如果您需要运行大量进程或 serverless 函数，请改用内置的 PgBouncer，详见[使用 PgBouncer](#pgbouncer)。
+
+接下来，下载实例的 CA 证书。打开 **Use SSL** 并点击 **Download CA certificate**，或前往 **Settings → CA Certificate → Download CA certificate**。每个实例的证书都是唯一的。
+
+## 设置项目 {#project-setup}
+
+新建一个项目并安装 `pg`：
+
+```bash
+mkdir node-pg-app && cd node-pg-app
+npm init -y
+npm install pg
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  请跳过 `mkdir` 和 `npm init -y`。在您的项目中运行 `npm install pg`，然后直接进入[创建数据库](#create-database)一节。
+</Tip>
+
+本指南中的示例均为扩展名为 `.mjs` 的 ES 模块，因此无论您的 `package.json` 使用的是 CommonJS 还是 ES 模块，示例都能正常运行。
+
+## 创建数据库 {#create-database}
+
+将下载的 `<service-name>-ca-certificate.pem` 文件移动到项目目录中，并重命名为 `ca-certificate.pem`。然后为应用创建数据库：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c 'CREATE DATABASE guide_nodejs;'
+```
+
+创建一个 `.env` 文件，在其中填入您复制的连接 URL (将其中的数据库名称改为 `guide_nodejs`) 以及证书路径：
+
+```bash .env
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_nodejs
+DATABASE_CA_CERT=./ca-certificate.pem
+```
+
+如果密码中包含 `@`、`/` 或 `#` 等字符，请在 URL 中对这些字符进行百分号编码。
+
+## 配置连接池 {#configure-pool}
+
+创建 `db.mjs`，并在其中导出一个连接池，供应用的其他部分共享使用：
+
+```javascript db.mjs
+import fs from 'node:fs';
+import pg from 'pg';
+
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    // Trust only your instance's CA; the hostname is verified too (verify-full).
+    ca: fs.readFileSync(process.env.DATABASE_CA_CERT, 'utf8'),
+  },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+// An idle client can be disconnected by the server (for example, during a failover).
+// Without this handler, the error would crash the process.
+pool.on('error', (err) => {
+  console.error('Idle client error:', err.message);
+});
+```
+
+传入 `ssl: { ca }` 的效果等同于 `sslmode=verify-full`：`pg` 会检查服务器证书是否由您实例的 CA 签发，以及证书是否与主机名匹配。`rejectUnauthorized` 默认为 `true`，请勿将其设为 `false`。
+
+<Warning>
+  **不要将 `ssl` 与 URL 中的 SSL 参数混用**
+
+  如果 `DATABASE_URL` 包含 `sslmode` 或 `sslrootcert`，`pg` 会根据 URL 构建 TLS 设置，并忽略 `ssl` 对象。例如，以 `?sslmode=verify-full` 结尾但不含 `sslrootcert` 的 URL 会覆盖您的 `ca`，导致连接失败并报错 `unable to verify the first certificate`。在代码中传入 `ssl` 时，请勿在 `DATABASE_URL` 中包含 SSL 参数。
+
+  另请注意：
+
+  * 如果既未传入 `ssl` 对象，URL 中也没有 `sslmode`，`pg` 将不使用 TLS，也不会验证服务器。
+  * `pg` 会读取 `PGHOST`、`PGUSER`、`PGPASSWORD` 等变量，但不会读取 `PGSSLROOTCERT`。因此，仅靠 Connect 弹窗中 **env** 选项卡里的变量无法验证服务器。
+  * 如果您希望将所有配置都放在 URL 中，也可以直接使用开启 **Use SSL** 后 Connect 弹窗所显示的 URL，它同样适用于 `pg`，例如 `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`。此时请移除 `ssl` 选项，并注意 `sslrootcert` 是相对于启动 Node.js 时所在的目录解析的。
+</Warning>
+
+## 创建 schema {#create-schema}
+
+创建 `setup.mjs`。该脚本会创建表，通过参数化查询插入两个账户，然后再将其读取出来：
+
+```javascript setup.mjs
+import { pool } from './db.mjs';
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    owner   text NOT NULL UNIQUE,
+    balance numeric(12, 2) NOT NULL CHECK (balance >= 0)
+  );
+  CREATE TABLE IF NOT EXISTS transfers (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    from_id    integer NOT NULL REFERENCES accounts (id),
+    to_id      integer NOT NULL REFERENCES accounts (id),
+    amount     numeric(12, 2) NOT NULL CHECK (amount > 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+`);
+
+const accounts = [
+  ['alice', 100],
+  ['bob', 50],
+];
+for (const [owner, balance] of accounts) {
+  await pool.query(
+    'INSERT INTO accounts (owner, balance) VALUES ($1, $2) ON CONFLICT (owner) DO NOTHING',
+    [owner, balance],
+  );
+}
+
+const { rows } = await pool.query(
+  'SELECT id, owner, balance FROM accounts WHERE owner = ANY($1) ORDER BY id',
+  [['alice', 'bob']],
+);
+console.table(rows);
+
+await pool.end();
+```
+
+请始终以参数 (`$1`、`$2`、...) 的形式传递值，而不要将其拼接到 SQL 字符串中。`pg` 会将这些值与查询文本分开发送，从而防止 SQL 注入。JavaScript 数组会映射为 Postgres 数组，如 `ANY($1)` 查询所示。
+
+运行：
+
+```bash
+node --env-file=.env setup.mjs
+```
+
+```text
+┌─────────┬────┬─────────┬──────────┐
+│ (index) │ id │ owner   │ balance  │
+├─────────┼────┼─────────┼──────────┤
+│ 0       │ 1  │ 'alice' │ '100.00' │
+│ 1       │ 2  │ 'bob'   │ '50.00'  │
+└─────────┴────┴─────────┴──────────┘
+```
+
+`pg` 会以字符串形式返回 `numeric` (以及 `bigint`) 类型的值，以免丢失精度。如需数值，请显式转换。
+
+## 在事务中运行查询 {#transaction}
+
+事务必须在同一个连接上执行，因此请使用 `pool.connect` 从连接池中获取一个客户端，并务必在用完后将其释放。创建 `transfer.mjs`：
+
+```javascript transfer.mjs
+import { pool } from './db.mjs';
+
+// Moves money between two accounts atomically: either every statement commits, or none do.
+export async function transfer(fromOwner, toOwner, amount) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const debit = await client.query(
+      'UPDATE accounts SET balance = balance - $1 WHERE owner = $2 AND balance >= $1 RETURNING id',
+      [amount, fromOwner],
+    );
+    if (debit.rowCount === 0) {
+      throw new Error(`Insufficient funds or unknown account: ${fromOwner}`);
+    }
+    const credit = await client.query(
+      'UPDATE accounts SET balance = balance + $1 WHERE owner = $2 RETURNING id',
+      [amount, toOwner],
+    );
+    if (credit.rowCount === 0) {
+      throw new Error(`Unknown account: ${toOwner}`);
+    }
+    const { rows } = await client.query(
+      'INSERT INTO transfers (from_id, to_id, amount) VALUES ($1, $2, $3) RETURNING *',
+      [debit.rows[0].id, credit.rows[0].id, amount],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+不要使用 `pool.query` 执行事务中的语句：每次调用 `pool.query` 都可能在不同的连接上运行。
+
+## 通过 HTTP 提供数据 {#http-server}
+
+创建 `server.mjs`。它在端口 `3107` 上以 JSON 格式提供账户和转账数据，可接收新的转账，并在收到 `SIGINT` (<kbd>Ctrl</kbd>+<kbd>C</kbd>) 或 `SIGTERM` 时正常关闭：
+
+```javascript server.mjs
+import http from 'node:http';
+import { pool } from './db.mjs';
+import { transfer } from './transfer.mjs';
+
+const port = Number(process.env.PORT ?? 3107);
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+async function readJson(req) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  return JSON.parse(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (req.method === 'GET' && url.pathname === '/accounts') {
+      const { rows } = await pool.query('SELECT id, owner, balance FROM accounts ORDER BY id');
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'GET' && url.pathname === '/transfers') {
+      const limit = Number(url.searchParams.get('limit') ?? 10);
+      const { rows } = await pool.query(
+        `SELECT t.id, f.owner AS "from", o.owner AS "to", t.amount, t.created_at
+           FROM transfers t
+           JOIN accounts f ON f.id = t.from_id
+           JOIN accounts o ON o.id = t.to_id
+          ORDER BY t.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'POST' && url.pathname === '/transfers') {
+      const { from, to, amount } = await readJson(req);
+      return sendJson(res, 201, await transfer(from, to, amount));
+    }
+    sendJson(res, 404, { error: 'Not found' });
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
+});
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}`));
+
+// Stop accepting requests, let in-flight ones finish, then close all pool connections.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(async () => {
+    await pool.end();
+    console.log('Pool closed');
+  });
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+```
+
+只需在进程关闭时调用一次 `pool.end`，而不是每处理完一个请求就调用。它会等待所有已借出的客户端归还，然后关闭全部连接。
+
+## 验证 {#verify}
+
+启动服务器：
+
+```bash
+node --env-file=.env server.mjs
+```
+
+在另一个终端中，先执行一次转账，然后再分别尝试一笔会导致账户透支的转账和一笔转入不存在账户的转账：
+
+```bash
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "bob", "amount": 25}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "bob", "to": "alice", "amount": 1000}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "carol", "amount": 10}'
+```
+
+```text
+{
+  "id": 1,
+  "from_id": 1,
+  "to_id": 2,
+  "amount": "25.00",
+  "created_at": "2026-09-30T16:45:56.751Z"
+}
+{
+  "error": "Insufficient funds or unknown account: bob"
+}
+{
+  "error": "Unknown account: carol"
+}
+```
+
+第三笔转账在失败前已从 `alice` 的账户中扣款，但 `ROLLBACK` 撤销了这笔扣款。在浏览器中打开 [http://localhost:3107/accounts](http://localhost:3107/accounts) 即可查看余额。响应如下所示：
+
+```json
+[
+  {
+    "id": 1,
+    "owner": "alice",
+    "balance": "75.00"
+  },
+  {
+    "id": 2,
+    "owner": "bob",
+    "balance": "75.00"
+  }
+]
+```
+
+要确认该连接使用的是经过验证的 TLS，请查询 `pg_stat_ssl`：
+
+```bash
+node --env-file=.env --input-type=module -e "
+import { pool } from './db.mjs';
+const { rows } = await pool.query('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
+console.log(rows[0]);
+await pool.end();
+"
+```
+
+```text
+{ ssl: true, version: 'TLSv1.3' }
+```
+
+如果将 `DATABASE_CA_CERT` 指向其他任何证书，连接都会失败并报错 `unable to verify the first certificate`，这说明服务器证书确实经过了校验。
+
+最后，按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 停止服务器。它会先输出 `SIGINT received, shutting down`，然后输出 `Pool closed`。
+
+你也可以在控制台中查看数据。打开 **SQL 控制台**，展开 `guide_nodejs` 数据库，然后打开 `accounts` 表：
+
+| id | owner | balance |
+| -- | ----- | ------- |
+| 1  | alice | 75.00   |
+| 2  | bob   | 75.00   |
+
+## 使用 PgBouncer {#pgbouncer}
+
+如需通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 连接，请在 Connect 弹窗中选择 **via PgBouncer**，并在 `DATABASE_URL` 中使用端口 `6432`。无需修改代码，且可继续使用同一 CA 证书。
+
+PgBouncer 以事务池模式运行，因此每个事务都可能在不同的 Postgres 连接上执行。使用 `pg` 时：
+
+* 参数化查询、命名预处理语句 (`pool.query({ name, text, values })`) 以及使用 `pool.connect` 的事务均可按本指南所示方式正常使用。
+* SQL 级别的 `PREPARE` 和 `EXECUTE`，以及通过 `SET` 设置的会话设置，都不会跨事务保留。请改为在事务内部使用 `SET LOCAL`。
+* `pg_stat_ssl` 反映的是 PgBouncer 与 Postgres 之间的连接，因此上文的 TLS 检查查询会返回 `ssl: false`。应用与 PgBouncer 之间的连接仍会经过验证：若 CA 证书有误，连接同样会失败。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：修改 `max_connections` 等参数
+* [只读副本](/zh/products/managed-postgres/read-replicas)：将只读查询路由到副本
+* [高可用性](/zh/products/managed-postgres/high-availability)：备用实例与故障转移

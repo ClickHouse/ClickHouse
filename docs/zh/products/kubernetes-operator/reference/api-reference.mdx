@@ -140,15 +140,17 @@ ClickHouseNetworkPolicySpec 用于配置由 ClickHouse 集群管理的 NetworkPo
 
 ClickHouseSettings 定义 ClickHouse 服务器的设置选项。
 
-| 字段                    | 类型                                                                                                            | 描述                                                                                          | 是否必填  | 默认值  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----- | ---- |
-| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | 指定 `default` ClickHouse 用户密码的来源和类型。                                                         | false |      |
-| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse 服务器的日志配置。                                                                        | false |      |
-| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 设置，用于为 ClickHouse 服务器配置安全端点和证书验证。                                                       | false |      |
-| `encryption`          | [EncryptionSettings](#encryptionsettings)                                                                     | 加密设置。设置后，将通过专用存储策略为表数据启用静态加密。<br />可通过 `SETTINGS storage_policy = '<policyName>'` 为每张表单独启用。 | false |      |
-| `enableDatabaseSync`  | boolean                                                                                                       | 启用将 ClickHouse 数据库同步到新创建的副本，并在<br />缩容后清理过期副本。<br />仅支持 Replicated 和 integration 数据库。       | false | true |
-| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 配置，将与默认配置合并。                                                                 | false |      |
-| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 用户配置，将与默认配置合并。                                                               | false |      |
+| 字段                      | 类型                                                                                                            | 描述                                                                                                                                                                                              | 是否必填  | 默认值  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- |
+| `defaultUserPassword`   | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | 指定 `default` ClickHouse 用户密码的来源和类型。                                                                                                                                                             | false |      |
+| `logger`                | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse 服务器的日志配置。                                                                                                                                                                            | false |      |
+| `systemLogsTTLDays`     | integer                                                                                                       | 系统日志表 (`query_log`、`part_log`、`text_log`、`metric_log`、<br />`asynchronous_metric_log`) 的保留天数，将在下次服务器重启时作为表生存时间 (TTL) 应用。仅新建集群<br />默认为 30 天；在此字段引入前创建的集群，其表在设置此字段之前不受保留期限限制。<br />设为 0 可禁用 TTL。 | false |      |
+| `tls`                   | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 设置，用于为 ClickHouse 服务器配置安全端点和证书验证。                                                                                                                                                           | false |      |
+| `encryption`            | [EncryptionSettings](#encryptionsettings)                                                                     | 加密设置。设置后，将通过专用存储策略为表数据启用静态加密。<br />可通过 `SETTINGS storage_policy = '<policyName>'` 为每张表单独启用。                                                                                                     | false |      |
+| `enableDatabaseSync`    | boolean                                                                                                       | 启用将 ClickHouse 数据库同步到新创建的副本，并在<br />缩容后清理过期副本。<br />仅支持 Replicated 和 integration 数据库。                                                                                                           | false | true |
+| `extraConfig`           | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 配置，将与默认配置合并。                                                                                                                                                                     | false |      |
+| `extraReloadableConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 配置，将与默认配置合并，并通过<br />重新加载配置生效，无需重启 Pod（容器组）。将配置节放在此处即表示它可以安全地重新加载：<br />如果将只能通过重启生效的设置放在此处，该设置只会在下次重启时生效，且不会报错。                                                                       | false |      |
+| `extraUsersConfig`      | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 用户配置，将与默认配置合并。                                                                                                                                                                   | false |      |
 
 出现于：
 
@@ -205,12 +207,14 @@ ContainerTemplateSpec 描述了集群中各容器的容器配置覆盖项。
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
 | `image`           | [ContainerImage](#containerimage)                                                                                         | Image 是要部署的容器镜像。                                                                                                                                                                                                   | true     |         |
 | `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core)                     | 镜像的 ImagePullPolicy，默认为 IfNotPresent。                                                                                                                                                                              | false    |         |
-| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources 是 server 容器的资源需求。<br />作为整体应用：仅当所有资源字段都为空时，才会使用 operator 默认值。                                                                                                                                            | false    |         |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources 是 服务器 容器的资源需求。<br />作为整体应用：仅当所有资源字段都为空时，才会使用 operator 默认值。                                                                                                                                            | false    |         |
 | `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | VolumeMounts 是容器的卷挂载列表。<br />会与 operator 生成的挂载项拼接。与 operator 挂载共享 `mountPath` 的条目<br />会合并到同一个 projected volume 中。                                                                                                 | false    |         |
 | `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | Env 是要在容器中设置的环境变量列表。<br />按名称与 operator 默认值合并。                                                                                                                                                                     | false    |         |
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext 定义了容器运行时应使用的安全选项。<br />非 nil 的 SecurityContext 会完全替换 operator 默认值；整个<br />结构体都由用户负责。为 nil 时，会保留 operator 默认值。<br />更多信息：https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false    |         |
 | `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe 会覆盖 operator 的默认存活探针。                                                                                                                                                                                | false    |         |
 | `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe 会覆盖 operator 的默认就绪探针。                                                                                                                                                                               | false    |         |
+| `startupProbe`    | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | StartupProbe 在成功前会暂停存活探针和就绪探针，让启动较慢的<br />容器有足够时间完成启动。operator 默认不设置启动探针。                                                                                                                                          | false    |         |
+| `lifecycle`       | [Lifecycle](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#lifecycle-v1-core)                       | Lifecycle 定义了在容器生命周期事件 (PostStart/PreStop) 发生时由 kubelet 节点代理触发的操作。<br />非 nil 的 Lifecycle 会完全替换 operator 默认值；整个结构体都由用户负责。                                                                                          | false    |         |
 
 出现位置：
 
@@ -397,13 +401,13 @@ KeeperSettings 定义 ClickHouse Keeper server 的配置。
 
 LoggerConfig 定义服务器日志配置。
 
-| 字段          | 类型      | 描述                       | 必需    | 默认值   |
-| ----------- | ------- | ------------------------ | ----- | ----- |
-| `logToFile` | boolean | 如果为 false，则禁用所有文件日志。     | false | true  |
-| `jsonLogs`  | boolean | 如果为 true，则以 JSON 格式记录日志。 | false | false |
-| `level`     | string  | 服务器日志记录器的详细程度级别。         | false | trace |
-| `size`      | string  | 日志文件最大大小。                | false | 1000M |
-| `count`     | integer | 保留的日志文件最大数量。             | false | 50    |
+| 字段          | 类型      | 描述                       | 必需    | 默认值         |
+| ----------- | ------- | ------------------------ | ----- | ----------- |
+| `logToFile` | boolean | 如果为 false，则禁用所有文件日志。     | false | true        |
+| `jsonLogs`  | boolean | 如果为 true，则以 JSON 格式记录日志。 | false | false       |
+| `level`     | string  | 服务器日志记录器的详细程度级别。         | false | information |
+| `size`      | string  | 日志文件最大大小。                | false | 100M        |
+| `count`     | integer | 保留的日志文件最大数量。             | false | 10          |
 
 出现在：
 

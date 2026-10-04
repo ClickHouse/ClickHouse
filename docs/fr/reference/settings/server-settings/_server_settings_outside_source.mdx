@@ -843,7 +843,7 @@ La colonne « Example » montre la sortie à `2023-07-06 18:32:07`.
 </logger>
 ```
 
-Pour afficher uniquement les messages de log dans la console :
+Pour afficher uniquement les messages de journal dans la console :
 
 ```xml
 <logger>
@@ -854,7 +854,7 @@ Pour afficher uniquement les messages de log dans la console :
 
 **Redéfinitions par niveau**
 
-Le niveau de log de chaque logger peut être redéfini. Par exemple, pour désactiver tous les messages des loggers &quot;Backup&quot; et &quot;RBAC&quot;.
+Le niveau de journal de chaque logger peut être redéfini. Par exemple, pour désactiver tous les messages des loggers &quot;Backup&quot; et &quot;RBAC&quot;.
 
 ```xml
 <logger>
@@ -873,12 +873,13 @@ Le niveau de log de chaque logger peut être redéfini. Par exemple, pour désac
 
 **syslog**
 
-Pour envoyer également les messages de log à syslog :
+Pour envoyer également les messages de journal à syslog :
 
 ```xml
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -887,22 +888,23 @@ Pour envoyer également les messages de log à syslog :
 </logger>
 ```
 
-Clés pour `<syslog>` :
+Clés pour `<syslog>` :
 
-| Clé        | Description                                                                                                                                                                                                                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | L’adresse de syslog au format `host\[:port\]`. Si elle est omise, le démon local est utilisé.                                                                                                                                                                                                   |
-| `hostname` | Le nom de l’hôte à partir duquel les logs sont envoyés (facultatif).                                                                                                                                                                                                                            |
-| `facility` | Le [mot-clé facility](https://en.wikipedia.org/wiki/Syslog#Facility) de syslog. Il doit être indiqué en majuscules avec le préfixe &quot;LOG&#95;&quot;, par exemple `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Valeur par défaut : `LOG_USER` si `address` est spécifié, `LOG_DAEMON` sinon. |
-| `format`   | Format du message de log. Valeurs possibles : `bsd` et `syslog.`                                                                                                                                                                                                                                |
+| Clé           | Description                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | L’adresse de syslog au format `host\[:port\]`. Si elle est omise, le démon local est utilisé.                                                                                                                                                                                                                                                       |
+| `hostname`    | Le nom de l’hôte à partir duquel les journaux sont envoyés (facultatif).                                                                                                                                                                                                                                                                                |
+| `facility`    | Le [mot-clé facility](https://en.wikipedia.org/wiki/Syslog#Facility) de syslog. Il doit être indiqué en majuscules avec le préfixe &quot;LOG&#95;&quot;, par exemple `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Valeur par défaut : `LOG_USER` si `address` est spécifié, `LOG_DAEMON` sinon.                                                     |
+| `format`      | Format du message de journal. Valeurs possibles : `bsd` et `syslog.`                                                                                                                                                                                                                                                                                    |
+| `programname` | Nom du programme utilisé dans les messages syslog : l’identifiant (ident) syslog local, ou la valeur `APP-NAME` pour un syslog distant avec `format=syslog`. Sans effet avec `format=bsd`. De 1 à 48 caractères ASCII imprimables, sans espaces. Valeur par défaut : le nom de la commande pour le syslog local, non défini pour le syslog distant. |
 
-**Formats de logs**
+**Formats de journaux**
 
-Vous pouvez spécifier le format de log qui sera affiché dans les logs de la console. Actuellement, seul JSON est pris en charge.
+Vous pouvez spécifier le format de journal qui sera affiché dans les journaux de la console. Actuellement, seul JSON est pris en charge.
 
 **Exemple**
 
-Voici un exemple de log JSON en sortie :
+Voici un exemple de journal JSON en sortie :
 
 ```json
 {
@@ -919,7 +921,7 @@ Voici un exemple de log JSON en sortie :
 }
 ```
 
-Pour activer la prise en charge de la journalisation au format JSON, utilisez l&#39;extrait suivant :
+Pour activer la prise en charge de la journalisation au format JSON, utilisez l&#39;extrait suivant :
 
 ```xml
 <logger>
@@ -942,13 +944,13 @@ Pour activer la prise en charge de la journalisation au format JSON, utilisez l&
 </logger>
 ```
 
-**Renommer les clés des logs JSON**
+**Renommer les clés des journaux JSON**
 
 Les noms de clés peuvent être modifiés en changeant les valeurs des balises à l’intérieur de la balise `<names>`. Par exemple, pour remplacer `DATE_TIME` par `MY_DATE_TIME`, vous pouvez utiliser `<date_time>MY_DATE_TIME</date_time>`.
 
-**Omettre des clés dans les logs JSON**
+**Omettre des clés dans les journaux JSON**
 
-Les propriétés des logs peuvent être omises en les mettant en commentaire. Par exemple, si vous ne voulez pas que votre log affiche `query_id`, vous pouvez mettre la balise `<query_id>` en commentaire.
+Les propriétés des journaux peuvent être omises en les mettant en commentaire. Par exemple, si vous ne voulez pas que votre journal affiche `query_id`, vous pouvez mettre la balise `<query_id>` en commentaire.
 
 ## send_crash_reports {#send_crash_reports}
 
@@ -1264,6 +1266,33 @@ Clés des paramètres côté serveur et client :
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+La zone de disponibilité et la région cloud où s’exécute le serveur. Le client ZooKeeper utilise la zone de disponibilité pour privilégier les hôtes de la même zone (`prefer_local_availability_zone` dans la section [zookeeper](#zookeeper)). ClickHouse Keeper la publie également dans le nœud `/keeper/availability_zone`.
+
+En l’absence de la section `placement`, la zone de disponibilité et la région sont vides.
+
+Les paramètres suivants sont disponibles :
+
+| Paramètre                     | Description                                                                                                                                                                                                                 | Valeur par défaut                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Récupère la zone de disponibilité auprès du service de métadonnées de l’instance du fournisseur cloud : AWS d’abord, puis GCP. Si ce paramètre est activé, tous les autres paramètres sont ignorés et la région reste vide. | `false`                              |
+| `availability_zone`           | La zone de disponibilité.                                                                                                                                                                                                   | Vide                                 |
+| `availability_zone_from_file` | Le fichier à partir duquel lire la zone de disponibilité lorsque `availability_zone` est vide. Si le fichier n’existe pas, la zone de disponibilité reste vide.                                                             | `/run/instance-metadata/node-zone`   |
+| `region`                      | La région.                                                                                                                                                                                                                  | Vide                                 |
+| `region_from_file`            | Le fichier à partir duquel lire la région lorsque `region` est vide. Si le fichier n’existe pas, la région reste vide.                                                                                                      | `/run/instance-metadata/node-region` |
+
+Les informations de placement ne sont lues qu’une fois, au démarrage du serveur.
+
+**Exemple**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1610,26 +1639,26 @@ Le fichier de configuration du serveur `config.xml` par défaut contient la sect
 
 ## create_union_system_log_tables {#create_union_system_log_tables}
 
-Demande la création de tables `all_...` à côté des tables de logs système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de logs correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
+Demande la création de tables `all_...` à côté des tables de journaux système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de journaux correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-Cette section est facultative. Si elle est présente, au moins l’un des paramètres suivants doit être spécifié :
+Cette section est facultative. Le fichier de configuration par défaut du serveur, `config.xml`, contient cette section avec `merge_rotated_tables` activé : les tables `all_...` sont donc créées automatiquement sur un serveur avec la configuration par défaut, lors du premier flush de chaque journal, ou au démarrage si `prepare_system_log_tables_on_startup` est activé. Le paramètre `cluster`, en revanche, doit être configuré explicitement. Une table qui existe déjà sous l’un des noms `all_...` et qui n’a pas été créée par cette fonctionnalité (par exemple, une table créée manuellement et contenant des données) n’est jamais remplacée : elle est laissée intacte, un avertissement est consigné dans le journal du serveur, et la table d’union est créée lors du flush suivant du journal, une fois cette table supprimée ou renommée. Les tables créées par cette fonctionnalité sont reconnaissables à la phrase marqueur figurant à la fin de leur commentaire : `It is safe to drop this table at any time: it will be recreated automatically.` Si la section est présente, au moins l’un des paramètres suivants doit être spécifié :
 
 | Paramètre              | Description                                                                                                                                                                                                                                                                                   |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de logs et de ses versions après rotation à l’aide de la fonction de table `merge`.                                                                                                                                         |
+| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de journaux et de ses versions après rotation à l’aide de la fonction de table `merge`.                                                                                                                                         |
 | `cluster`              | Si ce paramètre est spécifié, la table `all_...` sélectionne les données de toutes les répliques de ce cluster à l’aide de la fonction de table `clusterAllReplicas` (avec `SETTINGS skip_unavailable_shards = 1`, afin que les répliques indisponibles ne fassent pas échouer les requêtes). |
 
 Si les deux paramètres sont spécifiés, la table est l’union des tables après rotation sur toutes les répliques du cluster.
 
-Cette option s’applique à toutes les tables de logs système ; elle ne permet pas de définir une configuration différente pour chaque log système. Les tables sont créées dans la même base de données que les tables de logs système lors du premier flush de chaque log et sont automatiquement recréées lorsque la structure de la table de logs change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création n’est prise en charge que pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
+Cette option s’applique à toutes les tables de journaux système ; elle ne permet pas de définir une configuration différente pour chaque journal système. Les tables sont créées dans la même base de données que les tables de journaux système lors du premier flush de chaque journal et sont automatiquement recréées lorsque la structure de la table de journaux change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création n’est prise en charge que pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
 
 <Note>
   Lorsque le paramètre `cluster` est utilisé, la définition de la table fait référence au cluster, qui doit exister pour que la table puisse être chargée. Si vous supprimez le cluster de la configuration, supprimez également les tables `all_...` (elles seront recréées conformément à la nouvelle configuration lors du prochain flush).
 </Note>
 
-<Warning>
-  Une fois cette section activée, les noms `all_...` de la base de données `system` sont réservés à cette fonctionnalité. N’utilisez pas ces noms pour vos propres tables : renommez toute table concernée avant d’activer la section.
-</Warning>
+<Note>
+  Une table portant l’un des noms `all_...` n’est considérée comme créée par cette fonctionnalité, et n’est susceptible d’être remplacée lorsque sa définition diffère de celle attendue, que si elle sélectionne ses données à partir de la fonction de table `merge` ou `clusterAllReplicas` et que son commentaire contient la phrase marqueur ci-dessus. Ne copiez pas cette phrase dans les commentaires de vos propres tables.
+</Note>
 
 **Exemple**
 

@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Opérateurs",
           "pages": [
-            "fr/reference/operators/index",
-            "fr/reference/operators/exists",
-            "fr/reference/operators/distributed-ddl"
+            "fr/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "fr/reference/engines/database-engines/index",
             "fr/reference/engines/database-engines/atomic",
             "fr/reference/engines/database-engines/backup",
+            "fr/reference/engines/database-engines/cluster",
             "fr/reference/engines/database-engines/datalake",
             "fr/reference/engines/database-engines/dictionary",
             "fr/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "fr/reference/formats/SQLInsert",
+        "fr/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1020,6 +1020,7 @@
         "fr/reference/system-tables/codecs",
         "fr/reference/system-tables/collations",
         "fr/reference/system-tables/columns",
+        "fr/reference/system-tables/columns_cache",
         "fr/reference/system-tables/completions",
         "fr/reference/system-tables/constraints",
         "fr/reference/system-tables/contributors",

@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operadores",
           "pages": [
-            "pt-BR/reference/operators/index",
-            "pt-BR/reference/operators/exists",
-            "pt-BR/reference/operators/distributed-ddl"
+            "pt-BR/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "pt-BR/reference/engines/database-engines/index",
             "pt-BR/reference/engines/database-engines/atomic",
             "pt-BR/reference/engines/database-engines/backup",
+            "pt-BR/reference/engines/database-engines/cluster",
             "pt-BR/reference/engines/database-engines/datalake",
             "pt-BR/reference/engines/database-engines/dictionary",
             "pt-BR/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "pt-BR/reference/formats/SQLInsert",
+        "pt-BR/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -995,7 +995,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Tabelas do sistema",
+      "group": "Tabelas de sistema",
       "pages": [
         "pt-BR/reference/system-tables/overview",
         "pt-BR/reference/system-tables/aggregate_function_combinators",
@@ -1020,6 +1020,7 @@
         "pt-BR/reference/system-tables/codecs",
         "pt-BR/reference/system-tables/collations",
         "pt-BR/reference/system-tables/columns",
+        "pt-BR/reference/system-tables/columns_cache",
         "pt-BR/reference/system-tables/completions",
         "pt-BR/reference/system-tables/constraints",
         "pt-BR/reference/system-tables/contributors",

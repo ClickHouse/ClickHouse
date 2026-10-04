@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="allow_suspicious_codecs">
-  ## allow_suspicious_codecs
-</div>
+## allow_suspicious_codecs {#allow_suspicious_codecs}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,27 +21,23 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 true로 설정하면 무의미한 압축 코덱을 지정할 수 있습니다.
 
-<div id="allow_suspicious_fixed_string_types">
-  ## allow_suspicious_fixed_string_types
-</div>
+## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 CREATE TABLE 문에서 n &gt; 256인 FixedString(n) 타입의 컬럼을 생성할 수 있도록 합니다. 길이가 256 이상인 FixedString은 일반적이지 않으며, 대부분 잘못 사용한 것일 가능성이 높습니다.
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indexes {#allow_suspicious_indexes}
+
+**별칭**: `allow_suspicious_indices`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "true인 경우 동일한 표현식으로 인덱스를 정의할 수 있습니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`allow_suspicious_indices` 설정의 별칭을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "true인 경우 동일한 표현식으로 인덱스를 정의할 수 있습니다"}]}]} />
 
 동일한 표현식을 가진 프라이머리/세컨더리 인덱스와 정렬 키를 거부합니다
 
-<div id="allow_suspicious_low_cardinality_types">
-  ## allow_suspicious_low_cardinality_types
-</div>
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,9 +56,7 @@ CREATE TABLE 문에서 n &gt; 256인 FixedString(n) 타입의 컬럼을 생성�
 * 1 — `LowCardinality` 사용이 제한되지 않습니다.
 * 0 — `LowCardinality` 사용이 제한됩니다.
 
-<div id="allow_suspicious_primary_key">
-  ## allow_suspicious_primary_key
-</div>
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,9 +64,7 @@ CREATE TABLE 문에서 n &gt; 256인 FixedString(n) 타입의 컬럼을 생성�
 
 MergeTree에서 의심스러운 `PRIMARY KEY`/`ORDER BY`(예: SimpleAggregateFunction)를 허용합니다.
 
-<div id="allow_suspicious_ttl_expressions">
-  ## allow_suspicious_ttl_expressions
-</div>
+## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,9 +72,7 @@ MergeTree에서 의심스러운 `PRIMARY KEY`/`ORDER BY`(예: SimpleAggregateFun
 
 테이블의 어떤 컬럼에도 의존하지 않는 TTL 표현식은 거부합니다. 이는 대부분 사용자 오류를 의미합니다.
 
-<div id="allow_suspicious_types_in_group_by">
-  ## allow_suspicious_types_in_group_by
-</div>
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -92,9 +80,7 @@ MergeTree에서 의심스러운 `PRIMARY KEY`/`ORDER BY`(예: SimpleAggregateFun
 
 GROUP BY 키로 [Variant](/ko/reference/data-types/variant) 및 [Dynamic](/ko/reference/data-types/dynamic) 타입을 사용하는 것을 허용하거나 제한합니다.
 
-<div id="allow_suspicious_types_in_order_by">
-  ## allow_suspicious_types_in_order_by
-</div>
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,9 +88,7 @@ GROUP BY 키로 [Variant](/ko/reference/data-types/variant) 및 [Dynamic](/ko/re
 
 ORDER BY 키에 [Variant](/ko/reference/data-types/variant) 및 [Dynamic](/ko/reference/data-types/dynamic) 타입을 사용할 수 있도록 허용하거나 제한합니다.
 
-<div id="allow_suspicious_variant_types">
-  ## allow_suspicious_variant_types
-</div>
+## allow_suspicious_variant_types {#allow_suspicious_variant_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

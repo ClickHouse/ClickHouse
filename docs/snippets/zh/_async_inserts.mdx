@@ -28,9 +28,7 @@ title: 异步插入
 
 这一批处理过程对客户端是透明的，并帮助 ClickHouse 高效合并来自多个来源的插入流量。不过，在发生刷写之前，这些数据无法被查询。需要特别注意的是，针对每种插入形态与设置组合，都会有多个缓冲区；而在集群中，缓冲区则按节点分别维护——从而能够在多租户环境中实现细粒度控制。除此之外，插入机制与[同步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default)中描述的内容完全相同。
 
-<div id="choosing-a-return-mode">
-  ### 选择返回模式
-</div>
+### 选择返回模式 {#choosing-a-return-mode}
 
 可以通过 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置进一步细化异步插入的行为。
 
@@ -46,19 +44,17 @@ title: 异步插入
 
 我们的强烈建议是：如果使用异步插入，请使用 `async_insert=1,wait_for_async_insert=1`。使用 `wait_for_async_insert=0` 风险很高，因为即使发生错误，你的 INSERT 客户端也可能毫不知情；此外，如果客户端在 ClickHouse server 需要降低写入速度并施加反压以确保服务可靠性时仍持续快速写入，还可能导致潜在过载。
 
-<div id="adaptive-async-inserts">
-  ### 自适应异步插入
-</div>
+### 自适应异步插入 {#adaptive-async-inserts}
 
 从 24.2 版本开始，ClickHouse 默认使用自适应刷写超时 ([`async_insert_use_adaptive_busy_timeout`](/zh/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout))。不再使用固定的刷写间隔，而是根据传入数据速率，在最小值 ([`async_insert_busy_timeout_min_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms)，默认 50 毫秒) 和最大值 ([`async_insert_busy_timeout_max_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)，默认 200 毫秒，Cloud 上为 1000 毫秒) 之间动态调整超时。
 
 当数据频繁到达时，超时会保持更接近最小值，以便更早刷写并降低端到端延迟。当数据较为稀疏时，超时则会增大并趋近最大值，以积累更大的批次。这在默认模式 (`wait_for_async_insert=1`) 下尤其有用，因为如果使用固定且较高的超时，即使数据已经可以刷写，客户端仍需阻塞等待整个时间间隔结束。
 
-<div id="error-handling">
-  ### 错误处理
-</div>
+### 错误处理 {#error-handling}
 
 Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到插入时进行。如果某个插入查询中的任意一行出现解析错误或类型错误，**该查询中的所有数据都不会被 刷写**——整个查询的载荷都会被拒绝。在默认模式 (`wait_for_async_insert=1`) 下，错误会返回给客户端。在发出即忘模式下，错误会被写入服务器日志和 [`system.asynchronous_inserts`](/zh/reference/system-tables/asynchronous_inserts) 表。
+
+目标端的查找和授权也会在刷写时，依据届时的目录和访问控制状态重新评估，而不是依据收到插入时的状态。在收到插入后、刷写缓冲区前，如果有 materialized view 关联到目标端，或有授权被撤销，都会影响此次刷写。
 
 每次 刷写 都会针对缓冲区中每个不同的分区键值至少创建一个 part。即使对于没有分区键的表，如果缓冲数据超过 [`max_insert_block_size`](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) (默认约 100 万行) ，单次 刷写 也可能生成多个 parts。
 
@@ -66,9 +62,7 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
   即使使用了异步插入，如果分区键的基数较高，你仍然可能遇到[&quot;parts 过多&quot;](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### 去重与可靠性
-</div>
+### 去重与可靠性 {#deduplication-and-reliability}
 
 自 26.2 版本起，ClickHouse 会自动对异步插入和同步插入进行去重，因此，对于保留去重日志的表，可以安全地重试插入操作。`*ReplicatedMergeTree` 引擎默认保留去重日志；普通的 `MergeTree` 表则需将 `non_replicated_deduplication_window` 设置为正值。这两种插入类型均由 [`deduplicate_insert`](/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 控制，默认值为 `enable`。支持依赖的 materialized view。
 
@@ -76,20 +70,22 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
 
 有关详细信息，以及异步插入时 materialized view 的唯一限制，请参阅[重试时对插入进行去重](/zh/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts)。
 
-<div id="enabling-asynchronous-inserts">
-  ### 启用异步插入
-</div>
+### 启用异步插入 {#enabling-asynchronous-inserts}
 
 可以为特定用户或特定查询启用异步插入：
 
 * 在用户级别启用异步插入。此示例使用用户 `default`；如果你创建了其他用户，请将其替换为相应的用户名：
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * 你可以通过插入查询的 SETTINGS 子句指定异步插入设置：
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * 使用 ClickHouse 编程语言客户端时，也可以将异步插入设置指定为连接参数。
 
   例如，使用 ClickHouse Java JDBC 驱动连接到 ClickHouse Cloud 时，可以在 JDBC 连接字符串中这样设置：
@@ -99,11 +95,11 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
   ```
 
 <Note>
-  异步插入不适用于 `INSERT INTO ... SELECT` 查询。当插入包含 `SELECT` 子句时，无论 `async_insert` 设置如何，查询始终都会同步执行。
+  当 `async_insert = 1`，且整个结果可放入一个不超过 `async_insert_max_data_size` 的块时，`INSERT ... SELECT` 也可以通过异步插入队列执行；否则会同步执行。这种执行方式有独立的适用条件、写入统计方式和取消行为。详情请参阅[异步 `INSERT ... SELECT`](/zh/concepts/features/operations/insert/async-insert-select)。
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### 关闭时刷新缓冲区
+  ### 关闭时刷新缓冲区 {#flushing-buffers-on-shutdown}
 </div>
 
 如需刷新所有待处理的 async insert 缓冲区 (例如在优雅关闭期间或维护前) ，请运行：
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 这可确保在服务器停止前，所有缓冲的数据都会先写入存储。
 
 <div id="comparison-with-buffer-tables">
-  ### 与缓冲表的比较
+  ### 与缓冲表的比较 {#comparison-with-buffer-tables}
 </div>
 
 异步插入是 [缓冲表](/zh/reference/engines/table-engines/special/buffer) 的现代替代方案。主要区别如下：

@@ -879,6 +879,7 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 
 `<syslog>` で使用できるキー:
 
-| Key        | Description                                                                                                                                                                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
-| `hostname` | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
-| `facility` | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
-| `format`   | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| Key           | Description                                                                                                                                                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
+| `hostname`    | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
+| `facility`    | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
+| `format`      | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| `programname` | syslog メッセージで使用するプログラム名です。ローカル syslog では ident、`format=syslog` のリモート syslog では `APP-NAME` として使用されます。`format=bsd` の場合は効果がありません。空白を含まない、1〜48 文字の印字可能な ASCII 文字で指定します。デフォルト値は、ローカル syslog の場合はコマンド名で、リモート syslog の場合は未設定です。                 |
 
 **ログフォーマット**
 
@@ -925,7 +927,7 @@ JSON 形式のログ出力を有効にするには、次のスニペットを使
 <logger>
     <formatting>
         <type>json</type>
-        <!-- チャネルごと（log、errorlog、console、syslog）に設定することも、すべてのチャネルに対してグローバルに設定することもできます（グローバルに設定する場合はこのタグを省略してください）。 -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
@@ -1263,6 +1265,33 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+サーバーが稼働するクラウドのアベイラビリティゾーンとリージョンを指定します。アベイラビリティゾーンは、ZooKeeper クライアントが同じゾーン内のホストを優先するために使用します ([zookeeper](#zookeeper) セクションの `prefer_local_availability_zone`) 。ClickHouse Keeper もこの情報を使用し、`/keeper/availability_zone` ノードで公開します。
+
+`placement` セクションがない場合、アベイラビリティゾーンとリージョンは空になります。
+
+以下の設定を使用できます。
+
+| 設定                            | 説明                                                                                                | デフォルト値                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | クラウドプロバイダーのインスタンスメタデータサービスからアベイラビリティゾーンを取得します。AWS、GCP の順に試行します。有効にすると、ほかの設定はすべて無視され、リージョンは空になります。 | `false`                              |
+| `availability_zone`           | アベイラビリティゾーン。                                                                                      | 空                                    |
+| `availability_zone_from_file` | `availability_zone` が空の場合に、アベイラビリティゾーンを読み取る元のファイル。ファイルが存在しない場合、アベイラビリティゾーンは空になります。                | `/run/instance-metadata/node-zone`   |
+| `region`                      | リージョン。                                                                                            | 空                                    |
+| `region_from_file`            | `region` が空の場合に、リージョンを読み取る元のファイル。ファイルが存在しない場合、リージョンは空になります。                                       | `/run/instance-metadata/node-region` |
+
+配置先の情報は、サーバーの起動時に一度だけ読み取られます。
+
+**例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1611,7 +1640,7 @@ curl 127.0.0.1:9363/metrics
 
 システムログテーブルと同じ場所に `all_...` テーブル (`system.query_log` に対応する `system.all_query_log`、`system.text_log` に対応する `system.all_text_log` など) を作成するよう要求します。このテーブルは、対応するログテーブル、そのローテーションされたバージョン (`query_log_0`、`query_log_1`、…) 、および／またはクラスター内のすべてのレプリカにある同じテーブルをユニオンしたもので、`clusterAllReplicas(default, merge(system, '^query_log'))` のような構文を覚えなくても、これらすべてを一度にクエリできます。
 
-このセクションは任意です。指定する場合は、以下の設定の少なくとも1つを指定する必要があります。
+このセクションは任意です。デフォルトのサーバー設定ファイル `config.xml` には、`merge_rotated_tables` を有効にした状態でこのセクションが含まれているため、デフォルト構成のサーバーでは `all_...` テーブルが自動的に作成されます。作成タイミングは各ログの最初のフラッシュ時、または `prepare_system_log_tables_on_startup` が有効な場合は起動時です。なお、`cluster` 設定は明示的に指定する必要があります。`all_...` のいずれかの名前で既に存在し、この機能によって作成されたものではないテーブル (たとえば、データを含む手動で作成したテーブル) が置き換えられることはありません。そのテーブルはそのまま残され、サーバーログに警告が出力されます。そのテーブルを削除またはリネームすると、次回のログのフラッシュ時にユニオンテーブルが作成されます。この機能によって作成されたテーブルは、コメント末尾の目印となる文 `It is safe to drop this table at any time: it will be recreated automatically.` によって識別されます。セクションを指定する場合は、以下の設定の少なくとも1つを指定する必要があります。
 
 | 設定                     | 説明                                                                                                                                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1626,9 +1655,9 @@ curl 127.0.0.1:9363/metrics
   `cluster` 設定を使用する場合、テーブル定義がクラスターを参照するため、テーブルをロードするにはクラスターが存在している必要があります。設定からクラスターを削除する場合は、`all_...` テーブルも削除してください (次回のフラッシュ時に、新しい設定に従って再作成されます) 。
 </Note>
 
-<Warning>
-  このセクションを有効にすると、`system` データベース内の `all_...` という名前はこの機能用に予約されます。これらの名前の独自テーブルは置かないでください。該当するテーブルがある場合は、このセクションを有効にする前にリネームしてください。
-</Warning>
+<Note>
+  `all_...` のいずれかの名前を持つテーブルがこの機能によって作成されたものとみなされ、定義が想定と異なる場合に置き換えの対象となるのは、そのテーブルが `merge` または `clusterAllReplicas` テーブル関数からデータを選択し、かつコメントに上記の目印となる文が含まれている場合に限られます。この文を独自のテーブルのコメントにコピーしないでください。
+</Note>
 
 **例**
 

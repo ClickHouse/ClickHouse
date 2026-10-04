@@ -15,7 +15,7 @@ doc_type: 'guide'
 | ---- | ----- | --------- |
 | ✔    | ✔     |           |
 
-## Описание
+## Описание {#description}
 
 Формат `Protobuf` — это формат [Protocol Buffers](https://protobuf.dev/).
 
@@ -109,9 +109,9 @@ Enum (а также Enum8 или Enum16) должен содержать 0 дл�
 ClickHouse принимает и выводит protobuf-сообщения в формате `с префиксом длины`.
 Это означает, что перед каждым сообщением его длина должна быть записана как [целое число переменной длины (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 
-## Пример использования
+## Пример использования {#example-usage}
 
-### Чтение и запись данных
+### Чтение и запись данных {#basic-examples}
 
 <Note title="Файлы примера">
   Файлы, используемые в этом примере, доступны в [репозитории с примерами](https://github.com/ClickHouse/formats/ProtoBuf)
@@ -274,9 +274,9 @@ SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickho
 
 Имея схему Protobuf, теперь вы можете десериализовать данные, записанные ClickHouse в файл `protobuf_message_from_clickhouse.bin`.
 
-### Чтение и запись данных с помощью ClickHouse Cloud
+### Чтение и запись данных с помощью ClickHouse Cloud {#basic-examples-cloud}
 
-В ClickHouse Cloud нельзя загрузить файл схемы Protobuf. Однако можно использовать SETTING `format_protobuf_schema`,
+В ClickHouse Cloud нельзя загрузить файл схемы Protobuf. Однако можно использовать SETTING `format_schema_source`,
 чтобы указать схему в запросе. В этом примере мы покажем, как считать сериализованные данные с локальной
 машины и вставить их в таблицу в ClickHouse Cloud.
 
@@ -302,18 +302,18 @@ SETTING `format_schema_source` задаёт источник для SETTING `for
 * &#39;string&#39;: `format_schema` содержит буквальное содержимое схемы.
 * &#39;query&#39;: `format_schema` — это запрос для получения схемы.
 
-### `format_schema_source='string'`
+### `format_schema_source='string'` {#format-schema-source-string}
 
 Чтобы выполнить вставку данных в ClickHouse Cloud, указав схему строкой, выполните:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
 Выберите вставленные в таблицу данные:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -322,14 +322,14 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### `format_schema_source='query'`
+### `format_schema_source='query'` {#format-schema-source-query}
 
-Вы также можете хранить схему Protobuf в таблице.
+Схему Protobuf также можно хранить в таблице.
 
-Создайте в ClickHouse Cloud таблицу, в которую будут вставляться данные:
+Создайте в ClickHouse Cloud таблицу для вставки данных:
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -337,19 +337,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-Вставьте данные в ClickHouse Cloud, указав схему в запросе, который нужно выполнить:
+Если вы уже выполнили предыдущий пример, сначала очистите таблицу, чтобы получить приведённый ниже результат:
 
-```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```sql
+TRUNCATE TABLE test.protobuf_messages;
 ```
 
-Выберите данные, которые были вставлены в таблицу:
+Вставьте данные в ClickHouse Cloud, указав схему в виде запроса, который нужно выполнить.
+Выполняйте эту вставку через [HTTP-интерфейс](/ru/concepts/features/interfaces/http#insert-protobuf): в этом случае данные разбирает сервер, и он же выполняет запрос схемы. `clickhouse client` разбирает входные данные на стороне клиента, и там запрос схемы завершается ошибкой.
+Параметр `--url-query` утилиты curl (curl 7.87 и новее) кодирует каждый параметр для URL, поэтому и запрос, и запрос схемы можно записать как есть:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
+```
+
+Выполните выборку данных, вставленных в таблицу:
+
+```bash
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -358,7 +371,7 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### Использование автоматически сгенерированной схемы
+### Использование автоматически сгенерированной схемы {#using-autogenerated-protobuf-schema}
 
 Если у вас нет внешней схемы Protobuf для ваших данных, вы всё равно можете выводить и читать данные в формате Protobuf,
 используя автоматически сгенерированную схему. Для этого используйте SETTING `format_protobuf_use_autogenerated_schema`.
@@ -388,7 +401,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 В этом случае автоматически сгенерированная схема Protobuf будет сохранена в файле `path/to/schema/schema.capnp`.
 
-### Очистка кэша protobuf
+### Очистка кэша protobuf {#drop-protobuf-cache}
 
 Чтобы перезагрузить схему Protobuf, загруженную из [`format_schema_path`](/ru/reference/settings/server-settings/settings/format#format_schema_path), используйте оператор [`SYSTEM DROP ... FORMAT CACHE`](/ru/reference/statements/system#system-drop-schema-format).
 

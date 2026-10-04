@@ -17,22 +17,26 @@ doc_type: 'reference'
 **구문**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE`와 `IF NOT EXISTS`는 함께 사용할 수 없습니다. 기존 컬렉션에 `CREATE OR REPLACE`를 실행하면
+컬렉션 전체가 대체되며, 새 정의에 포함되지 않은 키와 재정의 가능 여부 플래그는 제거됩니다.
+
 **예시**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **관련 SQL 문**
 
-* [CREATE NAMED COLLECTION](/ko/reference/statements/alter/named-collection)
+* [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)
 * [DROP NAMED COLLECTION](/ko/reference/statements/drop#drop-function)
 
 **관련 항목**

@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_async_executor_for_materialized_views">
-  ## use_async_executor_for_materialized_views
-</div>
+## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,9 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Utilise une exécution asynchrone et potentiellement multithreadée de la requête de vue matérialisée, ce qui peut accélérer le traitement des vues lors des INSERT, mais consomme aussi davantage de mémoire.
 
-<div id="use_cache_for_count_from_files">
-  ## use_cache_for_count_from_files
-</div>
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,37 +30,13 @@ Active la mise en cache du nombre de lignes lors du comptage depuis des fichiers
 
 Activé par défaut.
 
-<div id="use_client_time_zone">
-  ## use_client_time_zone
-</div>
+## use_client_time_zone {#use_client_time_zone}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Utilise le fuseau horaire du client pour interpréter les valeurs de chaîne DateTime, au lieu de celui du serveur.
 
-<div id="use_compact_format_in_distributed_parts_names">
-  ## use_compact_format_in_distributed_parts_names
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Utilise par défaut le format compact pour les INSERT asynchrones dans les tables Distributed"}]}]} />
-
-Utilise le format compact pour stocker les blocs des INSERT en arrière-plan (`distributed_foreground_insert`) dans les tables utilisant le moteur `Distributed`.
-
-Valeurs possibles :
-
-* 0 — Utilise le format de répertoire `user[:password]@host:port#default_database`.
-* 1 — Utilise le format de répertoire `[shard{shard_index}[_replica{replica_index}]]`.
-
-<Note>
-  - avec `use_compact_format_in_distributed_parts_names=0`, les modifications de la définition du cluster ne seront pas appliquées aux INSERT en arrière-plan.
-  - avec `use_compact_format_in_distributed_parts_names=1`, modifier l’ordre des nœuds dans la définition du cluster changera `shard_index`/`replica_index` ; tenez-en compte.
-</Note>
-
-<div id="use_concurrency_control">
-  ## use_concurrency_control
-</div>
+## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -72,9 +44,7 @@ Valeurs possibles :
 
 Respecte le contrôle de la concurrence du serveur (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`). Si ce paramètre est désactivé, il permet d&#39;utiliser un plus grand nombre de threads même si le serveur est surchargé (non recommandé en usage normal, et surtout nécessaire pour les tests).
 
-<div id="use_constant_folding_in_index_analysis">
-  ## use_constant_folding_in_index_analysis
-</div>
+## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +65,7 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
-<div id="use_hash_table_stats_for_join_reordering">
-  ## use_hash_table_stats_for_join_reordering
-</div>
+## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -105,9 +73,7 @@ Valeurs possibles :
 
 Active l’utilisation des statistiques de table de hachage collectées pour l’estimation de la cardinalité lors de la réorganisation des jointures
 
-<div id="use_hedged_requests">
-  ## use_hedged_requests
-</div>
+## use_hedged_requests {#use_hedged_requests}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,9 +88,7 @@ Activé par défaut.
 
 Valeur par défaut dans Cloud : `0`.
 
-<div id="use_hive_partitioning">
-  ## use_hive_partitioning
-</div>
+## use_hive_partitioning {#use_hive_partitioning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -132,9 +96,7 @@ Valeur par défaut dans Cloud : `0`.
 
 Lorsqu’il est activé, ClickHouse détecte le partitionnement de style Hive dans le chemin (`/name=value/`) des moteurs de table de type fichier [File](/fr/reference/functions/table-functions/file#hive-style-partitioning)/[S3](/fr/reference/functions/table-functions/s3#hive-style-partitioning)/[URL](/fr/reference/functions/table-functions/url#hive-style-partitioning)/[HDFS](/fr/reference/functions/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#hive-style-partitioning), et permet d’utiliser les colonnes de partition comme colonnes virtuelles dans les requêtes. Ces colonnes virtuelles porteront les mêmes noms que dans le chemin partitionné, précédés de `_`.
 
-<div id="use_indexes_refiner_in_read_pools">
-  ## use_indexes_refiner_in_read_pools
-</div>
+## use_indexes_refiner_in_read_pools {#use_indexes_refiner_in_read_pools}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -144,9 +106,7 @@ Applique les index évalués lors de la lecture des données directement dans le
 
 Dans le pool de lecture avec prélecture, les plages exclues ne sont jamais préchargées, mais les limites des tâches et l’admission de la prélecture via `filesystem_prefetch_max_memory_usage` / `filesystem_prefetches_limit` sont toujours déterminées avant le filtrage ; avec des filtres très sélectifs, les tâches restantes peuvent donc être plus petites que la taille de tâche prévue et l’admission peut être prudente.
 
-<div id="use_join_disjunctions_push_down">
-  ## use_join_disjunctions_push_down
-</div>
+## use_join_disjunctions_push_down {#use_join_disjunctions_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,9 +117,7 @@ Cela permet aux moteurs de stockage de filtrer plus tôt, ce qui peut réduire l
 L&#39;optimisation préserve la sémantique et n&#39;est appliquée que lorsque chaque branche OR de premier niveau apporte au moins un
 prédicat déterministe pour le côté cible.
 
-<div id="use_legacy_to_time">
-  ## use_legacy_to_time
-</div>
+## use_legacy_to_time {#use_legacy_to_time}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -173,9 +131,7 @@ qui convertit des valeurs de différents types en type [`Time`](/fr/reference/da
 La fonction legacy reste également accessible sans condition sous le nom `toTimeWithFixedDate`, indépendamment de ce paramètre.
 Lorsque ce paramètre est activé, utilisez `CAST(x AS Time)` ou `x::Time` pour convertir vers le type `Time`.
 
-<div id="use_lightweight_primary_key_index_analysis">
-  ## use_lightweight_primary_key_index_analysis
-</div>
+## use_lightweight_primary_key_index_analysis {#use_lightweight_primary_key_index_analysis}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -190,9 +146,7 @@ Valeurs possibles :
 * 0 — Désactivé. Toutes les colonnes de la clé primaire sont traitées lors de l’analyse d’index.
 * 1 — Activé.
 
-<div id="use_parquet_metadata_cache">
-  ## use_parquet_metadata_cache
-</div>
+## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -205,9 +159,7 @@ Valeurs possibles :
 * 0 - Désactivé
 * 1 - Activé
 
-<div id="use_primary_key">
-  ## use_primary_key
-</div>
+## use_primary_key {#use_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +172,7 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
-<div id="use_reader_executor">
-  ## use_reader_executor
-</div>
+## use_reader_executor {#use_reader_executor}
 
 <ExperimentalBadge />
 
@@ -232,9 +182,7 @@ Valeurs possibles :
 
 Expérimental. Achemine les lectures via le nouveau pipeline `ReaderExecutor` au lieu de la matriochka legacy des tampons de lecture. Bascule sur le chemin legacy pour les configurations que l&#39;exécuteur ne prend pas encore en charge.
 
-<div id="use_roaring_bitmap_iceberg_positional_deletes">
-  ## use_roaring_bitmap_iceberg_positional_deletes
-</div>
+## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -242,9 +190,7 @@ Expérimental. Achemine les lectures via le nouveau pipeline `ReaderExecutor` au
 
 Utiliser un bitmap roaring pour les suppressions positionnelles d’Iceberg.
 
-<div id="use_streaming_marks_compression">
-  ## use_streaming_marks_compression
-</div>
+## use_streaming_marks_compression {#use_streaming_marks_compression}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -252,9 +198,7 @@ Utiliser un bitmap roaring pour les suppressions positionnelles d’Iceberg.
 
 Lors du chargement des marks pour les parts MergeTree, compressez-les dans leur représentation en mémoire un bloc à la fois (streaming), au lieu de matérialiser d’abord l’ensemble du tableau de marks bruts. Cela réduit considérablement le pic de mémoire lors du chargement des marks pour les compact parts avec de nombreux sous-flux (par exemple, les tables avec des colonnes JSON et `write_marks_for_substreams_in_compact_parts` activé).
 
-<div id="use_strict_insert_block_limits">
-  ## use_strict_insert_block_limits
-</div>
+## use_strict_insert_block_limits {#use_strict_insert_block_limits}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -277,9 +221,7 @@ Lorsqu’il est désactivé, un bloc est émis lorsque :
 
 Désactivé par défaut.
 
-<div id="use_structure_from_insertion_table_in_table_functions">
-  ## use_structure_from_insertion_table_in_table_functions
-</div>
+## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -287,9 +229,7 @@ Désactivé par défaut.
 
 Utilise la structure de la table d’insertion au lieu de l’inférence de schéma à partir des données. Valeurs possibles : 0 - désactivé, 1 - activé, 2 - auto
 
-<div id="use_uncompressed_cache">
-  ## use_uncompressed_cache
-</div>
+## use_uncompressed_cache {#use_uncompressed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -298,9 +238,7 @@ L’utilisation du cache non compressé (uniquement pour les tables de la famill
 
 Pour les requêtes qui lisent un volume de données déjà important (un million de lignes ou plus), le cache non compressé est automatiquement désactivé afin de réserver l’espace aux requêtes véritablement petites. Cela signifie que vous pouvez laisser le paramètre &#39;use&#95;uncompressed&#95;cache&#39; toujours défini sur 1.
 
-<div id="use_with_fill_by_sorting_prefix">
-  ## use_with_fill_by_sorting_prefix
-</div>
+## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

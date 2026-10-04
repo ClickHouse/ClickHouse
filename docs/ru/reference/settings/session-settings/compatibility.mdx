@@ -13,11 +13,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## compatibility
+## compatibility {#compatibility}
 
 Параметр `compatibility` заставляет ClickHouse использовать настройки по умолчанию из более ранней версии ClickHouse, за исключениями, зафиксированными в истории изменений настроек.
 
 Если для каких-либо настроек заданы значения, отличные от значений по умолчанию, они сохраняются (параметр `compatibility` влияет только на настройки, которые не были изменены).
+
+Параметр `compatibility` никогда не применяет значение, которое пользователь не смог бы задать сам: настройка сохраняет своё значение по умолчанию, если значение по умолчанию из более ранней версии нарушило бы [ограничения](/ru/concepts/features/configuration/settings/constraints-on-settings) профилей настроек пользователя или если настройка относится к уровню, который отключён параметром [`allow_feature_tier`](/ru/reference/settings/server-settings/settings/allow#allow_feature_tier).
 
 Изменения, помеченные как `Ignore` в [`system.settings_changes`](/ru/reference/system-tables/settings_changes), блокируют откат этого изменения и всех более ранних изменений той же настройки.
 
@@ -30,7 +32,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Однако параметр compatibility можно переопределить на уровне пользователя, роли, профиля, запроса или сеанса с помощью стандартных механизмов настройки ClickHouse, например `SET compatibility = '22.3'` в сеансе или `SETTINGS compatibility = '22.3'` в запросе.
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path
+## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

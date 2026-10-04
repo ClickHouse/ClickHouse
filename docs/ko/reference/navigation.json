@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "연산자",
           "pages": [
-            "ko/reference/operators/index",
-            "ko/reference/operators/exists",
-            "ko/reference/operators/distributed-ddl"
+            "ko/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ko/reference/engines/database-engines/index",
             "ko/reference/engines/database-engines/atomic",
             "ko/reference/engines/database-engines/backup",
+            "ko/reference/engines/database-engines/cluster",
             "ko/reference/engines/database-engines/datalake",
             "ko/reference/engines/database-engines/dictionary",
             "ko/reference/engines/database-engines/filesystem",
@@ -945,6 +944,7 @@
           ]
         },
         "ko/reference/formats/SQLInsert",
+        "ko/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1020,6 +1020,7 @@
         "ko/reference/system-tables/codecs",
         "ko/reference/system-tables/collations",
         "ko/reference/system-tables/columns",
+        "ko/reference/system-tables/columns_cache",
         "ko/reference/system-tables/completions",
         "ko/reference/system-tables/constraints",
         "ko/reference/system-tables/contributors",
