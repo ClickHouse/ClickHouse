@@ -1,0 +1,68 @@
+exported Dynamic path: one field
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+exported Dynamic path: nested fields
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.c.e Array(Dynamic(max_types=16))
+10
+30
+exported Dynamic path: two fields of the same value
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+json.a.:`Array(JSON)`.c.e Array(Dynamic(max_types=16))
+1	20
+3	
+exported Dynamic path: through a CTE
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+exported Dynamic path: UNION ALL
+├──ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+│     Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+└──ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+1
+3
+3
+exported Dynamic path derived from a JSON column of a deeper subquery
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+a Dynamic value re-exported as a bare column has no subcolumn expression at the intermediate boundary
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic
+1
+3
+a Dynamic column that is not a JSON path is not rewritten
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: d Dynamic
+the exported Dynamic value stays alive
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic
+mixed usage: the ancestor subcolumn is pushed, the nested field is extracted from it
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic
+1	[\'{"b":1,"c":{"e":10}}\',\'{"b":2,"c":{"e":20}}\']
+3	[\'{"b":3,"c":{"e":30}}\']
+mixed usage through a derived export of the ancestor subcolumn
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic
+1	[\'{"b":1,"c":{"e":10}}\',\'{"b":2,"c":{"e":20}}\']
+3	[\'{"b":3,"c":{"e":30}}\']
+mixed usage: two nested fields of the same ancestor
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic
+a sibling subcolumn does not block the nested field
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+json.z Dynamic
+1	100
+3	200
+setting off
+ReadFromMergeTree (default.t_push_subcolumns_json_exports)
+Header: json.a Dynamic

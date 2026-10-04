@@ -1,0 +1,15 @@
+two subcolumns, only one pushable: nothing is pushed
+Output: getSubcolumn(tup, \'a\'), getSubcolumn(tup, \'b\')
+Output: tup
+1	one
+2	two
+the unpushable subcolumn alone is not pushed
+Output: getSubcolumn(tup, \'a\')
+Output: tup
+1
+2
+the pushable subcolumn alone is pushed
+Output: tup.b
+Output: tup.b
+one
+two

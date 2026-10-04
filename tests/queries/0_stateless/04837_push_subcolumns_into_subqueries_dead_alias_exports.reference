@@ -1,0 +1,20 @@
+dead alias-equivalent sibling export, pushed two levels
+Output: tup.a
+Output: tup.a
+1
+2
+the same through the base name, sibling alias dead, pushed two levels
+Output: tup.a
+Output: tup.a
+1
+2
+the same shape through a CTE, pushed two levels
+Output: tup.a
+Output: tup.a
+1
+2
+sibling export alive in the outer query, not pushed
+Output: getSubcolumn(tup, \'a\'), tup
+Output: tup
+1	(1,'one')
+2	(2,'two')

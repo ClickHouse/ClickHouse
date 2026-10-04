@@ -1,0 +1,33 @@
+derived export over a subquery, paths composed down to the table
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+derived export directly over the table
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+multi-element path composed through the derived export
+Output: tup.a.c
+Output: tup.a.c
+one
+two
+derived export through a CTE
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+derived export also read whole, the parent subcolumn is still read
+Output: getSubcolumn(tup.a, \'b\'), tup.a
+Output: tup.a
+1	(1,'one')
+2	(2,'two')
+composition disabled with the setting
+Output: getSubcolumn(getSubcolumn(tup, \'a\'), \'b\')
+Output: tup
+JSON derived export over a subquery, paths composed down to the table
+Output: json.a.b
+Output: json.a.b
+1
+2
