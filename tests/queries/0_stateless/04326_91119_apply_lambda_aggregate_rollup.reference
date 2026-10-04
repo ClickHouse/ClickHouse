@@ -1,0 +1,144 @@
+-- GROUPING SETS, materialize key, argMax ---
+0
+0
+-- ROLLUP, argMax ---
+0
+0
+-- CUBE, argMax ---
+0
+0
+-- ROLLUP, sum ---
+0
+1
+2
+3
+-- ROLLUP, function-form aggregate ---
+0
+1
+2
+3
+-- ROLLUP, regex-filtered APPLY ---
+
+\N
+-- nested aggregate inside a function ---
+0
+0
+-- deeply nested aggregate ---
+1
+1
+1
+1
+-- ROLLUP, lambda grouping ---
+0
+1
+-- ROLLUP, function-form grouping ---
+0
+1
+-- CUBE, lambda grouping ---
+0
+1
+-- GROUPING SETS, lambda grouping ---
+0
+-- ROLLUP, grouping nested inside a function ---
+1
+2
+-- non-aggregate APPLY remains Nullable ---
+0
+1
+\N
+-- REPLACE reference in ORDER BY under GROUPING SETS ---
+-3
+-2
+-1
+0
+-- REPLACE reference in GROUP BY key under GROUPING SETS ---
+0
+1
+-- REPLACE reference in ORDER BY under ROLLUP ---
+0
+1
+\N
+-- REPLACE reference in HAVING under GROUPING SETS ---
+-3
+-2
+-1
+-- REPLACE reference in WHERE under GROUPING SETS ---
+-3
+-2
+-1
+0
+-- REPLACE reference in ORDER BY under CUBE ---
+-3
+-2
+-1
+0
+\N
+-- REPLACE with toTypeName in ORDER BY (bot reproducer) ---
+UInt8
+-- non-aggregate APPLY result as GROUPING SETS key is Nullable ---
+Nullable(UInt8)
+-- minSimpleState over APPLY-result grouping key (crashed before fix) ---
+0
+-- DISTINCT * APPLY isNull, GROUPING SETS, minSimpleState (fuzzer shape) ---
+0
+-- lambda-form APPLY result as grouping key is Nullable ---
+Nullable(UInt16)
+-- REPLACE reference in named WINDOW ORDER BY under GROUPING SETS ---
+-3	1
+-2	2
+-1	3
+0	4
+-- REPLACE reference in named WINDOW PARTITION BY under GROUPING SETS ---
+0	1
+1	1
+-- function-form APPLY result as grouping key is Nullable ---
+Nullable(String)
+-- minOrNull over function-form APPLY-result grouping key (bad-cast before fix) ---
+UInt8
+-- REPLACE name collides with a lambda argument in WHERE (crashed before fix) ---
+1
+-- REPLACE name collides with a lambda argument under ROLLUP (crashed before fix) ---
+1
+1
+-- REPLACE name collides with a subquery-local column (wrong result before fix) ---
+1
+-- WITH FILL bound referencing a REPLACE column: sort expression rewrite is OK, FROM bound is not ---
+-- WITH FILL with constant bounds and a REPLACE sort key: both settings agree ---
+-5
+-4
+-3
+-2
+-1
+0
+-5
+-4
+-3
+-2
+-1
+0
+-- mixed lambda tuple(x, sum(x)): the non-aggregate x stays wrapped Nullable per-occurrence ---
+Tuple(Nullable(UInt64), UInt64)
+-- EXCEPT c before REPLACE (0 AS c): HAVING keeps c bound to source under ROLLUP ---
+0
+1
+2
+0
+1
+2
+-- EXCEPT c before REPLACE (0 AS c): HAVING keeps c bound to source under GROUPING SETS ---
+0
+1
+2
+0
+1
+2
+-- REPLACE (0 AS d) with no column d: HAVING d stays unresolved under ROLLUP ---
+-- REPLACE (0 AS d) with no column d: HAVING d stays unresolved under GROUPING SETS ---
+-- REPLACE (0 AS d) with no column d: ORDER BY d stays unresolved under ROLLUP ---
+-- REPLACE ((c * 10) AS c) matches c: HAVING sees the replacement under both settings ---
+20
+20
+-- qualified t1.* REPLACE (0 AS c) with c only in t2: HAVING keeps c bound to t2.c under ROLLUP ---
+6
+6
+-- * REPLACE (0 AS m) with m MATERIALIZED (hidden from *): HAVING m stays bound to source under ROLLUP ---
