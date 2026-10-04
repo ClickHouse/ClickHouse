@@ -332,3 +332,58 @@ WHERE
 ) != 2;
 
 DROP TABLE time_decay_signed_index;
+
+
+-- Unit-time inspection exposes the compact ordering bucket and the residual
+-- amplitude retained by the authoritative direct curve. The discarded low bit
+-- must not be silently rounded into an exact +/-1 value.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS exact_unit_time,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS positive_bucket_time,
+    exponentialTimeDecaying(1)(1., exact_unit_time) AS positive,
+    exponentialTimeDecaying(1)(-1., exact_unit_time) AS negative
+SELECT 'unit-time residual mismatch'
+WHERE NOT (
+    exponentialTimeDecayingUnitTime(positive) = positive_bucket_time
+    AND exponentialTimeDecayingValueAtUnitTime(positive)
+        = exponentialTimeDecayingValueAt(
+            positive,
+            exponentialTimeDecayingUnitTime(positive))
+    AND exponentialTimeDecayingValueAtUnitTime(positive) < 1
+    AND exponentialTimeDecayingValueAtUnitTime(positive) > 0.999999999999999
+    AND exponentialTimeDecayingUnitTime(negative) = toFloat64(1)
+    AND exponentialTimeDecayingValueAtUnitTime(negative)
+        = exponentialTimeDecayingValueAt(
+            negative,
+            exponentialTimeDecayingUnitTime(negative))
+    AND exponentialTimeDecayingValueAtUnitTime(negative) < -1
+    AND exponentialTimeDecayingValueAtUnitTime(negative) > -1.000000000000001);
+
+-- Equivalent curves must expose the same ordered pair regardless of the anchor
+-- used to construct them.
+WITH
+    exponentialTimeDecaying(10)(2., toFloat64(0)) AS positive_a,
+    exponentialTimeDecaying(10)(1., toFloat64(10 * log(2))) AS positive_b,
+    exponentialTimeDecaying(10)(-2., toFloat64(0)) AS negative_a,
+    exponentialTimeDecaying(10)(-1., toFloat64(10 * log(2))) AS negative_b
+SELECT 'unit-time re-anchoring mismatch'
+WHERE NOT (
+    exponentialTimeDecayingUnitTime(positive_a)
+        = exponentialTimeDecayingUnitTime(positive_b)
+    AND exponentialTimeDecayingValueAtUnitTime(positive_a)
+        = exponentialTimeDecayingValueAtUnitTime(positive_b)
+    AND exponentialTimeDecayingUnitTime(negative_a)
+        = exponentialTimeDecayingUnitTime(negative_b)
+    AND exponentialTimeDecayingValueAtUnitTime(negative_a)
+        = exponentialTimeDecayingValueAtUnitTime(negative_b));
+
+-- Zero remains the midpoint identity for the exposed ordering pair.
+WITH exponentialTimeDecaying(10)(0., toFloat64(123)) AS zero
+SELECT 'zero unit-time mismatch'
+WHERE NOT (
+    exponentialTimeDecayingUnitTime(zero) = 0
+    AND exponentialTimeDecayingValueAtUnitTime(zero) = 0);
+
+-- The inspection functions accept only the decaying type.
+SELECT exponentialTimeDecayingUnitTime(toFloat64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT exponentialTimeDecayingValueAtUnitTime(toFloat64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
