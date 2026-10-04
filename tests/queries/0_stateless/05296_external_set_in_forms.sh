@@ -106,19 +106,20 @@ grep -v '^report' "${LOCAL_DIR}/1.out"
 grep '^report' "${LOCAL_DIR}/1.out"
 grep '^report' "${LOCAL_DIR}/0.out" | awk -F'\t' '{ built += $3; spilled += $4 } END { print "without a threshold", built, spilled }'
 
-# A lightweight `DELETE` and `ALTER TABLE ... UPDATE` fill their sets in the background mutation, which the
-# log does not attribute to their queries: the events of the process count them.
+# A lightweight `DELETE` and an `UPDATE` mutate three partitions, which share the sets of each mutation through
+# the prepared sets cache: each mutation builds two sets, as it does with one part. The log does not attribute
+# mutations to their queries, so the events of the process count the sets.
 for threshold in 0 1; do
     ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/mutations-${threshold}" --max_bytes_before_external_set "${threshold}" \
         --multiquery > "${LOCAL_DIR}/mutations-${threshold}.out" <<'SQL'
-CREATE TABLE d (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE d (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY intDiv(k, 10000) ORDER BY k;
 INSERT INTO d SELECT number, 0 FROM numbers(30000);
 DELETE FROM d WHERE k IN (SELECT number * 3 FROM numbers(10000));
 ALTER TABLE d UPDATE v = 1 WHERE k IN (SELECT number * 5 FROM numbers(10000)) SETTINGS mutations_sync = 2;
 SELECT 'mutations', count(), sum(v) FROM d;
-SELECT 'mutations', (SELECT sum(value) FROM system.events WHERE event = 'SetsBuiltFromSubquery') > 0,
-    (SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk')
-        = (SELECT sum(value) FROM system.events WHERE event = 'SetsBuiltFromSubquery');
+SELECT 'mutations', (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'd' AND active),
+    (SELECT sum(value) FROM system.events WHERE event = 'SetsBuiltFromSubquery'),
+    (SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk');
 SQL
 done
 diff -u <(head -n 1 "${LOCAL_DIR}/mutations-0.out") <(head -n 1 "${LOCAL_DIR}/mutations-1.out")

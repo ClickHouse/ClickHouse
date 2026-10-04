@@ -272,21 +272,6 @@ SELECT countIf(number IN (SELECT number * 2 FROM numbers(600000))) FROM numbers(
 $(event SetsSpilledToDisk)
 SQL
 
-# A mutation applies to each part separately, and the parts share the set through the prepared sets
-# cache. The background mutation takes the setting from the command line of `clickhouse-local`; the
-# parts are never merged.
-run mutation --max_bytes_before_external_set 1 --multiquery <<SQL
-CREATE TABLE t (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
-INSERT INTO t SELECT number FROM numbers(100);
-INSERT INTO t SELECT number + 100 FROM numbers(100);
-INSERT INTO t SELECT number + 200 FROM numbers(100);
-ALTER TABLE t DELETE WHERE k IN (SELECT number * 2 FROM numbers(150)) SETTINGS mutations_sync = 2;
-SELECT count(), sum(k) FROM t;
-SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
-$(event SetsBuiltFromSubquery)
-$(event SetsSpilledToDisk)
-SQL
-
 # The rows of the subquery count once in the query progress, whether the set is in memory or on disk.
 for threshold in 0 1; do
     run "progress-${threshold}" --max_bytes_before_external_set "${threshold}" --multiquery <<SQL

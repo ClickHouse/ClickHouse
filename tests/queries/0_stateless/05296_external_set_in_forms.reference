@@ -32,8 +32,8 @@ report	old analyzer	2	2	1
 report	join to in	1	1	1
 without a threshold 18 0
 mutations	20000	4000
-mutations	1	1
-mutations	1	0
+mutations	3	4	4
+mutations	3	4	0
 lazy final	499	124750
 lazy final	0
 lazy final applied with threshold 0: 1
