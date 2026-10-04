@@ -2759,7 +2759,8 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// are visible in subsequent user queries.
     auto internal_context = Context::createCopy(server.context());
     internal_context->makeQueryContext();
-    internal_context->setCurrentQueryId(fmt::format("postgres-init:{:d}", connection_id));
+    /// A random token keeps the query id unpredictable, see `refreshCatalogOids`.
+    internal_context->setCurrentQueryId(fmt::format("postgres-init:{:d}:{:d}", connection_id, generateRandomUInt32()));
     internal_context->setSessionContext(query_context->getSessionContext());
 
     String out_str;
@@ -3259,7 +3260,10 @@ void PostgreSQLHandler::refreshCatalogOids(ContextMutablePtr query_context)
     /// something the client asked to write.
     auto internal_context = Context::createCopy(query_context);
     internal_context->makeQueryContext();
-    internal_context->setCurrentQueryId(fmt::format("postgres-oids:{:d}", connection_id));
+    /// The query id must not be predictable: `ProcessList` rejects a duplicate query id across users, so a
+    /// per-connection constant could be occupied by another client in advance and would make every later
+    /// catalog statement of this session fail with `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`.
+    internal_context->setCurrentQueryId(fmt::format("postgres-oids:{:d}:{:d}", connection_id, generateRandomUInt32()));
     internal_context->setSessionContext(query_context->getSessionContext());
     internal_context->setSetting("readonly", Field(0u));
 
