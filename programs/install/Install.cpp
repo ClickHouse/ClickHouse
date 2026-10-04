@@ -1,5 +1,6 @@
 #include <iostream>
 #include <filesystem>
+#include <optional>
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
@@ -31,6 +32,12 @@
 #include <IO/copyData.h>
 #include <IO/Operators.h>
 #include <IO/Ask.h>
+#include <IO/ReadHelpers.h>
+#include <Access/AccessEntityIO.h>
+#include <Access/User.h>
+#include <Access/Common/AccessEntityType.h>
+#include <Common/StringUtils.h>
+#include <base/range.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
@@ -46,6 +53,11 @@ constexpr unsigned char resource_config_xml[] =
 constexpr unsigned char resource_users_xml[] =
 {
 #embed "../server/users.xml"
+};
+
+constexpr unsigned char resource_users_yaml[] =
+{
+#embed "../server/users.yaml.example"
 };
 
 
@@ -145,6 +157,138 @@ static void changeOwnership(const String & file_name, const String & user_name, 
         fmt::print(" {}\n", command);
         executeScript(command);
     }
+}
+
+/// Whether the authentication of the user at `user_path` in a users config is configured with anything but an empty flat `password`.
+/// The installer sets up a password by replacing the flat `password` with `password_sha256_hex`, which is valid only if
+/// the user has no other authentication method: `UsersConfigParser` allows only one flat method, rejects flat methods together
+/// with `auth_methods`, and allows `time_based_one_time_password` at the user level. Like `UsersConfigParser`, a method counts
+/// if it is present, even if its value is empty.
+static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, const std::string & user_path)
+{
+    if (!config.getString(user_path + ".password", "").empty())
+        return true;
+
+    for (const auto * key : {"no_password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex",
+             "ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication", "auth_methods", "time_based_one_time_password"})
+        if (config.has(user_path + "." + key))
+            return true;
+
+    return false;
+}
+
+/// Whether the user at `user_path` in a users config can authenticate only with credentials, i.e. not with an empty password
+/// or `no_password`. Checks the same carriers as `UsersConfigParser`: the flat fields of the user and every entry of `auth_methods`.
+/// Any entry of `auth_methods` that needs no credentials makes the user accessible without them.
+static bool hasCredentials(const Poco::Util::AbstractConfiguration & config, const std::string & user_path)
+{
+    auto has_credentials_at = [&](const std::string & path)
+    {
+        for (const auto * key : {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex"})
+            if (!config.getString(path + "." + key, "").empty())
+                return true;
+        for (const auto * key : {"ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication"})
+            if (config.has(path + "." + key))
+                return true;
+        return false;
+    };
+
+    const std::string auth_methods_path = user_path + ".auth_methods";
+    if (!config.has(auth_methods_path))
+        return has_credentials_at(user_path);
+
+    Poco::Util::AbstractConfiguration::Keys auth_methods;
+    config.keys(auth_methods_path, auth_methods);
+    if (auth_methods.empty())
+        return false;
+    for (const auto & auth_method : auth_methods)
+        if (!has_credentials_at(auth_methods_path + "." + auth_method))
+            return false;
+    return true;
+}
+
+/// Whether a `DiskAccessStorage` at `directory_path` is known not to define the default user.
+/// Mirrors how it loads entities at startup: if there is no `need_rebuild_lists.mark` and all `*.list` files can be read,
+/// it trusts them and ignores `<id>.sql` files not listed there; otherwise it rebuilds the lists from all `<id>.sql` files.
+/// Empty lists and entities of other types (roles, settings profiles, etc.) don't define the default user.
+/// A relative path is resolved against the working directory of the server, which is not known here.
+/// A directory or a file that cannot be inspected (e.g. without permissions, or corrupted) is not known to be without the default user.
+static bool isKnownWithoutDefaultUserDiskAccessStorage(const fs::path & directory_path)
+{
+    if (directory_path.is_relative())
+        return false;
+
+    std::error_code ec;
+    if (!fs::exists(directory_path, ec))
+        return !ec;
+
+    try
+    {
+        /// Same as `DiskAccessStorage::readLists`: if any list file is missing or cannot be parsed, the lists are rebuilt.
+        bool lists_are_used = !fs::exists(directory_path / "need_rebuild_lists.mark");
+        bool has_default_user_in_lists = false;
+        for (auto type : collections::range(AccessEntityType::MAX))
+        {
+            if (!lists_are_used)
+                break;
+
+            String list_file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
+            toLowerASCII(list_file_name);
+            const fs::path list_path = directory_path / (list_file_name + ".list");
+            if (!fs::exists(list_path))
+            {
+                lists_are_used = false;
+                break;
+            }
+
+            try
+            {
+                /// Same format as `writeListFile` in `DiskAccessStorage`.
+                ReadBufferFromFile in(list_path.string());
+                size_t num = 0;
+                readVarUInt(num, in);
+                for (size_t i = 0; i != num; ++i)
+                {
+                    String name;
+                    readStringBinary(name, in);
+                    UUID id;
+                    readUUIDText(id, in);
+                    if (type == AccessEntityType::USER && name == "default")
+                        has_default_user_in_lists = true;
+                }
+            }
+            catch (...)
+            {
+                /// Ok: same as `DiskAccessStorage::readLists`, a list file that cannot be read means the lists are rebuilt from the `.sql` files.
+                lists_are_used = false;
+            }
+        }
+
+        if (lists_are_used)
+            return !has_default_user_in_lists;
+
+        for (const auto & entry : fs::directory_iterator(directory_path))
+        {
+            if (entry.path().extension() != ".sql")
+                continue;
+            String definition;
+            {
+                ReadBufferFromFile in(entry.path().string());
+                readStringUntilEOF(definition, in);
+            }
+            auto entity = deserializeAccessEntity(definition, entry.path().string());
+            if (entity->isTypeOf<User>() && entity->getName() == "default")
+                return false;
+        }
+    }
+    catch (...)
+    {
+        std::cerr << "Cannot check whether " << directory_path.string() << " defines the default user: "
+            << getCurrentExceptionMessage(false) << "\n";
+        return false;
+    }
+
+    return true;
 }
 
 static void createGroup(const String & group_name)
@@ -576,18 +720,37 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path data_path = prefix / options["data-path"].as<std::string>();
         fs::path pid_path = prefix / options["pid-path"].as<std::string>();
 
+        /// True if the authentication of the default user is configured with anything but an empty flat `password`,
+        /// so the installer does not set up a password for it.
+        bool has_authentication_for_default_user = false;
+        /// True if the default user cannot log in without credentials, so it is reasonable to accept connections from the network.
         bool has_password_for_default_user = false;
+        bool is_default_user_removed = false;
+        /// True if no XML users config preceding `shadowing_access_storage` defines the default user,
+        /// so the effective default user is not known.
+        bool is_default_user_maybe_shadowed = false;
+        /// False if the main config has `user_directories` without `users_xml` and no `users_config`,
+        /// so the server does not read users from any XML file.
+        bool has_users_xml_config = true;
+        /// Set if the first XML users config is a relative path that does not exist in the config directory,
+        /// other than the stock `users.xml`. The server resolves it against its working directory, which is not known here,
+        /// so the installer neither creates it nor sets up a password in it.
+        std::optional<fs::path> unresolved_users_config_file;
+        /// All XML users configs the server reads users from, in the order it looks up users in them.
+        std::vector<fs::path> users_config_files;
+        /// The first access storage that is not an XML users config and may store the default user (e.g. `local_directory`),
+        /// and the number of XML users configs preceding it. The server looks up users in all storages in order,
+        /// so if no preceding XML users config defines the default user, the installer cannot know the effective one.
+        std::string shadowing_access_storage;
+        size_t num_users_configs_before_shadowing_access_storage = 0;
+        /// Set if the default user may instead be defined in a later XML users config with a relative path
+        /// that is resolved against the working directory of the server, which is not known here.
+        std::optional<fs::path> unresolved_later_users_config_file;
 
         if (!fs::exists(config_d))
         {
             fmt::print("Creating config directory {} that is used for tweaks of main server configuration.\n", config_d.string());
             fs::create_directory(config_d);
-        }
-
-        if (!fs::exists(users_d))
-        {
-            fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
-            fs::create_directory(users_d);
         }
 
         if (!fs::exists(main_config_file))
@@ -698,15 +861,151 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 log_path = fs::path(configuration->getString("logger.log")).remove_filename();
                 fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path.string());
             }
+
+            /// Find the XML users configs in the same order as `AccessControl::addStoragesFromMainConfig` adds them.
+            /// The first one is where the password for the default user is written to.
+            /// Like `AccessControl`, a relative path is resolved against the config directory only if the file exists there.
+            /// Otherwise the server resolves it against its working directory, which is not known here.
+            auto resolve_users_config_path = [&](fs::path users_config_path)
+            {
+                if (users_config_path.is_relative() && fs::exists(config_dir / users_config_path))
+                    users_config_path = (config_dir / users_config_path).lexically_normal();
+                return users_config_path;
+            };
+
+            auto add_users_config = [&](const fs::path & users_config_path)
+            {
+                if (std::find(users_config_files.begin(), users_config_files.end(), users_config_path) == users_config_files.end())
+                    users_config_files.push_back(users_config_path);
+            };
+
+            /// `disk_storage_path` is set for a local directory storage, which shadows the users configs only if it may define the default user.
+            auto add_shadowing_access_storage = [&](const std::string & description, const std::optional<fs::path> & disk_storage_path = {})
+            {
+                if (shadowing_access_storage.empty() && !(disk_storage_path && isKnownWithoutDefaultUserDiskAccessStorage(*disk_storage_path)))
+                {
+                    shadowing_access_storage = description;
+                    num_users_configs_before_shadowing_access_storage = users_config_files.size();
+                }
+            };
+
+            /// `AccessControl::addStoragesFromMainConfig` adds the storage from `access_control_path` before all others.
+            std::string access_control_path = configuration->getString("access_control_path", "");
+            if (!access_control_path.empty())
+                add_shadowing_access_storage("access_control_path", fs::path(access_control_path));
+
+            bool has_user_directories = configuration->has("user_directories");
+            std::string configured_users_config = configuration->getString("users_config", "");
+            if (!configured_users_config.empty())
+                add_users_config(resolve_users_config_path(configured_users_config));
+            else if (!has_user_directories)
+                add_users_config(main_config_file);
+
+            if (has_user_directories)
+            {
+                Poco::Util::AbstractConfiguration::Keys keys_in_user_directories;
+                configuration->keys("user_directories", keys_in_user_directories);
+                for (const auto & key_in_user_directories : keys_in_user_directories)
+                {
+                    /// Same type names as in `AccessControl::addStoragesFromUserDirectoriesConfig`.
+                    std::string type = key_in_user_directories;
+                    if (size_t bracket_pos = type.find('['); bracket_pos != std::string::npos)
+                        type.resize(bracket_pos);
+                    if (type == "users_xml" || type == "users.xml" || type == "users_config")
+                        add_users_config(resolve_users_config_path(
+                            configuration->getString("user_directories." + key_in_user_directories + ".path")));
+                    else if (type == "local" || type == "local_directory")
+                        add_shadowing_access_storage("user_directories." + key_in_user_directories,
+                            fs::path(configuration->getString("user_directories." + key_in_user_directories + ".path", "")));
+                    else if (type != "memory")
+                        /// `replicated` or `ldap`: the default user may be stored or authenticated there.
+                        /// A `memory` storage is empty when the server starts.
+                        add_shadowing_access_storage("user_directories." + key_in_user_directories);
+                }
+            }
+
+            if (users_config_files.empty())
+            {
+                has_users_xml_config = false;
+                fmt::print("{} does not use an XML users config.\n", main_config_file.string());
+            }
+            else
+            {
+                /// The first XML users config is a relative path only if it does not exist in the config directory.
+                /// For the stock `users.xml` (or its YAML counterparts `users.yaml` and `users.yml`) it is created there below,
+                /// and then the server resolves the path to it the same way as above, as it checks the config directory first.
+                /// This keeps the stock layouts working.
+                /// Any other relative path may intentionally point to a file in the working directory of the server,
+                /// and creating it in the config directory would silently switch the server to the new file.
+                if (users_config_files.front().is_relative())
+                {
+                    const fs::path first_users_config = users_config_files.front().lexically_normal();
+                    /// The extension is compared case-insensitively, like `ConfigProcessor::parseConfig` does.
+                    std::string first_users_config_extension = first_users_config.extension().string();
+                    toLowerASCII(first_users_config_extension);
+                    const bool is_stock_users_config = !first_users_config.has_parent_path() && first_users_config.stem() == "users"
+                        && (first_users_config_extension == ".xml" || first_users_config_extension == ".yaml"
+                            || first_users_config_extension == ".yml");
+                    if (is_stock_users_config)
+                        users_config_files.front() = (config_dir / first_users_config).lexically_normal();
+                    else
+                        unresolved_users_config_file = users_config_files.front();
+                }
+
+                if (unresolved_users_config_file)
+                {
+                    has_users_xml_config = false;
+                    fmt::print("{} has {} as users config, which is resolved against the working directory of the server.\n",
+                        main_config_file.string(), unresolved_users_config_file->string());
+                }
+                else if (users_config_files.front() != users_config_file)
+                {
+                    users_config_file = users_config_files.front();
+                    users_d = fs::path(users_config_file).replace_extension("d");
+                    fmt::print("{} has {} as users config.\n", main_config_file.string(), users_config_file.string());
+                }
+
+                if (!shadowing_access_storage.empty() && num_users_configs_before_shadowing_access_storage == 0)
+                {
+                    /// The server still reads the users config, so it is created if missing, but the default user it defines may be shadowed.
+                    is_default_user_maybe_shadowed = true;
+                    fmt::print("{} has {} before any XML users config.\n", main_config_file.string(), shadowing_access_storage);
+                }
+            }
         }
 
+        if (users_config_files.empty() && has_users_xml_config)
+            users_config_files.push_back(users_config_file);
 
-        if (!fs::exists(users_config_file))
+        if (has_users_xml_config && !fs::exists(users_d))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
+            fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
+            fs::create_directories(users_d);
+        }
+
+        /// The XML users config that defines the effective default user, and the directory for its tweaks,
+        /// where the password for the default user is written to. It is the first XML users config unless the default user
+        /// is removed from it and defined in a later one: overriding it in the first one would create a new default user there,
+        /// which would shadow the later definition entirely.
+        fs::path default_user_config_file = users_config_file;
+        fs::path default_user_users_d = users_d;
+
+        if (!has_users_xml_config)
+        {
+            /// Nothing to create or check: users are not configured in XML files.
+        }
+        else if (!fs::exists(users_config_file))
+        {
+            /// The server parses the users config according to its extension, case-insensitively, like `ConfigProcessor::parseConfig`.
+            std::string users_config_extension = users_config_file.extension().string();
+            toLowerASCII(users_config_extension);
+            const bool is_yaml_users_config = users_config_extension == ".yaml" || users_config_extension == ".yml";
+            std::string_view users_config_content = is_yaml_users_config
+                ? std::string_view(reinterpret_cast<const char *>(resource_users_yaml), std::size(resource_users_yaml))
+                : std::string_view(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
             if (users_config_content.empty())
             {
-                fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
+                fmt::print("There is no default users config, you have to download it and place to {}.\n", users_config_file.string());
             }
             else
             {
@@ -719,16 +1018,55 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         else
         {
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
+        }
 
-            /// Check if password for the default user already specified.
-            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
-
-            if (!configuration->getString("users.default.password", "").empty()
-                || !configuration->getString("users.default.password_sha256_hex", "").empty()
-                || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
+        /// Also check a just created users config: the existing fragments in its companion `users.d` directory
+        /// may remove the default user or set up its authentication.
+        if (has_users_xml_config && fs::exists(users_config_file))
+        {
+            /// The server looks up the default user in the XML users configs in order and uses the first one that defines it,
+            /// so check whether it is defined anywhere and whether its first definition has a password.
+            is_default_user_removed = true;
+            for (size_t i = 0; i < users_config_files.size(); ++i)
             {
-                has_password_for_default_user = true;
+                if (!shadowing_access_storage.empty() && i == num_users_configs_before_shadowing_access_storage)
+                {
+                    /// The default user may be defined in a storage that is not an XML users config.
+                    is_default_user_removed = false;
+                    is_default_user_maybe_shadowed = true;
+                    break;
+                }
+
+                const auto & users_config_path = users_config_files[i];
+                /// A relative path here is resolved against the working directory of the server, which is not known,
+                /// so the default user may be defined in that file.
+                if (users_config_path.is_relative())
+                {
+                    is_default_user_removed = false;
+                    unresolved_later_users_config_file = users_config_path;
+                    break;
+                }
+
+                if (!fs::exists(users_config_path))
+                    continue;
+
+                ConfigProcessor processor(users_config_path.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+                /// The default user may be explicitly removed, e.g. via `<default remove="1" />` in users.d.
+                if (!configuration->has("users.default"))
+                    continue;
+
+                is_default_user_removed = false;
+                has_authentication_for_default_user = hasAuthentication(*configuration, "users.default");
+                has_password_for_default_user = hasCredentials(*configuration, "users.default");
+                if (i != 0)
+                {
+                    default_user_config_file = users_config_path;
+                    default_user_users_d = fs::path(users_config_path).replace_extension("d");
+                    fmt::print("The default user is defined in {}.\n", default_user_config_file.string());
+                }
+                break;
             }
         }
 
@@ -819,15 +1157,45 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool can_ask_password = !noninteractive && stdout_is_a_tty;
 
         /// Set up password for default user.
-        if (has_password_for_default_user)
+        if (unresolved_users_config_file)
+        {
+            fmt::print("{}The users config {} from {} is not in {}. Not setting up a password for the default user.{}\n",
+                start_hilite, unresolved_users_config_file->string(), main_config_file.string(), config_dir.string(), end_hilite);
+        }
+        else if (unresolved_later_users_config_file)
+        {
+            fmt::print("{}The default user may be defined in the users config {} from {}, which is resolved against the working directory of the server. Not setting up a password for it.{}\n",
+                start_hilite, unresolved_later_users_config_file->string(), main_config_file.string(), end_hilite);
+        }
+        else if (is_default_user_maybe_shadowed)
+        {
+            fmt::print("{}The default user may be defined in {} from {}, which is not an XML users config. Not setting up a password for it.{}\n",
+                start_hilite, shadowing_access_storage, main_config_file.string(), end_hilite);
+        }
+        else if (!has_users_xml_config)
+        {
+            fmt::print("{}There is no XML users config in {}. Not setting up a password for the default user.{}\n",
+                start_hilite, main_config_file.string(), end_hilite);
+        }
+        else if (is_default_user_removed)
+        {
+            fmt::print("{}The default user is removed from {} and {}. Not setting up a password for it.{}\n",
+                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+        }
+        else if (has_password_for_default_user)
         {
             fmt::print("{}Password for the default user is already specified. To remind or reset, see {} and {}.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
+        }
+        else if (has_authentication_for_default_user)
+        {
+            fmt::print("{}The default user is configured to be accessible without a password. See {} and {} to change it.{}\n",
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
         else if (!can_ask_password)
         {
             fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
         else
         {
@@ -841,7 +1209,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (!password.empty())
             {
-                std::string password_file = users_d / "default-password.xml";
+                if (!fs::exists(default_user_users_d))
+                {
+                    fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", default_user_users_d.string());
+                    fs::create_directories(default_user_users_d);
+                }
+                std::string password_file = default_user_users_d / "default-password.xml";
                 WriteBufferFromFile out(password_file);
 #if USE_SSL
                 std::vector<uint8_t> hash;
@@ -878,7 +1251,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
             else
                 fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                    start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                    start_hilite, default_user_config_file.string(), default_user_users_d.string(), end_hilite);
         }
 
         /** Set capabilities for the binary.
@@ -925,19 +1298,38 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Chmod and chown configs
         changeOwnership(config_dir, user, group);
 
+        /// The users config may live outside the config directory, the server needs to read it as well.
+        if (has_users_xml_config)
+        {
+            auto is_outside_config_dir = [&](const fs::path & checked_path)
+            {
+                auto relative = checked_path.lexically_normal().lexically_relative(config_dir.lexically_normal());
+                return relative.empty() || *relative.begin() == "..";
+            };
+
+            if (fs::exists(users_config_file) && is_outside_config_dir(users_config_file))
+                changeOwnership(users_config_file, user, group, /* recursive= */ false);
+            if (fs::exists(users_d) && is_outside_config_dir(users_d))
+                changeOwnership(users_d, user, group);
+            if (default_user_users_d != users_d && fs::exists(default_user_users_d) && is_outside_config_dir(default_user_users_d))
+                changeOwnership(default_user_users_d, user, group);
+        }
+
         /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
         fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
 
         /// Subdirectories, so "execute" is needed.
         if (fs::exists(config_d))
             fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-        if (fs::exists(users_d))
+        if (has_users_xml_config && fs::exists(users_d))
             fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+        if (has_users_xml_config && default_user_users_d != users_d && fs::exists(default_user_users_d))
+            fs::permissions(default_user_users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
 
         /// Readonly.
         if (fs::exists(main_config_file))
             fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
-        if (fs::exists(users_config_file))
+        if (has_users_xml_config && fs::exists(users_config_file))
             fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
 
 
