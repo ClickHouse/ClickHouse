@@ -283,11 +283,11 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
 /// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
-/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` use the same
-/// representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
-/// The active member of a `Variant` reached through `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is
-/// named by its own type; under any other wrapper, and below an `Object` whose JSON text carries no
-/// discriminator, it is not.
+/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` or `Dynamic` use the
+/// same representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
+/// The active member of a `Variant`, and of a `Dynamic` when `date_time_as_numbers` is set, reached through
+/// `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is named by its own type; under any other wrapper, and
+/// below an `Object` whose JSON text carries no discriminator, it is not.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
