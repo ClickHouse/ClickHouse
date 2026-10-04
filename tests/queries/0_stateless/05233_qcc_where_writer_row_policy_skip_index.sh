@@ -18,7 +18,9 @@
 #     keys on a different condition than an unrestricted one and the two never share an entry;
 #   * `use_skip_indexes_on_data_read = 1` puts a skip-index reader ahead of PREWHERE in the readers
 #     chain, and `MergeTreeSelectProcessor` then attaches no `MarkRangesInfo` at all (the fix for
-#     issue #104781), so such a read writes nothing for a later read to pick up.
+#     issue #104781), so the residual `WHERE` writer records nothing. The skip-index reader records
+#     only the granules its indexes exclude, under a key salted with the skip-index profile, so a
+#     later read with the indexes off never picks them up.
 #
 # Settings pinned per query so CI randomization cannot dissolve the shape:
 #   * `optimize_use_implicit_projections = 0` - `_exact_count_projection` answers `count()` from
@@ -99,7 +101,7 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, min_bytes_for_
 INSERT INTO t_qcc_where_idx SELECT number, number % 7, number FROM numbers(500000);
 "
 
-echo "-- skip index on data read: the read writes no entry at all (14, 0)"
+echo "-- skip index on data read: the read records only the granules its skip index excludes (14, 1)"
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_where_idx WHERE v = 3 AND w < 100
@@ -115,8 +117,8 @@ SELECT count() FROM t_qcc_where_idx WHERE v = 3 AND w < 100
 SETTINGS use_query_condition_cache = 0, optimize_use_implicit_projections = 0, optimize_move_to_prewhere = 0, use_skip_indexes = 0;
 "
 
-# Liveness: without the data-read pruning the same shape *does* write, and the entry is reused both
-# with the indexes off and back on - so the zero above is the guard, not a dead test.
+# Liveness: without the data-read pruning the residual `WHERE` writer *does* write, and its entry is
+# reused both with the indexes off and back on - so the poisoning check above is not a dead test.
 echo "-- without the data-read pruning the same shape writes and is reused (14, 1, 14, 14)"
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 SYSTEM DROP QUERY CONDITION CACHE;

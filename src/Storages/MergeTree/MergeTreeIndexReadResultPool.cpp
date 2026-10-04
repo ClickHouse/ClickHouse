@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 
@@ -75,6 +76,57 @@ bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
     return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
 }
 
+void MergeTreeSkipIndexReader::writeExclusionsToQueryConditionCache(
+    const MergeTreeDataPartInfoForReaderPtr & part_info, const MarkRanges & input_ranges, const MarkRanges & selected_ranges) const
+{
+    /// The cache is keyed by the storage UUID, which only a concrete part provides.
+    auto data_part = part_info->getDataPart();
+    if (!data_part)
+        return;
+
+    /// Both lists are sorted and non-intersecting. A selected range may also cover a small gap between two
+    /// input ranges (filterMarksUsingIndex merges ranges closer than min_marks_for_seek), so subtract every
+    /// selected range overlapping an input range.
+    MarkRanges excluded_ranges;
+    const auto * selected_it = selected_ranges.begin();
+    for (const auto & input_range : input_ranges)
+    {
+        size_t pos = input_range.begin;
+        while (selected_it != selected_ranges.end() && selected_it->end <= pos)
+            ++selected_it;
+
+        while (selected_it != selected_ranges.end() && selected_it->begin < input_range.end)
+        {
+            if (selected_it->begin > pos)
+                excluded_ranges.emplace_back(pos, selected_it->begin);
+            pos = std::max(pos, selected_it->end);
+            if (pos >= input_range.end)
+                break; /// The selected range may continue into the next input range.
+            ++selected_it;
+        }
+
+        if (pos < input_range.end)
+            excluded_ranges.emplace_back(pos, input_range.end);
+    }
+
+    if (excluded_ranges.empty())
+        return;
+
+    String part_name = part_info->isProjectionPart()
+        ? fmt::format("{}:{}", part_info->getParentPartName(), part_info->getPartName())
+        : part_info->getPartName();
+
+    const auto & index_granularity = part_info->getIndexGranularity();
+    Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+        data_part->storage.getStorageID().uuid,
+        part_name,
+        query_condition_cache_key->hash,
+        query_condition_cache_key->condition,
+        excluded_ranges,
+        index_granularity.getMarksCount(),
+        index_granularity.hasFinalMark());
+}
+
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const SkipIndexReadInput & input,
@@ -142,6 +194,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
         total_granules = ranges.getNumberOfMarks();
     }
+
+    /// Before the dynamic (JOIN runtime filter) pruning below: its exclusions depend on the build side of the
+    /// JOIN, not on the WHERE condition that keys the cache entry.
+    if (query_condition_cache_key && !is_cancelled)
+        writeExclusionsToQueryConditionCache(part_info, input.ranges, ranges);
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
     if (dynamic_predicate_builder && !ranges.empty())

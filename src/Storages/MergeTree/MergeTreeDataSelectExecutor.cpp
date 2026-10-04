@@ -1623,6 +1623,11 @@ UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
     /// predicates, so two queries with different effective modes must not share a key.
     hash.update(indexes.use_skip_indexes_for_disjunctions);
 
+    /// Exclusions are recorded both by index analysis and by the skip index reader at data read time
+    /// (use_skip_indexes_on_data_read), which do not handle disjunctions identically. Keep their entries apart
+    /// so that a query only reuses exclusions produced the same way it would produce them itself.
+    hash.update(indexes.use_skip_indexes_on_data_read);
+
     return hash.get64();
 }
 
@@ -1729,8 +1734,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
     ///     MergeTreeSelectProcessor, object storage) which are always sound; and
     ///   * a hash salted with the effective skip-index profile that index analysis ran
-    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
-    ///     written by ReadFromMergeTree.
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index exclusions written by
+    ///     ReadFromMergeTree (index analysis) or MergeTreeSkipIndexReader (skip indexes applied
+    ///     at data read time).
     /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
     /// index with a preprocessor), so they must only be consulted by a query that ran the same set
     /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a

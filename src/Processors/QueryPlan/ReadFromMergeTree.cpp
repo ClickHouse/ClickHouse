@@ -378,6 +378,42 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+/// The query condition cache key of the WHERE condition under which the ranges excluded by primary key and
+/// skip index analysis are recorded (before the skip-index profile salt, see
+/// `MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash`), or nullopt if they must not be recorded.
+/// Shared by the writer for index analysis (`selectRangesToRead`) and the one for skip indexes applied at data
+/// read time (`MergeTreeSkipIndexReader`), so that both produce the key `filterPartsByQueryConditionCache` probes.
+static std::optional<size_t> getIndexExclusionsConditionHash(
+    const SelectQueryInfo & query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool has_vector_search,
+    bool use_sampling,
+    const MergeTreeReaderSettings & reader_settings,
+    const Settings & settings)
+{
+    if (!reader_settings.use_query_condition_cache || !query_info.filter_actions_dag || query_info.isFinal()
+        || has_vector_search /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+        || use_sampling)     /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                             /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+        return {};
+
+    const auto & outputs = query_info.filter_actions_dag->getOutputs();
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
+    /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
+    /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
+    /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
+    /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
+    const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
+    if (outputs.size() != 1 || skip_top_k || !isDeterministicAllowingTopKFilter(outputs.front()))
+        return {};
+
+    size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
+    if (top_k_filter_info)
+        boost::hash_combine(hash, top_k_filter_info->condition_hash);
+    return hash;
+}
+
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 {
     for (const auto & part : parts)
@@ -3804,28 +3840,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
 
-        std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
-                && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
-                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
-                                                         /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
-        {
-            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-            /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
-            /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
-            /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
-            /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
-            /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
-            const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
-            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
-            {
-                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
-                if (top_k_filter_info)
-                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
-                condition_hash = hash;
-            }
-        }
+        std::optional<size_t> condition_hash = getIndexExclusionsConditionHash(
+            query_info_, top_k_filter_info, vector_search_parameters.has_value(), result.sampling.use_sampling, reader_settings, settings);
 
         /// Fill query condition cache with ranges excluded by index analysis.
         if (condition_hash)
@@ -5411,6 +5427,23 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 dynamic_skip_index_filter,
                 context,
                 getLogger("MergeTreeSkipIndexReader"));
+
+            /// Record the granules the skip indexes exclude at read time in the query condition cache, under the
+            /// same skip-index-profiled key as the exclusions of index analysis. Without it, a repeated query
+            /// evaluates the skip indexes on every granule again, e.g. a text index scanning its whole
+            /// dictionary for `LIKE '%...%'`. The cache is not consulted while on-fly mutations or patch parts
+            /// are pending (see filterPartsByQueryConditionCache), so do not record in that state either.
+            if (!pending_mutations)
+            {
+                if (auto condition_hash = getIndexExclusionsConditionHash(
+                        query_info, top_k_filter_info, vector_search_parameters.has_value(), result.sampling.use_sampling,
+                        reader_settings, context->getSettingsRef()))
+                {
+                    skip_index_reader->setQueryConditionCacheKey(
+                        {.hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(*condition_hash, *indexes),
+                         .condition = query_info.filter_actions_dag->getOutputs().front()->result_name});
+                }
+            }
         }
     }
 
