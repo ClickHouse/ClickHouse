@@ -3346,7 +3346,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (indexes_mapping.empty())
         return false;
 
-    /// The sparse primary index stores the same UInt64 ordering key used by the
+    /// The sparse primary index stores the same width-specific ordering key used by the
     /// column comparator. Set indexes are not projected into that key domain yet,
     /// so leave IN/NOT IN to the row-level predicate for now.
     if (std::ranges::any_of(
@@ -5065,7 +5065,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
-        /// The sparse primary index stores the same UInt64 ordering key used by the
+        /// The sparse primary index stores the same width-specific ordering key used by the
         /// column comparator. Keep the row predicate active because sparse index marks
         /// still describe ranges of rows rather than complete values.
         const auto key_type_for_index = removeNullable(key_expr_type);
@@ -6173,7 +6173,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 namespace
 {
 
-std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
+std::optional<Field> getProjectedExponentialTimeDecayingKey(
     const Field & field,
     const DataTypePtr & type)
 {
@@ -6213,8 +6213,14 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
         const Float64 time = tuple[1].safeGet<Float64>();
         if (!std::isfinite(value) || !std::isfinite(time))
             return std::nullopt;
-        return getExponentialTimeDecayingOrderingKey(
-            value, time, decay_type->getDecayLength());
+        const auto normalized = normalizeExponentialTimeDecaying(
+            value,
+            time,
+            decay_type->getDecayLength(),
+            decay_type->getKeyWidth());
+        if (decay_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+            return Field(static_cast<UInt64>(normalized.ordering_key));
+        return Field(normalized.ordering_key);
     }
 
     /// A three-field Field is the public raw (value, timestamp, decay_length)
@@ -6230,7 +6236,11 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
             || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
             return std::nullopt;
 
-        return getExponentialTimeDecayingOrderingKey(value, time, decay_length);
+        const auto normalized = normalizeExponentialTimeDecaying(
+            value, time, decay_length, decay_type->getKeyWidth());
+        if (decay_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+            return Field(static_cast<UInt64>(normalized.ordering_key));
+        return Field(normalized.ordering_key);
     }
 
     return std::nullopt;
@@ -6249,7 +6259,7 @@ bool projectExponentialTimeDecayingRange(
         if (!key)
             return false;
 
-        endpoint = FieldRef(*key);
+        endpoint = FieldRef(std::move(*key));
         return true;
     };
 

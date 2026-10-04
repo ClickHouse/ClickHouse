@@ -1804,8 +1804,14 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     for (size_t i = 0; i < key_size; ++i)
     {
-        if (isExponentialTimeDecaying(primary_key.data_types[i]))
-            loaded_index[i] = ColumnUInt64::create();
+        if (const auto * decaying_type
+            = typeid_cast<const DataTypeExponentialTimeDecaying *>(primary_key.data_types[i].get()))
+        {
+            if (decaying_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+                loaded_index[i] = ColumnUInt64::create();
+            else
+                loaded_index[i] = ColumnUInt128::create();
+        }
         else
             loaded_index[i] = primary_key.data_types[i]->createColumn();
 
@@ -1829,11 +1835,21 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     {
         for (size_t j = 0; j < key_size; ++j)
         {
-            if (isExponentialTimeDecaying(primary_key.data_types[j]))
+            if (const auto * decaying_type
+                = typeid_cast<const DataTypeExponentialTimeDecaying *>(primary_key.data_types[j].get()))
             {
-                UInt64 key = 0;
-                readBinaryLittleEndian(key, *index_file);
-                assert_cast<ColumnUInt64 &>(*loaded_index[j]).insertValue(key);
+                if (decaying_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+                {
+                    UInt64 key = 0;
+                    readBinaryLittleEndian(key, *index_file);
+                    assert_cast<ColumnUInt64 &>(*loaded_index[j]).insertValue(key);
+                }
+                else
+                {
+                    UInt128 key = 0;
+                    readBinaryLittleEndian(key, *index_file);
+                    assert_cast<ColumnUInt128 &>(*loaded_index[j]).insertValue(key);
+                }
             }
             else
             {
