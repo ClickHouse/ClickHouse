@@ -912,11 +912,15 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         /// another replica which is ahead of this one (see `IBackupCoordination::addReplicatedDataPath`),
         /// and only ZooKeeper knows the version those parts were written with. It also cannot be used when
         /// the table is known from a `Replicated` database but has not been created on this host yet
-        /// (`storage == nullptr`). Both of those cases already require a ZooKeeper connection, so reading
-        /// the version from ZooKeeper there adds no new dependency - unlike a `structure_only` backup,
-        /// which used to need no ZooKeeper at all and must keep working while ZooKeeper is unavailable.
+        /// (`storage == nullptr`), nor for any table of a `Replicated` database: its definition is taken
+        /// from the database's ZooKeeper snapshot (see `DatabaseReplicated::getTablesForBackup`), which can
+        /// be ahead of the local table if this replica lags behind on `ALTER_METADATA`. All of those cases
+        /// already require a ZooKeeper connection, so reading the version from ZooKeeper there adds no new
+        /// dependency - unlike a `structure_only` backup of a table in an ordinary database, which used to
+        /// need no ZooKeeper at all and must keep working while ZooKeeper is unavailable.
         bool will_backup_data = !backup_settings.structure_only && table_info.should_backup_data;
-        if (table_info.storage && !will_backup_data)
+        bool definition_from_zookeeper = table_info.database && table_info.database->getEngineName() == "Replicated";
+        if (table_info.storage && !will_backup_data && !definition_from_zookeeper)
         {
             auto metadata_snapshot = table_info.storage->getInMemoryMetadataPtr(context, false);
             add_metadata_version_entry(metadata_path_in_backup, metadata_snapshot->getMetadataVersion());

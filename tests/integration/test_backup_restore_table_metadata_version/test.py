@@ -401,3 +401,56 @@ def test_replicated_database_second_replica_applies_restored_version(start_clust
     finally:
         replica1.query("DROP DATABASE IF EXISTS repl_db2 SYNC")
         replica2.query("DROP DATABASE IF EXISTS repl_db2 SYNC")
+
+
+# A replica of a `Replicated` database which has the table but lags behind on its ALTER_METADATA
+# writes the table definition from the database's ZooKeeper snapshot (with the new column), so the
+# metadata version saved next to it must also come from ZooKeeper, even if no data is backed up.
+def test_replicated_database_lagging_replica_structure_only(start_cluster):
+    version_query = (
+        "SELECT metadata_version FROM system.tables "
+        "WHERE database = 'repl_db3' AND name = 't'"
+    )
+    create_db_query = (
+        "CREATE DATABASE repl_db3 "
+        "ENGINE = Replicated('/clickhouse/databases/repl_db3', '{shard}', '{replica}')"
+    )
+    replica1.query(create_db_query)
+    replica2.query(create_db_query)
+    try:
+        replica1.query(
+            "CREATE TABLE repl_db3.t (id UInt64, name Nullable(String)) "
+            "ENGINE = ReplicatedReplacingMergeTree ORDER BY id"
+        )
+        replica2.query("SYSTEM SYNC DATABASE REPLICA repl_db3")
+        replica2.query("SYSTEM STOP REPLICATION QUEUES repl_db3.t")
+
+        replica1.query(
+            "ALTER TABLE repl_db3.t ADD COLUMN surname Nullable(String) SETTINGS alter_sync = 1"
+        )
+        assert replica1.query(version_query).strip() == "1"
+        assert replica2.query(version_query).strip() == "0"
+
+        backup_name = new_backup_name()
+        replica1.query(
+            f"BACKUP DATABASE repl_db3 ON CLUSTER 'cluster' TO {backup_name} SETTINGS structure_only = 1"
+        )
+        replica2.query("SYSTEM START REPLICATION QUEUES repl_db3.t")
+        replica1.query("DROP DATABASE repl_db3 SYNC")
+        replica2.query("DROP DATABASE repl_db3 SYNC")
+
+        # Restore the part of the backup written by the lagging replica2.
+        replica1.query(
+            f"RESTORE DATABASE repl_db3 FROM {backup_name} SETTINGS replica_num_in_backup = 2"
+        )
+        assert (
+            replica1.query(
+                "SELECT count() FROM system.columns WHERE database = 'repl_db3' AND table = 't' AND name = 'surname'"
+            ).strip()
+            == "1"
+        )
+        assert replica1.query(version_query).strip() == "1"
+    finally:
+        replica2.query("SYSTEM START REPLICATION QUEUES repl_db3.t")
+        replica1.query("DROP DATABASE IF EXISTS repl_db3 SYNC")
+        replica2.query("DROP DATABASE IF EXISTS repl_db3 SYNC")
