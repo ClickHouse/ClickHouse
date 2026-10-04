@@ -53,7 +53,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 1/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -87,7 +87,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 2/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -121,7 +121,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 3/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -155,7 +155,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 4/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -189,7 +189,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, release_base, nightly, 1/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -223,7 +223,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, release_base, nightly, 2/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -257,7 +257,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, release_base, nightly, 3/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -291,7 +291,7 @@ jobs:
     runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, release_base, nightly, 4/4)"
-    timeout-minutes: 485
+    timeout-minutes: 965
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}

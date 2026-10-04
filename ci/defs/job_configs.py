@@ -1799,7 +1799,7 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_LARGE_STORAGE,
         command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
         run_in_docker="clickhouse/performance-comparison",
-        timeout=8 * 3600,
+        timeout=16 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
         *[
