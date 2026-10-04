@@ -4175,6 +4175,16 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (type == "interserver")
                 has_interserver = true;
 
+            if ((type == "tls" || type == "postgres") && !Poco::trim(config.getString(prefix + "cipherSuites", "")).empty())
+            {
+                const auto private_key_file = config.getString(prefix + "privateKeyFile", "");
+                if (private_key_file.empty() || config.getString(prefix + "certificateFile", private_key_file).empty())
+                    throw Exception(
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Protocol '{}': 'cipherSuites' in '{}' requires a 'privateKeyFile' (and 'certificateFile', if separate) "
+                        "in the same section, without them it cannot be applied", protocol, conf_name);
+            }
+
             if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,

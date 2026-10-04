@@ -14,11 +14,19 @@ from helpers.proxy1 import Proxy1
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
+ALLOWED_TLS13_SUITE = "TLS_AES_256_GCM_SHA384"
+EXCLUDED_TLS13_SUITE = "TLS_CHACHA20_POLY1305_SHA256"
+
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance(
     "server",
     base_config_dir="configs",
     main_configs=["configs/server.crt", "configs/server.key"],
+    stay_alive=True,
+)
+
+CIPHER_SUITES_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/cipher_suites_without_key_pair.xml"
 )
 
 
@@ -80,6 +88,23 @@ def netcat(hostname, port, content):
         data.append(d)
     s.close()
     return b"".join(data)
+
+
+def offer_single_tls13_suite(port, suite):
+    """Hand one endpoint exactly one TLS 1.3 cipher suite and report whether it was accepted.
+
+    Reads the negotiated suite rather than the exit status, because s_client also reports a
+    verification failure for the self-signed server certificate.
+    """
+    result = server.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -connect 127.0.0.1:{port} -tls1_3 "
+            f"-ciphersuites {suite} -brief </dev/null 2>&1 || true",
+        ]
+    )
+    return f"Ciphersuite: {suite}" in result
 
 
 def test_connections():
@@ -166,6 +191,52 @@ def test_connections():
     assert execute_query_https_unsupported(
         server.ip_address, 8443, "SELECT 1", version=ssl.TLSVersion.TLSv1_3
     )
+
+
+def test_tls13_cipher_suites_per_endpoint():
+    # 8445 keeps no cipherSuites, so it shows the excluded suite is available in this image;
+    # without that the refusal on 8446 would not be attributable to the setting.
+    assert offer_single_tls13_suite(8445, EXCLUDED_TLS13_SUITE)
+    assert offer_single_tls13_suite(8446, ALLOWED_TLS13_SUITE)
+    assert not offer_single_tls13_suite(8446, EXCLUDED_TLS13_SUITE)
+
+
+def start_with_protocols(protocols_xml, refused_protocol=None):
+    server.stop_clickhouse()
+    server.replace_config(
+        CIPHER_SUITES_CONFIG_IN_CONTAINER,
+        f"<clickhouse><protocols>{protocols_xml}</protocols></clickhouse>",
+    )
+    try:
+        if refused_protocol is None:
+            server.start_clickhouse()
+            assert server.query("SELECT 1") == "1\n"
+        else:
+            server.start_clickhouse(expected_to_fail=True)
+            assert server.contains_in_log(
+                f"'cipherSuites' in 'protocols.{refused_protocol}' requires a 'privateKeyFile'",
+                filename="clickhouse-server.err.log",
+            )
+    finally:
+        server.stop_clickhouse()
+        server.exec_in_container(
+            ["rm", "-f", CIPHER_SUITES_CONFIG_IN_CONTAINER], user="root"
+        )
+        server.start_clickhouse()
+
+
+def test_tls13_cipher_suites_require_own_key_pair():
+    start_with_protocols(
+        f"<tcp_secure><cipherSuites>{ALLOWED_TLS13_SUITE}</cipherSuites></tcp_secure>",
+        refused_protocol="tcp_secure",
+    )
+    start_with_protocols(
+        "<postgres_secure><type>postgres</type><port>5433</port>"
+        f"<cipherSuites>{ALLOWED_TLS13_SUITE}</cipherSuites></postgres_secure>",
+        refused_protocol="postgres_secure",
+    )
+    # A blank value leaves the defaults in place, so it is accepted.
+    start_with_protocols("<tcp_secure><cipherSuites> </cipherSuites></tcp_secure>")
 
 
 # tests when using PROXYv1 with enabled auth_use_forwarded_address that forwarded address is used for authentication and query's source address
