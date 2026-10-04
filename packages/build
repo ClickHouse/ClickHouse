@@ -27,6 +27,7 @@ Used envs:
   VERSION_STRING='${VERSION_STRING}' - the package version to overwrite
 
 ./build-dir must link to the build directory, configured with -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1
+and with chdig enabled
 "
 
 CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
@@ -247,6 +248,14 @@ fi
 
 CLICKHOUSE_VERSION_STRING+=$VERSION_POSTFIX
 echo -e "\nCurrent version is $CLICKHOUSE_VERSION_STRING"
+
+# The manifests package `clickhouse-chdig` and `chdig` as links to `clickhouse`, which only
+# work when the build includes chdig. It is disabled e.g. in the sanitizer builds, where the
+# links would silently run `clickhouse` itself, so refuse to package such a build.
+if [ ! -L build-dir/programs/chdig ]; then
+    echo "The build in ./build-dir does not include chdig (build-dir/programs/chdig is missing), cannot package it" >&2
+    exit 4
+fi
 
 for config in clickhouse*.yaml; do
     if [ -n "$MAKE_DEB" ] || [ -n "$MAKE_TGZ" ]; then
