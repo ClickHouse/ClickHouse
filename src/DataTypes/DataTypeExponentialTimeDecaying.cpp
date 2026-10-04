@@ -29,6 +29,7 @@
 #include <cmath>
 #include <fmt/format.h>
 #include <utility>
+#include <boost/multiprecision/cpp_bin_float.hpp>
 
 namespace DB
 {
@@ -44,24 +45,87 @@ namespace ErrorCodes
 namespace
 {
 
-Float64 getDecayLength(const ASTPtr & parameters)
+using ExtendedTimeDecayFloat = boost::multiprecision::cpp_bin_float_quad;
+
+ExponentialTimeDecayingCanonicalDirectValue normalizeExponentialTimeDecaying128Direct(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    if (value == 0)
+        return {0, 0};
+
+    const bool negative = std::signbit(value);
+    const ExtendedTimeDecayFloat unit_timestamp
+        = ExtendedTimeDecayFloat(time)
+        + ExtendedTimeDecayFloat(decay_length) * log(ExtendedTimeDecayFloat(std::abs(value)));
+
+    Float64 anchor = static_cast<Float64>(unit_timestamp);
+    if (ExtendedTimeDecayFloat(anchor) > unit_timestamp)
+        anchor = std::nextafter(anchor, -std::numeric_limits<Float64>::infinity());
+
+    auto magnitude_at = [&](Float64 candidate)
+    {
+        return static_cast<Float64>(
+            exp((unit_timestamp - ExtendedTimeDecayFloat(candidate))
+                / ExtendedTimeDecayFloat(decay_length)));
+    };
+
+    Float64 magnitude = magnitude_at(anchor);
+    if (!std::isfinite(magnitude) || magnitude == 0)
+    {
+        anchor = std::nextafter(anchor, std::numeric_limits<Float64>::infinity());
+        magnitude = magnitude_at(anchor);
+    }
+
+    if (!std::isfinite(anchor) || !std::isfinite(magnitude) || magnitude == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ExponentialTimeDecaying128 value cannot be represented by a finite canonical anchor");
+
+    return {negative ? -magnitude : magnitude, anchor};
+}
+
+UInt128 packExponentialTimeDecaying128Key(
+    Float64 value_at_anchor, Float64 anchor_time)
+{
+    constexpr UInt128 midpoint = UInt128(1) << 127;
+    constexpr UInt64 magnitude_mask = (UInt64(1) << 63) - 1;
+
+    if (value_at_anchor == 0)
+        return midpoint;
+
+    const UInt64 sortable_anchor = getExponentialTimeDecayingSortableFloatKey(anchor_time);
+    const UInt64 sortable_magnitude
+        = getExponentialTimeDecayingSortableFloatKey(std::abs(value_at_anchor));
+    const UInt128 timestamp_key
+        = (UInt128(sortable_anchor) << 63)
+        | UInt128(sortable_magnitude & magnitude_mask);
+
+    if (std::signbit(value_at_anchor))
+        return midpoint - 1 - timestamp_key;
+    return midpoint + timestamp_key;
+}
+
+Float64 getDecayLength(const ASTPtr & parameters, const char * type_name)
 {
     if (!parameters || parameters->children.size() != 1)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Data type ExponentialTimeDecaying takes exactly one parameter, the decay length");
+            "Data type {} takes exactly one parameter, the decay length",
+            type_name);
 
     const auto * literal = parameters->children[0]->as<ASTLiteral>();
     if (!literal)
         throw Exception(
             ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-            "Decay length of data type ExponentialTimeDecaying must be a literal");
+            "Decay length of data type {} must be a literal",
+            type_name);
 
     const Float64 decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), literal->value);
     if (!std::isfinite(decay_length) || decay_length <= 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Decay length of data type ExponentialTimeDecaying must be finite and positive");
+            "Decay length of data type {} must be finite and positive",
+            type_name);
 
     return decay_length;
 }
@@ -74,12 +138,14 @@ public:
         SerializationPtr logical_serialization_,
         DataTypePtr storage_type_,
         DataTypePtr logical_type_,
-        Float64 decay_length_)
+        Float64 decay_length_,
+        ExponentialTimeDecayingKeyWidth key_width_)
         : SerializationWrapper(storage_serialization_)
         , logical_serialization(std::move(logical_serialization_))
         , storage_type(std::move(storage_type_))
         , logical_type(std::move(logical_type_))
         , decay_length(decay_length_)
+        , key_width(key_width_)
     {
     }
 
@@ -136,23 +202,18 @@ public:
         const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
     {
         const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(column);
-        const auto & tuple = decaying.getStorageTuple();
-        const Float64 value
-            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-        const Float64 time
-            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
-
-        UInt8 domain = 1;
-        UInt64 sortable_unit_timestamp = 0;
-        if (value != 0)
+        if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
         {
-            domain = std::signbit(value) ? 0 : 2;
-            sortable_unit_timestamp = getExponentialTimeDecayingSortableFloatKey(
-                getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
+            const auto & keys
+                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+            writeBinaryLittleEndian(keys[row_num], ostr);
         }
-
-        writeBinary(domain, ostr);
-        writeBinaryLittleEndian(sortable_unit_timestamp, ostr);
+        else
+        {
+            const auto & keys
+                = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
+            writeBinaryLittleEndian(keys[row_num], ostr);
+        }
     }
 
     void serializeBinaryBulk(
@@ -302,7 +363,7 @@ private:
     {
         auto logical = logical_type->createColumn();
         deserialize(*logical);
-        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization");
+        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization", key_width);
         column.insertRangeFrom(*storage, 0, storage->size());
     }
 
@@ -312,7 +373,7 @@ private:
         auto logical = logical_type->createColumn();
         if (!deserialize(*logical))
             return false;
-        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization");
+        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization", key_width);
         column.insertRangeFrom(*storage, 0, storage->size());
         return true;
     }
@@ -329,18 +390,109 @@ private:
     const DataTypePtr storage_type;
     const DataTypePtr logical_type;
     const Float64 decay_length;
+    const ExponentialTimeDecayingKeyWidth key_width;
 };
 
-DataTypePtr createFromParameters(const ASTPtr & parameters)
+DataTypePtr createFromParameters64(const ASTPtr & parameters)
 {
-    return std::make_shared<DataTypeExponentialTimeDecaying>(getDecayLength(parameters));
+    return std::make_shared<DataTypeExponentialTimeDecaying>(
+        getDecayLength(parameters, "ExponentialTimeDecaying64"),
+        ExponentialTimeDecayingKeyWidth::Bits64);
 }
 
+DataTypePtr createFromParameters128(const ASTPtr & parameters)
+{
+    return std::make_shared<DataTypeExponentialTimeDecaying>(
+        getDecayLength(parameters, "ExponentialTimeDecaying128"),
+        ExponentialTimeDecayingKeyWidth::Bits128);
+}
+
+}
+
+
+UInt128 getExponentialTimeDecayingOrderingKey128(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    const auto direct = normalizeExponentialTimeDecaying128Direct(value, time, decay_length);
+    return packExponentialTimeDecaying128Key(direct.value_at_anchor, direct.anchor_time);
+}
+
+ExponentialTimeDecayingCanonicalDirectValue
+getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key)
+{
+    constexpr UInt128 midpoint = UInt128(1) << 127;
+    constexpr UInt128 residual_mask = (UInt128(1) << 63) - 1;
+
+    if (ordering_key == midpoint)
+        return {0, 0};
+
+    const bool negative = ordering_key < midpoint;
+    const UInt128 timestamp_key = negative
+        ? midpoint - 1 - ordering_key
+        : ordering_key - midpoint;
+
+    const UInt64 sortable_anchor = static_cast<UInt64>(timestamp_key >> 63);
+    const UInt64 sortable_magnitude
+        = (UInt64(1) << 63) | static_cast<UInt64>(timestamp_key & residual_mask);
+
+    const Float64 anchor_time
+        = getExponentialTimeDecayingFloatFromSortableKey(sortable_anchor);
+    const Float64 magnitude
+        = getExponentialTimeDecayingFloatFromSortableKey(sortable_magnitude);
+
+    if (!std::isfinite(anchor_time) || !std::isfinite(magnitude) || magnitude <= 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Serialized ExponentialTimeDecaying128 ordering key is invalid");
+
+    return {negative ? -magnitude : magnitude, anchor_time};
+}
+
+bool isFiniteExponentialTimeDecayingCurve(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    if (!std::isfinite(value)
+        || !std::isfinite(time)
+        || !std::isfinite(decay_length)
+        || decay_length <= 0)
+        return false;
+
+    return value == 0
+        || std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
+}
+
+ExponentialTimeDecayingValue normalizeExponentialTimeDecaying(
+    Float64 value,
+    Float64 time,
+    Float64 decay_length,
+    ExponentialTimeDecayingKeyWidth key_width)
+{
+    if (value == 0)
+    {
+        const UInt128 ordering_key = key_width == ExponentialTimeDecayingKeyWidth::Bits64
+            ? UInt128(shiftOneBitAndSign(0, 0))
+            : (UInt128(1) << 127);
+        return {ordering_key, 0, 0};
+    }
+
+    if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
+        return {
+            UInt128(getExponentialTimeDecayingOrderingKey(value, time, decay_length)),
+            value,
+            time};
+
+    const auto direct = normalizeExponentialTimeDecaying128Direct(value, time, decay_length);
+    return {
+        packExponentialTimeDecaying128Key(direct.value_at_anchor, direct.anchor_time),
+        direct.value_at_anchor,
+        direct.anchor_time};
 }
 
 DataTypeExponentialTimeDecaying::DataTypeExponentialTimeDecaying(
-    Float64 decay_length_)
+    Float64 decay_length_,
+    ExponentialTimeDecayingKeyWidth key_width_)
     : decay_length(decay_length_)
+    , key_width(key_width_)
     , storage_type(std::make_shared<DataTypeTuple>(
           DataTypes{
               std::make_shared<DataTypeFloat64>(),
@@ -357,12 +509,12 @@ DataTypeExponentialTimeDecaying::DataTypeExponentialTimeDecaying(
 
 String DataTypeExponentialTimeDecaying::doGetName() const
 {
-    return fmt::format("ExponentialTimeDecaying({})", decay_length);
+    return fmt::format("{}({})", getExponentialTimeDecayingTypeName(key_width), decay_length);
 }
 
 MutableColumnPtr DataTypeExponentialTimeDecaying::createColumn() const
 {
-    return ColumnExponentialTimeDecaying::create(storage_type->createColumn(), decay_length);
+    return ColumnExponentialTimeDecaying::create(storage_type->createColumn(), decay_length, key_width);
 }
 
 Field DataTypeExponentialTimeDecaying::getDefault() const
@@ -378,7 +530,9 @@ void DataTypeExponentialTimeDecaying::insertDefaultInto(IColumn & column) const
 bool DataTypeExponentialTimeDecaying::equals(const IDataType & rhs) const
 {
     const auto * other = typeid_cast<const DataTypeExponentialTimeDecaying *>(&rhs);
-    return other && decay_length == other->decay_length;
+    return other
+        && decay_length == other->decay_length
+        && key_width == other->key_width;
 }
 
 bool DataTypeExponentialTimeDecaying::haveMaximumSizeOfValue() const
@@ -388,17 +542,20 @@ bool DataTypeExponentialTimeDecaying::haveMaximumSizeOfValue() const
 
 size_t DataTypeExponentialTimeDecaying::getMaximumSizeOfValueInMemory() const
 {
-    return storage_type->getMaximumSizeOfValueInMemory() + sizeof(UInt64);
+    return storage_type->getMaximumSizeOfValueInMemory()
+        + (key_width == ExponentialTimeDecayingKeyWidth::Bits64 ? sizeof(UInt64) : sizeof(UInt128));
 }
 
 size_t DataTypeExponentialTimeDecaying::getSizeOfValueInMemory() const
 {
-    return storage_type->getSizeOfValueInMemory() + sizeof(UInt64);
+    return storage_type->getSizeOfValueInMemory()
+        + (key_width == ExponentialTimeDecayingKeyWidth::Bits64 ? sizeof(UInt64) : sizeof(UInt128));
 }
 
 void DataTypeExponentialTimeDecaying::updateHashImpl(SipHash & hash) const
 {
     hash.update(decay_length);
+    hash.update(static_cast<UInt8>(key_width));
 }
 
 SerializationPtr DataTypeExponentialTimeDecaying::doGetSerialization(const SerializationInfoSettings &) const
@@ -408,7 +565,8 @@ SerializationPtr DataTypeExponentialTimeDecaying::doGetSerialization(const Seria
         logical_type->getDefaultSerialization(),
         storage_type,
         logical_type,
-        decay_length);
+        decay_length,
+        key_width);
 }
 
 SerializationPtr DataTypeExponentialTimeDecaying::getSerialization(const SerializationInfo & info) const
@@ -418,7 +576,8 @@ SerializationPtr DataTypeExponentialTimeDecaying::getSerialization(const Seriali
         logical_type->getDefaultSerialization(),
         storage_type,
         logical_type,
-        decay_length);
+        decay_length,
+        key_width);
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecaying::createSerializationInfo(
@@ -437,9 +596,11 @@ SerializationInfoPtr DataTypeExponentialTimeDecaying::getSerializationInfo(
     return storage_type->getSerializationInfo(decaying_column.getStorageColumn(), settings);
 }
 
-DataTypePtr createDataTypeExponentialTimeDecaying(Float64 decay_length)
+DataTypePtr createDataTypeExponentialTimeDecaying(
+    Float64 decay_length,
+    ExponentialTimeDecayingKeyWidth key_width)
 {
-    return std::make_shared<DataTypeExponentialTimeDecaying>(decay_length);
+    return std::make_shared<DataTypeExponentialTimeDecaying>(decay_length, key_width);
 }
 
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType & type)
@@ -453,6 +614,19 @@ std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType 
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const DataTypePtr & type)
 {
     return type ? tryGetExponentialTimeDecayingDecayLength(*type) : std::nullopt;
+}
+
+std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const IDataType & type)
+{
+    if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecaying *>(&type))
+        return decaying_type->getKeyWidth();
+
+    return std::nullopt;
+}
+
+std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const DataTypePtr & type)
+{
+    return type ? tryGetExponentialTimeDecayingKeyWidth(*type) : std::nullopt;
 }
 
 bool isExponentialTimeDecaying(const IDataType & type)
@@ -546,6 +720,15 @@ void assertExponentialTimeDecayingTypesCompatibleImpl(
                 operation,
                 *left_decay_length,
                 *right_decay_length);
+
+        if (tryGetExponentialTimeDecayingKeyWidth(left_type)
+            != tryGetExponentialTimeDecayingKeyWidth(right_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{} cannot implicitly combine {} and {}",
+                operation,
+                left_type->getName(),
+                right_type->getName());
         return;
     }
 
@@ -653,7 +836,10 @@ ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
 }
 
 ColumnPtr materializeExponentialTimeDecayingStorageColumn(
-    const IColumn & logical_column, Float64 decay_length, const String & operation)
+    const IColumn & logical_column,
+    Float64 decay_length,
+    const String & operation,
+    ExponentialTimeDecayingKeyWidth key_width)
 {
     ColumnPtr full = logical_column.convertToFullColumnIfConst();
     const auto & tuple = assert_cast<const ColumnTuple &>(*full);
@@ -697,14 +883,16 @@ ColumnPtr materializeExponentialTimeDecayingStorageColumn(
                 "Malformed ExponentialTimeDecaying value in {}: value and timestamp must define a finite decay curve",
                 operation);
 
-        const auto normalized = normalizeExponentialTimeDecaying(value, time, decay_length);
+        const auto normalized = normalizeExponentialTimeDecaying(
+            value, time, decay_length, key_width);
         storage_values->insertValue(normalized.value_at_anchor);
         storage_times->insertValue(normalized.anchor_time);
     }
 
     auto physical = ColumnTuple::create(
         Columns{std::move(storage_values), std::move(storage_times)});
-    return ColumnExponentialTimeDecaying::create(physical->assumeMutable(), decay_length);
+    return ColumnExponentialTimeDecaying::create(
+        physical->assumeMutable(), decay_length, key_width);
 }
 
 void validateExponentialTimeDecayingColumn(
@@ -731,25 +919,44 @@ void validateExponentialTimeDecayingColumn(
 
     const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
     const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    const auto & ordering_key
-        = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
-
     for (size_t row = 0; row < tuple.size(); ++row)
     {
         if (nullable && nullable->isNullAt(row))
             continue;
 
-        const auto normalized
-            = normalizeExponentialTimeDecaying(values[row], times[row], decaying.getDecayLength());
         if (!isFiniteExponentialTimeDecayingCurve(
-                values[row], times[row], decaying.getDecayLength())
-            || normalized.value_at_anchor != values[row]
-            || normalized.anchor_time != times[row]
-            || normalized.ordering_key != ordering_key[row])
+                values[row], times[row], decaying.getDecayLength()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: direct payload or derived ordering key is invalid",
+                "Malformed ExponentialTimeDecaying value in {}: direct payload is invalid",
                 operation);
+
+        const auto normalized = normalizeExponentialTimeDecaying(
+            values[row],
+            times[row],
+            decaying.getDecayLength(),
+            decaying.getKeyWidth());
+
+        if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+        {
+            const auto & keys
+                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+            if (static_cast<UInt64>(normalized.ordering_key) != keys[row])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed ExponentialTimeDecaying64 value in {}: derived ordering key is invalid",
+                    operation);
+        }
+        else
+        {
+            const auto & keys
+                = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
+            if (normalized.ordering_key != keys[row])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed ExponentialTimeDecaying128 value in {}: derived ordering key is invalid",
+                    operation);
+        }
     }
 }
 
@@ -830,47 +1037,40 @@ void validateExponentialTimeDecayingColumn(
 
 void registerDataTypeExponentialTimeDecaying(DataTypeFactory & factory)
 {
-    const Documentation documentation{
+    const Documentation documentation64{
         .description = R"(
-Represents a finite exponentially time-decaying value.
-
-The decay length is part of the logical type: `ExponentialTimeDecaying(decay_length)` and is not
-stored per row. The persisted payload contains the authoritative
-`(value_at_anchor, anchor_time)` pair. Arithmetic uses that direct payload.
-
-For ordered presentation and sparse indexes, the type derives one 8-byte `UInt64` prefix with
-`shiftOneBitAndSign(unit_timestamp)`. The sign divides the key space around zero and one low-order
-bit of the sortable `Float64` unit timestamp is discarded. The prefix is only an accelerator:
-neighboring curves can share it, so equality and ordering fall back to the full sign and sortable
-unit timestamp when the prefixes collide. Logical hashing and arena keys use that full logical key
-as well, so the discarded prefix bit never changes equality, `GROUP BY`, or `DISTINCT` semantics.
-
-For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
-time at which its magnitude is one. The authoritative persisted payload remains
-`(value_at_anchor, anchor_time)`; the full logical key and the compact `UInt64` prefix are derived
-from it.
-There is no three-field sign/unit-time/decay-length representation. Sign and unit-time may be
-derived for inspection, but a tuple containing them is not a value representation or constructor.
-
-Public CAST construction uses raw `(value, timestamp[, decay_length])` input. When the target omits
-its type parameter, the third tuple element supplies the decay length; when both are present they
-must agree. The decay length remains part of the static result type rather than being stored
-independently per row.
-
-`PARTITION BY` is not supported for this experimental type. DateTime and DateTime64 inputs are
-represented as seconds. Values with different decay lengths are different logical types and cannot
-be mixed.
+Represents an exponentially time-decaying curve whose complete logical identity is a compact
+`UInt64` ordering key. Curves mapping to the same key compare equal and have the same hash.
+The direct payload is `(value_at_anchor, anchor_time)`, and `decay_length` is part of the type.
 )",
-        .syntax = "ExponentialTimeDecaying(decay_length)",
+        .syntax = "ExponentialTimeDecaying64(decay_length)",
         .examples = {},
-        .related = {"SimpleAggregateFunction"},
+        .related = {"SimpleAggregateFunction", "ExponentialTimeDecaying128"},
+    };
+
+    const Documentation documentation128{
+        .description = R"(
+Represents an exponentially time-decaying curve whose complete logical identity is a `UInt128`
+ordering key. The wider key uses a deterministic extended-precision unit timestamp and retains
+additional residual timestamp precision compared with `ExponentialTimeDecaying64`.
+The direct payload is `(value_at_anchor, anchor_time)`, and `decay_length` is part of the type.
+)",
+        .syntax = "ExponentialTimeDecaying128(decay_length)",
+        .examples = {},
+        .related = {"SimpleAggregateFunction", "ExponentialTimeDecaying64"},
     };
 
     factory.registerDataType(
-        "ExponentialTimeDecaying",
-        createFromParameters,
+        "ExponentialTimeDecaying64",
+        createFromParameters64,
         DataTypeFactory::Case::Sensitive,
-        documentation);
+        documentation64);
 
+    factory.registerDataType(
+        "ExponentialTimeDecaying128",
+        createFromParameters128,
+        DataTypeFactory::Case::Sensitive,
+        documentation128);
 }
+
 }
