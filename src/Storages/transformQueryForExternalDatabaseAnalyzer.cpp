@@ -101,9 +101,8 @@ bool isStringOrNumber(const DataTypePtr & type)
     return isStringOrFixedString(value_type) || isNumber(value_type);
 }
 
-/// Rewrites each `Enum` leaf of the size-1 constant `column` the way a comparison with `operand_type` reads it: as
-/// its name against a string, as its value against a number. Other leaves are kept. Empty if an `Enum` leaf faces
-/// another type.
+/// Rewrites each `Enum` leaf of the size-1 constant `column` as a comparison with `operand_type` reads it: the name
+/// against a string, the value against a number. Empty if an `Enum` leaf faces another type.
 std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
 {
     if (!holdsEnumValue(column, type))
