@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -34,17 +35,6 @@ static bool dependsOnItsBlock(const ActionsDAG & actions)
     return false;
 }
 
-/// True if a value of this type can contain a floating-point number anywhere inside it - directly,
-/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
-static bool typeCanContainFloat(const DataTypePtr & type)
-{
-    if (isFloat(type))
-        return true;
-    bool found = false;
-    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
-    return found;
-}
-
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
 /// marks or skip indexes here, so only the dynamic-filtering path applies, and it is delivered
 /// through `FormatTopKFilterInfo` rather than an injected PREWHERE: the format appends the
@@ -68,24 +58,13 @@ static size_t tryTopKForFormatSource(
     if (!settings.use_top_k_dynamic_filtering)
         return 0;
 
-    /// Same eligibility as the MergeTree dynamic-filtering path below: Dynamic and Variant
-    /// columns cannot be reliably compared by `__topKFilter`, and for variable-length types the
-    /// per-row comparison cost can exceed its savings, so they are gated behind an explicit
-    /// opt-in.
+    /// Same eligibility as the MergeTree dynamic-filtering path below: a Dynamic, Variant or JSON
+    /// anywhere in the type cannot be reliably compared by `__topKFilter`, and for variable-length
+    /// types the per-row comparison cost can exceed its savings, so they are gated behind an
+    /// explicit opt-in.
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
-    if (isDynamic(sort_column.type) || isVariant(sort_column.type)
+    if (hasRuntimeTypedType(sort_column.type)
         || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
-        return 0;
-
-    /// `ORDER BY` sorts `nan` together with `NULL` (see `SortColumnDescription::nulls_direction`),
-    /// but the comparison functions behind `__topKFilter` do not: a `nan` can become the published
-    /// threshold and then reject every finite value, or be dropped under `NULLS FIRST`. That is a
-    /// pre-existing defect of the `MergeTree` path, tracked in
-    /// https://github.com/ClickHouse/ClickHouse/issues/116705. Formats add a second, independent
-    /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
-    /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
-    /// sort keys off this path until both are `nan`-aware.
-    if (typeCanContainFloat(sort_column.type))
         return 0;
 
     /// The resolved sort column must be one of the source's outputs with an unchanged type: the
@@ -269,23 +248,23 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     TopKThresholdTrackerPtr threshold_tracker = nullptr;
 
     /// The skip-index top-k path ranks granules via raw Field comparison
-    /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-    /// or collation. Restrict it to types where raw Field ordering matches
-    /// ORDER BY semantics. This check mirrors the guard in
-    /// ReadFromMergeTree::buildIndexes for defense-in-depth.
+    /// (MinMaxGranuleItem::operator<), which does not respect nulls_direction or collation and
+    /// compares Float64 with a hardcoded NaN-last hint. Restrict it to types where raw Field
+    /// ordering matches ORDER BY semantics. buildIndexes applies the same conditions
+    /// independently; neither check subsumes the other.
     bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
         && !sort_column.type->isNullable()
+        && !hasTypeThatCanContainFloat(sort_column.type)
         && !sort_col_desc.collator;
 
     bool use_skip_index = settings.use_skip_indexes_for_top_k
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
-    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Comparison functions also
-    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
-    /// for these types.
+    /// The threshold is a bare Field, so it can only order types whose Field ordering matches
+    /// ORDER BY. Comparison functions also reject zero-sized tuples even though ORDER BY
+    /// supports them.
+    /// TODO: lift the Field restriction once the threshold carries the full sort-key representation.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -295,8 +274,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type)
+        && !hasRuntimeTypedType(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 

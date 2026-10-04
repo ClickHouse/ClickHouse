@@ -58,18 +58,17 @@ SELECT countIf(explain LIKE '%Granules: 0/2%') FROM (EXPLAIN indexes = 1 SELECT 
 SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0;
 SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0 SETTINGS use_skip_indexes = 0;
 
--- The stored bound is a semantic extremum, so a consumer that reads it as one gets the true maximum.
 -- `ORDER BY val DESC LIMIT 1` reaches two independently gated TopK mechanisms: plan-time granule
 -- ordering and the read-time threshold tracker. Both are admitted if either gate is on, so the oracle
 -- has to turn off both, and pin both on for the other arm because both gates are randomized. Both
--- arms also answer 200 when neither mechanism runs, and the section is described whenever the
--- mechanism is enabled, even for a part the index was never materialized for, so assert its granule
--- count: only pruning reaches 1/2, and a merge moves Parts to 1/1 but leaves Granules alone.
+-- arms also answer 200 when neither mechanism runs, so assert which one does: a float sort column
+-- keeps the threshold filter but gets no granule ordering, because a stored bound cannot place a NaN
+-- where ORDER BY does.
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0;
-SELECT countIf(explain LIKE '%Granules: 1/2%')
+SELECT countIf(explain LIKE '%Filter TopK Granules%'), countIf(explain LIKE '%__topKFilter%') > 0
 FROM (EXPLAIN indexes = 1 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1);
 
