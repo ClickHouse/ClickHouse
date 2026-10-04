@@ -226,6 +226,14 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Estimates merge work in independently mergeable state elements, or returns zero without an estimate.
+    /// Callers compare states in these units to decide which merges warrant additional parallelism.
+    virtual size_t getEstimatedMergeWork(ConstAggregateDataPtr /*place*/) const { return 0; }
+
+    /// Estimates state growth in bytes per distinct argument tuple, excluding the fixed storage from
+    /// `sizeOfData`. Returns zero when a linear model of distinct inputs does not describe the state.
+    virtual size_t getStateBytesPerDistinctInput() const { return 0; }
+
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }

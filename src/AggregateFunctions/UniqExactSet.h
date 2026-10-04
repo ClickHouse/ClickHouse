@@ -53,6 +53,14 @@ class UniqExactSet
 public:
     using value_type = typename SingleLevelSet::value_type;
 
+    /// Estimates buffer bytes per distinct value at the maximum load of a single-level set. This
+    /// excludes fixed state storage and the spare capacity immediately after a buffer grows.
+    static size_t getEstimatedBytesPerValue()
+    {
+        const typename SingleLevelSet::grower_type grower;
+        return sizeof(typename SingleLevelSet::cell_type) * grower.bufSize() / grower.maxFill();
+    }
+
     template <typename Arg, SetLevelHint hint>
     auto ALWAYS_INLINE insert(Arg && arg)
     {

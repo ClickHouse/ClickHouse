@@ -401,6 +401,14 @@ bool AggregateFunctionTuple::isAbleToParallelizeMerge() const
     return false;
 }
 
+size_t AggregateFunctionTuple::getEstimatedMergeWork(ConstAggregateDataPtr place) const
+{
+    size_t work = 0;
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+        work += nested_functions[i]->getEstimatedMergeWork(place + state_offsets[i]);
+    return work;
+}
+
 bool AggregateFunctionTuple::canOptimizeEqualKeysRanges() const
 {
     for (const auto & func : nested_functions)
