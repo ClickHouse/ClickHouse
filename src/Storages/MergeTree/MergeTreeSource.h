@@ -17,6 +17,8 @@ public:
 
     std::string getName() const override;
 
+    bool hasVirtualRowConversions() const;
+
     Status prepare() override;
 
 #if defined(OS_LINUX)
