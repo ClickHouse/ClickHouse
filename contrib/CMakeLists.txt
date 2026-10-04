@@ -171,6 +171,12 @@ add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 
+# PCAP input format: libpcap (offline file reading) must precede libtins.
+# The option is declared here because libpcap-cmake (added first) reads it.
+option (ENABLE_PCAP "Enable the PCAP input format (libtins + libpcap)" ${ENABLE_LIBRARIES})
+add_contrib (libpcap-cmake libpcap)
+add_contrib (libtins-cmake libtins) # requires: libpcap
+
 option(ENABLE_LIBPQXX "Enable PostgreSQL" ${ENABLE_LIBRARIES})
 if (ENABLE_LIBPQXX)
     add_contrib (postgres-cmake postgres)
