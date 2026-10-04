@@ -459,9 +459,16 @@ ASTPtr tryParseLeadingSetQuery(
     IParser::Pos iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
     Expected expected;
     ASTPtr set_query;
-    if (ParserSetQuery().parse(iterator, set_query, expected))
-        return set_query;
-    return nullptr;
+    if (!ParserSetQuery().parse(iterator, set_query, expected))
+        return nullptr;
+
+    /// The `SET` must be the whole statement: a successful parse only proves a valid prefix, and
+    /// returning it for `SET x = 1 garbage` or `SET dialect = 'clickhouse'; db.t.find({})` would
+    /// silently drop the text after it. A single trailing `;` is tolerated.
+    ParserToken(TokenType::Semicolon).ignore(iterator, expected);
+    if (!iterator->isEnd())
+        return nullptr;
+    return set_query;
 }
 
 std::map<String, Documentation> ParserSetQuery::getDocumentation() const
