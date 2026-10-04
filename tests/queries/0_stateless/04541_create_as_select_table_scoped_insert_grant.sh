@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 # Regression test for the temporary-table publish path of `CREATE TABLE ... AS SELECT` on Atomic
 # databases (issue https://github.com/ClickHouse/ClickHouse/issues/26746).
 #
