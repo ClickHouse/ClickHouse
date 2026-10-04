@@ -103,12 +103,18 @@ public:
     /// is registered in the list and gets its own per-entry `is_cancelled` flag.
     bool isAllCancelled() const { return all_cancelled; }
 
-    /// Cancel all current fetches, and also all inserted later.
+    /// Cancel all current and future fetches.
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
         /// See the comment in `MergeList::cancelAll` about the ordering with `insert`.
         all_cancelled = true;
+        cancelCurrent();
+    }
+
+    /// Cancel all current fetches.
+    void cancelCurrent()
+    {
         std::lock_guard lock{mutex};
         for (auto & fetch_element : entries)
             fetch_element.is_cancelled = true;
