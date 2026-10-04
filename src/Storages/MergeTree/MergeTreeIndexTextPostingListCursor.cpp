@@ -1165,11 +1165,10 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & c
         window = written;
     }
 
-    size_t n = cursors.size();
-    if (n > 1)
+    if (cursors.size() > 1)
     {
-        chassert(n < 256);
-        finalizeCounters(out + (first.begin - row_offset), first.end - first.begin, static_cast<UInt8>(n));
+        chassert(cursors.size() < 256);
+        finalizeCounters(out + (first.begin - row_offset), first.end - first.begin, static_cast<UInt8>(cursors.size()));
     }
 }
 
@@ -1189,9 +1188,7 @@ void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors)
         { return a->cardinality() < b->cardinality(); });
 }
 
-TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(
-    const std::vector<PostingListCursor *> & cursors,
-    TextIndexPostingsIntersectionAlgorithm algorithm)
+TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(const std::vector<PostingListCursor *> & cursors, TextIndexPostingsIntersectionAlgorithm algorithm)
 {
     const size_t n = cursors.size();
     bool use_brute_force = algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce;
@@ -1242,24 +1239,21 @@ void lazyIntersectPostingLists(
     TextIndexPostingsIntersectionAlgorithm algorithm,
     LazyPostingsStats & stats)
 {
+    const size_t n = cursors.size();
+    if (n == 0)
+        return;
+
     requireRowOffsetRepresentable(row_offset);
 
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
-
-    const size_t n = cursors.size();
     const size_t end = row_offset + num_rows;
-
-    if (n == 0)
-        return;
 
     if (n == 1)
     {
         cursors.front()->linearOr(out, row_offset, num_rows);
-        return;
     }
-
-    if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
+    else if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
     {
         /// The counters are `UInt8`, `chooseIntersectionAlgorithm` never picks brute force for 256+ cursors.
         if (n >= 256)
@@ -1267,21 +1261,23 @@ void lazyIntersectPostingLists(
 
         ++stats.brute_force_intersections;
         intersectBruteForce(out, cursors, row_offset, num_rows, stats);
-        return;
     }
-
-    if (algorithm != TextIndexPostingsIntersectionAlgorithm::Leapfrog)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unresolved intersection algorithm: {}", algorithm);
-
-    for (size_t i = 0; i < n; ++i)
+    else if (algorithm == TextIndexPostingsIntersectionAlgorithm::Leapfrog)
     {
-        cursors[i]->advance(static_cast<uint32_t>(row_offset));
-        if (!cursors[i]->valid() || cursors[i]->value() >= end)
-            return;
-    }
+        for (size_t i = 0; i < n; ++i)
+        {
+            cursors[i]->advance(static_cast<uint32_t>(row_offset));
+            if (!cursors[i]->valid() || cursors[i]->value() >= end)
+                return;
+        }
 
-    ++stats.leapfrog_intersections;
-    intersectLeapfrog(out, cursors, row_offset, end);
+        ++stats.leapfrog_intersections;
+        intersectLeapfrog(out, cursors, row_offset, end);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unresolved intersection algorithm: {}", algorithm);
+    }
 }
 
 }

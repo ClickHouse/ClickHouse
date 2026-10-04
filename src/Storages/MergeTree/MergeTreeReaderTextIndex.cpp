@@ -83,8 +83,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         search_queries.push_back(condition_text->getSearchQueryForVirtualColumn(column.name));
     }
 
-    lazy_cursors.resize(columns_.size());
-    prebuilt_cursors.resize(columns_.size());
     resolved_searches.resize(columns_.size());
 
     auto data_part = getDataPart();
@@ -730,8 +728,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
 
 void MergeTreeReaderTextIndex::resetCursors()
 {
-    lazy_cursors.assign(lazy_cursors.size(), {});
-    prebuilt_cursors.assign(prebuilt_cursors.size(), {});
+    lazy_cursors.clear();
     resolved_searches.assign(resolved_searches.size(), {});
 }
 
@@ -785,8 +782,7 @@ MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch
     const auto & search_query = search_queries[column_idx];
     chassert(search_query->getPatterns().empty());
 
-    /// hasAnyTokens / hasAllTokens whose needle tokens were all dropped (e.g. by a postprocessor): no
-    /// match, so fill zeros for every row read, matching fillColumn and the row-scan path.
+    /// Fill zeros without tokens.
     if (search_query->getTokens().empty())
         return resolved;
 
@@ -798,44 +794,31 @@ MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch
 
     if (query_builder.needReadPostings())
     {
-        auto & column_cursors = lazy_cursors[column_idx];
-
         for (const auto & [token, token_info] : query_builder.tokens)
         {
             if (analyzer.hasReadPostings(token))
                 continue;
 
-            auto [it, inserted] = column_cursors.try_emplace(token);
-
-            if (inserted)
-                it->second = makeLazyCursor(token, *token_info);
-
-            resolved.cursors.push_back(it->second.get());
+            auto cursor = makeLazyCursor(token, *token_info);
+            resolved.cursors.emplace_back(cursor.get());
+            lazy_cursors.emplace_back(std::move(cursor));
         }
     }
 
-    if (query_builder.postings)
+    if (query_builder.postings && !query_builder.postings->isEmpty())
     {
-        auto & prebuilt_cursor = prebuilt_cursors[column_idx];
-
-        if (prebuilt_cursor)
+        /// No cursors for large postings: fill the column directly from the postings.
+        if (resolved.cursors.empty())
         {
-            resolved.cursors.push_back(prebuilt_cursor.get());
+            resolved.kind = ResolvedSearch::Kind::DirectPostings;
+            resolved.direct_postings = &*query_builder.postings;
+            return resolved;
         }
-        else if (!query_builder.postings->isEmpty())
-        {
-            /// No cursors for large postings: fill the column directly from the postings.
-            if (resolved.cursors.empty())
-            {
-                resolved.kind = ResolvedSearch::Kind::DirectPostings;
-                resolved.direct_postings = &*query_builder.postings;
-                return resolved;
-            }
 
-            /// Build a cursor over the sorted array of postings, shared by all readers of the granule.
-            prebuilt_cursor = std::make_shared<PostingListCursor>(query_builder.getFlatPostings());
-            resolved.cursors.push_back(prebuilt_cursor.get());
-        }
+        /// Build a cursor over the sorted array of postings, shared by all readers of the granule.
+        auto cursor = std::make_shared<PostingListCursor>(query_builder.getFlatPostings());
+        resolved.cursors.emplace_back(cursor.get());
+        lazy_cursors.emplace_back(std::move(cursor));
     }
 
     if (resolved.cursors.empty())
@@ -851,7 +834,7 @@ MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch
     else if (resolved.mode == TextSearchMode::All)
     {
         sortCursorsForIntersection(resolved.cursors);
-        resolved.algorithm = chooseIntersectionAlgorithm(resolved.cursors, intersection_algorithm);
+        resolved.intersection_algorithm = chooseIntersectionAlgorithm(resolved.cursors, intersection_algorithm);
     }
     else
     {
@@ -865,10 +848,9 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();
-
     auto & resolved = resolved_searches[column_idx];
 
-    if (!resolved)
+    if (!resolved.has_value())
         resolved = resolveSearch(column_idx);
 
     if (resolved->kind == ResolvedSearch::Kind::DirectPostings)
@@ -894,7 +876,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
     if (resolved->mode == TextSearchMode::Any)
         lazyUnionPostingLists(column, resolved->cursors, old_size, row_offset, num_rows);
     else
-        lazyIntersectPostingLists(column, resolved->cursors, old_size, row_offset, num_rows, resolved->algorithm, lazy_postings_stats);
+        lazyIntersectPostingLists(column, resolved->cursors, old_size, row_offset, num_rows, resolved->intersection_algorithm, lazy_postings_stats);
 }
 
 PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info)
