@@ -27,6 +27,9 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -82,6 +85,9 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_memory_usage_for_user;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_skip_unavailable_shards_num;
     extern const SettingsFloat max_skip_unavailable_shards_ratio;
     extern const SettingsMaxThreads max_threads;
@@ -133,6 +139,7 @@ namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
@@ -332,6 +339,53 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
     /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
     removeSettingsFromQuery(query, initiator_only_setting_names);
+}
+
+static void collectAdditionalFiltersIdentifierNames(const Map & additional_filters, const Settings & settings, IdentifierNameSet & names)
+{
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & filter = additional_filter.safeGet<Tuple>().at(1).safeGet<String>();
+        ParserExpression parser;
+        try
+        {
+            parseQuery(parser, filter, "additional filter", settings[Setting::max_query_size], settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks])->collectIdentifierNames(names);
+        }
+        catch (const Exception & e)
+        {
+            /// A replica that applies a filter that does not parse fails on it as well.
+            if (e.code() == ErrorCodes::LOGICAL_ERROR || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+        }
+    }
+}
+
+static void collectNestedAdditionalFiltersIdentifierNames(const IAST & ast, const Settings & settings, IdentifierNameSet & names)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+        if (const auto * additional_filters = set_query->changes.tryGet("additional_table_filters"))
+            collectAdditionalFiltersIdentifierNames(SettingFieldMap(*additional_filters).value, settings, names);
+
+    for (const auto & child : ast.children)
+        collectNestedAdditionalFiltersIdentifierNames(*child, settings, names);
+}
+
+Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & context)
+{
+    Tables external_tables = context->getExternalTables();
+    if (external_tables.empty())
+        return external_tables;
+
+    IdentifierNameSet names;
+    query->collectIdentifierNames(names);
+
+    const auto & settings = context->getSettingsRef();
+    collectAdditionalFiltersIdentifierNames(settings[Setting::additional_table_filters].value, settings, names);
+    collectNestedAdditionalFiltersIdentifierNames(*query, settings, names);
+
+    std::erase_if(external_tables, [&](const auto & table) { return !names.contains(table.first); });
+    return external_tables;
 }
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,

@@ -1359,6 +1359,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// packet is stripped separately, on `query_context` below).
     stripInitiatorOnlySettingsFromQueryText(*new_query);
 
+    const Tables external_tables = ClusterProxy::getExternalTablesUsedInQuery(new_query, local_context);
+
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1411,7 +1413,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 query_context,
                 /*throttler=*/nullptr,
                 Scalars{},
-                Tables{},
+                external_tables,
                 QueryProcessingStage::Complete,
                 nullptr,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
