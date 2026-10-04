@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-fasttest, no-random-settings, no-random-merge-tree-settings
 # no-parallel: SYSTEM ENABLE FAILPOINT is process-wide, and SYSTEM DROP COLUMNS CACHE clears the
 # cache of every other test.
+# no-fasttest: a test that arms a fail point runs alone, and such tests are kept out of the fast test.
 # no-random-settings: the read has to stay one task, so that both mark ranges go through one reader.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
