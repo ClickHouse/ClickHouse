@@ -66,11 +66,17 @@ std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKi
 /// `DateTime64` column. A `Date` / `Date32` bound is worse off: its raw day number would be taken as a number of seconds.
 /// Convert such a bound here, where the query settings are known, as the value it materializes: the same
 /// `date_time_overflow_behavior` outcome as `CAST` gives for the same constant (see `dateTime64OutOfWindow`).
+/// A `DateTime64` bound of another scale is converted too: widening a coarser bound (a scale-0 value in the year 2299
+/// on a `DateTime64(9)` key) can leave the window of the sort key, and `FillingTransform` requires the same type anyway.
 /// The bound then carries the type of the sort key, which `FillingTransform` accepts as is.
 void convertDateTime64FillBound(Field & value, DataTypePtr & value_type, const DataTypePtr & sort_key_type, const FormatSettings & format_settings)
 {
-    if (value.isNull() || !value_type
-        || (!isNumber(value_type) && !isDecimal(value_type) && !isDateOrDate32(value_type) && !isDateTime(value_type)))
+    if (value.isNull() || !value_type)
+        return;
+
+    const bool date_time64_of_other_type = isDateTime64(value_type) && !value_type->equals(*sort_key_type);
+    if (!date_time64_of_other_type
+        && !isNumber(value_type) && !isDecimal(value_type) && !isDateOrDate32(value_type) && !isDateTime(value_type))
         return;
 
     value = convertFieldToTypeOrThrow(value, *sort_key_type, value_type.get(), format_settings, /*convert_inexact_floats=*/true);
