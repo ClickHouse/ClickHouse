@@ -8,6 +8,8 @@ hello	0
 all	4
 any	0
 any	2
+all words	0
+any words	4
 -- explicit .:String is path-scoped: error on msg, not on status or Array
 1
 -- numbers are not indexed; only a String leaf matches

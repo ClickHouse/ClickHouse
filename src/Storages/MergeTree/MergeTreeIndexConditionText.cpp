@@ -2037,6 +2037,8 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
         if (needle.empty())
             return false;
         split.stringToTokens(needle.data(), needle.size(), raw_tokens);
+        if (raw_tokens.empty())
+            return false;
     }
     else if (which_value.isArray())
     {

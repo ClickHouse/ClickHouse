@@ -43,6 +43,8 @@ SELECT '-- typed Nullable(String): Exact on a positive filter';
 SELECT 'hello', id FROM tab WHERE hasToken(json.note, 'hello') ORDER BY id;
 SELECT 'all', id FROM tab WHERE hasAllTokens(json.note, ['connection', 'timeout']) ORDER BY id;
 SELECT 'any', id FROM tab WHERE hasAnyTokens(json.status, ['error', 'missing']) ORDER BY id;
+SELECT 'all words', id FROM tab WHERE hasAllTokens(json.note, 'hello world') ORDER BY id;
+SELECT 'any words', id FROM tab WHERE hasAnyTokens(json.note, 'missing timeout') ORDER BY id;
 
 SELECT '-- explicit .:String is path-scoped: error on msg, not on status or Array';
 SELECT id FROM tab WHERE hasToken(json.msg.:`String`, 'error') ORDER BY id;
