@@ -171,10 +171,14 @@ ColumnObject::ColumnObject(const ColumnObject & other)
         sorted_typed_paths.emplace_back(path);
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    /// This is a shallow copy: the typed paths are still shared with `other`, so the non-const
+    /// `WrappedPtr::get` would trip `chassert(use_count() == 1)`. Like `dynamic_paths_ptrs` above, the raw
+    /// pointer cache aliases the shared children until `IColumn::mutate` replaces them through
+    /// `forEachMutableSubcolumn`, which rebuilds this cache.
     sorted_typed_path_columns.clear();
     sorted_typed_path_columns.reserve(sorted_typed_paths.size());
     for (const auto & path : sorted_typed_paths)
-        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+        sorted_typed_path_columns.push_back(const_cast<IColumn *>(std::as_const(typed_paths).find(path)->second.get()));
 
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)

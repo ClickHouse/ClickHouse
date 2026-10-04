@@ -177,7 +177,9 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
-    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    /// Compare addresses through the const overload: the dictionary may be shared with `src`, and the
+    /// non-const `WrappedPtr` accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
+    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
     {
         /// Dictionary is shared with src column. Insert only index.
         idx.insertIndex(position);
@@ -206,7 +208,9 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
 
     const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
 
-    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    /// Compare addresses through the const overload: the dictionary may be shared with `src`, and the
+    /// non-const `WrappedPtr` accessor would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
+    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
         idx.insertManyIndexes(source_index, length);
