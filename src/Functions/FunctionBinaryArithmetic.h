@@ -653,8 +653,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -662,8 +662,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -674,8 +674,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -683,8 +683,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -694,7 +694,7 @@ public:
             processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
                 return applyScaledDiv<is_decimal_a>(
-                    static_cast<NativeResultType>(left), right, scale_a);
+                    castToNative(left), right, scale_a);
             });
             return;
         }
@@ -703,9 +703,7 @@ public:
             a, b, c, size, right_nullmap,
             [](const auto & left, const auto & right)
             {
-                return apply(
-                    static_cast<NativeResultType>(left),
-                    static_cast<NativeResultType>(right));
+                return apply(castToNative(left), castToNative(right));
             });
     }
 
@@ -714,16 +712,16 @@ public:
         requires(!is_decimal<A> && !is_decimal<B>)
     {
         if constexpr (is_division && is_decimal_b)
-            return applyScaledDiv<is_decimal_a>(a, b, scale_a);
+            return applyScaledDiv<is_decimal_a>(castToNative(a), b, scale_a);
         else if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
-                return applyScaled<true>(a, b, scale_a);
+                return applyScaled<true>(castToNative(a), castToNative(b), scale_a);
             if (scale_b != 1)
-                return applyScaled<false>(a, b, scale_b);
+                return applyScaled<false>(castToNative(a), castToNative(b), scale_b);
         }
 
-        return apply(a, b);
+        return apply(castToNative(a), castToNative(b));
     }
 
 private:
@@ -783,6 +781,35 @@ private:
             return undec(elem);
         else
             return undec(elem[i]);
+    }
+
+    /** The operation runs in the native width of the decimal result, so an operand that does not
+      * survive the narrowing into that width would wrap and make every row of the result silently
+      * wrong - `toDecimal32(1.5, 4) * 9223372036854775807` answered `-1.5`, because the multiplier
+      * narrowed to `-1`. Comparing the same pair already reports `DECIMAL_OVERFLOW`, and the
+      * documented contract of `Decimal` is that excessive digits in the integer part raise.
+      *
+      * Only the conversions that can lose information are checked, so the ones that cannot (a
+      * narrower integer into a wider native type) stay free.
+      */
+    template <typename T>
+    static NativeResultType castToNative(const T & value)
+    {
+        const auto result = static_cast<NativeResultType>(value);
+
+        using Value = std::decay_t<T>;
+        if constexpr (
+            check_overflow && is_integer<Value> && is_integer<NativeResultType>
+            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
+        {
+            if (!accurate::equalsOp(value, result))
+                throw Exception(
+                    ErrorCodes::DECIMAL_OVERFLOW,
+                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
+                    sizeof(NativeResultType) * 8);
+        }
+
+        return result;
     }
 
     /// there's implicit type conversion here
@@ -1568,7 +1595,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnDateTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
@@ -1667,7 +1694,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
@@ -1686,7 +1713,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             {
                 if (WhichDataType(to_be_checked.argument.type).isTime())
                 {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<UInt32>();
+                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<Int32>();
                     /// the output type is the same as the other argument, which is Time64
                     to_be_checked.scale = type->getScaleMultiplier();
                 }
@@ -2143,6 +2170,29 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             return col_const->template getValue<T>();
     }
 
+    /// The decimal operation runs in the native width of its result, so a constant operand that does
+    /// not survive the narrowing into that width would wrap and make every row silently wrong. Checked
+    /// here rather than inside the operation, because only this class knows the setting.
+    template <typename NativeResultType, typename T>
+    NativeResultType castConstantToNative(const T & value) const
+    {
+        const auto result = static_cast<NativeResultType>(value);
+
+        using Value = std::decay_t<T>;
+        if constexpr (
+            is_integer<Value> && is_integer<NativeResultType>
+            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
+        {
+            if (check_decimal_overflow && !accurate::equalsOp(value, result))
+                throw Exception(
+                    ErrorCodes::DECIMAL_OVERFLOW,
+                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
+                    sizeof(NativeResultType) * 8);
+        }
+
+        return result;
+    }
+
     template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck>
     void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap) const
     {
@@ -2214,14 +2264,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         /// non-vector result
         if (col_left_const && col_right_const)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
-
+            /// A `NULL` divisor makes the result `NULL` whatever the operands are, so they are not narrowed
+            /// (and cannot raise `DECIMAL_OVERFLOW`) in that case.
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
             {
+                const NativeResultType const_a
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+                const NativeResultType const_b
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+
                 res = helperInvokeEither<left_is_decimal, right_is_decimal, OpImpl, OpImplCheck, ResultType>(
                      const_a, const_b, scale_a, scale_b);
             }
@@ -2242,16 +2294,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         }
         else if (col_left_const && col_right)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+            const NativeResultType const_a
+                = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
         }
         else if (col_left && col_right_const)
         {
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+            const NativeResultType const_b
+                = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
