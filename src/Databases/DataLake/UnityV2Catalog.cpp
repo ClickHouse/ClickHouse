@@ -436,7 +436,7 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
 }
 
-bool UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+bool UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
     return false;

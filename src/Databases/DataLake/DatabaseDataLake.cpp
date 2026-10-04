@@ -947,7 +947,7 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
     bool namespace_created = false;
     if (!table_metadata && !catalog_storage_type)
     {
-        namespace_created = catalog->createNamespaceIfNotExists(namespace_name, /* location */ "");
+        namespace_created = catalog->createNamespaceIfNotExists(namespace_name);
         if (namespace_created)
             table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
     }
@@ -1005,7 +1005,7 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
         if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
             throw storage_mismatch(*catalog_storage_type);
 
-        namespace_created = catalog->createNamespaceIfNotExists(namespace_name, /* location */ "");
+        namespace_created = catalog->createNamespaceIfNotExists(namespace_name);
         if (namespace_created)
             table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
     }
@@ -1164,6 +1164,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached_storage)
         {
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
@@ -1268,6 +1269,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         {
             /// Lost a race to another query; keep the already-cached storage and drop ours.
             result_storage->shutdown(/*is_drop*/ false);
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;

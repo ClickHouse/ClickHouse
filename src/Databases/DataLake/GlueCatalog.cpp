@@ -629,7 +629,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-bool GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
+bool GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;

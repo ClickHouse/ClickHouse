@@ -50,7 +50,7 @@ public:
         const std::string & table_name) const override;
 
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
-    bool createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    bool createNamespaceIfNotExists(const String & namespace_name) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,
