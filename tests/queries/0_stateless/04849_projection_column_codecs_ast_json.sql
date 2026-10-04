@@ -72,6 +72,21 @@ SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"Ex
 
 SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"x"}]},"projection_type":{"type":"Function","name":"basic","no_empty_args":true}}'); -- { serverError BAD_ARGUMENTS }
 
+-- The list container can be valid while an item is a raw query. The complete projection must
+-- still reparse to the same AST; `SELECT y` is valid on its own but not an expression list item.
+SELECT formatQueryFromJSON('{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}') = 'SELECT y';
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","with":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}]},"select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+
+SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"group_by":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- `ParserProjectionSelectQuery` itself produces an empty list for a bare `GROUP BY`.
+-- Rejecting that JSON shape alone would break the parser-to-JSON round trip.
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (x UInt64, PROJECTION p (SELECT x GROUP BY)) ENGINE = MergeTree ORDER BY x'))
+     = formatQuerySingleLine('CREATE TABLE t (x UInt64, PROJECTION p (SELECT x GROUP BY)) ENGINE = MergeTree ORDER BY x');
+
 -- The parser produces a single expression for `ORDER BY`. A raw query or declaration in that
 -- slot would format as `ORDER BY SELECT ...` or `ORDER BY ...` with a different AST on reparse.
 SELECT formatQueryFromJSON('{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"order_by":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"y"}]}}}'); -- { serverError BAD_ARGUMENTS }
