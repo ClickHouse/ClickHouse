@@ -367,7 +367,8 @@ void updateTTL(
 }
 
 /// Removes the rows that the whole-table TTL DELETE has already expired, as a merge would.
-void removeExpiredRows(const ContextPtr & context, const TTLDescription & rows_ttl, Block & block)
+/// The returned info is the TTL of the rows that remain.
+IMergeTreeDataPart::TTLInfo removeExpiredRows(const ContextPtr & context, const TTLDescription & rows_ttl, Block & block)
 {
     auto expr_and_set = rows_ttl.buildExpression(context);
     for (auto & subquery : expr_and_set.sets->getSubqueries())
@@ -376,6 +377,7 @@ void removeExpiredRows(const ContextPtr & context, const TTLDescription & rows_t
     TTLDeleteAlgorithm algorithm(
         TTLExpressions{expr_and_set.expression, nullptr}, rows_ttl, IMergeTreeDataPart::TTLInfo{}, time(nullptr), /*force_=*/ true);
     algorithm.execute(block);
+    return algorithm.getNewTTLInfo();
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -889,6 +891,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
 
+    std::optional<IMergeTreeDataPart::TTLInfo> rows_ttl_info;
     if (!isPatchPartitionId(new_part_info.getPartitionId())
         && global_settings[Setting::optimize_on_insert]
         && metadata_snapshot->hasRowsTTL())
@@ -902,7 +905,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
 
         const size_t rows_before = block.rows();
-        removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
+        rows_ttl_info = removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
         if (block.rows() != rows_before && block.rows() != 0)
         {
             minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -1083,7 +1086,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         sync_guard = disk->getDirectorySyncGuard(data_part_storage->getFullPath());
     }
 
-    if (metadata_snapshot->hasRowsTTL())
+    if (rows_ttl_info)
+    {
+        new_data_part->ttl_infos.table_ttl = *rows_ttl_info;
+        new_data_part->ttl_infos.updatePartMinMaxTTL(*rows_ttl_info);
+    }
+    else if (metadata_snapshot->hasRowsTTL())
         updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())

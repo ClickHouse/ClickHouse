@@ -34,6 +34,7 @@ public:
 
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
     bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
+    const TTLInfo & getNewTTLInfo() const { return new_ttl_info; }
 
     /// Resolve the column type once and fill `timestamps` for the whole block. Every TTL algorithm
     /// and `TTLDeleteFilterTransform` map a TTL result column to Unix timestamps through here.
