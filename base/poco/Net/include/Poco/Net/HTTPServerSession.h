@@ -25,6 +25,8 @@
 #include "Poco/Net/SocketAddress.h"
 #include "Poco/Timespan.h"
 
+#include <functional>
+
 
 namespace Poco
 {
@@ -62,10 +64,21 @@ namespace Net
 
         size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; }
 
+        void setStopCallback(std::function<bool()> stopCallback);
+        /// Sets a predicate that aborts the wait for the next request as soon as
+        /// it returns true. Used to stop waiting promptly when the server is shutting
+        /// down instead of blocking for the whole keep-alive timeout.
+
     private:
+        bool waitForRequest(Poco::Timespan timeout);
+        /// Polls the socket for an incoming request, waking up periodically to
+        /// re-evaluate the stop callback so an idle connection does not block
+        /// shutdown for the whole timeout.
+
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;
         size_t _maxKeepAliveRequests;
+        std::function<bool()> _stopCallback;
     };
 
 
