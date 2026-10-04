@@ -9373,7 +9373,8 @@ bool Context::canUseParallelReplicasCustomKey() const
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
 {
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1
+        && !is_sql_security_overridden_body;
 }
 
 bool Context::canUseOffsetParallelReplicas() const

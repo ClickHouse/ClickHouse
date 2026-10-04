@@ -445,7 +445,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = false;
+        bool disable_parallel_replicas = context->isSQLSecurityOverriddenBody();
         if (is_remote_function)
         {
             if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster

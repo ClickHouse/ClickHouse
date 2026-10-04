@@ -45,6 +45,12 @@ CREATE VIEW $db.ck_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT
 GRANT READ ON URL, CREATE TEMPORARY TABLE ON *.* TO $definer;
 CREATE VIEW $db.url_view DEFINER = $definer SQL SECURITY DEFINER
     AS SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8');
+-- The only shard has three replicas, one of them local.
+CREATE TABLE $db.policy_dist AS $db.policy_secrets
+    ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, $db, policy_secrets);
+GRANT SELECT ON $db.policy_dist TO $definer;
+CREATE VIEW $db.dist_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_dist;
+CREATE VIEW $db.dist_ck_policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_dist SETTINGS $ck_settings;
 
 -- A NONE view applies no row policies, even when the invoker has one on the table.
 CREATE TABLE $db.invoker_policy_secrets (owner String) ENGINE = MergeTree ORDER BY owner SETTINGS index_granularity = 1;
@@ -73,6 +79,8 @@ GRANT SELECT ON $db.pr_policy_view TO $user;
 GRANT SELECT ON $db.ck_policy_view TO $user;
 GRANT SELECT ON $db.none_projection_view TO $user;
 GRANT SELECT ON $db.url_view TO $user;
+GRANT SELECT ON $db.dist_policy_view TO $user;
+GRANT SELECT ON $db.dist_ck_policy_view TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
@@ -138,6 +146,15 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "
 ${CLICKHOUSE_CLIENT} --user "$definer" --query "
     SELECT x FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+42', 'TSV', 'x UInt8')
     SETTINGS $url_pr_settings, log_comment = '05257_url_direct_${CLICKHOUSE_DATABASE}'"
+# Without parallel replicas, a `Distributed` shard with a local replica is read locally, as the definer.
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.dist_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_view_${CLICKHOUSE_DATABASE}'" 2>&1
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT secret FROM $db.dist_ck_policy_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0
+    SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1" 2>&1
+${CLICKHOUSE_CLIENT} --user "$definer" --query "
+    SELECT secret FROM $db.policy_dist SETTINGS $pr_settings, prefer_localhost_replica = 1, log_comment = '05257_dist_direct_${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
     SELECT replaceOne(log_comment, '_' || currentDatabase(), ''), countIf(NOT is_initial_query) > 0 FROM system.query_log
@@ -145,7 +162,8 @@ ${CLICKHOUSE_CLIENT} --query "
         SELECT query_id FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
           AND log_comment IN ('05257_url_view_${CLICKHOUSE_DATABASE}', '05257_url_direct_${CLICKHOUSE_DATABASE}',
-              '05257_ck_view_${CLICKHOUSE_DATABASE}', '05257_ck_direct_${CLICKHOUSE_DATABASE}'))
+              '05257_ck_view_${CLICKHOUSE_DATABASE}', '05257_ck_direct_${CLICKHOUSE_DATABASE}',
+              '05257_dist_view_${CLICKHOUSE_DATABASE}', '05257_dist_direct_${CLICKHOUSE_DATABASE}'))
     GROUP BY log_comment ORDER BY log_comment"
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
@@ -198,4 +216,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%'
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP VIEW $db.pr_policy_view; DROP VIEW $db.ck_policy_view; DROP VIEW $db.url_view; DROP VIEW $db.dist_policy_view; DROP VIEW $db.dist_ck_policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY invoker_policy05257 ON $db.invoker_policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"

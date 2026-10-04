@@ -34,8 +34,13 @@ visible
 visible
 42
 42
+visible
+visible
+visible
 05257_ck_direct	1
 05257_ck_view	0
+05257_dist_direct	1
+05257_dist_view	0
 05257_url_direct	1
 05257_url_view	0
 --- an outer predicate does not skip data by the values of the hidden rows
