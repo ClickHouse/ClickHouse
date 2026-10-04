@@ -76,6 +76,7 @@ namespace fs = std::filesystem;
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -2209,6 +2210,113 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
     }
 }
 
+namespace
+{
+
+/// Resolve a long option the same way as `Poco::Util::OptionSet::getOption`: case-insensitively, by the name
+/// up to the first `:` or `=`, preferring a full match over a unique partial one. Returns null for an unknown
+/// or an ambiguous option.
+const Poco::Util::Option * resolveLongOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    bool ambiguous = false;
+    for (const auto & option : options)
+    {
+        if (option.matchesFull(name_and_value))
+            return &option;
+        if (option.matchesPartial(name_and_value))
+        {
+            ambiguous = resolved != nullptr;
+            resolved = &option;
+        }
+    }
+    return ambiguous ? nullptr : resolved;
+}
+
+/// Rewrite every option before the `--` separator into the form `--<full name>=<value>` (or `--<full name>`
+/// for an option given without a value), resolving it the same way as `Poco::Util::OptionProcessor` does, so
+/// that `argsToConfig` records it under the option's own name. `Poco` matches a long option
+/// case-insensitively and by a unique prefix, accepts both `:` and `=` between the name and the value,
+/// takes the value of a short option from the rest of the argument (`-Lfile`), and takes the value of an
+/// option that requires one from the next argument when it is not given inline - while `argsToConfig` only
+/// splits on `=` and stores the raw spelling. Without this, a later `--LOGGER_LOG b` or `--logger_log:b`
+/// accepted by `Poco` would not be recognized as an occurrence of `logger_log`, and an earlier spelling
+/// would win. The arguments after the separator are not options for `Poco` and are kept verbatim.
+std::vector<std::string> canonicalizeOptions(const std::vector<std::string> & argv, const Poco::Util::OptionSet & options)
+{
+    std::vector<std::string> result;
+    result.reserve(argv.size());
+
+    const Poco::Util::Option * deferred = nullptr;
+    bool options_ended = false;
+    for (size_t i = 0; i < argv.size(); ++i)
+    {
+        const auto & argument = argv[i];
+
+        /// The first argument is the name of the program.
+        if (i == 0 || options_ended)
+        {
+            result.push_back(argument);
+            continue;
+        }
+
+        if (deferred)
+        {
+            result.push_back("--" + deferred->fullName() + "=" + argument);
+            deferred = nullptr;
+            continue;
+        }
+
+        if (argument == "--")
+        {
+            options_ended = true;
+            result.push_back(argument);
+            continue;
+        }
+
+        const Poco::Util::Option * option = nullptr;
+        std::optional<std::string> value;
+        if (argument.starts_with("--"))
+        {
+            std::string name_and_value = argument.substr(2);
+            option = resolveLongOption(options, name_and_value);
+            size_t value_position = name_and_value.find_first_of(":=");
+            if (value_position != std::string::npos)
+                value = name_and_value.substr(value_position + 1);
+        }
+        else if (argument.starts_with("-"))
+        {
+            std::string name_and_value = argument.substr(1);
+            for (const auto & candidate : options)
+            {
+                if (candidate.matchesShort(name_and_value))
+                {
+                    option = &candidate;
+                    break;
+                }
+            }
+            if (option && name_and_value.size() > option->shortName().size())
+                value = name_and_value.substr(option->shortName().size());
+        }
+
+        if (!option)
+            result.push_back(argument);
+        else if (value)
+            result.push_back("--" + option->fullName() + "=" + *value);
+        else if (option->argumentRequired())
+            deferred = option;
+        else
+            result.push_back("--" + option->fullName());
+    }
+
+    if (deferred)
+        result.push_back("--" + deferred->fullName());
+
+    return result;
+}
+
+}
+
 void ServerSettings::mirrorCommandLineToConfigPaths(
     const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options, Poco::Util::LayeredConfiguration & config)
 {
@@ -2229,9 +2337,15 @@ void ServerSettings::mirrorCommandLineToConfigPaths(
     /// its own (nested) key. Therefore this function has to be called before the configuration file is
     /// loaded, and it parses the command line into a throwaway configuration instead of looking at
     /// `config`, which by then already contains the bindings of the direct options.
+    ///
+    /// The options before the separator are canonicalized first (see `canonicalizeOptions`), so that every
+    /// spelling `Poco` accepts for an option is recognized below.
+    Poco::Util::OptionSet all_options(builtin_options);
+    addToProgramOptions(all_options);
+
     Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line(new Poco::Util::LayeredConfiguration);
     std::vector<std::pair<std::string, std::string>> ordered_args;
-    argsToConfig(argv, *command_line, 0, nullptr, &ordered_args);
+    argsToConfig(canonicalizeOptions(argv, all_options), *command_line, 0, nullptr, &ordered_args);
 
     /// Both spellings of every affected setting, mapped to the setting's index. Every setting backed by
     /// a config key different from the setting name is affected. This includes `config_file`, whose key
@@ -2261,17 +2375,14 @@ void ServerSettings::mirrorCommandLineToConfigPaths(
         settings_by_key[path] = i;
     }
 
-    /// The short name of a built-in option (`-L b`) reaches `argsToConfig` as the key `L`, the full name
-    /// (`--log-file b`, or `--log-file=b`) as `log-file`; an abbreviation of the full name has already been
-    /// expanded by the time this function runs (see `expandBuiltinOptionAbbreviations` in the server).
+    /// Every spelling of a built-in option before the separator (`-L b`, `--LOG-FILE:b`, ...) reaches
+    /// `argsToConfig` under its full name (`log-file`), see `canonicalizeOptions`.
     for (const auto & option : builtin_options)
     {
         auto it = settings_by_key.find(option.binding());
         if (it == settings_by_key.end())
             continue;
         spellings[option.fullName()] = it->second;
-        if (!option.shortName().empty())
-            spellings[option.shortName()] = it->second;
     }
 
     /// The last occurrence on the command line wins, whichever spelling it uses.
