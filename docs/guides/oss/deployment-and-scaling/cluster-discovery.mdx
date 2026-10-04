@@ -62,6 +62,8 @@ Traditionally, in ClickHouse, each shard and replica in the cluster needed to be
 
 With Cluster Discovery, rather than defining each node explicitly, you simply specify a path in ZooKeeper. All nodes that register under this path in ZooKeeper will be automatically discovered and added to the cluster.
 
+Discovery settings under `remote_servers` (including `user`, `password`, `secret`, `path`, `multicluster_root_path`, and adding or removing discovery clusters) are applied on configuration reload (for example with `SYSTEM RELOAD CONFIG`). A server restart is not required for these changes.
+
 ```xml
 <remote_servers>
     <cluster_name>
