@@ -968,9 +968,9 @@ public:
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
-    /// Removes all parts covered by drop_range from the working set parts.
+    /// Removes all parts covered by drop_range from the working set parts and returns the ones that were active.
     /// Used in REPLACE PARTITION command.
-    void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+    DataPartsVector removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, const DataPartsAnyLock & lock);

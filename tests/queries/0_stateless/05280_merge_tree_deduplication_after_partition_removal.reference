@@ -1,0 +1,11 @@
+replace, after ALTER	1	2
+replace, after ALTER	2	1
+replace, after INSERT	1	1
+replace, after INSERT	1	2
+replace, after INSERT	2	1
+move, source after ALTER	2	1
+move, destination after ALTER	1	1
+move, source after INSERT	1	1
+move, source after INSERT	2	1
+truncate in a transaction, after COMMIT	0
+truncate in a transaction, after INSERT	1
