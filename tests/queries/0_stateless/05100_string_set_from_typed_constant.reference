@@ -1,0 +1,50 @@
+the text of the value is what the set holds
+1	0
+1
+1	1
+1
+1	1
+1	1
+and the values table function renders the same text as CAST
+2020-01-01
+2020-01-01
+00000000-0000-0000-0000-000000000001
+1.2.3.4
+1
+over a table, where the set filters rows
+2020-01-01
+1.2.3.4
+1.2.3.4
+18262
+zz
+a String constant is unchanged
+18262
+1	0
+an Enum constant keeps the name, as it already did
+1	0
+the session output format settings apply exactly where CAST applies them
+2020-01-01 00:00:00
+1	0
+1	0
+2020-01-01 00:00:00
+2020-01-01 00:00:00
+yes
+1	0
+1	0
+yes
+yes
+nested elements of arrays, tuples and maps are rendered as CAST renders them
+['2020-01-01']
+1	0
+['2020-01-01']
+[['1.2.3.4']]
+('2020-01-01','00000000-0000-0000-0000-000000000001')
+{'2020-01-01':'true'}
+{'2020-01-01':'true'}
+['yes']	{'k':'yes'}
+1	0
+{'k':'yes'}
+decimal output settings do not apply, as in CAST
+1.5
+1	0
+1.5
