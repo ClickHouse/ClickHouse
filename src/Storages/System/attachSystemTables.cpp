@@ -146,6 +146,7 @@
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
+#include <Storages/System/StorageSystemRewriteRules.h>
 
 #include <Interpreters/Context.h>
 
@@ -3909,6 +3910,7 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
 ```
 )DOCS_MD");
 #endif
+    attachNoDescription<StorageSystemRewriteRules>(context, system_database, "query_rules", "Displays all query rewrite rules");
 
     if (has_zookeeper)
         attachSystemTablesGatedOnZooKeeper(context, system_database);

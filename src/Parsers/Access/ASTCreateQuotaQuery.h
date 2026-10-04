@@ -56,6 +56,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateQuotaQuery>(clone()); }
 

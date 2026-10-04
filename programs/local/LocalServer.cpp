@@ -53,6 +53,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
@@ -1810,6 +1811,7 @@ void LocalServer::processConfig()
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    RewriteRules::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// NOTE: it is important to apply any overrides before

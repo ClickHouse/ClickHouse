@@ -1,0 +1,7 @@
+<clickhouse>
+    <rewrite_rules_storage>
+        <type>zookeeper</type>
+        <path>/clickhouse/query_rules</path>
+        <update_timeout_ms>1000</update_timeout_ms>
+    </rewrite_rules_storage>
+</clickhouse>

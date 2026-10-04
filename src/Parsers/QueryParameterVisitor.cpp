@@ -2,6 +2,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -27,6 +28,13 @@ public:
             visitSetQuery(*set_query);
         else
         {
+            /// Some AST classes keep semantic subtrees outside `children` — e.g. `SHOW TABLES
+            /// LIMIT {n:UInt64}` keeps the limit in `ASTShowTablesQuery::limit_length` — so a
+            /// placeholder there would otherwise go undiscovered and never be requested from or
+            /// sent by the client. The walk shares the carrier list with the substitution and
+            /// the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
+            forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member) { visit(member); });
+
             for (const auto & child : ast->children)
                 visit(child);
         }
