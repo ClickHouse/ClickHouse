@@ -152,14 +152,14 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType : uint8_t
 {
-/// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
+/// Macros M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
 /// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
-#define APPLY_FOR_ACCESS_TYPES(M) \
+#define APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M_OBSOLETE) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
     M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
@@ -358,8 +358,6 @@ enum class AccessType : uint8_t
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_USERS, "RELOAD USERS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARIES, RELOAD DICTIONARY, RELOAD DICTIONARIES, SYSTEM UNLOAD DICTIONARY, SYSTEM UNLOAD DICTIONARIES, UNLOAD DICTIONARY, UNLOAD DICTIONARIES", GLOBAL, SYSTEM_RELOAD) \
-    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. */ \
-    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_FUNCTION, "SYSTEM RELOAD FUNCTIONS, RELOAD FUNCTION, RELOAD FUNCTIONS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD_ASYNCHRONOUS_METRICS, "RELOAD ASYNCHRONOUS METRICS", GLOBAL, SYSTEM_RELOAD) \
@@ -450,9 +448,14 @@ enum class AccessType : uint8_t
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
+    /* Obsolete */ \
+    M_OBSOLETE(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) /* the CatBoost integration was removed */ \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
+
+/// Applies M to all access types, including the obsolete ones.
+#define APPLY_FOR_ACCESS_TYPES(M) APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M)
 
 #define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
     name,
@@ -463,5 +466,7 @@ enum class AccessType : uint8_t
 
 
 std::string_view toString(AccessType type);
+
+bool isObsolete(AccessType type);
 
 }
