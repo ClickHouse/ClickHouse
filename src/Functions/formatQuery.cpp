@@ -61,17 +61,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(string_type);
-        return string_type;
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(String)"
+            : "(String) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

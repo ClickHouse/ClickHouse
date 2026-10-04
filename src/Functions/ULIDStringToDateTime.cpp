@@ -23,10 +23,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class FunctionULIDStringToDateTime final : public IFunction
@@ -49,36 +48,31 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    String getSignatureString() const override
+    {
+        /// `FixedString(26)` encodes the exact ULID byte length, so a wrong-width FixedString is
+        /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.
+        static_assert(ULID_LENGTH == 26, "the signature string below hardcodes the ULID length");
+        return
+            "(String | FixedString(26), const tz String) -> DateTime64(3, tz)"
+            " OR (String | FixedString(26)) -> DateTime64(3)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong number of arguments for function {}: should be 1 or 2",
-                getName());
+        /// Validate arity and argument types through the declarative signature first (it also
+        /// enforces the FixedString(26) width now), so e.g. `ULIDStringToDateTime(1, 2)` is rejected
+        /// on its non-string first argument with ILLEGAL_TYPE_OF_ARGUMENT (and a zero-argument call
+        /// with NUMBER_OF_ARGUMENTS_DOESNT_MATCH) before we inspect the optional timezone argument.
+        /// This also computes the result type and guarantees `arguments` is non-empty below.
+        auto result_type = IFunction::getReturnTypeImpl(arguments);
 
-        const auto * arg_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].type.get());
-        const auto * arg_string = checkAndGetDataType<DataTypeString>(arguments[0].type.get());
-
-        if (!arg_string && !(arg_fixed_string && arg_fixed_string->getN() == ULID_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Must be String or FixedString(26).",
-                arguments[0].type->getName(),
-                getName());
-
-        String timezone;
-        if (arguments.size() == 2)
-        {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
-
-            if (timezone.empty())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                    getName());
-        }
-
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
+        /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
+        /// `DateTime64(3, tz)` type function silently falls back to the server timezone when tz == ''.
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone", getName());
+        return result_type;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

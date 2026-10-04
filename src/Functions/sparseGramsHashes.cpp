@@ -31,12 +31,18 @@ public:
     bool useDefaultImplementationForVariant() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
+    String getSignatureString() const override
     {
-        SparseGramsImpl<is_utf8>::checkArguments(*this, args);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        /// `SparseGramsImpl::init` reads the optional `min_ngram_length` / `max_ngram_length` /
+        /// `min_cutoff_length` arguments exactly once per block with `getUInt(0)`, so they must be
+        /// constant integers, and the body only handles a `ColumnString` input. Spell the contract
+        /// precisely instead of `(Any, ...)`, which used to accept non-`String` input and
+        /// row-varying option columns (the latter silently hashing every row with the first row's
+        /// option values). This mirrors the validation the removed `SparseGramsImpl::checkArguments`
+        /// performed via `validateFunctionArguments`.
+        return "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(UInt32)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

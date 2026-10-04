@@ -28,15 +28,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & types) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
-        };
-
-        validateFunctionArguments(*this, types, mandatory_args);
-
-        return std::make_shared<DataTypeString>();
+        /// Legacy validator removed Nullable before checking DateTime/DateTime64.
+        return "(MaybeNullable(DateTime | DateTime64)) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -64,13 +59,6 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
-private:
-    static bool isDateTimeOrDateTime64(const IDataType & type)
-    {
-        DataTypePtr type_no_nullable = removeNullable(type.getPtr());
-
-        return WhichDataType(*type_no_nullable).isDateTimeOrDateTime64();
-    }
 };
 
 }

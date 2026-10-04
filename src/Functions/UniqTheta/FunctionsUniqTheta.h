@@ -66,6 +66,15 @@ namespace DB
 
         size_t getNumberOfArguments() const override { return 2; }
 
+        /// Both arguments must be `AggregateFunction('uniqTheta', T)` sketches with
+        /// identical inner-argument lists; the result is the first argument's
+        /// sketch type. The DSL doesn't model the inner-argument equality, so the
+        /// override remains the authority for that check.
+        String getSignatureString() const override
+        {
+            return "(A : AggregateFunction('uniqTheta', Any), AggregateFunction('uniqTheta', Any)) -> A";
+        }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             const auto * sketch_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());

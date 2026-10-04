@@ -11,6 +11,7 @@ struct RoundDurationImpl
 {
     using ResultType = UInt16;
     static constexpr bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeNumber) -> UInt16";
 
     static ResultType apply(A x)
     {

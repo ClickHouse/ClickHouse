@@ -15,6 +15,9 @@ struct DivideFloatingImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {

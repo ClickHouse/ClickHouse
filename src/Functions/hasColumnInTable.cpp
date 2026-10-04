@@ -58,6 +58,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
+    String getSignatureString() const override
+    {
+        return "(const String, const String, const String) -> UInt8";
+    }
+
     bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

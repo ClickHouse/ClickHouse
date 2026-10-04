@@ -88,14 +88,36 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    String getSignatureString() const override { return "(Array, Array) -> Float64"; }
+
+    /// The DSL signature accepts any array element types, but the implementation
+    /// builds `arrayIntersect`, whose element type is the most common subtype of
+    /// the element types. Resolve it here so calls like
+    /// `arrayJaccardIndex(['1','2'], [1,2])` are rejected at analyzer time
+    /// with `NO_COMMON_TYPE` instead of silently returning `0`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-            {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        if (arguments.size() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} requires exactly 2 arguments, got {}",
+                getName(),
+                arguments.size());
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            if (!checkAndGetDataType<DataTypeArray>(arguments[i].type.get()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} must be Array, got {}",
+                    i + 1,
+                    getName(),
+                    arguments[i].type->getName());
+        }
+
+        /// Throws `NO_COMMON_TYPE` if the elements have no common subtype.
+        (void)array_intersect->getReturnType(arguments);
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

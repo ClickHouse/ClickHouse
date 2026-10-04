@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -27,12 +26,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionClamp>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    String getSignatureString() const override
     {
-        if (types.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 3 arguments", getName());
-
-        return getLeastSupertype(types);
+        return "(T1, T2, T3) -> leastSupertype(T1, T2, T3)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

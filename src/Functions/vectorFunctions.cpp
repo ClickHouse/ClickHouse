@@ -93,6 +93,28 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
+    /// Documentation-only — element-wise binary op applied to each pair of
+    /// tuple elements; the result is a tuple whose i-th element type follows
+    /// the underlying scalar op's promotion rules.
+    String getSignatureString() const override
+    {
+        return "(Tuple, Tuple) -> Tuple";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
@@ -186,6 +208,27 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Documentation-only — element-wise `negate` applied to each tuple element;
+    /// the result tuple's i-th element type follows scalar `negate` promotion.
+    String getSignatureString() const override
+    {
+        return "(Tuple) -> Tuple";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -259,6 +302,28 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Documentation-only — applies the scalar op to each tuple element with
+    /// the same right-hand operand; the result tuple's i-th element type
+    /// follows the underlying scalar op's promotion rules.
+    String getSignatureString() const override
+    {
+        return "(Tuple, Any) -> Tuple";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -463,6 +528,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Documentation-only — applies `plus`/`minus` with each tuple-element
+    /// interval to the date/datetime. The concrete result type depends on
+    /// the date/datetime input and the precision of the intervals.
+    String getSignatureString() const override
+    {
+        return "(Date | Date32 | DateTime | DateTime64, Tuple) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -560,6 +633,23 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Documentation-only — accumulates intervals into a tuple of intervals.
+    /// If the right-hand interval shares the unit of the last element of the
+    /// tuple, it's merged in place; otherwise it's appended. The composite
+    /// per-element-interval-kind result isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(Tuple | Interval, Interval) -> Tuple";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1283,12 +1373,38 @@ public:
             return 1;
     }
 
+    /// Documentation-only — divides the input vector by its L-norm. The
+    /// `Lp` variant takes a `p` parameter; the others are unary. The result
+    /// element type is computed from `LNorm / TupleDivideByNumber`, so the
+    /// string is surfaced via `system.functions` only.
+    String getSignatureString() const override
+    {
+        if constexpr (FuncLabel::name[0] == 'p')
+            return "(Tuple, Float | UInt) -> Tuple";
+        else
+            return "(Tuple) -> Tuple";
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return {1};
         else
             return {};
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -1444,6 +1560,29 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — `Traits` may expose a `signature` constant describing
+    /// the shape accepted by both the tuple- and array-path. The actual return
+    /// type is computed by the underlying `tuple_function` / `array_function`,
+    /// so the string is surfaced via `system.functions` only.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Traits::signature; })
+            return Traits::signature;
+        else
+            return {};
+    }
+
+    /// The signature is documentation-only. Route type-only calls to the selected
+    /// implementation instead of letting the base class evaluate `Traits::signature`.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Since transposed distance functions are variadic, we check the number of arguments, as we won't do it later like with others
@@ -1522,6 +1661,7 @@ extern FunctionPtr createFunctionArrayDotProductTransposedQuantized(ContextPtr c
 struct DotProduct
 {
     static constexpr auto name = "dotProduct";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
@@ -1530,6 +1670,7 @@ struct DotProduct
 struct L1NormTraits
 {
     static constexpr auto name = "L1Norm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
@@ -1538,6 +1679,7 @@ struct L1NormTraits
 struct L2NormTraits
 {
     static constexpr auto name = "L2Norm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
@@ -1546,6 +1688,7 @@ struct L2NormTraits
 struct L2SquaredNormTraits
 {
     static constexpr auto name = "L2SquaredNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredNorm;
@@ -1554,6 +1697,7 @@ struct L2SquaredNormTraits
 struct LpNormTraits
 {
     static constexpr auto name = "LpNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit, Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
@@ -1562,6 +1706,7 @@ struct LpNormTraits
 struct LinfNormTraits
 {
     static constexpr auto name = "LinfNorm";
+    static constexpr auto signature = "(Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
@@ -1602,6 +1747,7 @@ struct LinfNormalizeTraits
 struct L1DistanceTraits
 {
     static constexpr auto name = "L1Distance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
@@ -1610,6 +1756,7 @@ struct L1DistanceTraits
 struct L2DistanceTraits
 {
     static constexpr auto name = "L2Distance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
@@ -1618,6 +1765,7 @@ struct L2DistanceTraits
 struct L2SquaredDistanceTraits
 {
     static constexpr auto name = "L2SquaredDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Any";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
@@ -1626,6 +1774,7 @@ struct L2SquaredDistanceTraits
 struct LpDistanceTraits
 {
     static constexpr auto name = "LpDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit, Float | UInt) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
@@ -1634,6 +1783,7 @@ struct LpDistanceTraits
 struct LinfDistanceTraits
 {
     static constexpr auto name = "LinfDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
@@ -1642,6 +1792,7 @@ struct LinfDistanceTraits
 struct CosineDistanceTraits
 {
     static constexpr auto name = "cosineDistance";
+    static constexpr auto signature = "(Tuple | Array | QBit, Tuple | Array | QBit) -> Float64";
 
     static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
@@ -1651,6 +1802,7 @@ struct L2DistanceTransposedTraits
 {
     static constexpr auto name = "L2DistanceTransposed";
     static constexpr bool is_transposed = true;
+    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     /// Transposed distances are always array functions, but we still need CreateTupleFunction to compile
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
@@ -1661,6 +1813,7 @@ struct CosineDistanceTransposedTraits
 {
     static constexpr auto name = "cosineDistanceTransposed";
     static constexpr bool is_transposed = true;
+    static constexpr auto signature = "(Array | QBit | FixedString, ...) -> Array(Float64)";
 
     static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposed;
