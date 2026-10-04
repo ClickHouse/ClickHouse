@@ -4,7 +4,8 @@
 # Tag no-msan: delta-kernel-rs is not built with MSan
 #
 # A filter on a Delta Lake column whose name has a dot, or on a subcolumn that is not a Delta field, returns the same
-# rows as without the engine predicate, and a filter on a nested field without dots in its names still skips files.
+# rows as without the engine predicate, also in a change data feed query, and a filter on a nested field without dots
+# in its names still skips files.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -70,6 +71,39 @@ with open(os.path.join(directory, "_delta_log", "00000000000000000000.json"), "w
         log.write(json.dumps(action) + "\n")
 EOF
 
+# delta-kernel refuses a change data feed on a table with column mapping, so the feed is read from a second table
+# without it.
+mkdir -p "$DIR/cdf/_delta_log"
+CDF_STRUCTURE='id Int32, `x.y` Nullable(Int32), s Tuple(x Nullable(Int32))'
+$CLICKHOUSE_LOCAL -q "
+INSERT INTO FUNCTION file('$DIR/cdf/data.parquet', Parquet, '$CDF_STRUCTURE') VALUES (1, 10, (20)), (2, 11, (21));
+"
+
+python3 - "$DIR/cdf" <<'EOF'
+import json, os, sys
+
+directory = sys.argv[1]
+
+def field(name, type_):
+    return {"name": name, "type": type_, "nullable": True, "metadata": {}}
+
+schema = {"type": "struct", "fields": [
+    field("id", "integer"), field("x.y", "integer"), field("s", {"type": "struct", "fields": [field("x", "integer")]})]}
+
+actions = [
+    {"protocol": {"minReaderVersion": 1, "minWriterVersion": 4}},
+    {"metaData": {"id": "c", "format": {"provider": "parquet", "options": {}}, "schemaString": json.dumps(schema),
+                  "partitionColumns": [], "createdTime": 1700000000000,
+                  "configuration": {"delta.enableChangeDataFeed": "true"}}},
+    {"add": {"path": "data.parquet", "partitionValues": {},
+             "size": os.path.getsize(os.path.join(directory, "data.parquet")),
+             "modificationTime": 1700000000000, "dataChange": True}},
+]
+with open(os.path.join(directory, "_delta_log", "00000000000000000000.json"), "w") as log:
+    for action in actions:
+        log.write(json.dumps(action) + "\n")
+EOF
+
 # Prints the matching ids and the number of data files read.
 check() {
     echo "$1"
@@ -86,5 +120,16 @@ check 'NOT `f.g`'
 check 's.x.null = 0'
 check 's.x = 32'
 check 's.x = 32 AND `a.b` = 300'
+
+# Prints the matching ids of a change data feed query.
+check_cdf() {
+    echo "cdf: $1"
+    $CLICKHOUSE_LOCAL -q "
+        SET delta_lake_snapshot_start_version = 0;
+        SELECT id FROM deltaLakeLocal('$DIR/cdf') WHERE $1 ORDER BY id;"
+}
+
+check_cdf '`x.y` = 11'
+check_cdf 's.x.null = 0'
 
 rm -rf "$DIR"
