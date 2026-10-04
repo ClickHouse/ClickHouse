@@ -1242,12 +1242,13 @@
 
     <!-- Embedded Iceberg REST catalog server (experimental). Not recommended for production use.
          The catalog state is stored in Keeper under <zookeeper_path>/<warehouse>.
-         Disabled unless the port is set. -->
+         New tables are placed under <base_location> and their metadata files are written using <storage_named_collection>. -->
     <!--
     <iceberg_rest_catalog>
         <port>8182</port>
         <warehouse>my_warehouse</warehouse>
         <base_location>s3://my-bucket/warehouse</base_location>
+        <storage_named_collection>iceberg_warehouse_storage</storage_named_collection>
         <zookeeper_path>/clickhouse/iceberg_rest_catalog</zookeeper_path>
     </iceberg_rest_catalog>
     -->
