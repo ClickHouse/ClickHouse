@@ -21,7 +21,7 @@ class Atomic
 public:
     Atomic() = default;
 
-    constexpr Atomic(T desired)
+    constexpr Atomic(T desired) /// NOLINT(google-explicit-constructor)
         : impl(desired)
     {
     }
@@ -99,12 +99,12 @@ public:
         return fetch_sub(1);
     }
 
-    operator T() const
+    operator T() const /// NOLINT(google-explicit-constructor)
     {
         return load();
     }
 
-    T operator=(T desired)
+    T operator=(T desired) /// NOLINT(misc-unconventional-assign-operator)
     {
         store(desired);
         return desired;

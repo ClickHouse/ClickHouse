@@ -12,11 +12,11 @@ namespace DB::Runtime::Wyrd
 
 #if defined(WYRD_SIMULATION)
 
-Thread::Thread(std::function<void()> body)
+Thread::Thread(std::function<void()> body_)
     : done(std::make_shared<UInt32>(0))
 {
     spawn(
-        [body = std::move(body), flag = done]
+        [body = std::move(body_), flag = done]
         {
             body();
             *flag = 1;
@@ -32,9 +32,9 @@ void Thread::join()
 
 #elif defined(WYRD_ADVERSARY)
 
-Thread::Thread(std::function<void()> body)
+Thread::Thread(std::function<void()> body_)
     : impl(
-          [body = std::move(body)]
+          [body = std::move(body_)]
           {
               if (auto * current = adversary())
                   current->threadEnter();

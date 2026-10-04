@@ -18,7 +18,7 @@ namespace DB::Runtime::Wyrd
 class Thread
 {
 public:
-    explicit Thread(std::function<void()> body);
+    explicit Thread(std::function<void()> body_);
 
     void join();
 
@@ -31,7 +31,7 @@ private:
 class Thread
 {
 public:
-    explicit Thread(std::function<void()> body);
+    explicit Thread(std::function<void()> body_);
 
     void join();
 

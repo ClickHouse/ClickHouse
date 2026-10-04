@@ -28,7 +28,7 @@ void setAdversary(AdversaryParams params)
 
 void resetAdversary()
 {
-    current().reset();
+    current() = nullptr;
 }
 
 }

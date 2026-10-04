@@ -46,6 +46,9 @@ UInt64 randomNumber()
 
 bool randomEventEvery(size_t freq)
 {
+    if (freq == 0)
+        return false;
+
     return generator()() % freq == 0;
 }
 
