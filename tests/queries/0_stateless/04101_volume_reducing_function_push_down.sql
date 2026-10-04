@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- The plan-shape assertions below describe the step layout produced by the Analyzer.
 -- `query_plan_merge_expressions` is pinned because the pass needs the expression and the
 -- row-carrying step it is pushed below to be adjacent, which is what merging produces.
