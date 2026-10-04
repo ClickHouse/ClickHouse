@@ -60,6 +60,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsUInt64 promql_max_points_per_series;
 }
 
 namespace TimeSeriesSetting
@@ -238,6 +239,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
+        evaluation_settings.max_points_per_series = getContext()->getSettingsRef()[Setting::promql_max_points_per_series];
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
