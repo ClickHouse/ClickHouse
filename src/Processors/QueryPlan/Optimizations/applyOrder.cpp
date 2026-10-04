@@ -15,6 +15,7 @@
 
 #include <Functions/IFunction.h>
 
+#include <algorithm>
 
 namespace DB
 {
