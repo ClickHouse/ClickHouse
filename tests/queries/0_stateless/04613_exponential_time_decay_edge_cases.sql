@@ -10,13 +10,15 @@ HAVING NOT (
     AND isFinite(exponentialTimeDecayedAvg(10)(id, time))
 );
 
--- Empty raw aggregates finalize to their raw numeric defaults.
+-- Empty aggregates use the canonical zero representation.
 SELECT
-    decaying_sum,
+    tupleElement(decaying_sum, 'value_at_anchor'),
+    tupleElement(decaying_sum, 'anchor_time') = 0,
+    exponentialTimeDecayingDecayLength(decaying_sum),
     isNaN(decaying_avg),
-    decaying_count,
-    toTypeName(decaying_sum),
-    toTypeName(decaying_count)
+    tupleElement(decaying_count, 'value_at_anchor'),
+    tupleElement(decaying_count, 'anchor_time') = 0,
+    exponentialTimeDecayingDecayLength(decaying_count)
 FROM
 (
     SELECT
@@ -38,9 +40,9 @@ WHERE false;
 -- Nullable aggregate arguments skip rows containing NULL in an argument used by
 -- that aggregate. Count only depends on time, so a NULL value does not skip it.
 SELECT
-    round(exponentialTimeDecayedSum(10)(value, time), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(exponentialTimeDecayedCount(10)(time), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM VALUES(
     'value Nullable(Float64), time Nullable(Float64)',
     (2, 0),
@@ -51,9 +53,9 @@ FROM VALUES(
 -- A sufficiently old contribution underflows to zero without producing a
 -- non-finite result.
 SELECT
-    exponentialTimeDecayedSum(1)(value, time),
+    exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(1)(value, time), toFloat64(0)),
     exponentialTimeDecayedAvg(1)(value, time),
-    exponentialTimeDecayedCount(1)(time)
+    exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(1)(time), toFloat64(0))
 FROM VALUES('value Float64, time Float64', (1000, -10000), (2, 0));
 
 WITH
@@ -65,7 +67,7 @@ SELECT
     toFloat64(0),
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
 
--- Finite inputs must not manufacture a non-finite ExponentialTimeDecaying64 curve.
+-- Finite inputs must not manufacture a non-finite ExponentialTimeDecaying curve.
 -- This covers a derived unit timestamp overflow, arithmetic overflow, and
 -- aggregate finalization overflow.
 SELECT exponentialTimeDecaying(1e308)(1e308, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
@@ -79,21 +81,37 @@ FROM VALUES('value Float64, time Float64', (1e308, 0), (1e308, 0)); -- { serverE
 
 -- A zero finalized-value cutoff preserves exact behavior.
 SET exponential_time_decay_significance_cutoff = 0;
-SELECT round(exponentialTimeDecayedSum(10)(value, time), 6)
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
 -- Raw rows do not carry a calculation index, so the finalized-value cutoff leaves
 -- their aggregation exact.
 SET exponential_time_decay_significance_cutoff = 5;
-SELECT round(exponentialTimeDecayedSum(10)(value, time), 6)
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
 -- This remains exact as well, even though the old contribution would be outside
 -- the configured distance if an index had been supplied.
-SELECT round(exponentialTimeDecayedSum(10)(value, time), 6)
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
 FROM VALUES('value Float64, time Float64', (1, 0), (2, 100));
 
-SELECT round(exponentialTimeDecayedSum(10)(value, time), 6)
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
 FROM VALUES('value Float64, time Float64', (100, 60), (2, 100));
 
 -- An average keeps a state when either its numerator or denominator is still
@@ -106,7 +124,11 @@ FROM VALUES('value Float64, time Float64', (1000000, 0), (2, 100));
 
 -- Aggregate-state merges remain exact. In particular, storage-engine merges do
 -- not inherit a query's finalized-value cutoff.
-SELECT round(exponentialTimeDecayedSumMerge(10)(state), 6)
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSumMerge(10)(state),
+        toFloat64(100)),
+    6)
 FROM
 (
     SELECT exponentialTimeDecayedSumState(10)(value, time) AS state
@@ -125,7 +147,7 @@ SELECT round(
         toFloat64(100)),
     6)
 FROM VALUES(
-    'decaying_value ExponentialTimeDecaying64(10)',
+    'decaying_value ExponentialTimeDecaying(10)',
     ((1., 0., 10.)),
     ((2., 100., 10.))
 );
@@ -160,7 +182,7 @@ CREATE TABLE time_decay_budget_engine_exact
     key UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecaying64(10))
+        ExponentialTimeDecaying(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;

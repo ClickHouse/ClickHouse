@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 namespace DB
 {
@@ -17,17 +16,12 @@ private:
     WrappedPtr storage;
     WrappedPtr ordering_key;
     Float64 decay_length;
-    ExponentialTimeDecayingKeyWidth key_width;
 
-    ColumnExponentialTimeDecaying(
-        MutableColumnPtr && storage_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_);
+    ColumnExponentialTimeDecaying(MutableColumnPtr && storage_, Float64 decay_length_);
     ColumnExponentialTimeDecaying(
         MutableColumnPtr && storage_,
         MutableColumnPtr && ordering_key_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_);
+        Float64 decay_length_);
 
     void appendOrderingKey(size_t row);
     void rebuildOrderingKey();
@@ -35,28 +29,23 @@ private:
 public:
     using Base = COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
 
-    static MutablePtr create(
-        MutableColumnPtr && storage_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64)
+    static MutablePtr create(MutableColumnPtr && storage_, Float64 decay_length_)
     {
-        return Base::create(std::move(storage_), decay_length_, key_width_);
+        return Base::create(std::move(storage_), decay_length_);
     }
 
     static MutablePtr createWithPrefix(
         MutableColumnPtr && storage_,
         MutableColumnPtr && ordering_key_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_)
+        Float64 decay_length_)
     {
         return Base::create(
             std::move(storage_),
             std::move(ordering_key_),
-            decay_length_,
-            key_width_);
+            decay_length_);
     }
 
-    const char * getFamilyName() const override { return getExponentialTimeDecayingTypeName(key_width); }
+    const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
     TypeIndex getDataType() const override { return TypeIndex::ExponentialTimeDecaying; }
     std::string getName() const override;
 
@@ -99,9 +88,7 @@ public:
     std::optional<size_t> getSerializedValueSize(
         size_t, const IColumn::SerializationSettings *) const override
     {
-        return key_width == ExponentialTimeDecayingKeyWidth::Bits64
-            ? sizeof(UInt64)
-            : sizeof(UInt128);
+        return sizeof(UInt8) + sizeof(UInt64);
     }
 
     void collectSerializedValueSizes(
@@ -190,7 +177,6 @@ public:
     bool structureEquals(const IColumn & rhs) const override;
 
     Float64 getDecayLength() const { return decay_length; }
-    ExponentialTimeDecayingKeyWidth getKeyWidth() const { return key_width; }
     const IColumn & getStorageColumn() const { return *storage; }
     IColumn & getStorageColumn() { return *storage; }
     const ColumnTuple & getStorageTuple() const { return assert_cast<const ColumnTuple &>(*storage); }

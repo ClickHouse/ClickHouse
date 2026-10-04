@@ -2369,9 +2369,15 @@ public:
         {
             if (isExponentialTimeDecaying(arguments[0]) && isExponentialTimeDecaying(arguments[1]))
             {
-                assertExponentialTimeDecayingTypesCompatible(
-                    arguments[0], arguments[1], "plus");
-                return arguments[0];
+                const Float64 left_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[0]);
+                const Float64 right_decay_length = *tryGetExponentialTimeDecayingDecayLength(arguments[1]);
+                if (left_decay_length != right_decay_length)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Cannot add ExponentialTimeDecaying values with different decay lengths: {} and {}",
+                        left_decay_length,
+                        right_decay_length);
+                return createDataTypeExponentialTimeDecaying(left_decay_length);
             }
         }
 

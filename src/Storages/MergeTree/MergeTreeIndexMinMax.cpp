@@ -45,10 +45,7 @@ DataTypePtr getMinMaxPhysicalType(const DataTypePtr & type)
     if (!isExponentialTimeDecaying(nested))
         return type;
 
-    const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecaying &>(*nested);
-    DataTypePtr result = decaying_type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64
-        ? DataTypePtr(std::make_shared<DataTypeUInt64>())
-        : DataTypePtr(std::make_shared<DataTypeUInt128>());
+    DataTypePtr result = std::make_shared<DataTypeUInt64>();
     if (nullable)
         result = makeNullable(result);
     return result;
@@ -83,82 +80,32 @@ bool getDecayPrefixExtremes(
         nested_column = &nullable_column->getNestedColumn();
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*nested_column);
+    const auto & prefix = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
 
     bool found = false;
     bool saw_null = false;
+    UInt64 min_key = 0;
+    UInt64 max_key = 0;
 
-    if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+    for (size_t row = begin; row < end; ++row)
     {
-        const auto & keys
-            = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
-        UInt64 min_key = 0;
-        UInt64 max_key = 0;
-
-        for (size_t row = begin; row < end; ++row)
+        if (nullable_column && nullable_column->isNullAt(row))
         {
-            if (nullable_column && nullable_column->isNullAt(row))
-            {
-                saw_null = true;
-                continue;
-            }
-
-            const UInt64 key = keys[row];
-            if (!found)
-            {
-                min_key = key;
-                max_key = key;
-                found = true;
-            }
-            else
-            {
-                min_key = std::min(min_key, key);
-                max_key = std::max(max_key, key);
-            }
+            saw_null = true;
+            continue;
         }
 
-        if (found)
+        const UInt64 key = prefix[row];
+        if (!found)
         {
-            min_value = Field(min_key);
-            if (!saw_null)
-                max_value = Field(max_key);
+            min_key = key;
+            max_key = key;
+            found = true;
         }
-    }
-    else
-    {
-        const auto & keys
-            = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
-        UInt128 min_key = 0;
-        UInt128 max_key = 0;
-
-        for (size_t row = begin; row < end; ++row)
+        else
         {
-            if (nullable_column && nullable_column->isNullAt(row))
-            {
-                saw_null = true;
-                continue;
-            }
-
-            const UInt128 key = keys[row];
-            if (!found)
-            {
-                min_key = key;
-                max_key = key;
-                found = true;
-            }
-            else
-            {
-                if (key < min_key)
-                    min_key = key;
-                if (key > max_key)
-                    max_key = key;
-            }
-        }
-
-        if (found)
-        {
-            min_value = Field(min_key);
-            if (!saw_null)
-                max_value = Field(max_key);
+            min_key = std::min(min_key, key);
+            max_key = std::max(max_key, key);
         }
     }
 
@@ -174,8 +121,11 @@ bool getDecayPrefixExtremes(
         return false;
     }
 
+    min_value = Field(min_key);
     if (saw_null)
         max_value = Null{};
+    else
+        max_value = Field(max_key);
     return true;
 }
 

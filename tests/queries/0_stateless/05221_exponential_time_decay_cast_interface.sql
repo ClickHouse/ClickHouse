@@ -7,29 +7,9 @@ WITH
     toFloat64(8) AS value,
     toFloat64(5.25) AS timestamp,
     toFloat64(3) AS decay_length,
-    (value, timestamp, decay_length)::ExponentialTimeDecaying64 AS inferred,
-    (value, timestamp, decay_length)::ExponentialTimeDecaying64(3) AS checked,
-    (value, timestamp)::ExponentialTimeDecaying64(3) AS parameterized
-SELECT
-    toTypeName(inferred),
-    toTypeName(checked),
-    toTypeName(parameterized),
-    exponentialTimeDecayingDecayLength(inferred),
-    exponentialTimeDecayingDecayLength(checked),
-    exponentialTimeDecayingDecayLength(parameterized),
-    abs(exponentialTimeDecayingValueAt(inferred, timestamp) - value) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(checked, timestamp) - value) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(parameterized, timestamp) - value) < 1e-12;
-
--- The precise type supports the same construction forms but derives a UInt128
--- identity from the higher-precision unit timestamp.
-WITH
-    toFloat64(8) AS value,
-    toFloat64(5.25) AS timestamp,
-    toFloat64(3) AS decay_length,
-    (value, timestamp, decay_length)::ExponentialTimeDecaying128 AS inferred,
-    (value, timestamp, decay_length)::ExponentialTimeDecaying128(3) AS checked,
-    (value, timestamp)::ExponentialTimeDecaying128(3) AS parameterized
+    (value, timestamp, decay_length)::ExponentialTimeDecaying AS inferred,
+    (value, timestamp, decay_length)::ExponentialTimeDecaying(3) AS checked,
+    (value, timestamp)::ExponentialTimeDecaying(3) AS parameterized
 SELECT
     toTypeName(inferred),
     toTypeName(checked),
@@ -43,14 +23,14 @@ SELECT
 
 -- Constant `CAST` results are serialized through the `Native` protocol before the
 -- data block is materialized. Keep serialization-info discovery valid for `ColumnConst`.
-SELECT CAST((toFloat64(1), toFloat64(65535), toFloat64(10)), 'ExponentialTimeDecaying64(10)');
+SELECT CAST((toFloat64(1), toFloat64(65535), toFloat64(10)), 'ExponentialTimeDecaying(10)');
 
 -- The unparameterized target can infer a non-integral decay length and DateTime64
 -- input while still producing one concrete static type.
 WITH
     toDateTime64('2026-09-28 06:00:00.123456', 6, 'UTC') AS timestamp,
     toFloat64(0.5) AS decay_length,
-    (toFloat64(2.5), timestamp, decay_length)::ExponentialTimeDecaying64 AS value
+    (toFloat64(2.5), timestamp, decay_length)::ExponentialTimeDecaying AS value
 SELECT
     toTypeName(value),
     exponentialTimeDecayingDecayLength(value),
@@ -63,7 +43,7 @@ WITH
     toFloat64(-1) AS raw_value,
     toFloat64(-123) AS timestamp,
     toFloat64(3) AS decay_length,
-    (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64(3) AS value
+    (raw_value, timestamp, decay_length)::ExponentialTimeDecaying(3) AS value
 SELECT
     abs(exponentialTimeDecayingValueAt(value, timestamp) + 1) < 1e-12,
     abs(exponentialTimeDecayingValueAt(value, toFloat64(123)) + 1) > 0.5;
@@ -72,7 +52,7 @@ SELECT
 WITH
     toFloat64(-4.5) AS raw_value,
     toFloat64(17.25) AS timestamp,
-    (raw_value, timestamp)::ExponentialTimeDecaying64(3) AS cast_value,
+    (raw_value, timestamp)::ExponentialTimeDecaying(3) AS cast_value,
     exponentialTimeDecaying(3)(raw_value, timestamp) AS function_value
 SELECT
     toTypeName(cast_value) = toTypeName(function_value),
@@ -87,7 +67,7 @@ SELECT
 WITH
     toFloat64(0) AS raw_value,
     toFloat64(123.5) AS timestamp,
-    (raw_value, timestamp)::ExponentialTimeDecaying64(3) AS value
+    (raw_value, timestamp)::ExponentialTimeDecaying(3) AS value
 SELECT
     exponentialTimeDecayingDecayLength(value) = 3,
     exponentialTimeDecayingValueAt(value, timestamp) = 0;
@@ -97,26 +77,26 @@ WITH
     toFloat64(8) AS raw_value,
     toFloat64(5) AS timestamp,
     toFloat64(4) AS decay_length
-SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64(3); -- { serverError BAD_ARGUMENTS }
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying(3); -- { serverError BAD_ARGUMENTS }
 
 -- The inferred decay length must be finite and positive.
 WITH
     toFloat64(8) AS raw_value,
     toFloat64(5) AS timestamp,
     toFloat64(0) AS decay_length
-SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64; -- { serverError BAD_ARGUMENTS }
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 
 WITH
     toFloat64(8) AS raw_value,
     toFloat64(5) AS timestamp,
     toFloat64(-1) AS decay_length
-SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64; -- { serverError BAD_ARGUMENTS }
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 
 WITH
     toFloat64(8) AS raw_value,
     toFloat64(5) AS timestamp,
     toFloat64('nan') AS decay_length
-SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64; -- { serverError BAD_ARGUMENTS }
+SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying; -- { serverError BAD_ARGUMENTS }
 
 -- A tuple carrying the derived sign/unit-time field names is not a value
 -- representation at all. Reject it instead of routing it through any
@@ -124,17 +104,12 @@ SELECT (raw_value, timestamp, decay_length)::ExponentialTimeDecaying64; -- { ser
 WITH CAST(
     (1., 123., 3.),
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
-SELECT forbidden_tuple::ExponentialTimeDecaying64(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT forbidden_tuple::ExponentialTimeDecaying(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH CAST(
     (1., 123., 3.),
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
-SELECT forbidden_tuple::ExponentialTimeDecaying64; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-WITH CAST(
-    (1., 123., 3.),
-    'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
-SELECT forbidden_tuple::ExponentialTimeDecaying128(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT forbidden_tuple::ExponentialTimeDecaying; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The same rejection applies when the invalid derived-field tuple is nested;
 -- container conversion must not reinterpret it as a decaying value.
@@ -142,70 +117,16 @@ SELECT CAST(
     [CAST(
         (1., 123., 3.),
         'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)')],
-    'Array(ExponentialTimeDecaying64(3))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+    'Array(ExponentialTimeDecaying(3))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Decay length is part of the static type, so direct casts between different
 -- parameterizations are type errors rather than malformed values.
-WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)') AS value
-SELECT CAST(value, 'ExponentialTimeDecaying64(20)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
+SELECT CAST(value, 'ExponentialTimeDecaying(20)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Explicit conversion is required to cross the key-width boundary.
-WITH
-    CAST((1., 0.), 'ExponentialTimeDecaying64(10)') AS compact,
-    CAST(compact, 'ExponentialTimeDecaying128(10)') AS precise,
-    CAST(precise, 'ExponentialTimeDecaying64(10)') AS compact_again
-SELECT
-    toTypeName(precise),
-    toTypeName(compact_again),
-    abs(exponentialTimeDecayingValueAt(precise, 0.) - 1.) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(compact_again, 0.) - 1.) < 1e-12;
-
-SELECT
-    CAST((1., 0.), 'ExponentialTimeDecaying64(10)')
-    + CAST((1., 0.), 'ExponentialTimeDecaying128(10)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
--- Aggregation of finalized values preserves the exact input key width.
-SELECT
-    (
-        SELECT toTypeName(exponentialTimeDecayedSum(value))
-        FROM
-        (
-            SELECT CAST((1., 0.), 'ExponentialTimeDecaying64(10)') AS value
-        )
-    ),
-    (
-        SELECT toTypeName(exponentialTimeDecayedSum(value))
-        FROM
-        (
-            SELECT CAST((1., 0.), 'ExponentialTimeDecaying128(10)') AS value
-        )
-    );
-
--- State/Merge combinators preserve the same key width as finalized input.
-WITH
-    compact_state AS
-    (
-        SELECT exponentialTimeDecayedSumState(value) AS state
-        FROM
-        (
-            SELECT CAST((1., 0.), 'ExponentialTimeDecaying64(10)') AS value
-        )
-    ),
-    precise_state AS
-    (
-        SELECT exponentialTimeDecayedSumState(value) AS state
-        FROM
-        (
-            SELECT CAST((1., 0.), 'ExponentialTimeDecaying128(10)') AS value
-        )
-    )
-SELECT
-    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM compact_state),
-    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM precise_state);
-
--- The width-specific parameterless spelling is inference-only. A standalone type declaration
+-- The parameterless spelling is inference-only. A standalone type declaration
 -- still needs a concrete decay length because column types are static.
 CREATE TEMPORARY TABLE time_decay_unparameterized_type_rejected
 (
-    value ExponentialTimeDecaying64
+    value ExponentialTimeDecaying
 ); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

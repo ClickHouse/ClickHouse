@@ -805,8 +805,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     ErrorCodes::TYPE_MISMATCH,
                     "ExponentialTimeDecaying value and timestamp must define a finite decay curve");
 
-            const auto normalized = normalizeExponentialTimeDecaying(
-                value, time, decay_length, decaying_type->getKeyWidth());
+            const auto normalized = normalizeExponentialTimeDecaying(value, time, decay_length);
             return Tuple{normalized.value_at_anchor, normalized.anchor_time};
         }
     }
