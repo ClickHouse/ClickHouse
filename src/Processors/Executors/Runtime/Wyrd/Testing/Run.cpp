@@ -67,10 +67,19 @@ static std::chrono::seconds watchdogTimeoutFromEnvironment()
     return std::chrono::seconds(seconds ? std::stoull(seconds) : 60);
 }
 
+static scope_guard installDefaultAdversary()
+{
+    if (adversary())
+        return {};
+
+    setAdversary({});
+    return [] { resetAdversary(); };
+}
+
 void runTest(std::function<void()> body)
 {
-    if (auto * current = adversary())
-        current->reset();
+    scope_guard default_adversary = installDefaultAdversary();
+    adversary()->reset();
 
     std::chrono::seconds timeout = watchdogTimeoutFromEnvironment();
     std::binary_semaphore finished{0};
@@ -91,11 +100,8 @@ void runTest(std::function<void()> body)
 
     body();
 
-    if (auto * current = adversary())
-    {
-        AdversaryResult result = current->report();
-        fmt::print(stderr, "Wyrd adversary: yields={} suspends={} spurious_failures={}\n", result.yields, result.suspends, result.spurious_failures);
-    }
+    AdversaryResult result = adversary()->report();
+    fmt::print(stderr, "Wyrd adversary: yields={} suspends={} spurious_failures={}\n", result.yields, result.suspends, result.spurious_failures);
 }
 
 #else
