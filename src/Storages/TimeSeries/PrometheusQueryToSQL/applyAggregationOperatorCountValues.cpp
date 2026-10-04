@@ -137,6 +137,8 @@ SQLQueryPiece applyAggregationOperatorCountValues(
 
     SQLQueryPiece res = vector_argument;
     res.node = operator_node;
+    /// Aggregation makes new series, so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
     if (label_name == kMetricName)
         res.metric_name_dropped = false;
 
