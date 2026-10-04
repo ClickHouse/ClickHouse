@@ -1999,11 +1999,6 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     catch (const DB::HTTPException & ex)
     {
-        /// Fabric registers tables it discovers in the lakehouse, so it has already picked up the
-        /// initial metadata written just before this call and reports the identifier as taken.
-        /// Accept the conflict only there, and only if the registered table is the one we have
-        /// just written; anything else is a real name collision, and returning from it would
-        /// report a successful `CREATE TABLE` while the catalog keeps pointing at someone else's table.
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT
             && getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
         {
