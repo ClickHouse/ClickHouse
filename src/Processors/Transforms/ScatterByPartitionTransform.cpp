@@ -8,6 +8,8 @@
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -62,7 +64,10 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
 
     /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
     if (has_output_chunks && !pushOutputChunks())
+    {
+        input.setNotNeeded();
         return Status::PortFull;
+    }
 
     /// Try get chunk from input.
 
@@ -72,6 +77,14 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
             output.finish();
 
         return Status::Finished;
+    }
+
+    /// Request input only while an unfinished output needs data. Downstream processors may delay
+    /// requesting data until their other inputs are ready.
+    if (std::none_of(outputs.begin(), outputs.end(), [](const auto & output) { return !output.isFinished() && output.canPush(); }))
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
     }
 
     input.setNeeded();

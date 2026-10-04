@@ -5,11 +5,6 @@ SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Independent per-partition DISTINCT is not applied when a DISTINCT size limit is set, and some CI
--- configurations set these limits at the server level, so pin them to unlimited.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
-
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Skip stream merging: 1` lines.
 SET explain_query_plan_default = 'legacy';
@@ -31,7 +26,7 @@ SYSTEM STOP MERGES test_partition_in_order;
 INSERT INTO test_partition_in_order SELECT number % 100, number      FROM numbers(1000);
 INSERT INTO test_partition_in_order SELECT number % 100, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Distinct%Transform%' OR explain LIKE '%Resize%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%DistinctSortedStreamTransform%' OR explain LIKE '%Resize%';
 SELECT count() = (SELECT uniqExact(a) FROM test_partition_in_order) FROM (SELECT DISTINCT a FROM test_partition_in_order SETTINGS optimize_distinct_in_order = 1, allow_distinct_partitions_independently = 1);
 
 -- Multi-column DISTINCT key covering the full primary key.

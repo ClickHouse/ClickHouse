@@ -428,6 +428,11 @@ public:
         return columns;
     }
 
+    size_t getTotalByteCount() const override
+    {
+        return data ? data->getTotalByteCount() : 0;
+    }
+
 private:
     std::unique_ptr<SetVariants> data;
     const DataTypes key_types;

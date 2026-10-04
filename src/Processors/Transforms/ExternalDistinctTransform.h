@@ -3,6 +3,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -41,6 +42,8 @@ class DistinctSortedTransform;
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
+    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
+    /// enforces the limits across all streams. In that mode, `set_size_limits_` must be unlimited.
     ExternalDistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -51,7 +54,8 @@ public:
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
         size_t preferred_block_bytes_,
-        bool preserve_input_order_);
+        bool preserve_input_order_,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
 
     ~ExternalDistinctTransform() override;
 
@@ -68,6 +72,11 @@ private:
             : set(header, columns, limits)
         {
         }
+
+        /// Memory charged to the global `max_bytes_in_distinct` check. A set without keys counts as empty,
+        /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
+        /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
+        size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
 
         DistinctSetFilter set;
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
@@ -233,6 +242,8 @@ private:
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
+    /// Outlives the state that owns the set and its suppression-key extractor.
+    DistinctSetMemoryTracker set_memory;
     State state;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;

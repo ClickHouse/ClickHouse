@@ -2,6 +2,7 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <optional>
@@ -58,6 +59,8 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// `shared_set_bytes_` accounts for retained set memory across disjoint streams and attaches
+    /// snapshots to output chunks for global limit accounting by `DistinctLimitsCheckingTransform`.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -65,7 +68,8 @@ public:
         const Names & columns_,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
-        UInt64 max_bytes_before_pass_through_ = 0);
+        UInt64 max_bytes_before_pass_through_ = 0,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -73,6 +77,8 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
+    /// Outlives the set so its contribution is removed after the retained allocations are released.
+    DistinctSetMemoryTracker set_memory;
     /// An absent filter means subsequent chunks pass through without deduplication.
     std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;

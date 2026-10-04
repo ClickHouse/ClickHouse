@@ -8,11 +8,6 @@ SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Independent per-partition DISTINCT is not applied when a DISTINCT size limit is set, and some CI
--- configurations set these limits at the server level, so pin them to unlimited.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
-
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Skip stream merging: 1` lines.
 SET explain_query_plan_default = 'legacy';
