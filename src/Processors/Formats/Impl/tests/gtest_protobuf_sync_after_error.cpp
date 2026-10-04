@@ -47,6 +47,7 @@ struct ProtobufFormatHelper
             with_length_delimiter,
             /* flatten_google_wrappers = */ false,
             /* oneof_presence = */ false,
+            /* input_datetime64_scale = */ -1,
             /* google_protos_path = */ "");
     }
 

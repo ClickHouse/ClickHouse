@@ -26,6 +26,7 @@
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypeTuple.h>
 #    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/Serializations/SerializationDecimal.h>
 #    include <DataTypes/Serializations/SerializationFixedString.h>
 #    include <Formats/ProtobufReader.h>
@@ -1150,7 +1151,7 @@ namespace
 
 
     /// Serializes a ColumnDecimal<DecimalType> to any field except TYPE_MESSAGE, TYPE_GROUP, TYPE_ENUM.
-    /// DecimalType must be one of the following types: Decimal32, Decimal64, Decimal128, Decimal256, DateTime64.
+    /// DecimalType must be one of the following types: Decimal32, Decimal64, Decimal128, Decimal256.
     template <typename DecimalType>
     class ProtobufSerializerDecimal : public ProtobufSerializerSingleValue
     {
@@ -1303,39 +1304,34 @@ namespace
 
                 case FieldTypeId::TYPE_BOOL:
                 {
-                    if (std::is_same_v<DecimalType, DateTime64>)
-                        incompatibleColumnType(TypeName<DecimalType>);
-                    else
+                    write_function = [this](const DecimalType & decimal)
                     {
-                        write_function = [this](const DecimalType & decimal)
+                        if (decimal.value == 0)
+                            writeInt(0);
+                        else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(
+                                        decimal, 1, scale, 0, /* check overflow */ true))
+                            writeInt(1);
+                        else
                         {
-                            if (decimal.value == 0)
-                                writeInt(0);
-                            else if (DecimalComparison<DecimalType, int, EqualsOp>::compare(
-                                         decimal, 1, scale, 0, /* check overflow */ true))
-                                writeInt(1);
-                            else
-                            {
-                                WriteBufferFromOwnString buf;
-                                writeText(decimal, scale, buf, false);
-                                cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
-                            }
-                        };
+                            WriteBufferFromOwnString buf;
+                            writeText(decimal, scale, buf, false);
+                            cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
+                        }
+                    };
 
-                        read_function = [this]() -> DecimalType
-                        {
-                            UInt64 u64 = readUInt();
-                            if (u64 < 2)
-                                return numberToDecimal(static_cast<UInt64>(u64 != 0));
-                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
-                        };
+                    read_function = [this]() -> DecimalType
+                    {
+                        UInt64 u64 = readUInt();
+                        if (u64 < 2)
+                            return numberToDecimal(static_cast<UInt64>(u64 != 0));
+                        cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
+                    };
 
-                        default_function = [this]() -> DecimalType
-                        {
-                            return numberToDecimal(static_cast<Int64>(field_descriptor.default_value_bool()));
-                        };
-                    }
-                    break;
+                    default_function = [this]() -> DecimalType
+                    {
+                        return numberToDecimal(static_cast<Int64>(field_descriptor.default_value_bool()));
+                    };
+                break;
                 }
 
                 case FieldTypeId::TYPE_STRING:
@@ -1384,20 +1380,14 @@ namespace
         void decimalToString(const DecimalType & decimal, String & str) const
         {
             WriteBufferFromString buf{str};
-            if constexpr (std::is_same_v<DecimalType, DateTime64>)
-                writeDateTimeText(decimal, scale, buf);
-            else
-                writeText(decimal, scale, buf, false);
+            writeText(decimal, scale, buf, false);
         }
 
         DecimalType stringToDecimal(const absl::string_view & str) const
         {
             ReadBufferFromString buf(str);
             DecimalType decimal{0};
-            if constexpr (std::is_same_v<DecimalType, DateTime64>)
-                readDateTime64Text(decimal, scale, buf);
-            else
-                SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
+            SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
         }
 
@@ -1409,8 +1399,6 @@ namespace
         std::optional<DecimalType> default_decimal;
         String text_buffer;
     };
-
-    using ProtobufSerializerDateTime64 = ProtobufSerializerDecimal<DateTime64>;
 
 
     /// Serializes a ColumnVector<UInt16> containing dates to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
@@ -1724,6 +1712,288 @@ namespace
             readDateTimeText(tm, buf, lut);
             return std::max<time_t>(tm, 0);
         }
+    };
+
+
+    /// Serializes ColumnDecimal<DateTime64> to any numeric or string field except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
+    /// Integer fields store Unix seconds by default. Set `input_format_protobuf_datetime64_scale` /
+    /// `output_format_protobuf_datetime64_scale` to the column precision to read / write scaled ticks
+    /// (`10^-N` seconds) instead; the setting must match the column precision.
+    /// Float/double fields always store fractional Unix seconds.
+    class ProtobufSerializerDateTime64 : public ProtobufSerializerSingleValue
+    {
+    public:
+        using ColumnType = ColumnDecimal<DateTime64>;
+
+        ProtobufSerializerDateTime64(
+            std::string_view column_name_,
+            const DataTypeDateTime64 & datetime64_type_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_,
+            Int64 input_datetime64_scale_,
+            Int64 output_datetime64_scale_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
+            , scale(datetime64_type_.getScale())
+            , scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+            , input_scaled_ticks(
+                  reader ? resolveScaledTicks(
+                               input_datetime64_scale_, field_typeid, scale, "input_format_protobuf_datetime64_scale", column_name_)
+                         : false)
+            , output_scaled_ticks(
+                  writer ? resolveScaledTicks(
+                               output_datetime64_scale_, field_typeid, scale, "output_format_protobuf_datetime64_scale", column_name_)
+                         : false)
+        {
+            setFunctions();
+        }
+
+        void writeRow(size_t row_num) override
+        {
+            const auto & column_decimal = assert_cast<const ColumnType &>(*column);
+            write_function(column_decimal.getElement(row_num));
+        }
+
+        void readRow(size_t row_num) override
+        {
+            DateTime64 value = read_function();
+            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            if (row_num < column_decimal.size())
+                column_decimal.getElement(row_num) = value;
+            else
+                column_decimal.insertValue(value);
+        }
+
+        void insertDefaults(size_t row_num) override
+        {
+            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            if (row_num < column_decimal.size())
+                return;
+            column_decimal.insertValue(getDefaultDateTime64());
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDateTime64: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
+    private:
+        enum class IntegerWireKind
+        {
+            Int,
+            SInt,
+            UInt,
+            Fixed,
+        };
+
+        /// WireType is the protobuf integer width: Int32, Int64, UInt32, UInt64
+        template <typename WireType, IntegerWireKind kind>
+        void setIntegerFunctions()
+        {
+            write_function = [this](DateTime64 value)
+            {
+                const auto wire_value = castNumber<WireType>(numericForProtobufField(value));
+                if constexpr (kind == IntegerWireKind::Int)
+                    writeInt(wire_value);
+                else if constexpr (kind == IntegerWireKind::SInt)
+                    writeSInt(wire_value);
+                else if constexpr (kind == IntegerWireKind::UInt)
+                    writeUInt(wire_value);
+                else
+                    writeFixed<WireType>(wire_value);
+            };
+
+            read_function = [this]() -> DateTime64
+            {
+                if constexpr (kind == IntegerWireKind::Int)
+                    return ticksFromNumericField(readInt());
+                else if constexpr (kind == IntegerWireKind::SInt)
+                    return ticksFromNumericField(readSInt());
+                else if constexpr (kind == IntegerWireKind::UInt)
+                    return ticksFromNumericField(castNumber<Int64>(readUInt()));
+                else if constexpr (std::is_signed_v<WireType>)
+                    return ticksFromNumericField(readFixed<WireType>());
+                else
+                    return ticksFromNumericField(castNumber<Int64>(readFixed<WireType>()));
+            };
+
+            default_function = [this]() -> DateTime64
+            {
+                if constexpr (std::is_same_v<WireType, Int32>)
+                    return ticksFromNumericField(field_descriptor.default_value_int32());
+                else if constexpr (std::is_same_v<WireType, Int64>)
+                    return ticksFromNumericField(field_descriptor.default_value_int64());
+                else if constexpr (std::is_same_v<WireType, UInt32>)
+                    return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint32()));
+                else
+                    return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint64()));
+            };
+        }
+
+        /// Float/double schemas always store fractional Unix seconds.
+        /// Auto-schema maps DateTime64 to int64; float/double only appear in hand-written schemas.
+        template <typename FloatType>
+        void setFloatingPointFunctions()
+        {
+            write_function = [this](DateTime64 value) { writeFixed<FloatType>(DecimalUtils::convertTo<FloatType>(value, scale)); };
+
+            read_function = [this]() -> DateTime64
+            { return convertToDecimal<DataTypeNumber<FloatType>, DataTypeDateTime64>(readFixed<FloatType>(), scale); };
+
+            default_function = [this]() -> DateTime64
+            {
+                if constexpr (std::is_same_v<FloatType, Float32>)
+                    return convertToDecimal<DataTypeNumber<FloatType>, DataTypeDateTime64>(field_descriptor.default_value_float(), scale);
+                else
+                    return convertToDecimal<DataTypeNumber<FloatType>, DataTypeDateTime64>(field_descriptor.default_value_double(), scale);
+            };
+        }
+
+        void setFunctions()
+        {
+            switch (field_typeid)
+            {
+                case FieldTypeId::TYPE_INT32: setIntegerFunctions<Int32, IntegerWireKind::Int>(); break;
+                case FieldTypeId::TYPE_SINT32: setIntegerFunctions<Int32, IntegerWireKind::SInt>(); break;
+                case FieldTypeId::TYPE_UINT32: setIntegerFunctions<UInt32, IntegerWireKind::UInt>(); break;
+                case FieldTypeId::TYPE_INT64: setIntegerFunctions<Int64, IntegerWireKind::Int>(); break;
+                case FieldTypeId::TYPE_SINT64: setIntegerFunctions<Int64, IntegerWireKind::SInt>(); break;
+                case FieldTypeId::TYPE_UINT64: setIntegerFunctions<UInt64, IntegerWireKind::UInt>(); break;
+                case FieldTypeId::TYPE_FIXED32: setIntegerFunctions<UInt32, IntegerWireKind::Fixed>(); break;
+                case FieldTypeId::TYPE_SFIXED32: setIntegerFunctions<Int32, IntegerWireKind::Fixed>(); break;
+                case FieldTypeId::TYPE_FIXED64: setIntegerFunctions<UInt64, IntegerWireKind::Fixed>(); break;
+                case FieldTypeId::TYPE_SFIXED64: setIntegerFunctions<Int64, IntegerWireKind::Fixed>(); break;
+
+                case FieldTypeId::TYPE_FLOAT: setFloatingPointFunctions<Float32>(); break;
+                case FieldTypeId::TYPE_DOUBLE: setFloatingPointFunctions<Float64>(); break;
+
+                case FieldTypeId::TYPE_STRING:
+                case FieldTypeId::TYPE_BYTES: {
+                    write_function = [this](DateTime64 value)
+                    {
+                        dateTime64ToString(value, text_buffer);
+                        writeStr(text_buffer);
+                    };
+
+                    read_function = [this]() -> DateTime64
+                    {
+                        readStr(text_buffer);
+                        return stringToDateTime64(text_buffer);
+                    };
+
+                    default_function = [this]() -> DateTime64 { return stringToDateTime64(field_descriptor.default_value_string()); };
+                    break;
+                }
+
+                default: incompatibleColumnType("DateTime64");
+            }
+        }
+
+        DateTime64 getDefaultDateTime64()
+        {
+            if (!default_value)
+                default_value = default_function();
+            return *default_value;
+        }
+
+        /// -1 means Unix seconds. A non-negative value is the tick precision and must equal the column scale
+        /// when the Protobuf field is an integer; other field types ignore the precision and only range-check it.
+        static bool resolveScaledTicks(
+            Int64 setting,
+            FieldTypeId field_type,
+            UInt32 column_scale,
+            std::string_view setting_name,
+            std::string_view date_time_column_name)
+        {
+            static constexpr Int64 max_scale = 9;
+            if (setting < -1 || setting > max_scale)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting {} must be -1 (Unix seconds) or a DateTime64 precision in [0, {}], got {}",
+                    setting_name,
+                    max_scale,
+                    setting);
+
+            if (setting < 0 || !isIntegerProtobufField(field_type))
+                return false;
+
+            if (static_cast<UInt32>(setting) != column_scale)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting {} is {}, but column {} has DateTime64 precision {}. "
+                    "Scaled ticks are used only when the setting equals the column precision. "
+                    "Leave the setting at -1 to use Unix seconds.",
+                    setting_name,
+                    setting,
+                    backQuote(date_time_column_name),
+                    column_scale);
+
+            return true;
+        }
+
+        static bool isIntegerProtobufField(FieldTypeId field_type)
+        {
+            switch (field_type)
+            {
+                case FieldTypeId::TYPE_INT32:
+                case FieldTypeId::TYPE_SINT32:
+                case FieldTypeId::TYPE_UINT32:
+                case FieldTypeId::TYPE_INT64:
+                case FieldTypeId::TYPE_SINT64:
+                case FieldTypeId::TYPE_UINT64:
+                case FieldTypeId::TYPE_FIXED32:
+                case FieldTypeId::TYPE_SFIXED32:
+                case FieldTypeId::TYPE_FIXED64:
+                case FieldTypeId::TYPE_SFIXED64: return true;
+                default: return false;
+            }
+        }
+
+        DateTime64 ticksFromNumericField(Int64 value) const
+        {
+            if (!input_scaled_ticks && scale > 0)
+            {
+                /// Integer protobuf fields store whole Unix seconds unless scaled ticks were explicitly selected.
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, scale_multiplier);
+            }
+
+            return DateTime64(value);
+        }
+
+        DateTime64::NativeType numericForProtobufField(DateTime64 value) const
+        {
+            if (!output_scaled_ticks)
+            {
+                /// Integer protobuf fields store whole Unix seconds unless scaled ticks were explicitly selected.
+                return DecimalUtils::getWholePart(value, scale);
+            }
+
+            return value.value;
+        }
+
+        void dateTime64ToString(DateTime64 value, String & str) const
+        {
+            WriteBufferFromString buf{str};
+            writeDateTimeText(value, scale, buf);
+        }
+
+        DateTime64 stringToDateTime64(const absl::string_view & str) const
+        {
+            ReadBufferFromString buf(str);
+            DateTime64 value{0};
+            readDateTime64Text(value, scale, buf);
+            return value;
+        }
+
+        const UInt32 scale;
+        const DateTime64::NativeType scale_multiplier;
+        const bool input_scaled_ticks;
+        const bool output_scaled_ticks;
+        std::function<void(DateTime64)> write_function;
+        std::function<DateTime64()> read_function;
+        std::function<DateTime64()> default_function;
+        std::optional<DateTime64> default_value;
+        String text_buffer;
     };
 
 
@@ -3186,7 +3456,13 @@ namespace
     class ProtobufSerializerBuilder
     {
     public:
-        explicit ProtobufSerializerBuilder(const ProtobufReaderOrWriter & reader_or_writer_) : reader_or_writer(reader_or_writer_) {}
+        explicit ProtobufSerializerBuilder(
+            const ProtobufReaderOrWriter & reader_or_writer_, Int64 input_datetime64_scale_ = -1, Int64 output_datetime64_scale_ = -1)
+            : reader_or_writer(reader_or_writer_)
+            , input_datetime64_scale(input_datetime64_scale_)
+            , output_datetime64_scale(output_datetime64_scale_)
+        {
+        }
 
         std::unique_ptr<ProtobufSerializer> buildMessageSerializer(
             const Strings & column_names,
@@ -3934,7 +4210,14 @@ namespace
                 case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(column_name, assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(column_name, assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime64:
+                    return std::make_unique<ProtobufSerializerDateTime64>(
+                        column_name,
+                        assert_cast<const DataTypeDateTime64 &>(*data_type),
+                        field_descriptor,
+                        reader_or_writer,
+                        input_datetime64_scale,
+                        output_datetime64_scale);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(column_name, typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(column_name, typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
@@ -4157,6 +4440,8 @@ namespace
         }
 
         const ProtobufReaderOrWriter reader_or_writer;
+        const Int64 input_datetime64_scale = -1;
+        const Int64 output_datetime64_scale = -1;
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
     };
@@ -4335,17 +4620,19 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool with_envelope,
     bool flatten_google_wrappers,
     bool oneof_presence,
+    Int64 input_datetime64_scale,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(
-        column_names,
-        data_types,
-        missing_column_indices,
-        *descriptor.message_descriptor,
-        with_length_delimiter,
-        with_envelope,
-        flatten_google_wrappers,
-        oneof_presence);
+    return ProtobufSerializerBuilder(reader, input_datetime64_scale)
+        .buildMessageSerializer(
+            column_names,
+            data_types,
+            missing_column_indices,
+            *descriptor.message_descriptor,
+            with_length_delimiter,
+            with_envelope,
+            flatten_google_wrappers,
+            oneof_presence);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -4355,13 +4642,20 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool with_length_delimiter,
     bool with_envelope,
     bool defaults_for_nullable_google_wrappers,
+    Int64 output_datetime64_scale,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(
-        column_names, data_types, missing_column_indices,
-        *descriptor.message_descriptor,
-        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false);
+    return ProtobufSerializerBuilder(writer, /* input_datetime64_scale = */ -1, output_datetime64_scale)
+        .buildMessageSerializer(
+            column_names,
+            data_types,
+            missing_column_indices,
+            *descriptor.message_descriptor,
+            with_length_delimiter,
+            with_envelope,
+            defaults_for_nullable_google_wrappers,
+            false);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence)
