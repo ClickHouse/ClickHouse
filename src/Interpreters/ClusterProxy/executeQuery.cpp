@@ -1072,7 +1072,11 @@ size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, con
     /// writes the count it was sized with into this server-owned context carrier before any reading step of
     /// the query is built, so a coordinated read on this server can never observe a different count than its
     /// coordinator. No client can write this carrier: it is not part of `ClientInfo` and is never deserialized.
-    if (const auto coordinator_replicas_count = context->getParallelReplicasCoordinatorCount())
+    /// The carrier is copied into every derived context, so it is scoped to the `cluster_for_parallel_replicas`
+    /// the coordinator was sized for: a nested view or subquery that re-points the setting at another cluster
+    /// does not inherit the outer read's count.
+    if (const auto coordinator_replicas_count
+        = context->getParallelReplicasCoordinatorCount(context->getSettingsRef()[Setting::cluster_for_parallel_replicas]))
         return *coordinator_replicas_count;
 
     /// Without a coordinator on this server the read is a follower read: the coordinator lives on the
@@ -1271,7 +1275,8 @@ void executeQueryWithParallelReplicas(
     /// The context carrier next to it is the one the initiator's own plan reads: the `ClientInfo` field is
     /// client-writable, so it is consulted only by follower reads (see `getActiveReplicasCountForParallelReplicas`).
     new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
-    new_context->setParallelReplicasCoordinatorCount(max_replicas_to_use);
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -1399,7 +1404,8 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
-    new_context->setParallelReplicasCoordinatorCount(max_replicas_to_use);
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
     if (connection_pools.size() == 1)
         return nullptr;
 
@@ -1819,7 +1825,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
 
     new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
-    new_context->setParallelReplicasCoordinatorCount(max_replicas_to_use);
+    new_context->setParallelReplicasCoordinatorCount(
+        max_replicas_to_use, new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas]);
 
     String formatted_query;
     {

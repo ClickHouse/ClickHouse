@@ -462,6 +462,9 @@ protected:
     /// initiator's own plan). Deliberately kept out of `ClientInfo`: that struct is deserialized from the
     /// client's `Query` packet, so a value carried there can be injected by a custom client on an initial query.
     std::optional<size_t> parallel_replicas_coordinator_count;
+    /// The `cluster_for_parallel_replicas` that coordinator was sized for. The count is copied into every derived
+    /// context, so it applies only while a read still targets that cluster (a nested view or subquery may re-point it).
+    String parallel_replicas_coordinator_cluster;
 
     BlockMarshallingCallback block_marshalling_callback;
 
@@ -2059,9 +2062,11 @@ public:
 
     /// The replica count the parallel-replicas reading coordinator of this query was sized with, for the
     /// initiator's own plan. Followers receive the same count over the wire, in `ClientInfo`.
-    void setParallelReplicasCoordinatorCount(size_t count);
+    /// The count is scoped to `cluster_name`, the `cluster_for_parallel_replicas` the coordinator was sized for:
+    /// the getter returns nothing for a read that targets another cluster.
+    void setParallelReplicasCoordinatorCount(size_t count, const String & cluster_name);
     void clearParallelReplicasCoordinatorCount();
-    std::optional<size_t> getParallelReplicasCoordinatorCount() const;
+    std::optional<size_t> getParallelReplicasCoordinatorCount(const String & cluster_name) const;
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

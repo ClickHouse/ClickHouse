@@ -129,7 +129,7 @@ TEST(ClientInfoRead, InitialQueryCannotOverrideCoordinatorReplicasCount)
     /// only the out-of-band context carrier, written by the dispatch itself, counts.
     context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     context->getClientInfo().obsolete_count_participating_replicas = 5;
-    context->setParallelReplicasCoordinatorCount(2);
+    context->setParallelReplicasCoordinatorCount(2, /*cluster_name=*/ "");
 
     EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
@@ -144,7 +144,22 @@ TEST(ClientInfoRead, SpoofedFollowerBitsCannotOverrideLocalCoordinatorReplicasCo
     context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     context->getClientInfo().collaborate_with_initiator = true;
     context->getClientInfo().obsolete_count_participating_replicas = 5;
-    context->setParallelReplicasCoordinatorCount(2);
+    context->setParallelReplicasCoordinatorCount(2, /*cluster_name=*/ "");
+
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
+}
+
+TEST(ClientInfoRead, CoordinatorReplicasCountIsScopedToItsCluster)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    /// The carrier is copied into every derived context. A nested view or subquery that re-points
+    /// `cluster_for_parallel_replicas` (empty here) at another cluster must not inherit a count that an
+    /// outer coordinator was sized with for a different cluster.
+    context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    context->getClientInfo().collaborate_with_initiator = true;
+    context->getClientInfo().obsolete_count_participating_replicas = 2;
+    context->setParallelReplicasCoordinatorCount(5, "other_cluster");
 
     EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
