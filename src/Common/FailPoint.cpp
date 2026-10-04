@@ -50,6 +50,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
     ONCE(connection_stale_on_establish) \
@@ -89,6 +90,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
     REGULAR(azure_inject_auth_failure_on_request) \
