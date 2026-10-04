@@ -17,6 +17,7 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
@@ -262,6 +263,28 @@ TEST(ParserShowTablesQuery, PreserveEmptyLike)
         ASSERT_NE(nullptr, ast) << "query: " << query;
         EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
     }
+}
+
+TEST(ParserShowTablesQuery, CloneOwnsWhereAndLimit)
+{
+    const String query = "SHOW TABLES WHERE name = 'x' LIMIT 1";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast);
+
+    ASTPtr cloned = ast->clone();
+    const auto & original = ast->as<ASTShowTablesQuery &>();
+    const auto & copy = cloned->as<ASTShowTablesQuery &>();
+
+    ASSERT_NE(nullptr, original.where_expression);
+    ASSERT_NE(nullptr, copy.where_expression);
+    EXPECT_NE(original.where_expression.get(), copy.where_expression.get());
+
+    ASSERT_NE(nullptr, original.limit_length);
+    ASSERT_NE(nullptr, copy.limit_length);
+    EXPECT_NE(original.limit_length.get(), copy.limit_length.get());
+
+    EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false));
 }
 
 TEST(ParserShowFunctionsQuery, PreserveEmptyLike)
