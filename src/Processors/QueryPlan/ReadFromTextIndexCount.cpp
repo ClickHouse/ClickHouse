@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -170,28 +169,22 @@ UInt64 computeCountForPart(
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = single_token,
+        .reader_settings = reader_settings,
     };
 
     const auto substreams = index.index->getSubstreams();
-    auto make_stream = [&](const MergeTreeIndexSubstream & substream)
-    {
-        return makeTextIndexInputStream(
-            part_info,
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
-    };
-
-    auto sparse_index_stream = make_stream(substreams[0]);
-    auto dictionary_stream = make_stream(substreams[1]);
-    auto postings_stream = make_stream(substreams[2]);
+    auto sparse_index_stream = makeTextIndexInputStream(
+        part_info,
+        index.index->getFileName(),
+        substreams[0],
+        reader_settings,
+        /*expected_buffer_size=*/ std::nullopt);
 
     sparse_index_stream->seekToStart();
 
+    /// The analysis opens the dictionary and postings streams itself
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = postings_stream.get();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
@@ -249,7 +242,12 @@ UInt64 computeCountForPart(
             if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
 
-            cursor_streams.push_back(make_stream(substreams[2]));
+            cursor_streams.push_back(makeTextIndexInputStream(
+                part_info,
+                index.index->getFileName(),
+                substreams[2],
+                reader_settings,
+                estimatePostingListBufferSize(*token_info)));
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
                 *token_info,
@@ -274,6 +272,18 @@ UInt64 computeCountForPart(
     auto postings_serialization = PostingsSerialization(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
         granule->getSerializationVersion());
+
+    /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
+    size_t largest_segment_bytes = 0;
+    for (const auto * token_info : tokens_to_read)
+        largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
+
+    auto postings_stream = makeTextIndexInputStream(
+        part_info,
+        index.index->getFileName(),
+        substreams[2],
+        reader_settings,
+        largest_segment_bytes);
 
     const PostingBlockReader<CheckCancelledCallback> posting_reader(
         *postings_stream,

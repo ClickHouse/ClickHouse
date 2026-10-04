@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test: plan-based parallel replicas with parallel_replicas_local_plan = 0 must
 -- still distribute the read via a remote-only fragment over all replicas
 

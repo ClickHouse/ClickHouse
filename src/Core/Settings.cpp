@@ -140,6 +140,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `allow_experimental_logsql_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
@@ -5036,6 +5037,12 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0, \
         {"24.12", true, false, "New setting"}) \
+    DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
+If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
+
+During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+)", 0, \
+        {"26.10", true, false, "`arrayCount` now returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements. Set this setting to `true` to return `UInt32` as before."}) \
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0, \
@@ -5237,6 +5244,8 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
         {"25.2", 0., 0., "New setting"}) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
+
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
 Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
@@ -6864,6 +6873,10 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
+    DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
+Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
+)", 0, \
+        {"26.10", false, true, "New setting to rewrite `length(arrayFilter(func, arr))` into `arrayCount(func, arr)`, which does not build the filtered array."}) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
 )", 0, \
@@ -7325,6 +7338,19 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.8", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
+    DECLARE(Bool, query_plan_aggregation_having_prefilter, true, R"(
+Toggles a query-plan-level optimization for `HAVING count() <comparison> <constant>` over a `GROUP BY`. While a two-level bucket of the aggregation result is converted to chunks, a group whose count cannot satisfy the bound is skipped before its key columns are materialized, instead of being materialized and then discarded by the filter above. Speeds up "groups above a threshold" queries over a high-cardinality `GROUP BY`, where most groups are discarded and the discarded keys are most of the conversion.
+
+A skipped group is neither filtered nor finalized, so this is not only a performance toggle: a `HAVING` conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can return rows instead, for example `HAVING throwIf(cnt = 3) = 0 AND count() > 3` over a `count() AS cnt`. Setting this to 0, or `compatibility` to a version below `26.10`, keeps the previous behavior.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", false, true, "New setting to toggle the plan optimization that skips a group's key materialization while a two-level bucket of a final aggregation is converted, when a HAVING bound on that aggregation's own no-argument count() already rejects the group. A skipped group is neither filtered nor finalized, so a HAVING conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can now succeed; `compatibility` below 26.10 keeps the previous behavior."}) \
     DECLARE(Bool, query_plan_split_filter, true, R"(
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -7387,9 +7413,9 @@ This is an expert-level setting which should only be used for debugging by devel
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
     DECLARE(Bool, legacy_array_join_function_nondeterministic_evaluation, false, R"(
-How a non-deterministic function next to the `arrayJoin` function is evaluated when it does not depend on the joined value, for example `rand()` or `generateUUIDv4()` in the same `SELECT`. By default it gives a different value on every output row, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions: one value per source row, repeated across that row's expanded rows.
+How non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated. By default `rand()` gives a different value on every output row and `runningDifference` or `neighbor` see the blocks of the expansion, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions.
 )", 0, \
-        {"26.10", true, false, "A non-deterministic function next to the `arrayJoin` function gives a different value on every output row, like with the `ARRAY JOIN` clause. The setting restores one value per source row."}) \
+        {"26.10", true, false, "Non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated like with the `ARRAY JOIN` clause."}) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -7403,6 +7429,22 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_below_limit_by, true, R"(
+Toggles pushing filters on `LIMIT BY` key columns below the `LIMIT BY` step.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+It is read independently of [query_plan_filter_push_down](#query_plan_filter_push_down): the push-down pass also runs, with that setting off, once a `JOIN` runtime filter has been added.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", true, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}, \
+        {"26.8", false, true, "New setting to control pushing a filter on the `LIMIT BY` key columns below the `LIMIT BY` step. Set it to false to keep the filter above the `LIMIT BY`."}) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
@@ -7435,6 +7477,10 @@ Possible values:
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0, \
         {"24.4", false, true, "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"}) \
+    DECLARE(Bool, query_plan_convert_outer_join_to_inner_join_transitively, true, R"(
+Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to extend `query_plan_convert_outer_join_to_inner_join` to consider a filter further up the plan and conditions of an enclosing `JOIN`. Only has an effect when `query_plan_convert_outer_join_to_inner_join` is enabled."}) \
     DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
@@ -7455,10 +7501,6 @@ Allow to merge expressions into JOIN step during join reordering optimization.
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0, \
         {"25.4", false, false, "New setting"}) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0, \
-        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
     DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
 Run a second `PREWHERE` promotion pass after later query plan optimizations may have
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
@@ -7506,35 +7548,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
         {"25.12", false, true, "New setting"}) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0, \
-        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -8256,6 +8271,8 @@ Use schema from cache for URL with last modification time validation (for URLs w
 The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, with exceptions recorded in the settings changes history.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+The `compatibility` setting never applies a value that the user could not set: a setting keeps its default if the previous version's default would violate the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the user's settings profiles, or if the setting belongs to a tier that [`allow_feature_tier`](/reference/settings/server-settings/settings/allow#allow_feature_tier) disables.
 
 Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
@@ -9897,7 +9914,8 @@ Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
-)", BETA, allow_experimental_json_lazy_type_hints, \
+)", 0, allow_experimental_json_lazy_type_hints, \
+        {"26.10", false, false, "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}, \
         {"26.9", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}, \
         {"26.3", false, false, "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
@@ -10241,6 +10259,48 @@ SET dialect = 'clickhouse_json';
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL, \
         {"26.3", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."}) \
+    DECLARE(Bool, allow_experimental_logsql_dialect, false, R"(
+Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect are translated into SELECT queries over the table specified by the `logsql_table` setting.
+
+Usage:
+```sql
+SET allow_experimental_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+A complete standalone `SET` query is still parsed as plain SQL so that the dialect can
+be switched back; a LogsQL query merely starting with the word `set` keeps its meaning.
+The `logsql_time_column` and `logsql_message_column` settings configure the columns
+referred to by the `_time` field and by the default (message) field.
+
+Unlike VictoriaLogs, which stores every field as a string, the translated queries run
+over the existing table schema. The key contract deviations that follow from this:
+- Text filters (words, phrases, prefixes, regexps) expect `String`-backed columns and do not convert numeric columns to text.
+- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values, as long as the compared literal fits `Int128` or `Decimal256(38)`; a wider value, e.g. an integer above 1e38 in a `UInt256` field, is compared with `Float64` precision, and so are the integral bucket steps of `stats by (<field>:<step>)`). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
+- The numeric stats functions (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value of every field, skipping the values that are not numbers, like VictoriaLogs. The values are `Float64`, so a numeric column is aggregated with `Float64` precision and not exactly.
+- The `math` pipe requires numeric operand columns; `String` columns are not coerced.
+- Query results are returned with the types of the underlying columns, not as strings.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."}) \
+    DECLARE(String, logsql_database, "", R"(
+Specifies the database with the logs table used by the 'logsql' dialect. Empty string means the current database.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."}) \
+    DECLARE(String, logsql_table, "", R"(
+Specifies the name of the logs table used by the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "", "", "New setting to specify the logs table used by the 'logsql' dialect."}) \
+    DECLARE(String, logsql_time_column, "_time", R"(
+Specifies the name of the column referred to by the `_time` field in the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."}) \
+    DECLARE(String, logsql_message_column, "_msg", R"(
+Specifies the name of the column referred to by the `_msg` field (the default field of LogsQL filters) in the 'logsql' dialect.
+)", EXPERIMENTAL, \
+        {"26.10", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."}) \
     DECLARE(Bool, enable_trino_dialect, false, R"(
 Enable the `trino` value of the `dialect` setting.
 
@@ -10382,6 +10442,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(UInt64, distributed_plan_max_buffered_log_rows, 100000, R"(
+When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
+)", EXPERIMENTAL, \
+        {"26.10", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."}) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL, \
@@ -10800,6 +10864,14 @@ Enable experimental table function `eval`.
         {"26.5", true, true, "Obsolete setting, the logical join step is now always used."}, \
         {"25.2", false, true, "Enable new step"}, \
         {"25.1", false, false, "New join step, internal change"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the read-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation (`ReadInOrderOptimizer`) was removed. Use `optimize_read_in_order` to toggle the optimization."}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true, \
+        {"26.10", true, true, "Obsolete setting: moving conditions from `WHERE` to `PREWHERE` is now always done at the query plan level, and the legacy AST-based implementation in `InterpreterSelectQuery` was removed. Use `optimize_move_to_prewhere` to toggle the optimization."}, \
+        {"24.2", true, true, "Allow to push down filter to PREWHERE expression for supported storages"}) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true, \
+        {"26.10", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."}, \
+        {"22.12", 0, 1, "Enable some refactoring around query plan"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_insert_select_local_pipeline, true, \
         {"26.10", true, true, "Obsolete setting: whether the initiator runs the local pipeline of a distributed `INSERT SELECT` is decided by `parallel_replicas_local_plan` and `parallel_replicas_prefer_local_replica` alone, and it is still skipped when `max_execution_time_leaf` imposes a different timeout contract. Set `parallel_replicas_local_plan = 0` to leave all the reading to the remote replicas."}, \
         {"25.5", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}, \
@@ -10868,6 +10940,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed);
     void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
@@ -11126,6 +11199,24 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
     num_settings_changed_by_compatibility_setting = 0;
 }
 
+void SettingsImpl::resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed)
+{
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
+    {
+        UInt64 bits = settings_changed_by_compatibility_setting[word];
+        while (bits)
+        {
+            const size_t index = word * 64 + std::countr_zero(bits);
+            bits &= bits - 1;
+            if (is_allowed(accessor.getName(index), accessor.getValue(*this, index)))
+                continue;
+            accessor.resetValueToDefault(*this, index);
+            unmarkChangedByCompatibility(index);
+        }
+    }
+}
+
 const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
     static const VersionToSettingsChangesMap history = []
@@ -11366,6 +11457,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 void Settings::resetSettingsChangedByCompatibility()
 {
     impl->resetSettingsChangedByCompatibility();
+}
+
+void Settings::resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed)
+{
+    impl->resetSettingsChangedByCompatibility(is_allowed);
 }
 
 void Settings::markSettingsChangedByCompatibilityAsUnchanged()
