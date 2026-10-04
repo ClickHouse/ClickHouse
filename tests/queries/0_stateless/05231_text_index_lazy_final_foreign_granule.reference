@@ -1,0 +1,27 @@
+Both optimizations under test apply
+1
+1
+1
+Different text search predicates in PREWHERE and WHERE
+0
+0
+1
+bar
+1
+The same, with the index granule read on data read
+0
+1
+Several read tasks of one part reuse the reader
+1
+1
+0
+1024
+0
+1024
+The counts do not depend on the optimizations
+0
+1
+1
+The same predicate in both clauses hashes to one search query and always worked
+1
+1
