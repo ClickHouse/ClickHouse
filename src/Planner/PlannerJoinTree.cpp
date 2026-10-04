@@ -271,7 +271,8 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 /// with the same correlated values would share one result. Unlike `containsNonDeterministicFunction`, this
 /// uses `isDeterministicInScopeOfQuery`, so `now` and server constants such as `hostName` are accepted.
 /// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well, and
-/// so do script-backed reads (the `executable` table function, `Executable` and `ExecutablePool` tables).
+/// so do tables with their engines (`GenerateRandom`, `FuzzQuery`, `FuzzJSON`) and script-backed reads
+/// (the `executable` table function, `Executable` and `ExecutablePool` tables).
 bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
 {
     if (!node)
@@ -291,7 +292,12 @@ bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
     }
     else if (const auto * table_node = node->as<TableNode>())
     {
-        if (typeid_cast<const StorageExecutable *>(table_node->getStorage().get()))
+        /// Tables backed by the engines of the volatile table functions sample new rows on every read.
+        const auto & storage = table_node->getStorage();
+        if (typeid_cast<const StorageExecutable *>(storage.get()))
+            return true;
+        const auto storage_name = storage->getName();
+        if (storage_name == "GenerateRandom" || storage_name == "FuzzQuery" || storage_name == "FuzzJSON")
             return true;
     }
 
@@ -4065,7 +4071,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 if (containsFunctionVolatileInScopeOfQuery(right_table_expression))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN subquery must not contain functions or table functions that are non-deterministic "
-                        "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom) or read the output of a script "
+                        "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom), tables with the GenerateRandom, "
+                        "FuzzQuery or FuzzJSON engine, or read the output of a script "
                         "(the executable table function, Executable and ExecutablePool tables), because it is not "
                         "evaluated separately for every row of the left side");
 
