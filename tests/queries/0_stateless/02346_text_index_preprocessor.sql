@@ -253,6 +253,15 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
+SELECT '- The preprocessor expression must not contain a subquery';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = if(val IN (SELECT 'the'), 'x', val))
+)
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Advanced expressions and types.';
 
 SELECT '- The preprocessor expression must contain the index definition';

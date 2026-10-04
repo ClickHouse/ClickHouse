@@ -165,7 +165,7 @@ KeyDescription KeyDescription::getKeyFromAST(
     result.definition_ast = definition_ast;
     result.additional_columns = additional_columns;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
-    checkExpressionDoesntContainSubqueries(*key_expression_list);
+    checkExpressionDoesntContainSubqueries(*key_expression_list, "Key expressions");
 
     std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
