@@ -492,6 +492,8 @@ namespace detail
 template <typename>     /// Unused template parameter is for AggregateFunctionQuantile.
 class QuantileTiming : private boost::noncopyable
 {
+public:
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
 private:
     union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `tiny.count` is initialized in `QuantileTiming` ctor
     {

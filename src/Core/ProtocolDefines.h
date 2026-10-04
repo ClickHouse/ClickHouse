@@ -157,6 +157,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version whose "Window" step carries `min_frame_rows_for_aggregate_tree`
+/// (step serialization version 1, see `registerWindowStep`). Below it the field is absent on both sides: a
+/// peer that old has no aggregate tree, so the legacy layout maps exactly to its recompute semantics, a newer
+/// writer refuses a step that could use the tree, and a newer reader disables the tree for such a step.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD = 20;
 /// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
