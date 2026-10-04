@@ -33,6 +33,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
@@ -584,6 +585,14 @@ ObjectIterator PaimonMetadata::iterate(
             "merge-on-read is not implemented, so the result would contain row versions "
             "superseded by later writes.",
             fmt::join(primary_keys, ", "));
+
+    const auto options = persistent_components.schema_processor->getOptions(state->schema_id);
+    if (auto it = options.find(PAIMON_DELETION_VECTORS_ENABLED); it != options.end() && equalsCaseInsensitive(it->second, "true"))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon table with deletion vectors ('{}' = '{}') is not supported: "
+            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
+            PAIMON_DELETION_VECTORS_ENABLED, it->second);
 
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
