@@ -919,7 +919,21 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         && global_settings[Setting::optimize_on_insert]
         && metadata_snapshot->hasRowsTTL())
     {
+        /// writeWithPermutation still applies this permutation, so materialize it before rows disappear.
+        if (perm_ptr)
+        {
+            for (auto & column : block)
+                column.column = column.column->permute(*perm_ptr, 0);
+            perm_ptr = nullptr;
+        }
+
+        const size_t rows_before = block.rows();
         removeExpiredRows(context, metadata_snapshot->getRowsTTL(), block);
+        if (block.rows() != rows_before && block.rows() != 0)
+        {
+            minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+            minmax_idx->update(block, minmax_columns);
+        }
     }
 
     ColumnsStatistics statistics;
