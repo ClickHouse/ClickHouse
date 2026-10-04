@@ -293,7 +293,10 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         hash_state.update(result_name);
 
     if (result_type)
+    {
         hash_state.update(result_type->getName());
+        updateExpressionIdentityHash(*result_type, hash_state);
+    }
 
     if (function_base)
         hash_state.update(function_base->getName());
@@ -1279,6 +1282,7 @@ struct ConstantKeyHash
     {
         SipHash h;
         k.sample->result_type->updateHash(h);
+        updateExpressionIdentityHash(*k.sample->result_type, h);
         k.sample->column->updateHashWithValue(0, h);
         h.update(k.sample->is_masked_secret);
         return h.get64();
@@ -1292,7 +1296,7 @@ struct ConstantKeyEqual
         /// a masked secret must not be collapsed onto an equal plain constant: the class
         /// representative would render the value instead of `[HIDDEN]` in plan dumps
         return a.sample->is_masked_secret == b.sample->is_masked_secret
-            && a.sample->result_type->equals(*b.sample->result_type)
+            && haveSameExpressionIdentity(*a.sample->result_type, *b.sample->result_type)
             && constColumnsEqual(a.sample->column, b.sample->column);
     }
 };
