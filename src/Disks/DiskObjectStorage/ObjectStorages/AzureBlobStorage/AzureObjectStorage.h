@@ -138,6 +138,12 @@ public:
     ObjectStoragePtr cloneImpl() const override;
 
 private:
+    /// The properties of `object` as they are now, checked against the generation the caller has
+    /// seen: throws `AZURE_OBJECT_CHANGED_DURING_READ` when `object.etag` is set and names another
+    /// generation. Used for an object whose size is known to be zero, which is read without a
+    /// single `Download` request, so that no `If-Match` condition pins it.
+    ObjectMetadata getObjectMetadataOfListedGeneration(const StoredObject & object) const;
+
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,

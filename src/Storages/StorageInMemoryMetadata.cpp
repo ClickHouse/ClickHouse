@@ -709,6 +709,22 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     return {};
 }
 
+NameSet StorageInMemoryMetadata::getStorageColumnsRequiredForKeys() const
+{
+    NameSet result;
+    for (const auto & required : {getColumnsRequiredForPartitionKey(), getColumnsRequiredForSortingKey(), getColumnsRequiredForPrimaryKey()})
+    {
+        for (const auto & name : required)
+        {
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                result.insert(column->getNameInStorage());
+            else
+                result.insert(name);
+        }
+    }
+    return result;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
 {
     return unique_key;

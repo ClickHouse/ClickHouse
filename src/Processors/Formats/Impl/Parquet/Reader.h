@@ -495,6 +495,9 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
+        std::atomic<bool> holds_top_k_admission {false};
     };
 
     struct Step
@@ -576,6 +579,8 @@ struct Reader
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
     bool top_k_column_is_read = false;
+    /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
+    bool row_groups_ordered_by_top_k = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 

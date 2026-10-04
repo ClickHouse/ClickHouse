@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 # `CREATE OR REPLACE` drops the replaced table after the swap, under an internal `_tmp_replace_*` name.
 # The drop privilege for the replaced table's kind must be enforced before the swap: a denied query
 # must leave the replaced table intact instead of failing after the replace is already committed.
