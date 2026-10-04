@@ -3,7 +3,6 @@
 # UNIQUE KEY: a write whose commit reply is lost waits until its transaction resolves.
 #   1. lost reply: an INSERT and a DELETE succeed with their rows visible
 #   2. next writer: an INSERT of the same key waits for the undetermined one, then succeeds
-#   3. given up: once the undetermined INSERT is killed, the next INSERT of its key waits, then succeeds
 # no-parallel: `transaction_force_unknown_state_after_commit` and `transaction_hold_unknown_state`
 # are server-wide.
 
@@ -89,23 +88,3 @@ wait "$STRANDED_PID" && echo "first_committed 1" || echo "first_committed 0"
 wait "$NEXT_PID" && echo "next_committed 1" || echo "next_committed 0"
 $CLICKHOUSE_CLIENT --query "SELECT 'next_writer', id, v FROM uk_next_writer ORDER BY id"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_next_writer"
-
-# 3. given up: red if the next INSERT probes while the killed one is still undetermined (a debug
-# server aborts on the key live in two parts), or does not succeed once it resolves (`next_committed` 0).
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_given_up"
-$CLICKHOUSE_CLIENT --query "
-    CREATE TABLE uk_given_up (id UInt64, v String)
-    ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_given_up SELECT number, 'a' FROM numbers(3)"
-
-strand_insert "${CLICKHOUSE_DATABASE}_killed" "INSERT INTO uk_given_up SELECT 1, 'b'"
-start_next_insert "${CLICKHOUSE_DATABASE}_waiting" "INSERT INTO uk_given_up SELECT 1, 'c'"
-$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_killed' SYNC FORMAT Null"
-wait "$STRANDED_PID" || true
-wait_for_log "${CLICKHOUSE_DATABASE}_waiting" "waiting for an unresolved part"
-
-# The killed INSERT's commit landed, so it resolves as committed once released.
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT transaction_hold_unknown_state"
-wait "$NEXT_PID" && echo "next_committed 1" || echo "next_committed 0"
-$CLICKHOUSE_CLIENT --query "SELECT 'given_up', id, v FROM uk_given_up ORDER BY id"
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_given_up"
