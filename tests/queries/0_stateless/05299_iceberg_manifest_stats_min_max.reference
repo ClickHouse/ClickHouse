@@ -1,18 +1,11 @@
 --- fixture: data files and rows per Iceberg table
 nf	1	1000
+nu	3	4000
 sel_l	1	1000
 sel_r	1	1000
---- T12 gate on: keys chosen by the min/max from the manifests
+--- T1: ie_join keys chosen by the min/max from the manifests
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
---- T12 gate off: the first two in syntax order
-Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
---- T17 use_statistics = 0: the first two in syntax order
-Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
---- T12 results are independent of the choice and equal the filter over CROSS JOIN
-5654	18438200
-5654	18438200
-5654	18438200
---- T15 gate on: rows, then NDV [min, max, NULL fraction] per column
+--- T2: rows, then NDV [min, max, NULL fraction] per column
 a: 1000 rows
 __table1.d: 365 [min 18262, max 18626]
 __table1.dc: <column_sizes / 8> [min '0', max '249.75']
@@ -20,17 +13,7 @@ __table1.k: 1000 [min 0, max 999]
 __table1.n: 99 [min 1, max 99, null 0.25]
 __table1.s: 500
 __table1.ts: 1000 [min '1577836800', max '1577837799']
---- T15 MergeTree twin with basic statistics, NDV removed
-__table1.d: [min 18262, max 18626]
-__table1.dc: [min '0', max '249.75']
-__table1.k: [min 0, max 999]
-__table1.n: [min 1, max 99, null 0.25]
-__table1.s:
-__table1.ts: [min '1577836800', max '1577837799']
-min, max and NULL fraction equal the twin's: yes
---- T15 every file pruned: no column statistics
-a: 0 rows
---- T15 a filter that prunes nothing: unknown rows, no column statistics
-a: unknown rows
---- T17 use_statistics = 0: rows only
-a: 1000 rows
+--- T3: a file before ADD COLUMN and an all-NULL file, then values
+a: 4000 rows
+__table1.c: 2000 [min 0, max 3998, null 0.5]
+__table1.k: 4000 [min 0, max 3999]

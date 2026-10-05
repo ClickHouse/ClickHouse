@@ -244,6 +244,8 @@ UInt64 ManifestColumnStatistics::estimateDistinctValues(
         num_distinct_values = 1;
     else if (inputs.identity_partition_known)
         num_distinct_values = inputs.identity_partition_values.size();
+    /// A timestamp counts microseconds, but its values usually step by thousands of them or more, so its range is far
+    /// above the rows and the clamp below gives the estimate.
     else if (range_width)
         num_distinct_values = *range_width;
     /// TODO AI made this decision: rule 3 divides column_sizes by the fixed width of the type and skips variable-width types (issue 120440, plan O6)
