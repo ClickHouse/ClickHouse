@@ -284,6 +284,13 @@ NULL key and a condition that may throw without short-circuit: rewritten	0
 2	1e308	1e308
 === subqueries correlated to each other's table: rewritten 0 ===
 3	25
+=== subqueries over each other's table, keyed by the other table: rewritten 0 ===
+1	10	30	101
+1	10	30	101
+1	30	30	101
+1	30	30	101
+2	5	1e308	200
+2	1e308	1e308	200
 === -If aggregate with a condition in the subquery: rewritten 0 ===
 1	10	\N
 1	10	\N

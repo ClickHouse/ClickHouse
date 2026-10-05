@@ -224,6 +224,8 @@ struct Candidate
     QueryTreeNodePtr subquery_table;
     /// Same names in the subquery and in the target.
     Names keys;
+    /// Correlated columns of the subquery. A rewrite replaces the columns of its target in the whole query, but
+    /// a target is not rewritten while a subquery of another candidate is correlated to it, so these stay valid.
     std::vector<const ColumnNode *> outer_keys;
     QueryTreeNodes conditions;
     /// Whether a row of the target may have no row satisfying the conditions of the subquery (the conditions
