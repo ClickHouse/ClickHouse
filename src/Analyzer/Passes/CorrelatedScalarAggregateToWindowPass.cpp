@@ -301,8 +301,12 @@ private:
         if (!optimization_settings.filter_push_down)
             return;
         const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
+        /// A runtime filter restricts only the probe (left) side of a join. With the automatic swap of the join sides,
+        /// the larger table becomes the probe side, and the window over a smaller one is small. With a fixed choice,
+        /// the target may stay on the build side.
         const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
             && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter)
+            && !optimization_settings.join_swap_table.has_value()
             && !hasGlobalJoin(query_node.getJoinTreeNode());
 
         for (auto & [target, target_candidates] : by_target)
