@@ -460,9 +460,10 @@ private:
         return candidate;
     }
 
-    /// The window reads the whole table unless a condition restricts its keys: one only on its keys (pushed
-    /// below the window), or one not on the target while the target is joined on one of its keys (the runtime
-    /// join filter is on the join key, and only a filter on the `PARTITION BY` keys is pushed below the window).
+    /// The window reads the whole table unless a condition restricts its keys: a deterministic one only on its
+    /// keys (pushed below the window), or one not on the target while the target is joined on one of its keys
+    /// (the runtime join filter is on the join key, and only a filter on the `PARTITION BY` keys is pushed below
+    /// the window).
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
     static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate)
     {
@@ -501,7 +502,9 @@ private:
                         only_keys = false;
                     }
                 });
-            if (reads_target && only_keys)
+            /// As in the filter push-down below a window: a non-deterministic condition is not pushed, because it
+            /// would also remove rows inside the partitions it keeps.
+            if (reads_target && only_keys && isDeterministicExpression(conjunct))
                 return true;
             other_table_condition |= !reads_target;
         }
