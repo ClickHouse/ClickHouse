@@ -162,6 +162,7 @@ static struct InitFiu
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
@@ -413,6 +414,8 @@ static struct InitFiu
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
+    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \

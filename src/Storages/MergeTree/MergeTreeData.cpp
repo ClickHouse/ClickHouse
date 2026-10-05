@@ -3,8 +3,9 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
@@ -46,6 +47,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -1064,14 +1066,18 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ColumnWithTypeAndName & element : sample_block)
     {
         const ColumnPtr & column = element.column;
+        /// Name the offending element: a key can be long or an expression, and the message is the only
+        /// thing the user has to find which part of it is the problem.
         if (column && (isColumnConst(*column) || column->isDummy()))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants", key_name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants, but {} is one",
+                key_name, backQuote(element.name));
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
                             ErrorCodes::ILLEGAL_COLUMN,
-                            "{} key contains nullable columns, "
-                            "but merge tree setting `allow_nullable_key` is disabled", key_name);
+                            "{} key contains nullable column {} of type {}, "
+                            "but merge tree setting `allow_nullable_key` is disabled",
+                            key_name, backQuote(element.name), element.type->getName());
     }
 }
 
@@ -1591,6 +1597,66 @@ void MergeTreeData::setProperties(
         setInMemoryMetadata(new_metadata);
         patch_parts_sorting_keys_cache.clear();
     }
+
+    /// Invalidate the columns cache when column identity changes: cache keys identify
+    /// columns by name, so any operation that makes a name refer to a different column
+    /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
+    /// name is reintroduced as a new column) can otherwise serve stale data. We also
+    /// invalidate on type or default changes for the same name, since `MODIFY COLUMN`
+    /// can change how the data is interpreted on read.
+    ///
+    /// We compare columns by sequence position rather than only by name: the prefix
+    /// of old columns must match the prefix of new columns by `(name, type, default)`.
+    /// If any old position now holds a column with a different name, the column at
+    /// that position has been dropped, renamed, or reordered, and any cached entries
+    /// for the old name are stale. This catches the `RENAME a TO b, ADD COLUMN a`
+    /// case even when the reintroduced `a` has the same type and default as the old
+    /// one: the new `a` is appended at the end, so the position previously occupied
+    /// by `a` now holds `b`.
+    ///
+    /// Leftover columns on either side also count as an identity change. Leftover old
+    /// columns mean columns were dropped or renamed away at the end. Leftover new
+    /// columns cannot be assumed to be pure additions: `RENAME a TO b, ADD COLUMN a
+    /// AFTER <the column preceding a>` puts the reintroduced `a` back into `a`'s old
+    /// slot and leaves only the renamed `b` as the new suffix, producing exactly the
+    /// same positional prefix as a plain `ADD COLUMN b` — the metadata alone cannot
+    /// distinguish the two, so we conservatively invalidate whenever the column list
+    /// changed at all. Schema changes are rare enough that flushing the table's cache
+    /// on every one of them is acceptable.
+    ///
+    /// This check runs regardless of `attach`: callers that reload the table's own
+    /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
+    /// the loop below finds no identity change for them, but callers that apply a
+    /// genuine schema change while passing `attach = true` to skip unrelated checks
+    /// still need the cache invalidated.
+    {
+        const auto & old_columns = old_metadata.columns;
+        const auto & new_columns = new_metadata.columns;
+        bool columns_identity_changed = false;
+        auto old_it = old_columns.begin();
+        auto new_it = new_columns.begin();
+        for (; old_it != old_columns.end() && new_it != new_columns.end(); ++old_it, ++new_it)
+        {
+            if (old_it->name != new_it->name
+                || !old_it->type->equals(*new_it->type)
+                || !(old_it->default_desc == new_it->default_desc))
+            {
+                columns_identity_changed = true;
+                break;
+            }
+        }
+        /// Any leftover columns on either side: dropped/renamed-away old columns, or a
+        /// new suffix that may hide a rename whose reintroduced name landed in its old
+        /// slot via `AFTER` (see the comment above).
+        if (!columns_identity_changed && (old_it != old_columns.end() || new_it != new_columns.end()))
+            columns_identity_changed = true;
+        if (columns_identity_changed)
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+    }
+
     {
         std::lock_guard lock(patch_parts_metadata_mutex);
         patch_parts_metadata_cache.clear();
@@ -1615,8 +1681,7 @@ void MergeTreeData::checkMinMaxIndexForJSON(const IndexDescription & index) cons
                     idx_column.type->getName(), idx_column.name);
             }
         };
-        check_json(*idx_column.type);
-        idx_column.type->forEachChild(check_json);
+        forEachInTypeTree(*idx_column.type, check_json);
     }
 }
 
@@ -5227,6 +5292,17 @@ void MergeTreeData::dropAllData()
 
         LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
         data_parts_indexes.clear();
+
+        /// Invalidate every deferred columns-cache write and reclaim part
+        /// generation tombstones left by the per-part cleanup above. This is
+        /// done only after all part removal has succeeded: on failure the
+        /// table remains usable and the per-part invalidations must stay.
+        if (getStorageID().hasUUID())
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+
         all_data_dropped = true;
     }
     catch (...)
@@ -10275,12 +10351,12 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
         auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
         auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
         const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
+        const bool has_time = is_broken_down && literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
         if (is_broken_down)
         {
             /// The broken-down reader takes the characters at their positions without checking them, so `'2024-02-2/'`
             /// would be read as `2024-02-19` and `'20/4-03-01 00:00:00'` as `1994-03-01 00:00:00`, and the comparison
             /// below would agree with it.
-            const bool has_time = literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
             if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3)
                 || !is_digit_at(5) || !is_digit_at(6) || !is_separator_at(7) || !is_digit_at(8) || !is_digit_at(9)
                 || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
@@ -10305,7 +10381,8 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
             /// `DateTime64` text parsing keeps `scale` fractional digits and ignores the rest, so on a `DateTime64(3)` key
             /// `'2024-02-19 00:00:00.5009'` would be read as `.500`.
             const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
-            const size_t dot = literal.find('.');
+            /// The date and time separators of a broken-down value may be `.` too, as in `'2024.02.19 00:00:00.500'`.
+            const size_t dot = literal.find('.', is_broken_down ? (has_time ? 19 : 10) : 0);
             if (dot != String::npos)
                 for (size_t pos = dot + 1 + scale; is_digit_at(pos); ++pos)
                     if (literal[pos] != '0')
@@ -10829,7 +10906,14 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                     if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
                         continue;
 
-                    if (self(column_default->expression, self))
+                    /// A column definition is authored at table scope, so an identifier inside it is a
+                    /// storage column even when a lambda of the predicate binds that name.
+                    std::vector<String> enclosing_lambda_parameters;
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+                    const bool definition_is_nondeterministic = self(column_default->expression, self);
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+
+                    if (definition_is_nondeterministic)
                         return true;
                 }
             }

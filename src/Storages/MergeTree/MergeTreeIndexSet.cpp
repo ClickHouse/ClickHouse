@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -34,13 +35,7 @@ static const Field UNKNOWN_FIELD(3u);
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
 static bool hasMeaningfulFieldExtremes(const IDataType & type)
 {
-    bool result = !isDynamic(type) && !isVariant(type);
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (isDynamic(child) || isVariant(child))
-            result = false;
-    });
-    return result;
+    return !anyInTypeTree(type, [](const IDataType & subtype) { return isDynamic(subtype) || isVariant(subtype); });
 }
 
 
