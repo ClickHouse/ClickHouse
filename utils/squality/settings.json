@@ -9,6 +9,7 @@
     "except_default_mode": "DISTINCT",
     "aggregate_functions_null_for_empty": 1,
     "group_by_use_nulls": 1,
-    "prefer_column_name_to_alias": 1
+    "prefer_column_name_to_alias": 1,
+    "allow_create_index_without_type": 1
   }
 }
