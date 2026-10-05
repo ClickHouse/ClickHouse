@@ -260,6 +260,20 @@ WITH
         'ExponentialTimeDecaying128(3)') AS roundtrip128
 SELECT compact64 = roundtrip64, compact128 = roundtrip128;
 
+-- Very short decay lengths can make the value at the lower Float64 anchor
+-- overflow. The 128-bit key must switch to the adjacent upper anchor while
+-- preserving natural ordering.
+WITH
+    CAST((toFloat64(1e-300), toFloat64(1e9)), 'ExponentialTimeDecaying128(1e-12)') AS p_small,
+    CAST((toFloat64(1e-200), toFloat64(1e9)), 'ExponentialTimeDecaying128(1e-12)') AS p_large,
+    CAST((toFloat64(-1e-300), toFloat64(1e9)), 'ExponentialTimeDecaying128(1e-12)') AS n_small,
+    CAST((toFloat64(-1e-200), toFloat64(1e9)), 'ExponentialTimeDecaying128(1e-12)') AS n_large
+SELECT
+    isFinite(tupleElement(p_small, 'value')),
+    isFinite(tupleElement(p_small, 'timestamp')),
+    p_small < p_large,
+    n_large < n_small;
+
 -- Very large decay lengths may place the mathematical unit time outside the
 -- Float64 timestamp range. Compact encoding must use the finite boundary slice
 -- and residual value instead of rejecting the curve.
