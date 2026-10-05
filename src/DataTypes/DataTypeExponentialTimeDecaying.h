@@ -5,6 +5,7 @@
 #include <bit>
 #include <cmath>
 #include <optional>
+#include <limits>
 
 namespace DB
 {
@@ -22,6 +23,8 @@ enum class ExponentialTimeDecayingMode : UInt8
     Compact,
     Direct,
 };
+
+ExponentialTimeDecayingMode parseExponentialTimeDecayingMode(const String & name);
 
 inline const char * getExponentialTimeDecayingModeName(ExponentialTimeDecayingMode mode)
 {
@@ -79,9 +82,11 @@ inline UInt64 shiftOneBitAndSign(
 inline UInt64 getExponentialTimeDecayingOrderingKey(
     Float64 value, Float64 time, Float64 decay_length)
 {
-    return shiftOneBitAndSign(
-        getExponentialTimeDecayingUnitTimestamp(value, time, decay_length),
-        value);
+    Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(value, time, decay_length);
+    if (!std::isfinite(unit_timestamp))
+        unit_timestamp = std::copysign(std::numeric_limits<Float64>::max(), unit_timestamp);
+
+    return shiftOneBitAndSign(unit_timestamp, value);
 }
 
 struct ExponentialTimeDecayingCanonicalDirectValue
