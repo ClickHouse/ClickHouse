@@ -9,8 +9,8 @@
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/UpdateChannel.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/UpdateInboxEntry.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/Updates/RoundUpdatesChannel.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/Updates/UpdateInboxEntry.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -288,21 +288,21 @@ class InputPort : public Port
 
 private:
     OutputPort * output_port = nullptr;
-    Runtime::V2::UpdateChannel<InputPort> update_channel;
+    Runtime::V2::RoundUpdatesChannel<InputPort> round_updates_channel;
 
     mutable bool is_finished = false;
 
 public:
     using Port::Port;
 
-    Runtime::V2::UpdateChannel<InputPort> & getUpdateChannel() { return update_channel; }
+    Runtime::V2::RoundUpdatesChannel<InputPort> & getRoundUpdatesChannel() { return round_updates_channel; }
 
     Data ALWAYS_INLINE pullData(bool set_not_needed = false)
     {
         if (!set_not_needed)
         {
             updateVersion();
-            update_channel.notifyChanges();
+            round_updates_channel.notifyChanges();
         }
 
         assumeConnected();
@@ -364,7 +364,7 @@ public:
         if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0)
         {
             updateVersion();
-            update_channel.notifyChanges();
+            round_updates_channel.notifyChanges();
         }
     }
 
@@ -381,7 +381,7 @@ public:
         if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0)
         {
             updateVersion();
-            update_channel.notifyChanges();
+            round_updates_channel.notifyChanges();
         }
 
         is_finished = true;
@@ -424,12 +424,12 @@ class OutputPort : public Port
 
 private:
     InputPort * input_port = nullptr;
-    Runtime::V2::UpdateChannel<OutputPort> update_channel;
+    Runtime::V2::RoundUpdatesChannel<OutputPort> round_updates_channel;
 
 public:
     using Port::Port;
 
-    Runtime::V2::UpdateChannel<OutputPort> & getUpdateChannel() { return update_channel; }
+    Runtime::V2::RoundUpdatesChannel<OutputPort> & getRoundUpdatesChannel() { return round_updates_channel; }
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
@@ -457,7 +457,7 @@ public:
         }
 
         updateVersion();
-        update_channel.notifyChanges();
+        round_updates_channel.notifyChanges();
 
         assumeConnected();
 
@@ -479,7 +479,7 @@ public:
         if ((flags & State::IS_FINISHED) == 0)
         {
             updateVersion();
-            update_channel.notifyChanges();
+            round_updates_channel.notifyChanges();
         }
     }
 

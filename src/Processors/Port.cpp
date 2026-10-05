@@ -35,8 +35,8 @@ void disconnect(OutputPort & output, InputPort & input)
     /// Disconnect from pipeline edges
     input.update_info = nullptr;
     output.update_info = nullptr;
-    input.update_channel.disconnect();
-    output.update_channel.disconnect();
+    input.round_updates_channel.disconnect();
+    output.round_updates_channel.disconnect();
 
     /// Disconnect from each other
     input.output_port = nullptr;

@@ -52,21 +52,21 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
 {
     for (auto & input : state.processor->getInputs())
     {
-        if (!input.isConnected() || input.getUpdateChannel().isConnected())
+        if (!input.isConnected() || input.getRoundUpdatesChannel().isConnected())
             continue;
 
         checkNeighbourIsKnown(states, state, input.getOutputPort(), "input");
-        input.getUpdateChannel().connect(state, input);
+        input.getRoundUpdatesChannel().connect(state, input);
         state.incoming_updates.push(input);
     }
 
     for (auto & output : state.processor->getOutputs())
     {
-        if (!output.isConnected() || output.getUpdateChannel().isConnected())
+        if (!output.isConnected() || output.getRoundUpdatesChannel().isConnected())
             continue;
 
         checkNeighbourIsKnown(states, state, output.getInputPort(), "output");
-        output.getUpdateChannel().connect(state, output);
+        output.getRoundUpdatesChannel().connect(state, output);
         state.incoming_updates.push(output);
     }
 }
@@ -75,11 +75,11 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
 void checkNeighboursHaveChannels(ProcessorState & state)
 {
     for (auto & input : state.processor->getInputs())
-        if (input.isConnected() && !input.getOutputPort().getUpdateChannel().isConnected())
+        if (input.isConnected() && !input.getOutputPort().getRoundUpdatesChannel().isConnected())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(&input.getOutputPort().getProcessor()));
 
     for (auto & output : state.processor->getOutputs())
-        if (output.isConnected() && !output.getInputPort().getUpdateChannel().isConnected())
+        if (output.isConnected() && !output.getInputPort().getRoundUpdatesChannel().isConnected())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(&output.getInputPort().getProcessor()));
 }
 #endif
@@ -161,10 +161,10 @@ void ProcessorStates::remove(const Processors & to_remove)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
         for (auto & input : processor->getInputs())
-            input.getUpdateChannel().disconnect();
+            input.getRoundUpdatesChannel().disconnect();
 
         for (auto & output : processor->getOutputs())
-            output.getUpdateChannel().disconnect();
+            output.getRoundUpdatesChannel().disconnect();
 
         states.erase(state_it);
         processors->erase(std::find(processors->begin(), processors->end(), processor));
