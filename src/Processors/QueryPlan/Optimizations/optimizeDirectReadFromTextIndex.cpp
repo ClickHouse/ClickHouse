@@ -1282,7 +1282,7 @@ void processAndOptimizeTextIndexFunctions(
             }
         }
 
-        /// `node->step` may have been replaced above, so read the DAG from the current step.
+        /// The step pointers taken at the loop start dangle if `node->step` was replaced above.
         const IQueryPlanStep * current_step = node->step.get();
         const auto * current_filter_step = typeid_cast<const FilterStep *>(current_step);
         const ActionsDAG & step_dag = current_filter_step
