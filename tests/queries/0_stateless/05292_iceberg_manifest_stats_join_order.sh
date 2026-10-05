@@ -2,12 +2,14 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: with `use_iceberg_manifest_statistics`, join reordering gets Iceberg row counts from the manifests.
-# - T1: order of a 3-way join with the setting off and on, and the rows its hash tables get.
+# Issue 120440: with `use_iceberg_manifest_statistics` and `use_iceberg_manifest_column_statistics`, join reordering
+# gets Iceberg row counts and column statistics from the manifests.
+# - T1: order of a 3-way join with the settings off and on, and the rows its hash tables get.
 # - T2: the smaller table becomes the build side.
 # - T3: a table that was never written has 0 rows.
 # - T4: the count comes from the snapshot the read uses.
-# - T5: an aggregation over an Iceberg read keeps an estimate and is named in the data lake hint line.
+# - T5: an aggregation over an Iceberg read estimates its groups from the NDV; without rows it is named in the data lake
+#   hint line.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,8 +25,9 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1"
-ON="--use_iceberg_manifest_statistics=1"
-OFF="--use_iceberg_manifest_statistics=0"
+ON="--use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1"
+# The column flag alone does nothing.
+OFF="--use_iceberg_manifest_statistics=0 --use_iceberg_manifest_column_statistics=1"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
@@ -104,13 +107,28 @@ labels "${T4}" --iceberg_snapshot_id="${FIRST_ID}" ${ON}
 echo '--- T4: latest snapshot'
 labels "${T4}" ${ON}
 
-# Without the NDV of `k` the aggregation keeps the input rows, so it overreports (100000 groups for 1000 keys);
-# the point is that the relation still gets an estimate, and the data lake hint line names it.
+# Prints how many data lake and column statistics hint lines name a relation. Usage: hint_lines <query> <relation>.
+hint_lines()
+{
+    local log
+    log=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 $1" 2>&1 >/dev/null)
+    local data_lake column_statistics
+    data_lake=$(echo "${log}" | grep 'derived from data lake metadata' | grep -c "$2")
+    column_statistics=$(echo "${log}" | grep 'Consider creating column statistics' | grep -c "$2")
+    echo "data lake hint lines naming $2: ${data_lake}"
+    echo "column statistics hint lines naming $2: ${column_statistics}"
+}
+
+# The NDV of `k` from the manifests gives the 1000 groups, an exact estimate.
 T5="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP BY k) AS ice_agg ON m.k = ice_agg.k"
 echo '--- T5: aggregation over an Iceberg read'
 labels "${T5}" ${ON}
-LOG=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 ${T5}" 2>&1 >/dev/null)
-echo "data lake hint lines naming ice_agg: $(echo "${LOG}" | grep 'derived from data lake metadata' | grep -c 'ice_agg')"
-echo "column statistics hint lines naming ice_agg: $(echo "${LOG}" | grep 'Consider creating column statistics' | grep -c 'ice_agg')"
+
+# A filter that prunes nothing leaves the read without rows and column statistics, so the data lake hint line names it.
+T5_FILTERED="SELECT count() FROM mt AS m
+    JOIN (SELECT k, count() AS c FROM ice_big WHERE v % 2 = 0 GROUP BY k) AS ice_filtered ON m.k = ice_filtered.k"
+echo '--- T5: aggregation over an Iceberg read with a filter that prunes nothing'
+labels "${T5_FILTERED}" ${ON}
+hint_lines "${T5_FILTERED}" ice_filtered
 
 rm -rf "${LAKE}"
