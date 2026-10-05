@@ -12,6 +12,41 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
+<Update label="Oct 5, 2026">
+
+This week's release simplifies billing for customers with multiple ClickHouse Cloud organizations, extends ClickPipes serialization support for Kafka and Kinesis, and introduces an experimental native TCP option for .NET developers. You can now manage prepaid credits across organizations in the console or retrieve balances programmatically; streaming ClickPipes support common Avro and Protobuf workflows; and the .NET driver offers a faster, lower-allocation native client.
+
+## New features {#2026-10-05-new-features}
+
+### Transfer prepaid credits between organizations {#transfer-prepaid-credits-between-organizations}
+
+Customers with multiple organizations can now move prepaid credits between them in the console, without opening a support ticket. A single view shows prepaid credits across all of your organizations, so you can track consumption and plan renewals. This requires Org Admin, Billing Admin, or a custom role with billing permissions on each organization involved. Credits can be split across tiers but not between Cloud and BYOC organizations or across different cloud marketplaces. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## API {#2026-10-05-api}
+
+### New API endpoint for organization credit balances {#new-api-endpoint-for-organization-credit-balances}
+
+The new `GET /v1/organizations/{organizationId}/creditBalances` endpoint in the ClickHouse Cloud OpenAPI returns an organization's active credit balances, including prepaid and trial credits. Use it to monitor credit consumption from your own tooling. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## ClickPipes {#2026-10-05-clickpipes}
+
+### Avro and Protobuf support for Kinesis ClickPipes {#avro-and-protobuf-support-for-kinesis-clickpipes}
+
+Kinesis ClickPipes now support **Avro** and **Protobuf** in addition to JSON. Schemas can come from the **AWS Glue Schema Registry** or from an uploaded schema file. Kafka and Kinesis ClickPipes now support the same common serialization formats, and the feature is available in the UI, OpenAPI, and Terraform. See the [Kinesis ClickPipes documentation](/integrations/clickpipes/kinesis/).
+
+### Protobuf schema file uploads for Kafka ClickPipes {#protobuf-schema-file-uploads-for-kafka-clickpipes}
+
+Kafka ClickPipes now accept Protobuf schemas uploaded as `.proto` files or file descriptor sets (`.desc`). If you don't use a schema registry, you can now provide a standalone schema for deserialization. See the [Kafka ClickPipes documentation](/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic).
+
+## Integrations {#2026-10-05-integrations}
+
+### .NET driver v1.5.0 adds a native TCP client {#net-driver-v150-adds-a-native-tcp-client}
+
+The ClickHouse .NET driver v1.5.0 adds a new native TCP client alongside the existing HTTP client. It supports connection pooling, sessions, TLS, LZ4/ZSTD compression, query parameters, and OpenTelemetry tracing. In benchmarks on ClickHouse Cloud, reads were up to 2x faster, concurrent inserts up to 2x faster, and memory allocation dropped by orders of magnitude. The TCP API is experimental and may change; continue using the HTTP client for `ADO.NET`, ORMs, and raw formats such as CSV or Parquet. See the [TCP client documentation](/integrations/language-clients/csharp/tcp) and [NuGet package](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0).
+
+</Update>
+
+
 <Update label="Sep 22, 2026">
 
 This week's updates expand ClickHouse Cloud's compliance footprint into new APAC regions, add public-beta replica-aware routing, and introduce new capabilities for metrics, compute, and dbt. HIPAA- and PCI-regulated cells are now available in AWS Seoul and Sydney; eligible customers can evaluate Prometheus-compatible metrics workloads and On-Demand Compute; and ClickHouse is available through dbt Core v2 and dbt Platform.
