@@ -1,0 +1,17 @@
+tq	1	1	1	1
+tq where	1	1	1	1
+tq where, no prewhere	1
+tq where, subquery	1
+tq where, order by s	2	1
+tq where, order by s	3	0
+tq where, order by s	1	0
+tq unmerged expressions	1
+tq where, renamed column	0
+tg	1
+tg where	1
+te	1
+te where	1
+tm	1
+tm where	1
+ta	1
+ta where	1
