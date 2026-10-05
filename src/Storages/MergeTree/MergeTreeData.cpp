@@ -6061,13 +6061,41 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
+
+    /// Names this `ALTER` gives to a skip index that did not hold them before. `apply` above has
+    /// resolved `IF EXISTS` / `IF NOT EXISTS` and the order of the commands, so this is the net
+    /// effect of the statement: a name present in both snapshots either keeps the definition it
+    /// already had - an `ADD INDEX IF NOT EXISTS` of an existing index does nothing - or is dropped
+    /// and re-added by this very `ALTER`, which publishes the new definition together with the
+    /// `DROP INDEX` mutation that marks the files of the old one stale.
+    ///
+    /// The answer depends on what the parts of this replica still hold, and how far a mutation has
+    /// got differs between replicas, so only the replica the `ALTER` was issued on decides. A
+    /// replica re-running an entry the initiator already committed must not fail it, or the DDL
+    /// queue of a `Replicated` database stalls on an entry it cannot skip.
+    bool is_initial_alter = true;
+    if (auto txn = local_context->getZooKeeperMetadataTransaction())
+        is_initial_alter = txn->isInitialQuery();
+
+    if (is_initial_alter)
+    {
+        for (const auto & index : new_metadata.getSecondaryIndices())
+        {
+            /// An implicit index follows its column, and a re-added column is already governed by
+            /// `AlterConversions::dropped_columns`. Refusing here would reject `ADD COLUMN c` while
+            /// a `DROP COLUMN c` is still pending, which has always been allowed.
+            if (index.isImplicitlyCreated())
+                continue;
+
+            if (!old_metadata.getSecondaryIndices().has(index.name))
+                checkAddedIndexNameHasNoStaleFiles(index.name, local_context);
+        }
+    }
+
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
-
-        if (command.type == AlterCommand::ADD_INDEX)
-            checkAddedIndexNameHasNoStaleFiles(command.index_name, commands, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -13799,6 +13827,15 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
     ///
     /// Only mutations some part has still to apply are listed, so a drop that has already reached
     /// every part leaves nothing behind and is killed as before.
+    ///
+    /// The decision reads the metadata, which another statement could change, but not under this
+    /// one: the only `ALTER` that can give the name of a pending drop to a new index is the one
+    /// that issues the drop itself, since `checkAddedIndexNameHasNoStaleFiles` refuses a name whose
+    /// files a part still holds. That `ALTER` publishes the new definition together with the
+    /// mutation - under `currently_processing_in_background_mutex` in `StorageMergeTree::alter`,
+    /// and in one ZooKeeper transaction for a replicated table - so a kill that finds the mutation
+    /// at all also sees the metadata it came with. A replica that is behind on that metadata is
+    /// refused by the override in `StorageReplicatedMergeTree`.
     auto unfinished_mutations = getUnfinishedMutationCommands();
     auto it = unfinished_mutations.find(mutation_id);
     if (it == unfinished_mutations.end())
@@ -13834,39 +13871,19 @@ void MergeTreeData::checkSkipIndexNameCanBeForgotten(const String & index_name) 
         getStorageID().getNameForLogs());
 }
 
-void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(
-    const String & index_name,
-    const AlterCommands & commands,
-    const std::map<std::string, MutationCommands> & unfinished_mutations,
-    ContextPtr local_context) const
+void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(const String & index_name, ContextPtr local_context) const
 {
     /// The granules of a dropped skip index are refused only while its `DROP INDEX` mutation is
-    /// pending for the part (`AlterConversions::getStaleIndices`). A name whose drop is no longer
-    /// pending while parts still hold its files - killed before it reached them, or carried in by an
-    /// `ATTACH` - therefore has nothing left to mark them stale, and giving that name to a new index
-    /// would make every read of it answer from the previous definition's granules (#121171).
+    /// still pending for the part (`AlterConversions::getStaleIndices`). Giving the name to a new
+    /// index while a part still holds the old files would therefore rest on that marker staying
+    /// there, and `KILL MUTATION` can take it away without rewriting the parts - which is how the
+    /// wrong results of #121171 become reachable again. Refuse instead, the way an `ALTER` that
+    /// conflicts with an in-progress mutation is refused: the name is free again as soon as the
+    /// parts no longer hold its files, and `OPTIMIZE TABLE ... FINAL` gets there directly.
     ///
-    /// Refuse, unless the drop is still coming and the guard still covers the window: in this very
-    /// `ALTER`, which is the ordinary `DROP INDEX ix, ADD INDEX ix ...`, or in a mutation that has yet
-    /// to reach every part.
-    for (const auto & command : commands)
-    {
-        if (command.type == AlterCommand::DROP_INDEX && command.index_name == index_name)
-            return;
-    }
-
-    for (const auto & [_, mutation_commands] : unfinished_mutations)
-    {
-        for (const auto & command : mutation_commands)
-        {
-            /// A `CLEAR INDEX` is a `DROP_INDEX` with `clear` and keeps its index in the metadata, so
-            /// it cannot be the drop that freed this name. The name of the index of a `DROP_INDEX`
-            /// command is in `column_name`, not `index_name`.
-            if (command.type == MutationCommand::Type::DROP_INDEX && !command.clear && command.column_name == index_name)
-                return;
-        }
-    }
-
+    /// The shape from the issue, `DROP INDEX ix, ADD INDEX ix ...` in one `ALTER`, never reaches
+    /// this check: the name is in the metadata on both sides, and that `ALTER` publishes the new
+    /// definition together with the `DROP INDEX` mutation that marks the old files stale.
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     for (const auto & part : getDataPartsVectorForInternalUsage())
@@ -13877,12 +13894,15 @@ void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot add skip index {} to table {}: part {} still holds the files of an earlier index "
-            "of that name, whose removal is no longer pending, so granules of the earlier definition "
-            "would be read as if they belonged to the new index. Use a different name, or rewrite the "
-            "parts first, for example with OPTIMIZE TABLE ... FINAL",
+            "of that name, so granules of the earlier definition would be read as if they belonged "
+            "to the new index. Wait for the `DROP INDEX` of the earlier index to finish, rewrite the "
+            "parts, for example with OPTIMIZE TABLE ... FINAL, or use a different name. To replace an "
+            "index in place, drop and add it in one ALTER: DROP INDEX {}, ADD INDEX {} ...",
             backQuoteIfNeed(index_name),
             getStorageID().getNameForLogs(),
-            part->name);
+            part->name,
+            backQuoteIfNeed(index_name),
+            backQuoteIfNeed(index_name));
     }
 }
 

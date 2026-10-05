@@ -1148,12 +1148,10 @@ public:
     virtual void checkSkipIndexNameCanBeForgotten(const String & index_name) const;
 
     /// Throws if an `ADD INDEX` would give its name to granules a previous index of the same name
-    /// left behind in the parts. See the definition.
-    void checkAddedIndexNameHasNoStaleFiles(
-        const String & index_name,
-        const AlterCommands & commands,
-        const std::map<std::string, MutationCommands> & unfinished_mutations,
-        ContextPtr local_context) const;
+    /// left behind in the parts. Asked only about a name the `ALTER` newly introduces, so a name
+    /// the metadata already holds - including the `DROP INDEX ix, ADD INDEX ix ...` shape - does
+    /// not reach it. See the definition.
+    void checkAddedIndexNameHasNoStaleFiles(const String & index_name, ContextPtr local_context) const;
 
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
