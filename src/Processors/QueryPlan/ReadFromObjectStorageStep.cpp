@@ -146,7 +146,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
 
     if (!data_lake_read_estimate)
         data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
-    return *data_lake_read_estimate;
+    return data_lake_read_estimate;
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
