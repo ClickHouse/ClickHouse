@@ -22,6 +22,10 @@ class DatabaseError(Exception):
     pass
 
 
+class ResultEncodingError(Exception):
+    pass
+
+
 class ClickHouse:
     def __init__(self, endpoint, settings, database=None):
         url = urllib.parse.urlparse(endpoint)
@@ -40,9 +44,13 @@ class ClickHouse:
         try:
             connection.request("POST", "/?" + urllib.parse.urlencode(params), sql.encode())
             response = connection.getresponse()
-            body = response.read().decode()
+            body_bytes = response.read()
         finally:
             connection.close()
+        try:
+            body = body_bytes.decode()
+        except UnicodeDecodeError as error:
+            raise ResultEncodingError(str(error)) from error
         if response.status != 200:
             raise DatabaseError(body)
         if not body.strip():
@@ -207,6 +215,9 @@ def run_file(path, args, client, classes):
                 started = time.monotonic()
                 try:
                     rows = client.execute(record.sql)
+                except ResultEncodingError as error:
+                    yield {**item, "status": "unsupported_result_encoding", "error": str(error)}
+                    continue
                 except DatabaseError as error:
                     message = str(error)
                     code_match = re.search(r"Code: (\d+)", message)
@@ -231,7 +242,11 @@ def run_file(path, args, client, classes):
                         # Successful unexpected DML can change all subsequent results.
                         break
                     continue
-                matched, actual, method = compare(rows, record, args.suite, SortType, ResultFormat)
+                try:
+                    matched, actual, method = compare(rows, record, args.suite, SortType, ResultFormat)
+                except (ValueError, OverflowError) as error:
+                    yield {**item, "status": "comparison_error", "error": str(error), "rows": rows}
+                    continue
                 if record.label and not record.result:
                     previous = labels.setdefault(record.label, actual)
                     matched = previous == actual
@@ -243,8 +258,12 @@ def run_file(path, args, client, classes):
                         if ref_error:
                             item.update(reference_error=ref_error, status="reference_exception")
                         else:
-                            ref_match, ref_actual, _ = compare(ref_rows, record, args.suite, SortType, ResultFormat)
-                            item.update(reference_actual=ref_actual, status="result_mismatch" if ref_match else "oracle_mismatch")
+                            try:
+                                ref_match, ref_actual, _ = compare(ref_rows, record, args.suite, SortType, ResultFormat)
+                            except (ValueError, OverflowError) as error:
+                                item.update(status="reference_comparison_error", reference_error=str(error))
+                            else:
+                                item.update(reference_actual=ref_actual, status="result_mismatch" if ref_match else "oracle_mismatch")
                     else:
                         item["status"] = "result_mismatch"
                 else:
@@ -270,7 +289,12 @@ def main():
     cli.add_argument("--max-files", type=int, default=0)
     cli.add_argument("--max-records", type=int, default=0)
     cli.add_argument("--seed", type=int, default=20261005)
+    cli.add_argument("--shard-count", type=int, default=1)
+    cli.add_argument("--shard-index", type=int, default=0)
+    cli.add_argument("--resume", action="store_true")
     args = cli.parse_args()
+    if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
+        cli.error("Require 0 <= --shard-index < --shard-count")
     sys.path.insert(0, str(args.squality.resolve()))
     from src.testparser import SLTParser, DTParser
     from src.utils import Statement, Query, Control, SortType, ResultFormat, DBMS_Set
@@ -289,24 +313,56 @@ def main():
     if args.max_files:
         random.Random(args.seed).shuffle(files)
         files = sorted(files[:args.max_files])
+    files = [path for index, path in enumerate(files) if index % args.shard_count == args.shard_index]
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    run_identity = {"version": version, "suite": args.suite, "files": [str(path) for path in files],
+                    "settings": settings, "max_records": args.max_records}
+    fingerprint = hashlib.sha256(json.dumps(run_identity, sort_keys=True).encode()).hexdigest()
+    checkpoint_path = args.output.with_suffix(".checkpoint.json")
     counts = Counter()
+    first_file = 0
+    if args.resume:
+        checkpoint = json.loads(checkpoint_path.read_text())
+        if checkpoint["fingerprint"] != fingerprint:
+            raise ValueError("Checkpoint does not match the requested run")
+        first_file = checkpoint["next_file"]
+        counts.update(checkpoint["counts"])
+        output_mode = "r+b"
+    else:
+        output_mode = "wb"
     started = time.monotonic()
-    with args.output.open("w") as out:
-        for index, path in enumerate(files):
+    records_seen = sum(counts.values())
+    with args.output.open(output_mode) as out:
+        if args.resume:
+            out.truncate(checkpoint["offset"])
+            out.seek(checkpoint["offset"])
+        for index in range(first_file, len(files)):
+            path = files[index]
             try:
                 for item in run_file(path, args, client, (SLTParser, DTParser, Statement, Query, Control, SortType, ResultFormat)):
                     counts[item["status"]] += 1
-                    out.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    out.write((json.dumps(item, ensure_ascii=False) + "\n").encode())
+                    records_seen += 1
+                    if records_seen % 10000 == 0:
+                        out.flush()
+                        print(json.dumps({"files_complete": index, "records": records_seen,
+                                          "counts": counts}), flush=True)
             except (IndexError, KeyError, ValueError) as error:
                 # Parser failures are distinct from server failures.
                 counts["harness_error"] += 1
-                out.write(json.dumps({"file": str(path), "status": "harness_error", "error": str(error)}) + "\n")
+                out.write((json.dumps({"file": str(path), "status": "harness_error", "error": str(error)}) + "\n").encode())
+                records_seen += 1
             out.flush()
-            if (index + 1) % 25 == 0:
-                print(json.dumps({"files": index + 1, "counts": counts}), flush=True)
+            checkpoint = {"fingerprint": fingerprint, "next_file": index + 1,
+                          "offset": out.tell(), "counts": counts}
+            checkpoint_tmp = checkpoint_path.with_suffix(".json.tmp")
+            checkpoint_tmp.write_text(json.dumps(checkpoint))
+            checkpoint_tmp.replace(checkpoint_path)
+            print(json.dumps({"files_complete": index + 1, "files_total": len(files),
+                              "records": records_seen, "counts": counts}), flush=True)
     summary = {"version": version, "profile": args.profile, "settings": settings, "suite": args.suite,
                "files": len(files), "seed": args.seed, "max_records": args.max_records,
+               "shard_count": args.shard_count, "shard_index": args.shard_index,
                "counts": counts, "seconds": time.monotonic() - started}
     args.output.with_suffix(".summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary), flush=True)

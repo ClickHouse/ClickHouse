@@ -15,6 +15,8 @@ def main():
     parser.add_argument("--directory", required=True, type=Path)
     parser.add_argument("--http-port", type=int, default=18173)
     parser.add_argument("--tcp-port", type=int, default=19173)
+    parser.add_argument("--max-memory", type=int, default=4294967296,
+                        help="Server memory limit in bytes")
     args = parser.parse_args()
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -31,7 +33,7 @@ def main():
         "path": str(directory / "data") + "/", "tmp_path": str(directory / "tmp") + "/",
         "user_files_path": str(directory / "user_files") + "/",
         "format_schema_path": str(directory / "format_schemas") + "/",
-        "max_server_memory_usage": 4294967296, "mark_cache_size": 67108864,
+        "max_server_memory_usage": args.max_memory, "mark_cache_size": 67108864,
         "uncompressed_cache_size": 67108864,
         "background_pool_size": 16, "background_schedule_pool_size": 8,
         "background_move_pool_size": 2, "background_fetches_pool_size": 2,
