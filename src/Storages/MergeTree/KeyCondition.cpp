@@ -2836,14 +2836,25 @@ static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & ty
     /// A `Dynamic` or `JSON` value has no static float element, but it can still be a float.
     if (WhichDataType which(type); which.isDynamic() || which.isObject())
     {
-        /// The comparison converts a `String` constant to the float, so `d = '0'` matches both zeros too.
-        /// A string that does not parse as a number compares as a string and never equals a float.
-        if (field.getType() == Field::Types::String)
+        switch (field.getType())
         {
-            Float64 value;
-            return tryParse(value, field.safeGet<String>()) && value == 0;
+            case Field::Types::String:
+            {
+                /// The comparison converts a `String` constant to the float, so `d = '0'` matches both zeros too.
+                /// A string that does not parse as a number cannot equal a float zero: the comparison rejects it.
+                Float64 value;
+                return tryParse(value, field.safeGet<String>()) && value == 0;
+            }
+            case Field::Types::UUID:
+            case Field::Types::IPv4:
+            case Field::Types::IPv6:
+                /// Neither a float nor a container of one.
+                return false;
+            default:
+                /// A number is a zero or not. Anything else, such as an `Array`, a `Tuple` or a `Map`, which a `Dynamic`
+                /// value can hold with float elements, is conservatively treated as holding a zero.
+                return isNumericallyZeroConstant(field).value_or(true);
         }
-        return isNumericallyZeroConstant(field).value_or(true);
     }
 
     if (!typeContainsFloat(type) && !type->hasDynamicStructure())

@@ -39,3 +39,29 @@ SELECT 'pruned for 42.0', count() < 10 FROM t_signed_zero_dynamic_floats WHERE d
 
 DROP TABLE t_signed_zero_dynamic_strings;
 DROP TABLE t_signed_zero_dynamic_floats;
+
+-- A `UUID`, `IPv4` or `IPv6` constant is not a float, so it keeps using the key.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_uuid;
+DROP TABLE IF EXISTS t_signed_zero_dynamic_ipv4;
+DROP TABLE IF EXISTS t_signed_zero_dynamic_ipv6;
+CREATE TABLE t_signed_zero_dynamic_uuid (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_uuid SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number), 12, '0'))) FROM numbers(100);
+CREATE TABLE t_signed_zero_dynamic_ipv4 (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_ipv4 SELECT toIPv4(number) FROM numbers(100);
+CREATE TABLE t_signed_zero_dynamic_ipv6 (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_ipv6 SELECT toIPv6(toIPv4(number)) FROM numbers(100);
+
+SELECT 'pruned for a UUID', count() FROM t_signed_zero_dynamic_uuid WHERE d = toUUID('00000000-0000-0000-0000-000000000042') SETTINGS force_primary_key = 1, max_rows_to_read = 10;
+SELECT 'pruned for an IPv4', count() FROM t_signed_zero_dynamic_ipv4 WHERE d = toIPv4('0.0.0.42') SETTINGS force_primary_key = 1, max_rows_to_read = 10;
+SELECT 'pruned for an IPv6', count() FROM t_signed_zero_dynamic_ipv6 WHERE d = toIPv6('::ffff:0.0.0.42') SETTINGS force_primary_key = 1, max_rows_to_read = 10;
+
+DROP TABLE t_signed_zero_dynamic_uuid;
+DROP TABLE t_signed_zero_dynamic_ipv4;
+DROP TABLE t_signed_zero_dynamic_ipv6;
+
+-- A `Dynamic` value can be an array of floats, so an array constant holding a zero must not skip the other zero.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_array;
+CREATE TABLE t_signed_zero_dynamic_array (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_array VALUES ([-0.0]), ([0.5]), ([0.0]);
+SELECT 'd = [0.0]', count(), (SELECT count() FROM t_signed_zero_dynamic_array WHERE d = [0.0] SETTINGS use_primary_key = 0) FROM t_signed_zero_dynamic_array WHERE d = [0.0];
+DROP TABLE t_signed_zero_dynamic_array;

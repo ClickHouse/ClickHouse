@@ -6,3 +6,7 @@ d = 2.0	1	1
 k = (0.0, 1)	2	2
 pruned for \'42\'	1
 pruned for 42.0	1
+pruned for a UUID	1
+pruned for an IPv4	1
+pruned for an IPv6	1
+d = [0.0]	2	2
