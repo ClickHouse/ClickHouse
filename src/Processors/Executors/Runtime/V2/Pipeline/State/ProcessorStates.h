@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/IProcessor.h>
 
 #include <functional>
@@ -28,7 +29,7 @@ public:
     String dump() const;
 
 private:
-    mutable std::mutex mutex;
+    mutable Wyrd::Mutex mutex;
     std::shared_ptr<Processors> processors;
     std::unordered_map<const IProcessor *, ProcessorState> states;
 };

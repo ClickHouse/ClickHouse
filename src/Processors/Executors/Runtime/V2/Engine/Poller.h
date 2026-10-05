@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/WakeupFd.h>
 
-#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -40,17 +42,17 @@ public:
 
 private:
     /// Registered descriptors. The mutex is not held while waiting in epoll.
-    mutable std::mutex mutex;
+    mutable Wyrd::Mutex mutex;
     Epoll epoll;
     std::unordered_map<ProcessorState *, int> fds;
-    std::atomic<size_t> pending_count = 0;
+    Wyrd::Atomic<size_t> pending_count = 0;
 
     /// In-flight timers
     std::unique_ptr<Deadlines> deadlines;
     TimerDescriptor timer_signal;
 
     /// One waiter at a time; a second poll returns nothing instead of waiting
-    std::atomic_bool polling = false;
+    Wyrd::Atomic<bool> polling = false;
     WakeupFd wakeup_signal;
 };
 

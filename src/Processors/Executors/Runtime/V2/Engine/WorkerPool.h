@@ -4,11 +4,15 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Common/ISlotControl.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <vector>
 
 class MemoryTracker;
 
@@ -46,9 +50,9 @@ private:
     AcquiredSlotPtr single_slot;
 
     /// Worker threads
-    std::unique_ptr<ThreadPool> pool;
-    std::mutex spawn_mutex;
-    std::atomic<size_t> workers_count = 0;
+    std::vector<std::optional<Wyrd::Thread>> threads;
+    Wyrd::Mutex spawn_mutex;
+    Wyrd::Atomic<size_t> workers_count = 0;
 
     /// Memory reservations
     MemoryReservation * reservation = nullptr;

@@ -2,9 +2,9 @@
 
 #include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorStates.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/State/RemovalGroups.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/IProcessor.h>
 
-#include <atomic>
 #include <exception>
 #include <memory>
 #include <vector>
@@ -29,7 +29,7 @@ struct ExecutingPipeline
     ReadProgressCallback * read_progress_callback = nullptr;
     StepProfiler * step_profiler = nullptr;
 
-    std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
+    Wyrd::Atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::exception_ptr exception;
 
 public:
@@ -54,7 +54,7 @@ public:
 private:
     ProcessorStates states;
     RemovalGroups removals;
-    std::atomic_bool failed = false;
+    Wyrd::Atomic<bool> failed = false;
 };
 
 }

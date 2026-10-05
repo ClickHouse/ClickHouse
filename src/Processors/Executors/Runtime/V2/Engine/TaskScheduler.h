@@ -3,8 +3,9 @@
 #include <Processors/Executors/Runtime/V2/Engine/Poller.h>
 #include <Processors/Executors/Runtime/V2/Engine/Task.h>
 #include <Processors/Executors/Runtime/V2/Engine/TaskQueue.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
-#include <atomic>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -20,21 +21,21 @@ class TaskScheduler
     struct alignas(128) AsyncState
     {
         Poller & poller;
-        std::atomic<size_t> tasks_count = 0;
+        Wyrd::Atomic<size_t> tasks_count = 0;
     };
 
     struct alignas(128) GlobalState
     {
-        std::mutex mutex;
+        Wyrd::Mutex mutex;
         TaskQueue queue;
-        std::atomic<size_t> tasks_count = 0;
+        Wyrd::Atomic<size_t> tasks_count = 0;
     };
 
     struct alignas(128) LocalState
     {
-        std::mutex mutex;
+        Wyrd::Mutex mutex;
         TaskQueue queue;
-        std::atomic<size_t> tasks_count = 0;
+        Wyrd::Atomic<size_t> tasks_count = 0;
 
         std::optional<Task> next;
         size_t next_streak = 0;

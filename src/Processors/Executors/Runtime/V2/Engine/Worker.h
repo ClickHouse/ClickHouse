@@ -5,6 +5,7 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <atomic>
@@ -24,7 +25,7 @@ class Worker
     void wakeOrSpawn(size_t threads_needed);
     size_t runTask(Task task);
     void runPrepare(ProcessorState & state);
-    void prepareRound(ProcessorState & state, std::unique_lock<std::mutex> round_lock);
+    void prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mutex> round_lock);
     void runWork(ProcessorState & state);
     void runAsyncReady(ProcessorState & state);
     void runUpdatePipeline(ProcessorState & requester);

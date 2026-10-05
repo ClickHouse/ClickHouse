@@ -2,8 +2,9 @@
 
 #include <Processors/Executors/Runtime/V2/Engine/Poller.h>
 #include <Processors/Executors/Runtime/V2/Engine/TaskScheduler.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
-#include <atomic>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -18,7 +19,7 @@ class WorkersCoordinator
 {
     struct alignas(128) ParkingSpot
     {
-        std::atomic<bool> wake_up = false;
+        Wyrd::Atomic<bool> wake_up = false;
 
         void park();
         void unpark();
@@ -48,7 +49,7 @@ private:
     TaskScheduler & scheduler;
     Poller & poller;
 
-    mutable std::mutex mutex;
+    mutable Wyrd::Mutex mutex;
 
     /// What threads are registered in coordinator.
     std::vector<bool> is_registered;
@@ -58,11 +59,11 @@ private:
     std::vector<size_t> sleeping_threads;
 
     /// Statistics
-    std::atomic<size_t> registered_workers = 0;
-    std::atomic<size_t> idle_count = 0;
-    std::atomic<size_t> sleeping_count = 0;
-    std::atomic<size_t> polling_count = 0;
-    std::atomic_bool is_stopped = false;
+    Wyrd::Atomic<size_t> registered_workers = 0;
+    Wyrd::Atomic<size_t> idle_count = 0;
+    Wyrd::Atomic<size_t> sleeping_count = 0;
+    Wyrd::Atomic<size_t> polling_count = 0;
+    Wyrd::Atomic<bool> is_stopped = false;
 };
 
 }

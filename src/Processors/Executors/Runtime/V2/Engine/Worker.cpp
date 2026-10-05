@@ -225,7 +225,7 @@ void Worker::runPrepare(ProcessorState & state)
         pipeline.recordAsFinished(*processor);
 }
 
-void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
+void Worker::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mutex>)
 {
     IProcessor & processor = *state.processor;
 

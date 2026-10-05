@@ -6,7 +6,7 @@ namespace DB
 namespace Runtime::V2
 {
 
-std::unique_lock<std::mutex> ProcessorLock::lockRound()
+std::unique_lock<Wyrd::Mutex> ProcessorLock::lockRound()
 {
     return std::unique_lock(mutex);
 }

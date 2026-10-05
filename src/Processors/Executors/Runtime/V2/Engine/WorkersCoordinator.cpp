@@ -39,8 +39,8 @@ std::optional<size_t> WorkersCoordinator::takeAnySleepingThread()
 
     size_t worker_id = sleeping_threads.back();
     sleeping_threads.pop_back();
-    --sleeping_count;
-    --idle_count;
+    sleeping_count.fetch_sub(1);
+    idle_count.fetch_sub(1);
     return worker_id;
 }
 
@@ -68,7 +68,7 @@ void WorkersCoordinator::enter(size_t worker_id)
         return;
 
     is_registered[worker_id] = true;
-    ++registered_workers;
+    registered_workers.fetch_add(1);
 }
 
 void WorkersCoordinator::leave(size_t worker_id)
@@ -79,7 +79,7 @@ void WorkersCoordinator::leave(size_t worker_id)
         return;
 
     is_registered[worker_id] = false;
-    --registered_workers;
+    registered_workers.fetch_sub(1);
     scheduler.drain(worker_id);
 
     if (allIdle(idle_count))
@@ -95,34 +95,34 @@ bool WorkersCoordinator::wait(size_t worker_id)
     if (is_stopped)
         return false;
 
-    ++idle_count;
+    idle_count.fetch_add(1);
 
     if (scheduler.queued() > 0)
     {
-        --idle_count;
+        idle_count.fetch_sub(1);
         return true;
     }
 
     if (allIdle(idle_count))
     {
-        --idle_count;
+        idle_count.fetch_sub(1);
         stopLocked();
         return false;
     }
 
     if (poller.pending() > 0 && polling_count == 0)
     {
-        ++polling_count;
+        polling_count.fetch_add(1);
         lock.unlock();
         scheduler.poll(worker_id, -1);
         lock.lock();
-        --polling_count;
-        --idle_count;
+        polling_count.fetch_sub(1);
+        idle_count.fetch_sub(1);
         return !is_stopped;
     }
 
     sleeping_threads.push_back(worker_id);
-    ++sleeping_count;
+    sleeping_count.fetch_add(1);
     lock.unlock();
     sleeping_spots[worker_id].park();
 

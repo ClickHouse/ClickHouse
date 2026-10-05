@@ -1,8 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Engine/TaskScheduler.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
-#include <Common/randomSeed.h>
-
-#include <pcg_random.hpp>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 #include <ranges>
 
@@ -21,8 +19,7 @@ constexpr size_t max_sequential_lifo_usages = 79;
 
 size_t randomWorker(size_t count)
 {
-    thread_local pcg64_fast rng(randomSeed());
-    return rng() % count;
+    return Wyrd::randomNumber() % count;
 }
 
 }
@@ -136,7 +133,7 @@ void TaskScheduler::push(Task task)
 
 void TaskScheduler::push(AsyncTask task)
 {
-    ++async.tasks_count;
+    async.tasks_count.fetch_add(1);
     async.poller.add(*task.state, task.fd, task.events, task.timeout_ms);
 }
 
@@ -183,7 +180,7 @@ size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
     for (auto * state : fired | std::views::reverse)
         pushToLocalQueue(own, Task{.state = state, .kind = Task::Kind::AsyncReady});
 
-    async.tasks_count -= fired.size();
+    async.tasks_count.fetch_sub(fired.size());
     return fired.size();
 }
 

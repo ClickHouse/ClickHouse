@@ -32,7 +32,7 @@ void RemovalGroups::submitForRemoval(Processors processors)
     }
 
     if (group.unfinished == 0)
-        ++ready_groups;
+        ready_groups.fetch_add(1);
 }
 
 void RemovalGroups::markFinished(IProcessor * processor)
@@ -51,7 +51,7 @@ void RemovalGroups::markFinished(IProcessor * processor)
     pending_finish_groups.erase(it);
 
     if (group.unfinished == 0)
-        ++ready_groups;
+        ready_groups.fetch_add(1);
 }
 
 Processors RemovalGroups::takeReadyForRemoval()

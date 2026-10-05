@@ -2,9 +2,10 @@
 
 #include <Processors/Executors/Runtime/V2/Pipeline/Updates/RoundUpdates.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/Updates/UpdateInbox.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/IProcessor.h>
 
-#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -25,7 +26,7 @@ public:
         Finished,
     };
 
-    std::unique_lock<std::mutex> lockRound();
+    std::unique_lock<Wyrd::Mutex> lockRound();
 
     /// Decisions are made under the round lock; `isFinished` is a lock-free look.
     Status status() const;
@@ -35,8 +36,8 @@ public:
     bool isFinished() const;
 
 private:
-    std::mutex mutex;
-    std::atomic<Status> value{Status::Idle};
+    Wyrd::Mutex mutex;
+    Wyrd::Atomic<Status> value{Status::Idle};
 };
 
 struct ProcessorState

@@ -1,25 +1,18 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Common/ConcurrencyControl.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric QueryPipelineExecutorThreads;
-    extern const Metric QueryPipelineExecutorThreadsActive;
-    extern const Metric QueryPipelineExecutorThreadsScheduled;
-}
+#include <algorithm>
 
 namespace DB
 {
@@ -104,14 +97,8 @@ WorkerPool::WorkerPool(TaskScheduler & scheduler_, WorkersCoordinator & coordina
     , max_threads(max_threads_)
     , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
     , cpu_slots(allocateCPU(max_threads, concurrency_control, requested_threads, coordinator))
+    , threads(max_threads)
 {
-    if (max_threads > 1)
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::QueryPipelineExecutorThreads,
-            CurrentMetrics::QueryPipelineExecutorThreadsActive,
-            CurrentMetrics::QueryPipelineExecutorThreadsScheduled,
-            max_threads);
-
     if (pipeline.process_list_element)
     {
         reservation = pipeline.process_list_element->getMemoryReservation();
@@ -121,7 +108,7 @@ WorkerPool::WorkerPool(TaskScheduler & scheduler_, WorkersCoordinator & coordina
 
 WorkerPool::~WorkerPool()
 {
-    chassert(!pool || pool->active() == 0);
+    chassert(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }));
 }
 
 void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
@@ -145,7 +132,7 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
 void WorkerPool::run()
 {
     auto slot = cpu_slots->acquire();
-    ++workers_count;
+    workers_count.fetch_add(1);
 
     try
     {
@@ -159,7 +146,7 @@ void WorkerPool::run()
     }
 
     runSlot(std::move(slot), nullptr);
-    --workers_count;
+    workers_count.fetch_sub(1);
 }
 
 void WorkerPool::runUntil(std::atomic_bool * yield_flag)
@@ -170,14 +157,14 @@ void WorkerPool::runUntil(std::atomic_bool * yield_flag)
     if (!single_slot)
         single_slot = cpu_slots->acquire();
 
-    ++workers_count;
+    workers_count.fetch_add(1);
     runSlot(single_slot, yield_flag);
-    --workers_count;
+    workers_count.fetch_sub(1);
 }
 
 void WorkerPool::grow(size_t threads_needed)
 {
-    if (!pool || threads_needed == 0 || workers_count >= max_threads)
+    if (max_threads == 1 || threads_needed == 0 || workers_count >= max_threads)
         return;
 
     std::lock_guard lock(spawn_mutex);
@@ -200,19 +187,26 @@ void WorkerPool::grow(size_t threads_needed)
 
 void WorkerPool::spawn(AcquiredSlotPtr slot)
 {
-    ++workers_count;
+    auto & thread = threads[slot->slot_id];
+    if (thread)
+    {
+        thread->join();
+        thread.reset();
+    }
+
+    workers_count.fetch_add(1);
     try
     {
-        pool->scheduleOrThrowOnError([this, my_slot = std::move(slot), thread_group = CurrentThread::getGroup()]
+        thread.emplace([this, my_slot = std::move(slot), thread_group = CurrentThread::getGroup()]
         {
             ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
             runSlot(my_slot, nullptr);
-            --workers_count;
+            workers_count.fetch_sub(1);
         });
     }
     catch (...)
     {
-        --workers_count;
+        workers_count.fetch_sub(1);
         throw;
     }
 }
@@ -224,8 +218,13 @@ void WorkerPool::stop()
         cpu_slots->free();
     }
 
-    if (pool)
-        pool->wait();
+    for (auto & thread : threads)
+    {
+        if (!thread)
+            continue;
+        thread->join();
+        thread.reset();
+    }
 
     single_slot.reset();
     cpu_slots.reset();

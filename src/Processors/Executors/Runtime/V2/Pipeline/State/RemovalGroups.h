@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+#include <Processors/IProcessor.h>
 
-#include <atomic>
 #include <list>
 #include <mutex>
 #include <unordered_map>
@@ -30,11 +31,11 @@ public:
     Processors takeReadyForRemoval();
 
 private:
-    std::mutex mutex;
+    Wyrd::Mutex mutex;
     std::list<Group> groups;
     std::unordered_map<const IProcessor *, Group *> pending_finish_groups;
     std::unordered_set<const IProcessor *> finished_processors;
-    std::atomic<size_t> ready_groups{0};
+    Wyrd::Atomic<size_t> ready_groups{0};
 };
 
 }

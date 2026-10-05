@@ -6,6 +6,7 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
 #include <atomic>
 #include <memory>
@@ -44,7 +45,7 @@ private:
     StepProfilerPtr step_profiler;
 
     /// Built by start, when the thread count is known; the mutex orders that against cancel from another thread
-    std::mutex mutex;
+    Wyrd::Mutex mutex;
     std::optional<IProcessor::CancelReason> cancel_before_start;
     std::optional<ExecutingPipeline> pipeline;
     std::optional<Poller> poller;
