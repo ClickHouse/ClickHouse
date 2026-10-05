@@ -601,24 +601,48 @@ CommitOutcome commitCompactedMetadata(
 
                 const auto our_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
                 const auto parent_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+                /// Snapshot id -> its parent's id (nullopt for a root).
+                std::unordered_map<Int64, std::optional<Int64>> parents;
+                bool applied = false;
                 auto snapshots = current_metadata->getArray(Iceberg::f_snapshots);
                 for (UInt32 i = 0; snapshots && i < snapshots->size(); ++i)
                 {
-                    if (snapshots->getObject(i)->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == our_id)
-                    {
-                        LOG_WARNING(
-                            log,
-                            "The catalog rejected the commit of snapshot {}, but the snapshot is in the table: "
-                            "an earlier attempt of the same request was applied",
-                            our_id);
-                        return CommitOutcome::Committed;
-                    }
+                    auto snapshot = snapshots->getObject(i);
+                    const auto id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                    std::optional<Int64> snapshot_parent;
+                    if (snapshot->has(Iceberg::f_parent_snapshot_id) && !snapshot->isNull(Iceberg::f_parent_snapshot_id))
+                        snapshot_parent = snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+                    /// Our snapshot, or a snapshot built on top of it, is in the table: some request of ours was applied.
+                    if (id == our_id || snapshot_parent == our_id)
+                        applied = true;
+                    parents.emplace(id, snapshot_parent);
                 }
-                if (current_metadata->has(Iceberg::f_current_snapshot_id)
-                    && current_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id) != parent_id)
+                if (applied)
                 {
-                    LOG_INFO(log, "Metadata commit conflict detected via catalog");
-                    return CommitOutcome::Conflict;
+                    LOG_WARNING(
+                        log,
+                        "The catalog rejected the commit of snapshot {}, but the snapshot is in the table: "
+                        "an earlier attempt of the same request was applied",
+                        our_id);
+                    return CommitOutcome::Committed;
+                }
+
+                /// A conflict is proven only when main's retained lineage reaches our parent through another snapshot.
+                if (current_metadata->has(Iceberg::f_current_snapshot_id))
+                {
+                    auto id = current_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+                    for (size_t step = 0; step < parents.size() && id != parent_id; ++step)
+                    {
+                        auto it = parents.find(id);
+                        if (it == parents.end() || !it->second)
+                            break;
+                        if (*it->second == parent_id)
+                        {
+                            LOG_INFO(log, "Metadata commit conflict detected via catalog");
+                            return CommitOutcome::Conflict;
+                        }
+                        id = *it->second;
+                    }
                 }
             }
             catch (...)
