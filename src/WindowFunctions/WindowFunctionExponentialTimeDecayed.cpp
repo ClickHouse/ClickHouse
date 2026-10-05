@@ -418,7 +418,7 @@ void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & fa
 void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
-Returns the exponentially decayed sum of values at the index `t` in time. Without `OVER`, the experimental regular aggregate form returns a mergeable `ExponentialTimeDecaying(decay_length)` value; the legacy window form remains a `Float64`.
+Returns the exponentially decayed sum of values at the index `t` in time. Without `OVER`, the experimental regular aggregate form over raw `(value, time)` input returns `Float64`. When it consumes a finalized `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value, it preserves that input type.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
@@ -428,7 +428,7 @@ Returns the exponentially decayed sum of values at the index `t` in time. Withou
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns `Float64` for the legacy window form and for the experimental raw-input aggregate form. A finalized decaying-value input preserves its `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` type.", {}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
         "Window function usage with visual representation",
@@ -635,7 +635,7 @@ Returns the cumulative exponential decay over a time series at the index `t` in 
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns `Float64` for the legacy window form and `ExponentialTimeDecaying(decay_length)` for the experimental regular aggregate form.", {}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns `Float64` for both the legacy window form and the experimental regular aggregate form.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
         "Window function usage with visual representation",

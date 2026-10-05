@@ -493,10 +493,10 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
 {
     factory.registerFunction<FunctionExponentialTimeDecaying>(FunctionDocumentation{
         .description = R"(
-Constructs one `ExponentialTimeDecaying(decay_length)` value for each `(value, time)` input row.
-The result keeps its direct value and anchor for arithmetic and derives one `UInt64` ordering prefix.
-Comparison and equality use that prefix first and fall back to the full logical key on collisions.
-Hashing uses the full logical key; primary-key marks and minmax indexes use the compact prefix.
+Constructs one `ExponentialTimeDecaying64(decay_length)` value for each `(value, time)` input row.
+The result keeps its direct value and anchor for arithmetic and derives one `UInt64` ordering key.
+That key is the complete identity for comparison, equality, hashing, `GROUP BY`, `DISTINCT`, primary-key marks, and minmax indexes.
+Two curves that map to the same 64-bit key are therefore equal in this type.
 It can be combined by `exponentialTimeDecayedSum`, including as a
 `SimpleAggregateFunction` column in an `AggregatingMergeTree`.
 )",
@@ -506,7 +506,7 @@ It can be combined by `exponentialTimeDecayedSum`, including as a
             {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
         .parameters = {
             {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
-        .returned_value = {"Returns an `ExponentialTimeDecaying(decay_length)` value.", {}},
+        .returned_value = {"Returns an `ExponentialTimeDecaying64(decay_length)` value.", {}},
         .examples = {{
             "Construct a decaying value",
             "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
@@ -526,9 +526,9 @@ sensitive inputs when stronger numerical reproducibility is required.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {
-            {"a", "First value of type `ExponentialTimeDecaying(decay_length)`.", {}},
+            {"a", "First value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}},
             {"b", "Second value with the same parameterized type.", {}}},
-        .returned_value = {"Returns the combined `ExponentialTimeDecaying(decay_length)` value.", {}},
+        .returned_value = {"Returns the combined decaying value with the same width as the inputs.", {}},
         .examples = {{
             "Add values with the same decay length",
             "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingAdd("
@@ -546,7 +546,7 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
 )",
         .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
         .arguments = {
-            {"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}},
+            {"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}},
             {"target_time", "Evaluation time; it may be before, at, or after the normalization time.",
                 {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
@@ -565,7 +565,7 @@ For non-zero curves, the exact unit time is quantized to the prefix bucket used 
 Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingUnitTime(value)",
-        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}}},
         .returned_value = {"Returns the canonical unit time of the ordering bucket.", {"Float64"}},
         .examples = {{
             "Read the unit time",
@@ -582,7 +582,7 @@ The result preserves the residual `Float64` precision discarded by the compact p
 `-1` or `1` for non-zero curves. Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingValueAtUnitTime(value)",
-        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}}},
         .returned_value = {"Returns the value at `exponentialTimeDecayingUnitTime(value)`.", {"Float64"}},
         .examples = {{
             "Read the residual value at unit time",
@@ -595,7 +595,7 @@ The result preserves the residual `Float64` precision discarded by the compact p
     factory.registerFunction<FunctionExponentialTimeDecayingDecayLength>(FunctionDocumentation{
         .description = "Returns the decay length encoded in an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` type.",
         .syntax = "exponentialTimeDecayingDecayLength(value)",
-        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}}},
         .returned_value = {"Returns the decay length.", {"Float64"}},
         .examples = {{
             "Read the decay length",

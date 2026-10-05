@@ -233,7 +233,7 @@ The following aggregate functions are supported:
 - [`max`](/reference/functions/aggregate-functions/max)
 - [`sum`](/reference/functions/aggregate-functions/sum)
 - [`sumWithOverflow`](/reference/functions/aggregate-functions/sumWithOverflow)
-- `exponentialTimeDecayedSum` for `ExponentialTimeDecaying(decay_length)`
+- `exponentialTimeDecayedSum` for `ExponentialTimeDecaying64(decay_length)` and `ExponentialTimeDecaying128(decay_length)`
 - [`groupBitAnd`](/reference/functions/aggregate-functions/groupBitAnd)
 - [`groupBitOr`](/reference/functions/aggregate-functions/groupBitOr)
 - [`groupBitXor`](/reference/functions/aggregate-functions/groupBitXor)
