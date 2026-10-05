@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
@@ -316,14 +317,16 @@ ExponentialTimeDecayingTypeParameters getTypeParameters(const ASTPtr & parameter
     ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact;
     if (parameters->children.size() == 2)
     {
-        const auto * identifier = parameters->children[1]->as<ASTIdentifier>();
-        if (!identifier)
+        const auto & mode_ast = parameters->children[1];
+        if (const auto * identifier = mode_ast->as<ASTIdentifier>())
+            mode = parseModeName(identifier->name());
+        else if (const auto * data_type = mode_ast->as<ASTDataType>(); data_type && !data_type->getArguments())
+            mode = parseModeName(data_type->name);
+        else
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Mode of data type {} must be compact or direct",
                 type_name);
-
-        mode = parseModeName(identifier->name());
     }
 
     return {decay_length, mode};

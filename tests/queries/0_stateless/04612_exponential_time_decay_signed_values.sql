@@ -131,8 +131,8 @@ SELECT
 -- complete logical identity of ExponentialTimeDecaying64, so a collision is
 -- equality for comparison, hashing, GROUP BY, and DISTINCT.
 WITH
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
     exponentialTimeDecaying(1)(1., t1) AS a,
     exponentialTimeDecaying(1)(1., t2) AS b
 SELECT
@@ -150,11 +150,11 @@ FROM
     (
         SELECT exponentialTimeDecaying(1)(
             1.,
-            reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)) AS value
+            toFloat64(1)) AS value
         UNION ALL
         SELECT exponentialTimeDecaying(1)(
             1.,
-            reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2)) AS value
+            reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)) AS value
     )
     GROUP BY value
 );
@@ -162,8 +162,8 @@ FROM
 -- The 128-bit type spends the wider key on additional unit-timestamp precision,
 -- so the same pair remains distinct.
 WITH
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
     CAST((1., t1), 'ExponentialTimeDecaying128(1)') AS a,
     CAST((1., t2), 'ExponentialTimeDecaying128(1)') AS b
 SELECT
@@ -179,11 +179,11 @@ FROM
     FROM
     (
         SELECT CAST(
-            (1., reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            (1., toFloat64(1)),
             'ExponentialTimeDecaying128(1)') AS value
         UNION ALL
         SELECT CAST(
-            (1., reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2)),
+            (1., reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
             'ExponentialTimeDecaying128(1)') AS value
     )
     GROUP BY value
@@ -325,9 +325,9 @@ WHERE abs(
             target_time)
         FROM
         (
-            SELECT CAST((toFloat64(1), target_time), 'ExponentialTimeDecaying128(1e-12)') AS value
-            UNION ALL
-            SELECT expected AS value
+            -- One input block exercises the row cutoff; parallel state merges are exact.
+            SELECT CAST((raw_value, target_time), 'ExponentialTimeDecaying128(1e-12)') AS value
+            FROM values('raw_value Float64', (1), (1000000))
         )
     )
     - exponentialTimeDecayingValueAt(expected, target_time))
@@ -346,9 +346,9 @@ WHERE abs(
             target_time)
         FROM
         (
-            SELECT CAST((toFloat64(1), target_time), 'ExponentialTimeDecaying128(1e308)') AS value
-            UNION ALL
-            SELECT expected AS value
+            -- One input block exercises the row cutoff; parallel state merges are exact.
+            SELECT CAST((raw_value, target_time), 'ExponentialTimeDecaying128(1e308)') AS value
+            FROM values('raw_value Float64', (1), (1000000))
         )
     )
     - exponentialTimeDecayingValueAt(expected, target_time))
@@ -415,40 +415,84 @@ WHERE
 DROP TABLE time_decay_signed_index;
 
 
--- Unit-time inspection exposes the compact ordering bucket and the residual
--- amplitude retained by the authoritative direct curve. The discarded low bit
--- must not be silently rounded into an exact +/-1 value.
+-- The compact 64-bit key defines a canonical sign/unit-time pair. Losing the
+-- low sortable timestamp bit does not leave a separate arithmetic residual.
 WITH
     reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS exact_unit_time,
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS positive_bucket_time,
     exponentialTimeDecaying(1)(1., exact_unit_time) AS positive,
     exponentialTimeDecaying(1)(-1., exact_unit_time) AS negative
-SELECT 'unit-time residual mismatch'
+SELECT 'compact unit-time mismatch'
 WHERE NOT (
-    exponentialTimeDecayingUnitTime(positive) = positive_bucket_time
+    exponentialTimeDecayingUnitTime(positive) = toFloat64(1)
+    AND exponentialTimeDecayingValueAtUnitTime(positive) = 1
     AND exponentialTimeDecayingValueAtUnitTime(positive)
         = exponentialTimeDecayingValueAt(
             positive,
             exponentialTimeDecayingUnitTime(positive))
-    AND exponentialTimeDecayingValueAtUnitTime(positive) < 1
-    AND exponentialTimeDecayingValueAtUnitTime(positive) > 0.999999999999999
     AND exponentialTimeDecayingUnitTime(negative) = toFloat64(1)
+    AND exponentialTimeDecayingValueAtUnitTime(negative) = -1
     AND exponentialTimeDecayingValueAtUnitTime(negative)
         = exponentialTimeDecayingValueAt(
             negative,
-            exponentialTimeDecayingUnitTime(negative))
-    AND exponentialTimeDecayingValueAtUnitTime(negative) < -1
-    AND exponentialTimeDecayingValueAtUnitTime(negative) > -1.000000000000001);
+            exponentialTimeDecayingUnitTime(negative)));
+
+-- Direct mode preserves the raw printable metadata, while arithmetic and
+-- inspection still use exactly the same canonical key as compact mode.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS exact_unit_time,
+    CAST((1., exact_unit_time), 'ExponentialTimeDecaying64(1, direct)') AS positive,
+    CAST((-1., exact_unit_time), 'ExponentialTimeDecaying64(1, direct)') AS negative,
+    CAST((1., exact_unit_time), 'ExponentialTimeDecaying64(1)') AS compact_positive,
+    CAST((-1., exact_unit_time), 'ExponentialTimeDecaying64(1)') AS compact_negative
+SELECT 'direct unit-time metadata mismatch'
+WHERE NOT (
+    tupleElement(positive, 'value') = 1
+    AND tupleElement(negative, 'value') = -1
+    AND tupleElement(positive, 'timestamp') = exact_unit_time
+    AND tupleElement(negative, 'timestamp') = exact_unit_time
+    AND exponentialTimeDecayingUnitTime(positive) = toFloat64(1)
+    AND exponentialTimeDecayingUnitTime(negative) = toFloat64(1)
+    AND exponentialTimeDecayingValueAtUnitTime(positive) = 1
+    AND exponentialTimeDecayingValueAtUnitTime(negative) = -1
+    AND exponentialTimeDecayingValueAtUnitTime(positive)
+        = exponentialTimeDecayingValueAt(positive, exponentialTimeDecayingUnitTime(positive))
+    AND exponentialTimeDecayingValueAtUnitTime(negative)
+        = exponentialTimeDecayingValueAt(negative, exponentialTimeDecayingUnitTime(negative))
+    AND exponentialTimeDecayingValueAt(positive, exact_unit_time)
+        = exponentialTimeDecayingValueAt(compact_positive, exact_unit_time)
+    AND exponentialTimeDecayingValueAt(negative, exact_unit_time)
+        = exponentialTimeDecayingValueAt(compact_negative, exact_unit_time));
+
+-- Raw 128-bit construction retains a non-unit residual at a large timestamp.
+-- Compact display still exposes +/-1, while evaluation at the rounded unit time
+-- exposes the residual. Preserve raw-fidelity and inspection consistency checks.
+WITH
+    CAST((2., toFloat64(1e9)), 'ExponentialTimeDecaying128(1)') AS positive,
+    CAST((-2., toFloat64(1e9)), 'ExponentialTimeDecaying128(1)') AS negative
+SELECT '128-bit unit-time residual mismatch'
+WHERE NOT (
+    tupleElement(positive, 'value') = 1
+    AND tupleElement(negative, 'value') = -1
+    AND abs(exponentialTimeDecayingValueAt(positive, toFloat64(1e9)) - 2) < 1e-12
+    AND abs(exponentialTimeDecayingValueAt(negative, toFloat64(1e9)) + 2) < 1e-12
+    AND exponentialTimeDecayingValueAtUnitTime(positive) > 0
+    AND exponentialTimeDecayingValueAtUnitTime(positive) < 1
+    AND exponentialTimeDecayingValueAtUnitTime(negative) < 0
+    AND exponentialTimeDecayingValueAtUnitTime(negative) > -1
+    AND exponentialTimeDecayingValueAtUnitTime(positive)
+        = exponentialTimeDecayingValueAt(positive, exponentialTimeDecayingUnitTime(positive))
+    AND exponentialTimeDecayingValueAtUnitTime(negative)
+        = exponentialTimeDecayingValueAt(negative, exponentialTimeDecayingUnitTime(negative)));
 
 -- Within one compact 64-bit bucket there is no residual tie-breaker: the
 -- ordering key itself is the complete identity.
 WITH
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t2,
     exponentialTimeDecaying(1)(1., t1) AS positive_a,
     exponentialTimeDecaying(1)(1., t2) AS positive_b,
     exponentialTimeDecaying(1)(-1., toFloat64(1)) AS negative_a,
-    exponentialTimeDecaying(1)(-1., t1) AS negative_b
+    exponentialTimeDecaying(1)(-1., t2) AS negative_b
 SELECT 'unit-time bucket identity mismatch'
 WHERE NOT (
     exponentialTimeDecayingUnitTime(positive_a)

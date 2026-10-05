@@ -48,6 +48,17 @@ SELECT
     tupleElement(nested64, 'value') = 8,
     tupleElement(nested128, 'timestamp') = 5.25;
 
+-- Explicit `compact` uses the same mode parser and retains the default type name.
+SELECT
+    toTypeName(JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying64(3, compact)')),
+    toTypeName(JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying128(3, compact)'));
+
+-- Accepting the parser's bare mode nodes must not accept parameterized modes.
+SELECT JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying64(3, direct(1))'); -- { serverError BAD_ARGUMENTS }
+SELECT JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying128(3, compact(1))'); -- { serverError BAD_ARGUMENTS }
+SELECT JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying64(3, invalid)'); -- { serverError BAD_ARGUMENTS }
+SELECT JSONExtract('[8,5.25,3]', 'ExponentialTimeDecaying128(3, 1)'); -- { serverError BAD_ARGUMENTS }
+
 -- Extracting a nonempty Variant alternative expands the selected column over
 -- absent rows. The keys under the resulting null map must remain valid zero
 -- curves, because normal nullable evaluation may inspect those nested rows.

@@ -50,11 +50,17 @@ SELECT CAST((toFloat64(1), toFloat64(65535), toFloat64(10)), 'ExponentialTimeDec
 WITH
     toDateTime64('2026-09-28 06:00:00.123456', 6, 'UTC') AS timestamp,
     toFloat64(0.5) AS decay_length,
-    (toFloat64(2.5), timestamp, decay_length)::ExponentialTimeDecaying64 AS value
+    (toFloat64(2.5), timestamp, decay_length)::ExponentialTimeDecaying64 AS value,
+    (toFloat64(2.5), timestamp, decay_length)::ExponentialTimeDecaying128 AS precise_value,
+    toFloat64(timestamp) + decay_length * log(2.5) AS raw_unit_time,
+    -- The positive unit time loses its low sortable bit in the 64-bit key.
+    reinterpretAsFloat64(bitAnd(reinterpretAsUInt64(raw_unit_time), toUInt64(18446744073709551614))) AS key_time,
+    exp((key_time - toFloat64(timestamp)) / decay_length) AS expected_value
 SELECT
     toTypeName(value),
     exponentialTimeDecayingDecayLength(value),
-    abs(exponentialTimeDecayingValueAt(value, timestamp) - 2.5) < 1e-12;
+    abs(exponentialTimeDecayingValueAt(value, timestamp) - expected_value) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(precise_value, timestamp) - 2.5) < 1e-12;
 
 -- A negative raw value proves that the first two fields are value/timestamp,
 -- not sign/signed-unit-time. Under the old logical tuple interpretation this

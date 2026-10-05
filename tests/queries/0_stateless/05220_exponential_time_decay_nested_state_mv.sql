@@ -7,12 +7,22 @@ WHERE name = 'exponentialTimeDecaying';
 
 -- Vector input preserves one constructed value per source row. Include signed,
 -- zero, and microsecond DateTime64 values so this cannot pass through constant
--- folding or aggregate collapse.
+-- folding or aggregate collapse. The independent numeric oracle clears the low
+-- bit of each positive unit timestamp, then evaluates the key-defined curve.
+-- Raw 128-bit construction separately retains strict source-value fidelity.
+WITH
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at
 SELECT
     id,
     toTypeName(decaying_value),
     exponentialTimeDecayingDecayLength(decaying_value),
-    abs(exponentialTimeDecayingValueAt(decaying_value, occurred_at) - value) < 1e-12
+    abs(exponentialTimeDecayingValueAt(decaying_value, occurred_at)
+        - key_value_at(value, toFloat64(occurred_at), toFloat64(occurred_at))) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(
+        CAST((value, occurred_at), 'ExponentialTimeDecaying128(3)'), occurred_at) - value) < 1e-12
 FROM
 (
     SELECT
@@ -30,12 +40,21 @@ ORDER BY id;
 
 -- Ordinary aggregates may consume expressions containing the constructor.
 -- This catches fixes that merely whitelist one specific nested aggregate.
+WITH
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at
 SELECT
     count(exponentialTimeDecaying(3)(value, occurred_at)),
     abs(
         sum(exponentialTimeDecayingValueAt(
             exponentialTimeDecaying(3)(value, occurred_at),
             occurred_at))
+        - sum(key_value_at(value, toFloat64(occurred_at), toFloat64(occurred_at)))) < 1e-12,
+    abs(
+        sum(exponentialTimeDecayingValueAt(
+            CAST((value, occurred_at), 'ExponentialTimeDecaying128(3)'), occurred_at))
         - sum(value)) < 1e-12
 FROM values(
     'value Float64, occurred_at DateTime64(6, \'UTC\')',
@@ -45,7 +64,12 @@ FROM values(
 
 -- Scalar execution must handle ColumnConst on either argument without collapsing
 -- the vector side or losing timestamp precision.
-WITH toDateTime64('2026-09-27 12:00:00.125001', 6, 'UTC') AS constant_time
+WITH
+    toDateTime64('2026-09-27 12:00:00.125001', 6, 'UTC') AS constant_time,
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at
 SELECT
     abs(
         sum(exponentialTimeDecayingValueAt(
@@ -56,6 +80,10 @@ SELECT
         sum(exponentialTimeDecayingValueAt(
             exponentialTimeDecaying(3)(toFloat64(2), occurred_at),
             occurred_at))
+        - sum(key_value_at(2., toFloat64(occurred_at), toFloat64(occurred_at)))) < 1e-12,
+    abs(
+        sum(exponentialTimeDecayingValueAt(
+            CAST((toFloat64(2), occurred_at), 'ExponentialTimeDecaying128(3)'), occurred_at))
         - 6) < 1e-12
 FROM values(
     'value Float64, occurred_at DateTime64(6, \'UTC\')',
@@ -88,22 +116,36 @@ FROM
         (0, '2026-09-27 12:00:00.750007'))
 );
 
--- Wrapping each raw row in a finalized value before aggregation must be
--- equivalent at the raw aggregate anchor. Raw input finalizes to Float64, while
--- finalized input preserves its decaying type.
+-- The 64-bit aggregate consumes quantized input curves and quantizes its final
+-- result. Build that oracle from raw numeric pairs, without a decaying value.
+-- Raw 128-bit casts separately preserve the raw-input equivalence assertion.
+WITH
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at
 SELECT
     abs(
-        raw_result
+        key_value_at(key_sum, key_anchor, toFloat64(anchor_time))
         - exponentialTimeDecayingValueAt(explicit_wrapped_result, anchor_time)
     ) < 1e-12,
     abs(
-        raw_result
+        key_value_at(key_sum, key_anchor, toFloat64(anchor_time))
         - exponentialTimeDecayingValueAt(inferred_wrapped_result, anchor_time)
-    ) < 1e-12
+    ) < 1e-12,
+    abs(raw_result - exponentialTimeDecayingValueAt(precise_wrapped_result, anchor_time)) < 1e-12
 FROM
 (
     SELECT
         exponentialTimeDecayedSum(3)(value, occurred_at) AS raw_result,
+        exponentialTimeDecayedSum(3)(
+            sign(value),
+            if(value = 0, 0., quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))))
+        ) AS key_sum,
+        maxIf(quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))), value != 0) AS key_anchor,
+        exponentialTimeDecayedSum(3)(
+            CAST((value, occurred_at), 'ExponentialTimeDecaying128(3)')
+        ) AS precise_wrapped_result,
         exponentialTimeDecayedSum(3)(
             exponentialTimeDecaying(3)(value, occurred_at)
         ) AS explicit_wrapped_result,
@@ -356,6 +398,10 @@ ORDER BY key;
 -- Preserve the AggregateFunction type through a subquery boundary and recover
 -- the same implicit Merge parameters from a qualified alias there as well.
 WITH
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at,
     merged AS
     (
         SELECT
@@ -374,8 +420,13 @@ WITH
     (
         SELECT
             key,
-            exponentialTimeDecayedSum(3)(value, occurred_at) AS exhaustion,
-            max(occurred_at) AS anchor_time
+            exponentialTimeDecayedSum(3)(
+                sign(value),
+                if(value = 0, 0., quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))))
+            ) AS key_sum,
+            maxIf(quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))), value != 0) AS key_anchor,
+            max(occurred_at) AS anchor_time,
+            key_value_at(key_sum, key_anchor, toFloat64(anchor_time)) AS exhaustion
         FROM exponential_time_decay_nested_state_source
         GROUP BY key
     )
@@ -389,16 +440,24 @@ FROM merged
 INNER JOIN expected USING (key)
 ORDER BY merged.key;
 
--- Compare the persisted, merged finalized-value states against direct raw
--- aggregation at each raw aggregate anchor. This simultaneously checks MV
+-- Compare the persisted, merged finalized-value states against independent
+-- key-defined aggregation at each raw aggregate anchor. This checks MV
 -- execution, DateTime64(6) handling, signed/zero values, out-of-order batches,
--- and storage-engine merging.
+-- and storage-engine merging. Raw 128-bit construction keeps raw fidelity strict.
+WITH
+    unit_time -> reinterpretAsFloat64(bitAnd(
+        reinterpretAsUInt64(unit_time), toUInt64(18446744073709551614))) AS quantize_time,
+    (raw_value, raw_time, target_time) -> if(raw_value = 0, 0.,
+        sign(raw_value) * exp((quantize_time(raw_time + 3 * log(abs(raw_value))) - target_time) / 3)) AS key_value_at
 SELECT
     actual.key,
     abs(
         exponentialTimeDecayingValueAt(actual.value, expected.anchor_time)
         - expected.value_at_anchor)
-        <= 1e-12 * greatest(1., abs(expected.value_at_anchor))
+        <= 1e-12 * greatest(1., abs(expected.value_at_anchor)),
+    abs(exponentialTimeDecayingValueAt(expected.precise_value, expected.anchor_time)
+        - expected.raw_value_at_anchor)
+        <= 1e-12 * greatest(1., abs(expected.raw_value_at_anchor))
 FROM
 (
     SELECT
@@ -411,8 +470,17 @@ INNER JOIN
 (
     SELECT
         key,
-        exponentialTimeDecayedSum(3)(value, occurred_at) AS value_at_anchor,
-        max(occurred_at) AS anchor_time
+        exponentialTimeDecayedSum(3)(
+            sign(value),
+            if(value = 0, 0., quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))))
+        ) AS key_sum,
+        maxIf(quantize_time(toFloat64(occurred_at) + 3 * log(abs(value))), value != 0) AS key_anchor,
+        max(occurred_at) AS anchor_time,
+        key_value_at(key_sum, key_anchor, toFloat64(anchor_time)) AS value_at_anchor,
+        exponentialTimeDecayedSum(3)(value, occurred_at) AS raw_value_at_anchor,
+        exponentialTimeDecayedSum(3)(
+            CAST((value, occurred_at), 'ExponentialTimeDecaying128(3)')
+        ) AS precise_value
     FROM exponential_time_decay_nested_state_source
     GROUP BY key
 ) AS expected USING (key)

@@ -61,8 +61,9 @@ WITH
     exponentialTimeDecaying(1)(2, toFloat64(0)) AS current_value,
     old_value + current_value AS combined
 SELECT
-    exponentialTimeDecayingValueAt(combined, toFloat64(0)),
-    toFloat64(0),
+    combined = current_value,
+    exponentialTimeDecayingValueAt(combined, toFloat64(0))
+        = exponentialTimeDecayingValueAt(current_value, toFloat64(0)),
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
 
 -- Finite inputs must not manufacture a non-finite ExponentialTimeDecaying64 curve.
