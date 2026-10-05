@@ -516,9 +516,10 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
     factory.registerFunction<FunctionExponentialTimeDecaying>(FunctionDocumentation{
         .description = R"(
 Constructs one `ExponentialTimeDecaying64(decay_length)` value for each `(value, time)` input row.
-The result keeps its direct value and anchor for arithmetic and derives one `UInt64` ordering key.
-That key is the complete identity for comparison, equality, hashing, `GROUP BY`, `DISTINCT`, primary-key marks, and minmax indexes.
-Two curves that map to the same 64-bit key are therefore equal in this type.
+The naturally ordered `UInt64` key is the complete identity for comparison, equality, hashing,
+`GROUP BY`, `DISTINCT`, primary-key marks, and minmax indexes. The default `compact` mode
+stores only that key. When `exponential_time_decay_default_mode = 'direct'`, the same key remains
+authoritative while the original `(value, timestamp)` pair is retained only as printable metadata.
 It can be combined by `exponentialTimeDecayedSum`, including as a
 `SimpleAggregateFunction` column in an `AggregatingMergeTree`.
 )",
