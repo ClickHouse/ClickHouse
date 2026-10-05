@@ -105,13 +105,13 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
 
 bool isEmptyRow(const DecayingColumnView & input, size_t row)
 {
-    return input.column.getDirectValueAt(row).value_at_anchor == 0;
+    return input.column.getCanonicalValueAt(row).value_at_anchor == 0;
 }
 
 void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const auto direct = input.column.getDirectValueAt(row);
-    if (!std::isfinite(direct.value_at_anchor) || !std::isfinite(direct.anchor_time))
+    const auto canonical = input.column.getCanonicalValueAt(row);
+    if (!std::isfinite(canonical.value_at_anchor) || !std::isfinite(canonical.anchor_time))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Argument of function {} is not a canonical exponential-time-decaying value",
@@ -124,9 +124,9 @@ Float64 valueAt(
     if (isEmptyRow(input, row))
         return 0;
 
-    const auto direct = input.column.getDirectValueAt(row);
-    const Float64 value = direct.value_at_anchor;
-    const Float64 anchor_time = direct.anchor_time;
+    const auto canonical = input.column.getCanonicalValueAt(row);
+    const Float64 value = canonical.value_at_anchor;
+    const Float64 anchor_time = canonical.anchor_time;
     if (target_time == anchor_time)
         return value;
 
@@ -323,11 +323,11 @@ public:
                 continue;
             }
 
-            const auto left_direct = left.column.getDirectValueAt(row);
-            const auto right_direct = right.column.getDirectValueAt(row);
+            const auto left_canonical = left.column.getCanonicalValueAt(row);
+            const auto right_canonical = right.column.getCanonicalValueAt(row);
             const Float64 latest_time = std::max(
-                left_direct.anchor_time,
-                right_direct.anchor_time);
+                left_canonical.anchor_time,
+                right_canonical.anchor_time);
             result.append(
                 valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
                 latest_time);
