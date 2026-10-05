@@ -308,7 +308,9 @@ public:
             return;
 
         const String & function_name = node_function->getFunctionName();
-        if (function_name == "in" || function_name == "notIn")
+        /// `transform_null_in` renames user-written `in` / `notIn` to `nullIn` / `notNullIn` during resolution.
+        /// `rewriteIn` requires a non-`Nullable` left-hand side and a constant without `NULL`, where both spellings agree.
+        if (function_name == "in" || function_name == "notIn" || function_name == "nullIn" || function_name == "notNullIn")
         {
             rewriteIn(node, *node_function);
             return;
@@ -603,7 +605,7 @@ private:
     ///     key NOT IN (SELECT key FROM dictionary(dict) WHERE attr IN (constants))      -- NOT IN, DEFAULT not in the list
     void rewriteIn(QueryTreeNodePtr & node, FunctionNode & node_function)
     {
-        const bool is_not_in = node_function.getFunctionName() == "notIn";
+        const bool is_not_in = node_function.getFunctionName() == "notIn" || node_function.getFunctionName() == "notNullIn";
 
         auto & arguments = node_function.getArguments().getNodes();
         if (arguments.size() != 2)
