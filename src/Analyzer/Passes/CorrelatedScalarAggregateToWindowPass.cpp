@@ -174,6 +174,26 @@ bool isDeterministicExpression(QueryTreeNodePtr node)
     return result;
 }
 
+/// The rule of the filter push-down below a join: functions that are deterministic in the scope of the query,
+/// no `arrayJoin`. A subquery is computed once for the query, e.g. the set of `IN`.
+bool isDeterministicInScopeOfQueryExpression(QueryTreeNodePtr node)
+{
+    bool result = true;
+    visitExpression(
+        node,
+        [&](QueryTreeNodePtr & current)
+        {
+            const auto * function = current->as<FunctionNode>();
+            if (!function || !function->isOrdinaryFunction())
+                return;
+            const auto & function_base = function->getFunctionOrThrow();
+            if (!function_base->isDeterministicInScopeOfQuery() || function_base->getName() == "arrayJoin")
+                result = false;
+        },
+        [](QueryTreeNodePtr &) {});
+    return result;
+}
+
 bool sameTable(const TableNode & lhs, const TableNode & rhs)
 {
     return lhs.getStorageID() == rhs.getStorageID() && lhs.getTableExpressionModifiers() == rhs.getTableExpressionModifiers();
@@ -491,6 +511,8 @@ private:
     /// - one only on tables joined to the target on one of its keys (directly or through other joined tables), when
     ///   the join can build a runtime filter: it is on the join key, and only a filter on the `PARTITION BY` keys is
     ///   pushed below the window. The runtime filter is not built for a small probe side, but then the window is small.
+    ///   The condition must also be one the filter push-down below a join moves to the joined table, otherwise it
+    ///   does not shrink the table the runtime filter is built from.
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
     static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys, bool runtime_join_filters)
     {
@@ -563,7 +585,8 @@ private:
             if (sources.size() == 1 && sources.contains(target) && only_keys && isDeterministicExpression(conjunct))
                 return true;
             joined_table_condition |= !sources.empty()
-                && std::ranges::all_of(sources, [&](const IQueryTreeNode * source) { return joined_on_keys.contains(source); });
+                && std::ranges::all_of(sources, [&](const IQueryTreeNode * source) { return joined_on_keys.contains(source); })
+                && isDeterministicInScopeOfQueryExpression(conjunct);
         }
         return joined_table_condition && runtime_join_filters;
     }
