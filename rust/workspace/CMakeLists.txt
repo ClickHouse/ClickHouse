@@ -28,6 +28,19 @@ if (ENABLE_LANCE AND ((SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER))
     set (ENABLE_LANCE OFF)
 endif()
 
+# `lance-linalg` builds its C kernels only for x86_64, aarch64 and loongarch64.
+if (ENABLE_LANCE AND NOT (ARCH_AMD64 OR ARCH_AARCH64))
+    message (STATUS "Disabling Lance because `lance-linalg` does not support this architecture")
+    set (ENABLE_LANCE OFF)
+endif()
+
+# The fuzzers do not exercise Lance, and its crates push the ASan fuzzer binary over the size limit of
+# 32-bit PC-relative relocations.
+if (ENABLE_LANCE AND ENABLE_FUZZING)
+    message (STATUS "Disabling Lance in the fuzzer build")
+    set (ENABLE_LANCE OFF)
+endif()
+
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
     message(STATUS "prql, skim, polyglot, and lance are disabled")
     return()
