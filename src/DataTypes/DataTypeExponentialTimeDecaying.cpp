@@ -1285,23 +1285,29 @@ void registerDataTypeExponentialTimeDecaying(DataTypeFactory & factory)
 {
     const Documentation documentation64{
         .description = R"(
-Represents an exponentially time-decaying curve whose complete logical identity is a compact
-`UInt64` ordering key. Curves mapping to the same key compare equal and have the same hash.
-The direct payload is `(value_at_anchor, anchor_time)`, and `decay_length` is part of the type.
+Represents an exponentially time-decaying curve whose complete logical identity is a naturally
+ordered `UInt64` key. Curves mapping to the same key compare equal and have the same hash.
+`compact` is the default storage mode and stores only that key. `direct` stores the same
+authoritative key plus the original `(value, timestamp)` pair as non-identity metadata.
+The public tuple representation is always `(value, timestamp, decay_length)`.
 )",
-        .syntax = "ExponentialTimeDecaying64(decay_length)",
+        .syntax = "ExponentialTimeDecaying64(decay_length[, mode])",
         .examples = {},
         .related = {"SimpleAggregateFunction", "ExponentialTimeDecaying128"},
     };
 
     const Documentation documentation128{
         .description = R"(
-Represents an exponentially time-decaying curve whose complete logical identity is a `UInt128`
-ordering key. The wider key uses a deterministic extended-precision unit timestamp and retains
-additional residual timestamp precision compared with `ExponentialTimeDecaying64`.
-The direct payload is `(value_at_anchor, anchor_time)`, and `decay_length` is part of the type.
+Represents an exponentially time-decaying curve whose complete logical identity is a naturally
+ordered `UInt128` key. The upper part stores a canonical Float64 anchor and the remaining
+timestamp bits store the positive magnitude at that anchor. This preserves additional unit-time
+precision and continues monotonically beyond the finite Float64 timestamp range by holding the
+anchor at the nearest finite boundary and using the residual magnitude there.
+`compact` stores only the key; `direct` additionally retains the original
+`(value, timestamp)` pair as non-identity metadata. The public tuple representation is always
+`(value, timestamp, decay_length)`.
 )",
-        .syntax = "ExponentialTimeDecaying128(decay_length)",
+        .syntax = "ExponentialTimeDecaying128(decay_length[, mode])",
         .examples = {},
         .related = {"SimpleAggregateFunction", "ExponentialTimeDecaying64"},
     };
