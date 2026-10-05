@@ -353,6 +353,8 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
+    void checkSkipIndexNameCanBeForgotten(const String & index_name) const override;
+
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 

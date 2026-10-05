@@ -1141,6 +1141,12 @@ public:
     /// definition's granules. Called by `killMutation` of both engines; see the definition.
     void checkMutationIsSafeToKill(const String & mutation_id) const;
 
+    /// Throws if the drop of an index with this name must not be forgotten, because the name is in
+    /// use. Asked only about a mutation that really drops an index, so an implementation may consult
+    /// metadata that costs a round trip. A replicated table overrides it: `killMutation` takes effect
+    /// on every replica, so one that has not applied the latest `ALTER` must not answer.
+    virtual void checkSkipIndexNameCanBeForgotten(const String & index_name) const;
+
     /// Throws if an `ADD INDEX` would give its name to granules a previous index of the same name
     /// left behind in the parts. See the definition.
     void checkAddedIndexNameHasNoStaleFiles(

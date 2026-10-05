@@ -13804,8 +13804,6 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
     if (it == unfinished_mutations.end())
         return;
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
     for (const auto & command : it->second)
     {
         /// `CLEAR INDEX` is a `DROP_INDEX` with `clear`: it keeps the index in the metadata, so the
@@ -13815,21 +13813,24 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
             continue;
 
         /// The name of the index of a `DROP_INDEX` command is in `column_name`, not `index_name`.
-        if (!metadata_snapshot->getSecondaryIndices().has(command.column_name))
-            continue;
-
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot kill mutation {} of table {}: it drops the skip index {}, and the metadata has "
-            "since given that name to another index. The parts the mutation has not rewritten still "
-            "hold the granules of the dropped index, and they are refused only while its drop is "
-            "pending, so forgetting the mutation would make queries answer from them as if they "
-            "belonged to the new index. Drop the index with that name first, or wait for the mutation "
-            "to finish",
-            mutation_id,
-            getStorageID().getNameForLogs(),
-            backQuoteIfNeed(command.column_name));
+        checkSkipIndexNameCanBeForgotten(command.column_name);
     }
+}
+
+void MergeTreeData::checkSkipIndexNameCanBeForgotten(const String & index_name) const
+{
+    if (!getInMemoryMetadataPtr(getContext(), false)->getSecondaryIndices().has(index_name))
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot forget the drop of skip index {} of table {}: the metadata has since given that name "
+        "to another index. The parts the drop has not rewritten still hold the granules of the dropped "
+        "index, and they are refused only while the drop is pending, so queries would answer from them "
+        "as if they belonged to the new index. Drop the index with that name first, or wait for the "
+        "mutation to finish",
+        backQuoteIfNeed(index_name),
+        getStorageID().getNameForLogs());
 }
 
 void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(
