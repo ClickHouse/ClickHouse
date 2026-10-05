@@ -81,7 +81,8 @@ check "correlated to the same table" "SELECT o.k AS k, o.v AS v, (SELECT count()
 check "condition on the correlated table" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE t.v > 5 AND u.w > 0 ORDER BY k, v"
 check "condition on an ALIAS column of the correlated table" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE t.al < 100 AND u.w > 0 ORDER BY k, v"
 check "join condition on a non-key column" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k AND t.v > u.w ORDER BY k, v"
-check "ANY join" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u ANY INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
+# Which of the matching rows `ANY` keeps is not defined, so `t.v` is not selected; `c` is the same for all of them.
+check "ANY join" "SELECT u.k AS k, $SQ AS c FROM u ANY INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k"
 check "LEFT join, correlated table on the left" "SELECT o.k AS k, o.v AS v, u.w AS w, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o LEFT JOIN u ON u.k = o.k WHERE o.k > 0 ORDER BY k, v, w"
 check "third table joined to the other relation" "SELECT u.k AS k, x.z AS z, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k INNER JOIN x ON u.w = x.w WHERE x.z > 1 ORDER BY k, z, v"
 check "join_use_nulls" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_use_nulls = 1"
