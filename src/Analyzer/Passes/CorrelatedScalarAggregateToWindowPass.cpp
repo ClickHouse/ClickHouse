@@ -109,6 +109,19 @@ void collectEnforcedConjuncts(const QueryTreeNodePtr & join_tree, QueryTreeNodes
     }
 }
 
+/// A runtime filter is not built for a `GLOBAL` join.
+bool hasGlobalJoin(const QueryTreeNodePtr & join_tree)
+{
+    if (const auto * join = join_tree->as<JoinNode>())
+        return join->getLocality() == JoinLocality::Global || hasGlobalJoin(join->getLeftTableExpressionNode())
+            || hasGlobalJoin(join->getRightTableExpressionNode());
+    if (const auto * cross_join = join_tree->as<CrossJoinNode>())
+        return std::ranges::any_of(cross_join->getTableExpressions(), hasGlobalJoin);
+    if (const auto * array_join = join_tree->as<ArrayJoinNode>())
+        return hasGlobalJoin(array_join->getTableExpressionNode());
+    return false;
+}
+
 std::pair<const ColumnNode *, const ColumnNode *> asColumnEquality(const QueryTreeNodePtr & node)
 {
     const auto * function = node->as<FunctionNode>();
@@ -289,7 +302,8 @@ private:
             return;
         const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
         const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
-            && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter);
+            && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter)
+            && !hasGlobalJoin(query_node.getJoinTreeNode());
 
         for (auto & [target, target_candidates] : by_target)
         {
