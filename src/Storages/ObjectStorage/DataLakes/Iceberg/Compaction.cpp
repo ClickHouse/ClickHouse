@@ -601,8 +601,13 @@ CommitOutcome commitCompactedMetadata(
 
                 const auto our_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
                 const auto parent_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
-                /// Snapshot id -> its parent's id (nullopt for a root).
-                std::unordered_map<Int64, std::optional<Int64>> parents;
+                const auto our_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+                struct RetainedSnapshot
+                {
+                    std::optional<Int64> parent;
+                    Int64 sequence_number = 0;
+                };
+                std::unordered_map<Int64, RetainedSnapshot> retained;
                 bool applied = false;
                 auto snapshots = current_metadata->getArray(Iceberg::f_snapshots);
                 for (UInt32 i = 0; snapshots && i < snapshots->size(); ++i)
@@ -615,33 +620,46 @@ CommitOutcome commitCompactedMetadata(
                     /// Our snapshot, or a snapshot built on top of it, is in the table: some request of ours was applied.
                     if (id == our_id || snapshot_parent == our_id)
                         applied = true;
-                    parents.emplace(id, snapshot_parent);
+                    retained.emplace(id, RetainedSnapshot{snapshot_parent, snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)});
                 }
                 if (applied)
                 {
                     LOG_WARNING(
                         log,
-                        "The catalog rejected the commit of snapshot {}, but the snapshot is in the table: "
+                        "The catalog rejected the commit of snapshot {}, but it or a snapshot built on it is in the table: "
                         "an earlier attempt of the same request was applied",
                         our_id);
                     return CommitOutcome::Committed;
+                }
+
+                /// Sequence numbers grow with every commit, so only a snapshot whose lineage loses a link above ours may descend from ours.
+                for (const auto & [_, retained_snapshot] : retained)
+                {
+                    const RetainedSnapshot * node = &retained_snapshot;
+                    for (size_t step = 0; node->sequence_number > our_sequence_number && node->parent; ++step)
+                    {
+                        auto it = retained.find(*node->parent);
+                        if (it == retained.end() || step >= retained.size())
+                            return CommitOutcome::Unknown;
+                        node = &it->second;
+                    }
                 }
 
                 /// A conflict is proven only when main's retained lineage reaches our parent through another snapshot.
                 if (current_metadata->has(Iceberg::f_current_snapshot_id))
                 {
                     auto id = current_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
-                    for (size_t step = 0; step < parents.size() && id != parent_id; ++step)
+                    for (size_t step = 0; step < retained.size() && id != parent_id; ++step)
                     {
-                        auto it = parents.find(id);
-                        if (it == parents.end() || !it->second)
+                        auto it = retained.find(id);
+                        if (it == retained.end() || !it->second.parent)
                             break;
-                        if (*it->second == parent_id)
+                        if (*it->second.parent == parent_id)
                         {
                             LOG_INFO(log, "Metadata commit conflict detected via catalog");
                             return CommitOutcome::Conflict;
                         }
-                        id = *it->second;
+                        id = *it->second.parent;
                     }
                 }
             }
