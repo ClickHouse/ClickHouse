@@ -17,6 +17,17 @@ enum class ExponentialTimeDecayingKeyWidth : UInt8
     Bits128 = 128,
 };
 
+enum class ExponentialTimeDecayingMode : UInt8
+{
+    Compact,
+    Direct,
+};
+
+inline const char * getExponentialTimeDecayingModeName(ExponentialTimeDecayingMode mode)
+{
+    return mode == ExponentialTimeDecayingMode::Compact ? "compact" : "direct";
+}
+
 inline const char * getExponentialTimeDecayingTypeName(ExponentialTimeDecayingKeyWidth width)
 {
     return width == ExponentialTimeDecayingKeyWidth::Bits64
@@ -133,7 +144,8 @@ class DataTypeExponentialTimeDecaying final : public IDataType
 public:
     explicit DataTypeExponentialTimeDecaying(
         Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64);
+        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64,
+        ExponentialTimeDecayingMode mode_ = ExponentialTimeDecayingMode::Compact);
 
     TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecaying; }
     TypeIndex getColumnType() const override { return TypeIndex::ExponentialTimeDecaying; }
@@ -166,23 +178,30 @@ public:
 
     Float64 getDecayLength() const { return decay_length; }
     ExponentialTimeDecayingKeyWidth getKeyWidth() const { return key_width; }
+    ExponentialTimeDecayingMode getMode() const { return mode; }
     const DataTypePtr & getNestedType() const { return storage_type; }
+    const DataTypePtr & getDirectTupleType() const { return direct_type; }
     const DataTypePtr & getLogicalTupleType() const { return logical_type; }
 
 private:
     const Float64 decay_length;
     const ExponentialTimeDecayingKeyWidth key_width;
+    const ExponentialTimeDecayingMode mode;
     const DataTypePtr storage_type;
+    const DataTypePtr direct_type;
     const DataTypePtr logical_type;
 };
 
 DataTypePtr createDataTypeExponentialTimeDecaying(
     Float64 decay_length,
-    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64);
+    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64,
+    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact);
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType & type);
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const DataTypePtr & type);
 std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const IDataType & type);
 std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const DataTypePtr & type);
+std::optional<ExponentialTimeDecayingMode> tryGetExponentialTimeDecayingMode(const IDataType & type);
+std::optional<ExponentialTimeDecayingMode> tryGetExponentialTimeDecayingMode(const DataTypePtr & type);
 bool isExponentialTimeDecaying(const IDataType & type);
 bool isExponentialTimeDecaying(const DataTypePtr & type);
 bool containsExponentialTimeDecaying(const IDataType & type);
@@ -207,7 +226,8 @@ ColumnPtr materializeExponentialTimeDecayingStorageColumn(
     const IColumn & logical_column,
     Float64 decay_length,
     const String & operation,
-    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64);
+    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64,
+    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact);
 
 void validateExponentialTimeDecayingColumn(
     const IColumn & column, const DataTypePtr & type, const String & operation);
