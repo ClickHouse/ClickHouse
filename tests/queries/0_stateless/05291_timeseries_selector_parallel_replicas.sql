@@ -58,5 +58,24 @@ SELECT '--- no matching series: no series has samples in the time range ---';
 SELECT count() FROM timeSeriesSelector(ts_v7, 'm', toDateTime64('2025-01-01 00:00:00', 3), toDateTime64('2025-01-01 00:10:00', 3));
 SELECT count() FROM timeSeriesSelector(ts_hist, 'm', toDateTime64('2025-01-01 00:00:00', 3), toDateTime64('2025-01-01 00:10:00', 3));
 
+-- Every selector registers the ids it selected as a temporary table named after its tags lookup, so the replicas get
+-- one table per selector. The same selector over the two tables selects the same 12 ids of float series, but only the
+-- table with histograms has 6 more series, which a selector given the ids of the other table would miss.
+SELECT '--- several selectors in one query: each reads its own series ---';
+SELECT table, rows FROM
+(
+    SELECT 'v7' AS table, count() AS rows FROM timeSeriesSelector(ts_v7, 'm', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3))
+    UNION ALL
+    SELECT 'hist' AS table, count() AS rows FROM timeSeriesSelector(ts_hist, 'm', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3))
+)
+ORDER BY table;
+SELECT count() FROM
+(
+    SELECT id FROM timeSeriesSelector(ts_hist, 'm', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3))
+    UNION ALL
+    SELECT id FROM timeSeriesSelector(ts_hist, 'm', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3))
+);
+SELECT value FROM prometheusQuery(ts_v7, 'count(m) + count(m)', toDateTime64('2026-01-01 00:01:00', 3));
+
 DROP TABLE ts_v7;
 DROP TABLE ts_hist;

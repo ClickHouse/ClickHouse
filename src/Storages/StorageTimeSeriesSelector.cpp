@@ -409,6 +409,7 @@ namespace
         table_exp->children.emplace_back(table_exp->table_function);
         auto table = make_intrusive<ASTTablesInSelectQueryElement>();
         table->table_expression = table_exp;
+        table->children.push_back(table->table_expression);
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         tables->children.push_back(table);
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
@@ -469,6 +470,7 @@ namespace
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
+            table->children.push_back(table->table_expression);
             tables->children.push_back(table);
 
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
@@ -606,6 +608,7 @@ namespace
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
+            table->children.push_back(table->table_expression);
             tables->children.push_back(table);
 
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
@@ -727,12 +730,12 @@ namespace
         Field max;
     };
 
-    /// The ids of the series selected by the tags lookup: the temporary table with the single column `id` holding them,
-    /// their number, their type (the type of the tags table's `id` without `LowCardinality`) and, if the lookup tracked
-    /// it, their range.
+    /// The ids of the series selected by the tags lookup: the name under which the temporary table with the single column `id`
+    /// holding them is registered in the context (see `lookUpTags`), their number, their type (the type of the tags table's
+    /// `id` without `LowCardinality`) and, if the lookup tracked it, their range.
     struct LookedUpIDs
     {
-        std::shared_ptr<TemporaryTableHolder> table;
+        String registered_table_name;
         size_t count = 0;
         DataTypePtr type;
         std::optional<IDRange> range;
@@ -956,7 +959,8 @@ namespace
     }
 
     /// Selects the series matching the matchers from the tags table, stores their tags into the tags collector of the query
-    /// context and stores selected ids in a temporary table. Tracks the range of the ids if `track_range` is set.
+    /// context and stores selected ids in a temporary table registered in `context`. Tracks the range of the ids if
+    /// `track_range` is set.
     LookedUpIDs lookUpTags(
         const StorageID & tags_table_id,
         const DataTypePtr & tags_table_id_type,
@@ -966,7 +970,7 @@ namespace
         const DataTypePtr & table_timestamp_type,
         const StorageLimitsList & storage_limits,
         const bool track_range,
-        const ContextPtr & context)
+        const ContextMutablePtr & context)
     {
         /// SELECT _CAST(id, '<id type without LowCardinality>') AS id, tags, '__name__', metric_name, 'tag_name1', tag_column1, ...
         /// FROM tags_table WHERE <matchers and time conditions>
@@ -1009,8 +1013,8 @@ namespace
             throw;
         }
 
-        /// `TemporaryTableHolder` keeps a weak pointer to its context and needs it to drop the table. The holder outlives
-        /// `context` (the query plan keeps it), so it gets the query context.
+        /// `TemporaryTableHolder` keeps a weak pointer to its context and needs it to drop the table. The holder lives as long
+        /// as `context`, which the query plan keeps, so it gets the query context, which outlives the plan.
         const auto query_context = context->getQueryContext();
         const auto & id_column = header_columns.front();
         auto ids_tmp_table = std::make_shared<TemporaryTableHolder>(
@@ -1026,7 +1030,16 @@ namespace
         PushingPipelineExecutor insert_executor(insert_pipeline);
         insert_executor.start();
 
-        LookedUpIDs res{.table = ids_tmp_table, .count = 0, .type = id_column.type, .range = {}};
+        /// The table is registered under a name depending only on the lookup query, so a selector gets the same data query plan
+        /// in every query: the cache of hash table sizes, which join reordering uses as row estimates, is keyed by the plan,
+        /// including the name in `id IN <temp_table>`. The name of the table itself can't be used: it's random, because the table
+        /// lives in the database of temporary tables shared by all queries.
+        const auto lookup_hash = select_query->getTreeHash(/* ignore_aliases = */ true);
+        LookedUpIDs res{
+            .registered_table_name = fmt::format("_time_series_selector_ids_{}_{}", lookup_hash.low64, lookup_hash.high64),
+            .count = 0,
+            .type = id_column.type,
+            .range = {}};
         ColumnPtr min_id;
         ColumnPtr max_id;
 
@@ -1058,6 +1071,8 @@ namespace
             insert_executor.push(Block{{ids.column, ids.type, TimeSeriesColumnNames::ID}});
         }
         insert_executor.finish();
+
+        context->addExternalTable(res.registered_table_name, std::move(ids_tmp_table));
 
         if (track_range && res.count)
             res.range = IDRange{.min = (*min_id)[0], .max = (*max_id)[0]};
@@ -1198,8 +1213,7 @@ void StorageTimeSeriesSelector::readImpl(
     }
 
     /// The data tables are filtered by `id IN <ids_tmp_table>`, and replicas reading them receive the table as an external one.
-    const String ids_tmp_table_name = ids.table->getGlobalTableID().getTableName();
-    modified_context->addExternalTable(ids_tmp_table_name, ids.table);
+    const String & ids_tmp_table_name = ids.registered_table_name;
 
     /// The conditions on the data tables are ordered by `makeWhereFilterForDataTable`. Estimating their selectivity from
     /// statistics converts the whole id set into ranges, which costs more than the rest of the planning.
