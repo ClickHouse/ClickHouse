@@ -203,6 +203,60 @@ SELECT
     (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM compact_state),
     (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM precise_state);
 
+-- Compact is the default, but the query setting can select direct storage
+-- for constructors and parameterless inferred casts. Explicit datatype modes win.
+SET exponential_time_decay_default_mode = 'direct';
+
+WITH
+    exponentialTimeDecaying(3)(toFloat64(8), toFloat64(5.25)) AS constructed,
+    (toFloat64(8), toFloat64(5.25), toFloat64(3))::ExponentialTimeDecaying64 AS inferred,
+    CAST((toFloat64(8), toFloat64(5.25)), 'ExponentialTimeDecaying64(3)') AS explicit_compact
+SELECT
+    toTypeName(constructed),
+    tupleElement(constructed, 'value'),
+    tupleElement(constructed, 'timestamp'),
+    tupleElement(constructed, 'decay_length'),
+    toTypeName(inferred),
+    tupleElement(inferred, 'value'),
+    tupleElement(inferred, 'timestamp'),
+    toTypeName(explicit_compact),
+    abs(tupleElement(explicit_compact, 'value')) = 1,
+    exponentialTimeDecayingValueAt(
+        explicit_compact,
+        tupleElement(explicit_compact, 'timestamp')) = tupleElement(explicit_compact, 'value');
+
+SET exponential_time_decay_default_mode = 'compact';
+
+-- Compact output is a canonical raw pair reconstructed from the authoritative
+-- key. Re-parsing that pair must reproduce the same key at either width.
+WITH
+    CAST((toFloat64(8), toFloat64(5.25)), 'ExponentialTimeDecaying64(3)') AS compact64,
+    CAST((toFloat64(8), toFloat64(5.25)), 'ExponentialTimeDecaying128(3)') AS compact128,
+    CAST(
+        (tupleElement(compact64, 'value'), tupleElement(compact64, 'timestamp')),
+        'ExponentialTimeDecaying64(3)') AS roundtrip64,
+    CAST(
+        (tupleElement(compact128, 'value'), tupleElement(compact128, 'timestamp')),
+        'ExponentialTimeDecaying128(3)') AS roundtrip128
+SELECT compact64 = roundtrip64, compact128 = roundtrip128;
+
+-- Very large decay lengths may place the mathematical unit time outside the
+-- Float64 timestamp range. Compact encoding must use the finite boundary slice
+-- and residual value instead of rejecting the curve.
+WITH
+    CAST((toFloat64(1e-300), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS p_small,
+    CAST((toFloat64(1e-200), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS p_large,
+    CAST((toFloat64(-1e-300), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS n_small,
+    CAST((toFloat64(-1e-200), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS n_large,
+    CAST((toFloat64(0), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS zero
+SELECT
+    isFinite(tupleElement(p_small, 'value')),
+    isFinite(tupleElement(p_small, 'timestamp')),
+    p_small < p_large,
+    p_large > zero,
+    zero > n_small,
+    n_large < n_small;
+
 -- The width-specific parameterless spelling is inference-only. A standalone type declaration
 -- still needs a concrete decay length because column types are static.
 CREATE TEMPORARY TABLE time_decay_unparameterized_type_rejected
