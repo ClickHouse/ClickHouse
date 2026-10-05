@@ -9,9 +9,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/Statistics/Statistics.h>
 
 #include <algorithm>
@@ -24,18 +24,18 @@ namespace DB::Iceberg
 namespace
 {
 
-/// The raw value of an identity partition field, written with the type `file_type`, as a value of `storage_type`
+/// The decoded value of an identity partition field, written with the type `file_type`, as a value of `storage_type`
 /// (see `ColumnMetrics::identity_partition_value`).
-std::optional<Field> identityPartitionValue(const Field & value, const IDataType & file_type, const IDataType & storage_type)
+std::optional<Field> identityPartitionValue(const Field & value, const DataTypePtr & file_type, const IDataType & storage_type)
 {
     if (value.isNull())
         return Field{};
 
-    auto result = partitionValueToFieldOfType(value, file_type);
-    /// Only numbers have several raw forms; other values are counted as written.
-    if (result && storage_type.isValueRepresentedByNumber())
-        result = convertFieldToType(*result, storage_type, &file_type, {}, /*strict=*/ true);
-    if (!result || result->isNull())
+    Field result = convertPartitionValueToType(value, file_type);
+    /// A number written with an older type is brought to the storage type, so equal values compare equal.
+    if (storage_type.isValueRepresentedByNumber())
+        result = convertFieldToType(result, storage_type, file_type.get(), {}, /*strict=*/ true);
+    if (result.isNull())
         return std::nullopt;
     return result;
 }
@@ -176,7 +176,7 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
 
     if (entry.common_partition_specification)
     {
-        const auto & partition_values = parsed_entry.partition_key_value;
+        const auto & partition_values = entry.normalized_partition_key_value;
         for (const auto & partition_field : *entry.common_partition_specification)
         {
             if (Poco::icompare(partition_field.transform_name, "identity") != 0 || partition_field.tuple_index < 0
@@ -190,7 +190,7 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
 
             const auto & [file_type, tracks_min_max, target_index] = type_it->second;
             file_metrics[target_index].identity_partition_value = identityPartitionValue(
-                partition_values[partition_field.tuple_index], *file_type, *targets[target_index].nested_type);
+                partition_values[partition_field.tuple_index], file_type, *targets[target_index].nested_type);
         }
     }
     return file_metrics;
