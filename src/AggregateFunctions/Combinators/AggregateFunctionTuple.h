@@ -152,6 +152,7 @@ public:
     void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override;
 
     bool allocatesMemoryInArena() const override;
+    bool mergeIsEquivalentToAddingRows() const override;
     bool isState() const override;
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;

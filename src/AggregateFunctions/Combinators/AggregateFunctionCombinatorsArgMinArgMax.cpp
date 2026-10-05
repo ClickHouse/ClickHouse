@@ -143,6 +143,11 @@ public:
         return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type->getTypeId());
     }
 
+    bool mergeIsEquivalentToAddingRows() const override
+    {
+        return nested_function->mergeIsEquivalentToAddingRows();
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor() && /*false*/ std::is_trivially_destructible_v<SingleValueDataBase>;
