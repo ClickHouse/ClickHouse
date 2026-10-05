@@ -1346,8 +1346,7 @@ ordered `UInt64` key. Curves mapping to the same key compare equal and have the 
 `compact` is the default storage mode and stores only that key. `direct` stores the same
 authoritative key plus `(value, timestamp)` as non-identity display metadata. Key-only operations
 such as `GROUP BY` or `DISTINCT` may choose any metadata representative for equal keys.
-Compact values normally print as `(-1/0/+1, unit_timestamp, decay_length)`; extreme 128-bit
-tails use their finite edge value and edge timestamp instead.
+Compact values print as `(-1/0/+1, unit_timestamp, decay_length)`.
 )",
         .syntax = "ExponentialTimeDecaying64(decay_length[, mode])",
         .examples = {},
