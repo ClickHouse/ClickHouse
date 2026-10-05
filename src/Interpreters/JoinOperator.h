@@ -29,6 +29,12 @@ struct JoinOperator
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
 
+    /// Multiset (bag) semantics of a LEFT SEMI or LEFT ANTI join: each right row matches at most one left row,
+    /// so a left row is kept (SEMI) or dropped (ANTI) as many times as its key occurs on the right, not once
+    /// for all its occurrences. `INTERSECT ALL` and `EXCEPT ALL` are executed as such joins. Only the hash
+    /// joins execute it, on the count maps of `HashJoin`, and the sides must not be swapped.
+    bool multiset = false;
+
     /// An expression in ON/USING clause of a JOIN statement
     std::vector<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
@@ -52,8 +58,9 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    /// `step_version` is the serialization version of the `Join` plan step; version 1 added the multiset flag.
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 step_version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version);
 
     String dump() const;
 };

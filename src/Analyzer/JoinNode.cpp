@@ -152,6 +152,9 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", kind: " << toString(kind);
 
+    if (is_set_operation)
+        buffer << ", is_set_operation: 1";
+
     if (lateral)
         buffer << ", lateral: true";
 
@@ -175,7 +178,8 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
         is_using_join_expression == rhs_typed.is_using_join_expression &&
-        is_natural == rhs_typed.is_natural && lateral == rhs_typed.lateral;
+        is_natural == rhs_typed.is_natural && lateral == rhs_typed.lateral &&
+        is_set_operation == rhs_typed.is_set_operation;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -186,6 +190,7 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(is_using_join_expression);
     state.update(is_natural);
     state.update(lateral);
+    state.update(is_set_operation);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
@@ -197,6 +202,7 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
     clone->lateral = lateral;
+    clone->is_set_operation = is_set_operation;
     return clone;
 }
 

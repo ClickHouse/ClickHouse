@@ -17,6 +17,7 @@ struct LogicalJoinInfo
     JoinEstimation estimation;
     JoinLocality locality{};
     UInt64 cluster_id = 0;
+    bool is_set_operation = false;
 };
 
 /// Join two data streams.

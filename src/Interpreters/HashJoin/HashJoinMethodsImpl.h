@@ -11,6 +11,7 @@
 #include <Interpreters/JoinUtils.h>
 
 #include <algorithm>
+#include <atomic>
 #include <type_traits>
 
 namespace DB
@@ -281,7 +282,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     bool & all_values_unique)
 {
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
-    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
+    constexpr bool is_key_only = KeyOnlyJoinMaps<MapsTemplate>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
@@ -297,9 +298,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
     auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
-    /// the block has to be kept for another algorithm the caller drops it.
-    if constexpr (is_set)
+    /// For ALL and ASOF join always insert values. A key-only map keeps no reference into the block, so
+    /// unless the block has to be kept for another algorithm the caller drops it.
+    if constexpr (is_key_only)
         is_inserted = join.mustKeepRightBlocks();
     else
         is_inserted = !mapped_one || is_asof_join;
@@ -333,8 +334,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
         if (null_map && (*null_map)[ind])
         {
             /// nulls are not inserted into hash table,
-            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-            if constexpr (!is_set)
+            /// keep them for RIGHT and FULL joins - a key-only map is never used by one of those
+            if constexpr (!is_key_only)
                 is_inserted = true;
             continue;
         }
@@ -345,7 +346,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, *asof_column);
-        else if constexpr (is_set)
+        else if constexpr (CountJoinMaps<MapsTemplate>)
+            Inserter<HashMap, KeyGetter>::insertCount(map, key_getter, ind, pool);
+        else if constexpr (SetJoinMaps<MapsTemplate>)
             Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool);
         else if constexpr (mapped_one)
             is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(any_take_last_row, map, key_getter, stored_block_no, ind, pool);
@@ -501,8 +504,13 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
     }
 }
 
-/// A set map records that a key is present and nothing else: LEFT ANTI emits a row only when the key
-/// is missing, and LEFT SEMI has no right-side value to emit, so a match only marks the left row.
+/// A key-only map holds no right row to emit, so a match only decides whether the left row is emitted. A set map
+/// records that the key is present: LEFT SEMI emits the row, LEFT ANTI does not. A count map records how many
+/// right rows of the key are still untaken, and a match takes one: LEFT SEMI emits the left row only when it got
+/// one, LEFT ANTI only when there was none left to get. The probe threads share the count map, so the count is
+/// taken atomically; it may go negative, which is as good as zero, and saves the compare-and-swap loop a clamp
+/// would need. A count that is already used up is read without the read-modify-write, which is what most probe
+/// rows of a key with many more left than right rows would otherwise fight over.
 template <
     JoinKind KIND,
     JoinStrictness STRICTNESS,
@@ -512,24 +520,42 @@ template <
     typename Map,
     typename KeyGetter,
     typename AddedColumns>
-requires SetJoinMaps<MapsTemplate>
+requires KeyOnlyJoinMaps<MapsTemplate>
 void processMatch(
-    const typename KeyGetter::FindResult &,
-    [[maybe_unused]] AddedColumns & added_columns,
+    const typename KeyGetter::FindResult & find_result,
+    AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags &,
-    [[maybe_unused]] size_t i,
+    size_t i,
     size_t,
-    IColumn::Offset &,
+    IColumn::Offset & current_offset,
     KnownRowsHolder<flag_per_row> &,
     bool)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     static_assert(
         join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A set map is only chosen for LEFT SEMI and LEFT ANTI");
+        "A key-only map is only chosen for LEFT SEMI and LEFT ANTI");
+
+    bool taken = true;
+    if constexpr (CountJoinMaps<MapsTemplate>)
+    {
+        std::atomic_ref<Int64> remaining(find_result.getMapped().remaining);
+        taken = remaining.load(std::memory_order_relaxed) > 0 && remaining.fetch_sub(1, std::memory_order_relaxed) > 0;
+    }
 
     if constexpr (join_features.is_semi_join)
-        setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    {
+        if (taken)
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
+    else
+    {
+        if (!taken)
+        {
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+            addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+        }
+    }
 }
 
 template <

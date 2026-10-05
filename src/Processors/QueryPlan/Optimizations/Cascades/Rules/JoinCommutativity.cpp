@@ -36,6 +36,10 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
     if (join.strictness == JoinStrictness::Asof)
         return false;
 
+    /// A multiset SEMI or ANTI join counts the rows of its right side, see `JoinOperator::multiset`.
+    if (join.multiset)
+        return false;
+
     /// INNER is commutative only with strictness ALL: ANY ("take at most one match")
     /// and RightAny (deduplicate right keys) depend on which side is which, and
     /// swapInputs flips only the kind, never the strictness.

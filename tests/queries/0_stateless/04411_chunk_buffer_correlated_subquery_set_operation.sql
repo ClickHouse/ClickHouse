@@ -176,7 +176,8 @@ SET correlated_subqueries_use_in_memory_buffer = 1;
 
 -- The reader counts prove which cases are buffered, but the fix is the forced join layout, so assert
 -- the layout too: with a buffer both decorrelation joins must be RIGHT even though the branch asked
--- for 'left', and none may be LEFT.
+-- for 'left', and none may be LEFT. The decorrelation joins are the ANY joins; the set operation
+-- itself is executed as a LEFT SEMI join and is not counted.
 SELECT count() FROM (
     EXPLAIN actions = 1 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
       SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
@@ -191,7 +192,7 @@ SELECT count() FROM (
                correlated_subqueries_default_join_kind = 'left'
     INTERSECT
     SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
-) WHERE explain ILIKE '%Type: LEFT%';
+) WHERE explain ILIKE '%Type: LEFT | Strictness: any%';
 
 -- Offering a merge algorithm the buffered case must not use: the shared buffer can only be read after
 -- the writer finished, so the decorrelation join has to stay a hash join on the forced layout. The
