@@ -1,6 +1,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
 
 #if defined(WYRD_SIMULATION)
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
 #    include <Common/randomSeed.h>
 #    include <fmt/format.h>
 #    include <magic_enum.hpp>
@@ -31,8 +32,8 @@ void runTest(std::function<void()> body, TestParams params)
         SimulationParams simulation = params.simulation;
         simulation.seed = params.seed ? *params.seed : randomSeed();
 
-        SimulationResult first = Simulation(simulation, params.scheduler).run(body);
-        SimulationResult second = Simulation(simulation, params.scheduler).run(body);
+        SimulationResult first = Simulation(simulation).run(body);
+        SimulationResult second = Simulation(simulation).run(body);
 
         if (first.digest != second.digest)
             throw std::runtime_error(fmt::format(

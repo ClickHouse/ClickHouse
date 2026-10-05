@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Adversary/Adversary.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
+#include <Processors/Executors/Runtime/Wyrd/Adversary/AdversaryParams.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulationParams.h>
 
 #include <chrono>
 #include <functional>
@@ -16,7 +15,6 @@ struct TestParams
     size_t runs = 10;
     std::optional<UInt64> seed = std::nullopt;
     SimulationParams simulation{};
-    SchedulerParams scheduler{};
     AdversaryParams adversary{};
     std::chrono::seconds watchdog{60};
 };
