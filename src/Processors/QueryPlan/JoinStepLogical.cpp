@@ -916,7 +916,7 @@ static bool canSplitNullSafeKey(const DataTypePtr & type)
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
     const auto value_type = removeLowCardinalityAndNullable(key.getType());
-    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>(/*use_analyzer_=*/ true)));
+    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>()));
     auto value = JoinActionRef::transform(
         {is_null, key},
         [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
