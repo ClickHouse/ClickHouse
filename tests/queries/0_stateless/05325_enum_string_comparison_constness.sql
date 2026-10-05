@@ -9,6 +9,10 @@ DROP TABLE IF EXISTS t_enum_chain;
 CREATE TABLE t_enum_chain (x Enum8('z' = 1, 'a' = 2, 'm' = 3, 'b' = 4), e Enum8('z' = 1, 'a' = 2, 'm' = 3, 'b' = 4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_enum_chain VALUES ('m', 'b');
 
+DROP TABLE IF EXISTS t_string_key;
+CREATE TABLE t_string_key (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s SETTINGS index_granularity = 1;
+INSERT INTO t_string_key VALUES ('z'), ('a'), ('m');
+
 SET optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
 
 SELECT 'by name';
@@ -28,6 +32,8 @@ SELECT count() FROM t_enum_cmp WHERE e = 'm';
 SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
 SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';
 SELECT count() FROM t_enum_chain WHERE x < e AND e < 'm';
+SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)');
+SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AND s = 'z';
 
 SELECT 'by value';
 SET compare_enum_with_string_lexicographically = 0;
@@ -44,9 +50,12 @@ SELECT count() FROM t_enum_cmp WHERE e = 'm';
 SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
 SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';
 SELECT count() FROM t_enum_chain WHERE x < e AND e < 'm';
+SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)');
+SELECT count() FROM t_string_key WHERE s < CAST('m', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)') AND s = 'z';
 
 SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
 DROP TABLE t_enum_cmp;
 DROP TABLE t_enum_chain;
+DROP TABLE t_string_key;

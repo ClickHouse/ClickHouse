@@ -5134,6 +5134,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 }
                 else
                 {
+                    /// Ordering by `Enum` value does not follow the order of a string key.
+                    if (!compare_enum_with_string_lexicographically && isStringOrFixedString(key_expr_type_not_null)
+                        && isEnum(removeLowCardinalityAndNullable(const_type)) && func_name != "equals" && func_name != "notEquals")
+                        return false;
+
                     /// When comparing an integer key column against a float constant,
                     /// convert the float to exact integer bounds. This is an exact equivalence
                     /// because no integer exists between floor(x) and ceil(x) for non-integer x.

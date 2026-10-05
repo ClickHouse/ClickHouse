@@ -878,11 +878,15 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
-    /// Ordering by `Enum` name does not follow the converted `Enum` values.
-    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
-        && isEnum(expr_type) && isStringOrFixedString(removeLowCardinality(new_filter.constant_node->getResultType()))
-        && context->getSettingsRef()[Setting::compare_enum_with_string_lexicographically])
-        new_filter.converted_value.reset();
+    /// The converted constant does not follow the order of an `Enum` and string comparison in the other mode.
+    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS)
+    {
+        const auto constant_type = removeLowCardinality(new_filter.constant_node->getResultType());
+        if (context->getSettingsRef()[Setting::compare_enum_with_string_lexicographically]
+                ? isEnum(expr_type) && isStringOrFixedString(constant_type)
+                : isStringOrFixedString(expr_type) && isEnum(constant_type))
+            new_filter.converted_value.reset();
+    }
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
