@@ -13819,7 +13819,8 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
 
 void MergeTreeData::checkSkipIndexNameCanBeForgotten(const String & index_name) const
 {
-    if (!getInMemoryMetadataPtr(getContext(), false)->getSecondaryIndices().has(index_name))
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (!metadata_snapshot->getSecondaryIndices().has(index_name))
         return;
 
     throw Exception(

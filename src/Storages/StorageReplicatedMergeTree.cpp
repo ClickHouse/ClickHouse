@@ -10822,7 +10822,8 @@ void StorageReplicatedMergeTree::checkSkipIndexNameCanBeForgotten(const String &
     Coordination::Stat metadata_stat;
     getZooKeeper()->get(zookeeper_path + "/metadata", &metadata_stat);
 
-    const auto local_metadata_version = getInMemoryMetadataPtr(getContext(), false)->getMetadataVersion();
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto local_metadata_version = metadata_snapshot->getMetadataVersion();
     if (metadata_stat.version > local_metadata_version)
     {
         throw Exception(
