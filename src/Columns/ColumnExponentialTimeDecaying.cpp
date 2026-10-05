@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -16,6 +17,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -121,11 +123,15 @@ std::string ColumnExponentialTimeDecaying::getName() const
 
 MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) const
 {
-    return ColumnExponentialTimeDecaying::create(
-        storage->cloneResized(new_size),
+    /// The logical zero uses the midpoint key, not the physical integer default.
+    const size_t copied_size = std::min(size(), new_size);
+    auto result = ColumnExponentialTimeDecaying::create(
+        storage->cloneResized(copied_size),
         decay_length,
         key_width,
         mode);
+    result->insertManyDefaults(new_size - copied_size);
+    return result;
 }
 
 const IColumn & ColumnExponentialTimeDecaying::getOrderingKeyColumn() const
@@ -590,7 +596,19 @@ void ColumnExponentialTimeDecaying::filter(const Filter & filt)
 
 void ColumnExponentialTimeDecaying::expand(const Filter & mask, bool inverted)
 {
-    storage->expand(mask, inverted);
+    if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
+        expandDataByMask<UInt64>(
+            assert_cast<ColumnUInt64 &>(getOrderingKeyColumn()).getData(), mask, inverted, UInt64(1) << 63);
+    else
+        expandDataByMask<UInt128>(
+            assert_cast<ColumnUInt128 &>(getOrderingKeyColumn()).getData(), mask, inverted, UInt128(1) << 127);
+
+    if (mode == ExponentialTimeDecayingMode::Direct)
+    {
+        auto & tuple = assert_cast<ColumnTuple &>(*storage);
+        tuple.getColumn(1).expand(mask, inverted);
+        tuple.getColumn(2).expand(mask, inverted);
+    }
 }
 
 ColumnPtr ColumnExponentialTimeDecaying::permute(const Permutation & perm, size_t limit) const
