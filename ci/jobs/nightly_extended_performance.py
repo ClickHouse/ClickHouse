@@ -39,9 +39,17 @@ def first_published(shas, what):
 
 def resolve():
     info = Info()
-    # The first-parent chain from the trigger commit and the release branch base with its predecessors, computed as
-    # `store_data.py` does for master runs only, so that a run from a branch resolves too.
-    chain = get_master_first_parent_commits(info.sha, MASTER_TRACK_COMMITS + 1)
+    # The first-parent chain from the anchor (the trigger commit on master, else its merge base with master) and the
+    # release branch base with its predecessors, computed as `store_data.py` does for master runs only.
+    anchor = info.sha
+    if info.git_branch != "master":
+        anchor = Shell.get_output_or_raise(
+            f"gh api 'repos/ClickHouse/ClickHouse/compare/master...{info.sha}' -q .merge_base_commit.sha"
+        ).strip()
+        if not anchor:
+            raise RuntimeError(f"No merge base with master for {info.sha}")
+    print(f"tests anchor: {anchor}")
+    chain = get_master_first_parent_commits(anchor, MASTER_TRACK_COMMITS + 1)
     predecessors = Shell.get_output_or_raise(f"git rev-list --max-count=20 '{CHVersion.get_release_version().githash}'").split()
     tested = first_published(chain, "tested binary")
     print(f"tested binary: {tested}")
@@ -67,6 +75,7 @@ ORDER BY check_start_time DESC LIMIT 1""",
     release_base = first_published(predecessors, "release base")
     print(f"release_base reference: {release_base}")
 
+    info.store_kv_data("nightly_tests_anchor_sha", anchor)
     info.store_kv_data("nightly_tested_sha", tested)
     info.store_kv_data("nightly_reference_sha_master_head", master_head)
     info.store_kv_data("nightly_reference_sha_release_base", release_base)
@@ -91,6 +100,20 @@ def run_job(args, rest):
     download(tested, TESTED_PATH)
     if args.clickbench:
         os.execvp("python3", ["python3", "./ci/jobs/clickbench.py", "--info", f"binary {tested}"])
+
+    # Tests as of the tested commit plus the branch's own changes (empty on master); the harness scripts stay from HEAD.
+    anchor = kv["nightly_tests_anchor_sha"]
+    tests = "tests/performance tests/benchmarks"
+    delta = f"git diff --binary {anchor} HEAD -- {tests} ':!tests/performance/scripts'"
+    patch = "./ci/tmp/tests-delta.patch"
+    Shell.check(f"git fetch --depth=1 --no-tags --no-recurse-submodules origin {tested} {anchor}", strict=True, verbose=True)
+    Shell.check(f"mkdir -p ci/tmp && {delta} > {patch}", strict=True, verbose=True)
+    Shell.check(f"rm -rf {tests} && git checkout {tested} -- {tests}", strict=True, verbose=True)
+    if os.path.getsize(patch):
+        Shell.check(f"git apply {patch}", strict=True, verbose=True)
+    Shell.check("rm -rf tests/performance/scripts && git checkout HEAD -- tests/performance/scripts", strict=True, verbose=True)
+    files = Shell.get_output_or_raise(f"{delta} --name-only").split()
+    print(f"tests: {tested} + {len(files)} branch file(s) from {anchor}..HEAD")
 
     (mode,) = {o.strip() for o in args.test_options.split(",")} & {"master_head", "release_base"}
     download(kv[f"nightly_reference_sha_{mode}"], REFERENCE_PATH)

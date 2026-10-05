@@ -2394,7 +2394,7 @@ def main():
         else ""
     )
 
-    # The nightly runs the HEAD tests against both references.
+    # The nightly wrapper pins the tests to the tested commit; both references run them.
     if compare_against_release and not nightly:
         print("It's a comparison against latest release baseline")
         print(

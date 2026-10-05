@@ -2,8 +2,10 @@
 
 Schedule: 05:13 UTC daily on `arm-large-storage` (m8g.8xlarge, 500 GB). The pre-hook
 `ci/jobs/nightly_extended_performance.py --resolve` picks the tested binary: the newest published
-`Build (arm_release)` on the first-parent chain from the trigger commit (on a branch, the master commits below it).
-No build job.
+`Build (arm_release)` on the first-parent chain from the trigger commit (on a branch, the master commits below its merge
+base with master). No build job.
+Tests: `tests/performance` and `tests/benchmarks` as of the tested commit, plus a branch's own changes; harness
+scripts from HEAD. The first night after this workflow is merged fails if the tested build predates it (`calibration.xml`).
 
 Job sets, 4 batches each over the sorted test list, `calibration.xml` in every batch:
 - `master_head` (alert reference): reference = the previous night's tested binary.
