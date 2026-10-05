@@ -5,4 +5,6 @@ a
 -- the name is free again once no part holds its files
 b
 -- re-adding a column while its drop is pending keeps working
-1000
+a
+c
+0

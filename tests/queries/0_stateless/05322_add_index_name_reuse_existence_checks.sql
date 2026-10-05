@@ -42,10 +42,13 @@ SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 1;
 INSERT INTO t_ixe2 SELECT number, number FROM numbers(1000);
 
 -- The implicit minmax index of `c` follows the column: it is dropped and re-added under the same
--- name while the pending `DROP COLUMN` still marks the files in the part stale.
+-- name while the pending `DROP COLUMN` still marks the files in the part stale, so the `ALTER` must
+-- not be refused the way an explicit index of a name a part still holds files under is.
 SYSTEM STOP MERGES t_ixe2;
 ALTER TABLE t_ixe2 DROP COLUMN c;
 ALTER TABLE t_ixe2 ADD COLUMN c UInt32;
-SELECT count() FROM t_ixe2 WHERE c = 0;
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_ixe2' ORDER BY name;
+-- The values of the dropped column stay hidden, so the re-added one reads as its default.
+SELECT sum(c) FROM t_ixe2;
 
 DROP TABLE t_ixe2;
