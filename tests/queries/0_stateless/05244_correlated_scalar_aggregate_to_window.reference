@@ -180,6 +180,9 @@
 1	10	10
 1	10	10
 2	5	5
+=== subcolumn: rewritten 1 ===
+1	a
+subcolumn: rewritten	1	reads the whole column	0
 --- keys ---
 === Nullable key and argument: rewritten 1 ===
 1	10	10

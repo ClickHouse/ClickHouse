@@ -21,6 +21,7 @@ CREATE TABLE tn (k Tuple(Nullable(Int32)), v Int32) ENGINE = MergeTree ORDER BY 
 CREATE TABLE tc (k Int32, __correlated_aggregate_0 Int32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE vt (k Variant(Int32, String), v Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE tp (id Int32, k Int32, v Int32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE ts (k Int32, s String) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO t VALUES (1, 10), (1, 30), (2, 5), (2, 1e308), (3, -7);
 INSERT INTO u VALUES (1, 100), (1, 101), (2, 200), (4, 400);
@@ -34,6 +35,7 @@ INSERT INTO tn VALUES (tuple(NULL), 1), (tuple(NULL), 2), (tuple(1), 3);
 INSERT INTO tc VALUES (1, 5), (1, 7), (2, 3);
 INSERT INTO vt VALUES (1, 10), (1, 20), ('a', 5), (NULL, 3), (NULL, 4);
 INSERT INTO tp VALUES (1, 2, 10), (2, 1, 20), (3, 2, 30), (4, 1, 40);
+INSERT INTO ts VALUES (1, 'a'), (1, 'bcd'), (2, 'ef');
 INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);
 "
 
@@ -148,6 +150,12 @@ check "non-deterministic condition" "SELECT countIf(c != multiIf(k = 1, 30, k = 
 check "inside a correlated subquery" "SELECT o, (SELECT max(t.v) FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 100 AND z.o = 1 AND t.v >= (SELECT max(v) FROM t AS s WHERE s.k = u.k)) AS c FROM (SELECT number + 1 AS o FROM numbers(3)) AS z ORDER BY o"
 check "FINAL on both" "SELECT u.k AS k, r.v AS v, (SELECT max(v) FROM r AS s FINAL WHERE s.k = u.k) AS c FROM u INNER JOIN r FINAL ON u.k = r.k WHERE u.w > 0 ORDER BY k, v"
 check "additional_table_filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS additional_table_filters = {'t': 'v < 20'}"
+check "subcolumn" "SELECT o.k AS k, o.s AS s FROM ts AS o WHERE o.k > 0 AND length(o.s) * 2 < (SELECT sum(length(s)) FROM ts AS z WHERE z.k = o.k) ORDER BY k, s"
+# The window reads the subcolumn `s.size` instead of the whole column.
+section "$($CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --optimize_functions_to_subcolumns=1 -q "
+    SELECT 'subcolumn: rewritten', countIf(explain LIKE '%Window step for window%'), 'reads the whole column', countIf(explain LIKE '%s String%') > 0
+    FROM (EXPLAIN header = 1, actions = 1
+    SELECT o.k AS k FROM ts AS o WHERE o.k > 0 AND length(o.s) * 2 < (SELECT sum(length(s)) FROM ts AS z WHERE z.k = o.k))")"
 
 section "--- keys ---"
 check "Nullable key and argument" "SELECT nk.k AS k, nn.v AS v, (SELECT max(v) FROM nn AS s WHERE s.k = nk.k) AS c FROM nk INNER JOIN nn ON nk.k = nn.k WHERE nk.w > 0 ORDER BY k, v"

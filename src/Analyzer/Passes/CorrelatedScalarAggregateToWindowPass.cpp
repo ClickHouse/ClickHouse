@@ -624,7 +624,7 @@ private:
                 supported = false;
             if (!supported || column_by_name.contains(column.getColumnName()))
                 return;
-            auto physical = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getColumnName());
+            auto physical = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), column.getColumnName());
             if (!physical)
             {
                 supported = false;
