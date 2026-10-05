@@ -83,14 +83,19 @@ void runTest(std::function<void()> body, TestParams params)
         watchdog.join();
     });
 
+    AdversaryResult total{};
     for (size_t i = 0; i < params.runs; ++i)
     {
         adversary()->reset();
         body();
 
         AdversaryResult result = adversary()->report();
-        fmt::print(stderr, "Wyrd adversary #{}: yields={} suspends={} spurious_failures={}\n", i, result.yields, result.suspends, result.spurious_failures);
+        total.yields += result.yields;
+        total.suspends += result.suspends;
+        total.spurious_failures += result.spurious_failures;
     }
+
+    fmt::print(stderr, "Wyrd adversary: runs={} yields={} suspends={} spurious_failures={}\n", params.runs, total.yields, total.suspends, total.spurious_failures);
 }
 
 #else
