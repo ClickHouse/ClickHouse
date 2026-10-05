@@ -583,9 +583,8 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
 
     factory.registerFunction<FunctionExponentialTimeDecayingUnitTime>(FunctionDocumentation{
         .description = R"(
-Returns the `Float64` unit time represented by the integer identity of an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value.
-The compact type exposes its ordering bucket; the wider type retains additional timestamp precision in its key.
-Zero returns `0`.
+Returns the finite `Float64` representative time exposed by an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` key.
+For ordinary keys this is the unit-time bucket. If a 128-bit key represents a mathematical unit time outside the finite `Float64` range, this returns the encoded edge timestamp instead. Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingUnitTime(value)",
         .arguments = {{"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}}},
@@ -600,9 +599,8 @@ Zero returns `0`.
 
     factory.registerFunction<FunctionExponentialTimeDecayingValueAtUnitTime>(FunctionDocumentation{
         .description = R"(
-Evaluates an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value at the unit time returned by `exponentialTimeDecayingUnitTime`.
-The result preserves the stored curve's `Float64` residual and is therefore only approximately
-`-1` or `1` for non-zero curves. Zero returns `0`.
+Evaluates an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value at the representative time returned by `exponentialTimeDecayingUnitTime`.
+For an ordinary key the result is approximately `-1` or `1`. For an extreme 128-bit tail it is the residual value stored at the finite edge timestamp. Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingValueAtUnitTime(value)",
         .arguments = {{"value", "Value of type `ExponentialTimeDecaying64(decay_length)` or `ExponentialTimeDecaying128(decay_length)`.", {}}},
