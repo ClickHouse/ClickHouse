@@ -102,6 +102,19 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
         }
     }
 
+    /// `ConstantFilterDescription` above only recognizes a real `ColumnConst`. A `LowCardinality`
+    /// filter (`x IN (...)`, `x = 'a'`, ...) is never one, even when every row in this granule has
+    /// the same truth value: detect that case too, so the row-by-row filtering of other columns
+    /// below (`MergeTreeRangeReader::filterColumns`/`filterBlock`) can be skipped by the callers
+    /// that check `alwaysTrue()`/`alwaysFalse()`. This does not avoid the full materialization just
+    /// below, which other callers of `getColumn()`/`getData()` (e.g. `ReadResult::optimize`) still
+    /// need regardless of constness.
+    if (!const_description.always_true && !const_description.always_false)
+    {
+        if (auto constant_truth = tryGetConstantTruthOfLowCardinalityFilter(*column_))
+            (*constant_truth ? const_description.always_true : const_description.always_false) = true;
+    }
+
     ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
