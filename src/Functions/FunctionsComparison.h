@@ -886,6 +886,7 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
+    bool compare_enum_with_string_lexicographically = true;
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
@@ -1191,6 +1192,10 @@ private:
 
         const IDataType * type_string = left_const ? left_type.get() : right_type.get();
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
+
+        /// Ordering by `Enum` name must not depend on whether the string is a constant.
+        if (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals && isEnum(type_to_compare) && params.compare_enum_with_string_lexicographically)
+            return nullptr;
 
         Field string_value = left_const ? left_const->getField() : right_const->getField();
 
@@ -2030,6 +2035,17 @@ public:
         res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
         if (res)
             return res;
+        /// Same as for a constant string: compare by the `Enum` value.
+        if (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals && !params.compare_enum_with_string_lexicographically
+            && ((isEnum(left_type) && right_is_string) || (left_is_string && isEnum(right_type))))
+        {
+            const DataTypePtr & enum_type = isEnum(left_type) ? left_type : right_type;
+            ColumnsWithTypeAndName converted{
+                {castColumn(col_with_type_and_name_left, enum_type), enum_type, ""},
+                {castColumn(col_with_type_and_name_right, enum_type), enum_type, ""},
+            };
+            return executeImpl(converted, result_type, input_rows_count);
+        }
         if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
         {
             res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);

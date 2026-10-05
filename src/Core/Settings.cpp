@@ -9659,6 +9659,15 @@ If there is a larger number of tables, the schema will be inferred from the firs
 If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
 )", 0, \
         {"25.1", false, false, "A new setting"}) \
+    DECLARE(Bool, compare_enum_with_string_lexicographically, true, R"(
+Controls how the operators `<`, `>`, `<=` and `>=` compare an `Enum` with a `String` or `FixedString`.
+
+- `1` — The `Enum` value is converted to its name, and the strings are compared. DuckDB and MySQL use the same rule.
+- `0` — The string is converted to the `Enum` type, and the numeric values are compared. This is the same order that `ORDER BY` uses for an `Enum` column. An exception is thrown if the string is not a valid `Enum` value.
+
+The result does not depend on whether the string is a constant. The operators `=` and `!=` give the same result with each value of this setting.
+)", 0, \
+        {"26.10", false, true, "New setting. Before, a constant string was compared with an `Enum` by the numeric value, and a non-constant string was compared by the `Enum` name. Now both are compared by the name."}) \
     \
     DECLARE(UInt64, max_autoincrement_series, 1000, R"(
 The limit on the number of series created by the `generateSerialID` function.
