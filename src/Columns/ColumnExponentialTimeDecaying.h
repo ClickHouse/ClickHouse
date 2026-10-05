@@ -15,22 +15,17 @@ private:
     friend class COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
 
     WrappedPtr storage;
-    WrappedPtr ordering_key;
     Float64 decay_length;
     ExponentialTimeDecayingKeyWidth key_width;
+    ExponentialTimeDecayingMode mode;
 
     ColumnExponentialTimeDecaying(
         MutableColumnPtr && storage_,
         Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_);
-    ColumnExponentialTimeDecaying(
-        MutableColumnPtr && storage_,
-        MutableColumnPtr && ordering_key_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_);
+        ExponentialTimeDecayingKeyWidth key_width_,
+        ExponentialTimeDecayingMode mode_);
 
-    void appendOrderingKey(size_t row);
-    void rebuildOrderingKey();
+    void insertEncoded(UInt128 key, std::optional<ExponentialTimeDecayingCanonicalDirectValue> direct);
 
 public:
     using Base = COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
@@ -38,22 +33,10 @@ public:
     static MutablePtr create(
         MutableColumnPtr && storage_,
         Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64)
+        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64,
+        ExponentialTimeDecayingMode mode_ = ExponentialTimeDecayingMode::Compact)
     {
-        return Base::create(std::move(storage_), decay_length_, key_width_);
-    }
-
-    static MutablePtr createWithPrefix(
-        MutableColumnPtr && storage_,
-        MutableColumnPtr && ordering_key_,
-        Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_)
-    {
-        return Base::create(
-            std::move(storage_),
-            std::move(ordering_key_),
-            decay_length_,
-            key_width_);
+        return Base::create(std::move(storage_), decay_length_, key_width_, mode_);
     }
 
     const char * getFamilyName() const override { return getExponentialTimeDecayingTypeName(key_width); }
@@ -72,8 +55,8 @@ public:
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-    bool isDefaultAt(size_t n) const override { return storage->isDefaultAt(n); }
-    bool hasOnlyTypeDefaults() const override { return storage->hasOnlyTypeDefaults(); }
+    bool isDefaultAt(size_t n) const override;
+    bool hasOnlyTypeDefaults() const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
@@ -140,36 +123,18 @@ public:
         Permutation & res,
         EqualRanges & equal_ranges) const override;
 
-    void reserve(size_t n) override
-    {
-        storage->reserve(n);
-        ordering_key->reserve(n);
-    }
+    void reserve(size_t n) override { storage->reserve(n); }
 
     void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
 
-    void shrinkToFit() override
-    {
-        storage->shrinkToFit();
-        ordering_key->shrinkToFit();
-    }
-
-    void ensureOwnership() override
-    {
-        storage->ensureOwnership();
-        ordering_key->ensureOwnership();
-    }
-
-    void protect() override
-    {
-        storage->protect();
-        ordering_key->protect();
-    }
+    void shrinkToFit() override { storage->shrinkToFit(); }
+    void ensureOwnership() override { storage->ensureOwnership(); }
+    void protect() override { storage->protect(); }
 
     size_t capacity() const override { return storage->capacity(); }
-    size_t byteSize() const override { return storage->byteSize() + ordering_key->byteSize(); }
-    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n) + ordering_key->byteSizeAt(n); }
-    size_t allocatedBytes() const override { return storage->allocatedBytes() + ordering_key->allocatedBytes(); }
+    size_t byteSize() const override { return storage->byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n); }
+    size_t allocatedBytes() const override { return storage->allocatedBytes(); }
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override { storage->updateCheckpoint(checkpoint); }
     void rollback(const ColumnCheckpoint & checkpoint) override;
     ColumnCheckpointPtr getCheckpoint() const override { return storage->getCheckpoint(); }
@@ -179,28 +144,22 @@ public:
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
-    void finalize() override
-    {
-        storage->finalize();
-        ordering_key->finalize();
-    }
-
-    bool isFinalized() const override { return storage->isFinalized() && ordering_key->isFinalized(); }
+    void finalize() override { storage->finalize(); }
+    bool isFinalized() const override { return storage->isFinalized(); }
 
     bool structureEquals(const IColumn & rhs) const override;
 
     Float64 getDecayLength() const { return decay_length; }
     ExponentialTimeDecayingKeyWidth getKeyWidth() const { return key_width; }
+    ExponentialTimeDecayingMode getMode() const { return mode; }
     const IColumn & getStorageColumn() const { return *storage; }
     IColumn & getStorageColumn() { return *storage; }
-    const ColumnTuple & getStorageTuple() const { return assert_cast<const ColumnTuple &>(*storage); }
-    ColumnTuple & getStorageTuple() { return assert_cast<ColumnTuple &>(*storage); }
     const ColumnPtr & getStoragePtr() const { return storage; }
-    const IColumn & getOrderingKeyColumn() const { return *ordering_key; }
-
-    /// The serialized/direct payload can be appended independently of the derived
-    /// ordering key. Synchronize the cache after such a deserialization.
-    void syncOrderingKeyFrom(size_t previous_size);
+    const IColumn & getOrderingKeyColumn() const;
+    IColumn & getOrderingKeyColumn();
+    ExponentialTimeDecayingCanonicalDirectValue getDirectValueAt(size_t n) const;
+    Float64 getUnitTimestampAt(size_t n) const;
+    Int8 getSignAt(size_t n) const;
 };
 
 }
