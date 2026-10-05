@@ -223,12 +223,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             scheduled_merge_parts->format(ostr, settings, state, frame);
             break;
         }
-        case Type::DROP_S3QUEUE_FAILED_FILES:
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         {
             ostr << ' ';
             print_database_table();
             ostr << " PATH " << quoteString(queue_path);
+            break;
+        }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            ostr << ' ';
+            print_database_table();
             break;
         }
         case Type::RESTART_REPLICA:
