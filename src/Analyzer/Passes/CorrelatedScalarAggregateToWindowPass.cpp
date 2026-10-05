@@ -16,6 +16,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
@@ -416,9 +417,7 @@ private:
                 return {};
             /// A NULL inside a key (e.g. `Tuple(Nullable(Int32))` or `Variant`) makes `=` not true, but not the grouping.
             auto key_type = removeNullable(removeLowCardinality(column->type));
-            bool has_nested_null = isVariant(key_type);
-            key_type->forEachChild([&](const IDataType & child) { has_nested_null |= child.isNullable() || isVariant(child); });
-            if (has_nested_null)
+            if (anyInTypeTree(*key_type, [](const IDataType & type) { return type.isNullable() || isVariant(type); }))
                 return {};
             candidate.may_match_nothing |= isNullableOrLowCardinalityNullable(column->type);
         }
