@@ -42192,6 +42192,50 @@
     "source": "/use-cases/observability/clickstack/migration"
   },
   {
+    "destination": "/ar/clickstack/migration/datadog",
+    "source": "/ar/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/es/clickstack/migration/datadog",
+    "source": "/es/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/fr/clickstack/migration/datadog",
+    "source": "/fr/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/ja/clickstack/migration/datadog",
+    "source": "/ja/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/ko/clickstack/migration/datadog",
+    "source": "/ko/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/pt-BR/clickstack/migration/datadog",
+    "source": "/pt-BR/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/ru/clickstack/migration/datadog",
+    "source": "/ru/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/zh/clickstack/migration/datadog",
+    "source": "/zh/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/ja/clickstack/migration/datadog",
+    "source": "/jp/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/clickstack/migration/datadog",
+    "source": "/en/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/clickstack/migration/datadog",
+    "source": "/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
     "destination": "/clickstack/migration/elastic",
     "source": "/use-cases/observability/clickstack/migration/elastic"
   },

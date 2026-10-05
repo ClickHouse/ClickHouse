@@ -15,6 +15,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
@@ -3387,7 +3388,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error, const QueryPipeline & query_pipeline) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3406,6 +3407,13 @@ static BlockIO executeQueryImpl(
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+
+                if (query_pipeline.initialized())
+                {
+                    /// The query may have failed with MEMORY_LIMIT_EXCEEDED, try to preserve original exception
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Process);
+                    logProcessorProfile(context, query_pipeline.getProcessors(), elem.exception_code, elem.exception);
+                }
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
