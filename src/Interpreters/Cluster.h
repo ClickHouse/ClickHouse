@@ -41,8 +41,9 @@ struct DatabaseReplicaInfo
     String replica_name;
     std::optional<bool> is_local;
     /// Replica group of the node, published by the replicated database replica
-    /// (empty when the node is a member of no group).
-    String replica_group;
+    /// (empty when the node is a member of no group). Has a default initializer, so that
+    /// aggregate initializations that do not know about replica groups remain valid.
+    String replica_group = {};
 };
 
 /// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
