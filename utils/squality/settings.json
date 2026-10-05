@@ -1,0 +1,14 @@
+{
+  "default": {},
+  "sql_standard": {
+    "data_type_default_nullable": 1,
+    "join_use_nulls": 1,
+    "cast_keep_nullable": 1,
+    "union_default_mode": "DISTINCT",
+    "intersect_default_mode": "DISTINCT",
+    "except_default_mode": "DISTINCT",
+    "aggregate_functions_null_for_empty": 1,
+    "group_by_use_nulls": 1,
+    "prefer_column_name_to_alias": 1
+  }
+}
