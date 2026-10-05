@@ -212,9 +212,9 @@ public:
         if (input_is_decaying_value)
         {
             const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
-            const auto & tuple = decaying.getStorageTuple();
-            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            const auto direct = decaying.getDirectValueAt(row_num);
+            value = direct.value_at_anchor;
+            time = direct.anchor_time;
             if (value == 0)
                 return;
 
@@ -305,12 +305,27 @@ public:
                 "Result of aggregate function {} does not define a finite decaying curve",
                 getName());
 
-        const auto normalized = normalizeExponentialTimeDecaying(
-            result, result_time, decay_length, *key_width);
-        Tuple decaying_value{
-            Field(normalized.value_at_anchor),
-            Field(normalized.anchor_time)};
-        to.insert(Field(decaying_value));
+        const auto & decaying_to = assert_cast<ColumnExponentialTimeDecaying &>(to);
+        if (decaying_to.getMode() == ExponentialTimeDecayingMode::Direct)
+        {
+            to.insert(Field(Tuple{Field(result), Field(result_time), Field(decay_length)}));
+        }
+        else
+        {
+            const auto normalized = normalizeExponentialTimeDecaying(
+                result, result_time, decay_length, *key_width);
+            const auto canonical = *key_width == ExponentialTimeDecayingKeyWidth::Bits64
+                ? getExponentialTimeDecayingCanonicalDirectValue(static_cast<UInt64>(normalized.ordering_key))
+                : getExponentialTimeDecayingCanonicalDirectValue(normalized.ordering_key);
+            const Int64 sign = canonical.value_at_anchor == 0
+                ? 0
+                : (std::signbit(canonical.value_at_anchor) ? -1 : 1);
+            const Float64 unit_timestamp = canonical.value_at_anchor == 0
+                ? 0
+                : getExponentialTimeDecayingUnitTimestamp(
+                    canonical.value_at_anchor, canonical.anchor_time, decay_length);
+            to.insert(Field(Tuple{Field(sign), Field(unit_timestamp), Field(decay_length)}));
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
