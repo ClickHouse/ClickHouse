@@ -404,7 +404,7 @@ struct HashMethodSerialized
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
+    PODArray<std::string_view> serialized_keys;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -478,8 +478,8 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
-                serialized_keys.resize(rows);
+                PODArray<char *> memories(rows);
+                serialized_keys.resize_exact(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
                     memories[i] = memory;

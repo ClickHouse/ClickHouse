@@ -22,8 +22,8 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        IColumn & to = *transform->blockAt(transform->current_row)
-            .output_columns[function_index];
+        IColumn & to = *transform->blocks.blockAt(transform->current_row.block)
+            .result_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
     }

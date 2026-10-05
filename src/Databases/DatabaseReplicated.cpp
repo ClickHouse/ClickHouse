@@ -46,6 +46,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageProxy.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -1551,7 +1552,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = query_context->getClientInfo().initial_query_id;
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags.internal);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags);
 
     Strings hosts_to_wait;
     Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -1662,7 +1663,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication() || existing_tables_it->table()->as<StorageKeeperMap>())
+        if (existing_tables_it->table()->supportsReplication()
+            || castStorage<StorageKeeperMap>(existing_tables_it->table(), DeferredTable::Load))
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
@@ -3005,7 +3007,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-        return table->as<StorageKeeperMap>() != nullptr;
+        return castStorage<StorageKeeperMap>(table, DeferredTable::Load) != nullptr;
     };
 
     const auto is_replicated_table = [&](const ASTPtr & ast)

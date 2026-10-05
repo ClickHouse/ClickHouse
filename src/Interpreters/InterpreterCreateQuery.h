@@ -97,6 +97,11 @@ public:
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
+    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
+    /// Both routes converting a table to a replicated engine call it: `ATTACH TABLE ... AS REPLICATED` and the
+    /// `convert_to_replicated` flag `DatabaseOrdinary` acts upon while loading the table.
+    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+
 private:
     struct TableProperties
     {
@@ -189,9 +194,6 @@ private:
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
-
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 #if CLICKHOUSE_CLOUD
