@@ -128,6 +128,13 @@ UInt128 getExponentialTimeDecayingOrderingKey128(
 ExponentialTimeDecayingCanonicalDirectValue
 getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key);
 
+int compareExponentialTimeDecayingOrderingKeyDistance(
+    UInt128 lhs_ordering_key,
+    UInt128 rhs_ordering_key,
+    ExponentialTimeDecayingKeyWidth key_width,
+    Float64 decay_length,
+    Float64 max_distance_in_decay_lengths);
+
 struct ExponentialTimeDecayingValue
 {
     UInt128 ordering_key;
