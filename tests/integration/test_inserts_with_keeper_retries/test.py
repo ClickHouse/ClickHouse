@@ -256,7 +256,10 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         )
     finally:
         if job is not None and not job.ready():
-            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+            node1.query(
+                f"KILL QUERY WHERE query_id = '{query_id}' ASYNC "
+                "SETTINGS kill_throw_if_noop = false"
+            )
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
@@ -334,7 +337,10 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
         )
     finally:
         if job is not None and not job.ready():
-            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+            node1.query(
+                f"KILL QUERY WHERE query_id = '{query_id}' ASYNC "
+                "SETTINGS kill_throw_if_noop = false"
+            )
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )

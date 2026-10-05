@@ -6,6 +6,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -68,6 +69,18 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     return path.replace_filename(ss.str());
 }
 
+/// RFC 5424 APP-NAME: 1-48 printable ASCII characters, no spaces.
+static void validateSyslogProgramName(const std::string & program_name)
+{
+    if (program_name.empty()
+        || program_name.size() > 48
+        || std::any_of(program_name.begin(), program_name.end(), [](char c) { return c < '!' || c > '~'; }))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "logger.syslog.programname must be 1 to 48 printable ASCII characters without spaces, got '{}'",
+            program_name);
+}
+
 Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -101,7 +114,11 @@ Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfi
 
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
+void Loggers::buildLoggers(
+    Poco::Util::AbstractConfiguration & config,
+    Poco::Logger & logger /*_root*/,
+    const std::string & cmd_name,
+    const DB::Strings & keep_loggers)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
@@ -181,7 +198,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
@@ -205,6 +222,14 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
 
+        std::string syslog_program_name = cmd_name;
+        const bool has_program_name = config.has("logger.syslog.programname");
+        if (has_program_name)
+        {
+            syslog_program_name = config.getString("logger.syslog.programname");
+            validateSyslogProgramName(syslog_program_name);
+        }
+
         if (config.has("logger.syslog.address"))
         {
             syslog_channel = new Poco::Net::RemoteSyslogChannel();
@@ -214,6 +239,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             {
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
+            if (has_program_name)
+                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
             syslog_channel->setProperty(
                 Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
@@ -221,7 +248,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
         {
             syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
         }
@@ -310,6 +337,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     for (const auto & name : names)
     {
+        if (std::ranges::contains(keep_loggers, name))
+            continue;
         logger.get(name).setLevel(max_log_level);
         logger.get(name).setChannel(split);
     }

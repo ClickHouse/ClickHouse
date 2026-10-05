@@ -8,6 +8,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -752,12 +753,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// algorithm joins on, so a bit-sensitive predicate disagrees between the two sides. The supertype is what the JOIN
             /// compares in, and a nested float is no different. A `Dynamic` or `JSON` supertype describes neither the runtime
             /// contents nor the representation, and a predicate can read either, so both are declined outright.
-            bool supertype_is_unsafe = false;
-            auto check_type = [&](const IDataType & type)
-            { supertype_is_unsafe |= isFloat(type) || isDynamic(type) || isObject(type); };
-            check_type(*supertype);
-            supertype->forEachChild(check_type);
-            if (supertype_is_unsafe)
+            if (anyInTypeTree(*supertype, [](const IDataType & type) { return isFloat(type) || isDynamic(type) || isObject(type); }))
                 return;
 
             /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
@@ -1236,6 +1232,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group

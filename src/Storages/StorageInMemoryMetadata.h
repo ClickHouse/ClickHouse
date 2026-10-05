@@ -292,6 +292,9 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
+    /// Columns of the partition, sorting and primary keys, with a subcolumn replaced by the column it is stored in.
+    NameSet getStorageColumnsRequiredForKeys() const;
+
     /// Returns structure with unique key (UNIQUE KEY clause).
     const KeyDescription & getUniqueKey() const;
     /// Returns AST of unique key expression for storage or nullptr if there is none.

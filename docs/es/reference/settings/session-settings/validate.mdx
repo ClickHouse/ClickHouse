@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,30 @@ Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tabl
 
 Si está habilitado, valida los literales de enum en operadores como `IN`, `NOT IN`, `==`, `!=` comparándolos con el tipo enum y lanza una excepción si el literal no es un valor válido del enum.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_group_by_all_key_types {#validate_group_by_all_key_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Nuevo ajuste para validar las consultas de mutación de forma predeterminada."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La validación de los tipos de las claves en que `GROUP BY ALL` expande las expresiones de `SELECT` se mantiene bajo `compatibility` con 26.7 o 26.8: el valor anterior es deliberadamente igual al nuevo, ya que esas versiones ya rechazaban dicha clave y solo una versión anterior a 26.7 restaura la aceptación previa."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva SETTING que controla la validación de los tipos de las claves en que `GROUP BY ALL` expande las expresiones de `SELECT`. La versión 26.7 comenzó a rechazar una clave `Variant`\/`Dynamic` en este caso, que las versiones anteriores aceptaban con el analizador habilitado (`enable_analyzer = 1`, el valor predeterminado; el analizador anterior también rechazaba dicha clave antes de 26.7), por lo que el valor anterior es `false` y la `compatibility` con una versión anterior a 26.7 restaura la aceptación previa."}]}]} />
+
+Controla si los tipos de las claves de agrupación en que `GROUP BY ALL` expande las expresiones de `SELECT` se validan según [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/es/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by). Desactívelo para restaurar el comportamiento de las versiones anteriores a la 26.7, que aceptaban una clave [Variant](/es/reference/data-types/variant) o [Dynamic](/es/reference/data-types/dynamic) especificada mediante `GROUP BY ALL`, por ejemplo, una clave de agrupación que sea una subruta JSON sin tipo. Solo tiene efecto cuando el analizador está habilitado (`enable_analyzer = 1`, el valor predeterminado); con el analizador anterior, dicha clave también se rechazaba antes de la 26.7, por lo que no hay nada que restaurar. Un `GROUP BY` explícito no se ve afectado y sigue rechazando dicha clave en ambos casos, por lo que esta opción es más limitada que SETTING `allow_suspicious_types_in_group_by`, que también permite esas claves en un `GROUP BY` explícito.
+
+Valores posibles:
+
+* 0 - No se validan los tipos de las claves en que se expande `GROUP BY ALL`.
+* 1 - Se validan, igual que un `GROUP BY` explícito valida sus propias claves.
+
+## validate_mutation_query {#validate_mutation_query}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Nuevo SETTING para validar las consultas de mutación de forma predeterminada."}]}]} />
 
 Valida las consultas de mutación antes de aceptarlas. Las mutaciones se ejecutan en segundo plano, y ejecutar una consulta no válida puede hacer que queden atascadas y requieran intervención manual.
 
-Cambie este ajuste solo si encuentra un error incompatible con versiones anteriores.
+Cambie este SETTING solo si encuentra un error incompatible con versiones anteriores.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

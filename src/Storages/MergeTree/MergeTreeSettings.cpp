@@ -68,6 +68,8 @@ to a table. You can also specify this setting in the global settings
 (see [max_compress_block_size](/reference/settings/merge-tree-settings/max#max_compress_block_size)
 setting). The value specified when the table is created overrides the global
 value for this setting.
+
+For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
@@ -571,6 +573,46 @@ there is free space, but this space is already booked by ongoing large merges,
 so other merges are unable to start, and the number of small parts grows
 with every insert.
 )", 0) \
+    DECLARE(UInt64, min_unreserved_disk_space_for_merge, 0, R"(
+Keeps the specified amount of unreserved disk space (in bytes) out of reach of
+background merges, so that they cannot starve inserts. The amount is subtracted
+from the free space, and the limit on the total size of a merge's source parts
+is derived from what remains with a safety factor on top, so the largest
+allowed merge stays well under that. The limit shrinks as the disk fills up and
+reaches zero once free space is down to this amount, at which point no
+background merge is selected at all. (0 means disabled)
+
+Unlike `keep_free_space_bytes`, the protected space stays usable by ClickHouse
+itself - it is only kept out of merge scheduling. Mutations are not limited by
+it and can still consume the protected space, and the setting has no effect on
+disks with unlimited space (such as object storage).
+
+Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
+with an explicit `PARTITION` ignore this setting. Merges that drop wholly
+expired parts are selected whenever the limit is above zero, whatever their
+size, and nothing is selected at zero. Every merge reserves at least 1 MiB, so
+a merge started with less than 1 MiB left above the protected space can take up
+to 1 MiB of it. A `ReplicatedMergeTree` replica also runs queued drops when its
+own limit is zero, if a row TTL without `WHERE` is the table's only TTL. With a
+`GROUP BY`, `WHERE` or column TTL such a drop rewrites the remaining rows:
+`ReplicatedMergeTree` postpones it by the size of its parts, but `MergeTree`
+does not and can write them into the protected space.
+
+Once the limit is zero a plain `OPTIMIZE` assigns nothing: it is a no-op, or
+throws `CANNOT_ASSIGN_OPTIMIZE` with `optimize_throw_if_noop = 1`. Use `FINAL`
+or an explicit `PARTITION` to merge into the protected space. On
+`ReplicatedMergeTree` that exemption is recorded in the replication log entry
+only when the setting is non-zero on the replica that queues it, so an
+`OPTIMIZE` queued while it was 0 still runs under the headroom.
+
+`ALTER TABLE ... MODIFY SETTING` is not replicated, so give every replica the
+same value: a replica with a larger headroom re-applies it to merges assigned
+elsewhere and can postpone them indefinitely. Keep the value at `0` until every
+replica runs a version that knows the setting - an older replica cannot parse
+the log entries written for the exempt merges and stops pulling any further
+entries for the table, including those for ordinary inserts.
+)", 0, \
+        {"26.10", 0, 0, "New setting to keep some unreserved disk space out of reach of background merges, so that they cannot starve inserts."}) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
 ReplicatedMergeTree queue.
@@ -1007,6 +1049,12 @@ Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
 Works for Simple and StochasticSimple merge selectors
 )", 0) \
+    DECLARE(UInt64, merge_selector_min_age_to_disable_right_tail_heuristic, 0, R"(
+If greater than zero and `merge_selector_enable_heuristic_to_remove_small_parts_at_right` is enabled,
+disables that heuristic for ranges where every part is at least this many seconds old. `0` disables this check.
+Works for Simple and StochasticSimple merge selectors.
+)", 0, \
+        {"26.10", 0, 0, "New setting"}) \
     DECLARE(Float, merge_selector_base, 5.0, R"(Affects write amplification of
     assigned merges (expert level setting, don't change if you don't understand
     what it is doing). Works for Simple and StochasticSimple merge selectors
@@ -1343,7 +1391,9 @@ Possible values:
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](#use_adaptive_write_buffer_for_dynamic_subcolumns).
 )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
 The minimum number of bytes that should be free in disk space in order to
@@ -1726,7 +1776,7 @@ If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
 )", 0, \
         {"26.3", false, false, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_outdated_parts_check, true, R"(
-Enable outdated parts check. Only available in ClickHouse Cloud
+Enables the `SharedMergeTree` background check that detects data parts which are no longer current and passes them to the parts-update process. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.1", true, true, "Cloud sync"}) \
     DECLARE(Float, shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations, 0.5, R"(
@@ -1740,11 +1790,11 @@ Amount of fetch parts metadata jobs to schedule at once. Only available in
 ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_leaders_in_total, 6, R"(
-Maximum number of parts update leaders. Only available in ClickHouse Cloud
+Maximum number of replicas across the service that may concurrently hold the parts-update leader role. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.1", 6, 6, "Cloud sync"}) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_leaders_per_az, 2, R"(
-Maximum number of parts update leaders. Only available in ClickHouse Cloud
+Maximum number of replicas within one availability zone that may concurrently hold the parts-update leader role. Both this limit and `shared_merge_tree_max_parts_update_leaders_in_total` apply. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.1", 2, 2, "Cloud sync"}) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, R"(
@@ -1764,11 +1814,11 @@ Cloud
 )", 0, \
         {"25.1", true, true, "Cloud sync"}) \
     DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, R"(
-Initial backoff for parts update. Only available in ClickHouse Cloud
+Initial delay, in milliseconds, before retrying a `SharedMergeTree` parts-update operation. Repeated retries increase the delay up to `shared_merge_tree_max_parts_update_backoff_ms`. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.2", 50, 50, "New setting"}) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_backoff_ms, 5000, R"(
-Max backoff for parts update. Only available in ClickHouse Cloud
+Maximum delay, in milliseconds, between retries of a `SharedMergeTree` parts-update operation. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.2", 5000, 5000, "New setting"}) \
     DECLARE(UInt64, shared_merge_tree_interserver_http_connection_timeout_ms, 100, R"(
@@ -1936,7 +1986,7 @@ Minimal absolute delay to close, stop serving requests and not
 return Ok during status check.
 )", 0) \
     DECLARE(UInt64, enable_vertical_merge_algorithm, 1, R"(
-Enable usage of Vertical merge algorithm.
+Allows eligible background merges to use the vertical merge algorithm. Vertical merges process columns separately to reduce peak memory usage for wide tables, potentially at the cost of merge speed. Setting this to `0` forces horizontal merges; a non-zero value only permits vertical merges—the part format, table engine, `TTL` operation, and `vertical_merge_algorithm_min_*` thresholds still determine whether it is selected.
 )", 0) \
     DECLARE(UInt64, vertical_merge_algorithm_min_rows_to_activate, 16 * 8192, R"(
 Minimal (approximate) sum of rows in
@@ -1965,15 +2015,15 @@ in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0, \
         {"26.3", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"}) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
-The maximum postpone time for failed mutations.
+Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 )", 0) \
     \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
-The maximum postpone time for failed replicated fetches.
+Maximum exponential backoff, in milliseconds, before retrying a failed `GET_PART` task in a `ReplicatedMergeTree` replication queue. The delay increases after repeated failures and is capped by this value. Set to `0` to disable postponement.
 )", 0, \
         {"25.4", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."}) \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_merges_ms, 1ULL * 60 * 1000, R"(
-The maximum postpone time for failed replicated merges.
+Maximum exponential backoff, in milliseconds, before retrying a failed `MERGE_PARTS` task in a `ReplicatedMergeTree` replication queue. The delay increases after repeated failures and is capped by this value. Set to `0` to disable postponement.
 )", 0, \
         {"25.4", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."}) \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_tasks_ms, 5ULL * 60 * 1000, R"(
@@ -2081,7 +2131,7 @@ still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
-Only recalculate ttl info when MATERIALIZE TTL
+When enabled, `MATERIALIZE TTL` recalculates the stored `TTL` metadata for each data part without removing expired data during that operation. When disabled, normal TTL materialization usually applies the configured row, column, or `GROUP BY` TTL actions. For tables with only row TTL and `ttl_only_drop_parts` enabled, it instead recalculates `TTL` metadata and drops only fully expired parts.
 )", 0) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
 Enables or disables transitioning to control the granule size with the
@@ -2125,6 +2175,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+The parts already present under the path are trusted to match the columns and the sorting
+key this table declares. Nothing records the sorting key a part was written with, so a
+table declaring a different one over the same parts returns wrong results or an error.
 )", 0, \
         {"25.2", false, false, "New setting"}) \
     DECLARE(Bool, allow_nullable_key, false, R"(
@@ -2382,7 +2435,7 @@ statistics and help with cold start.
         {"25.7", false, false, "New settings"}, \
         {"25.6", false, false, "New settings"}) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, true, R"(
-Enables coordinated merges strategy
+Enables coordinator-driven merge assignment for `SharedMergeTree`. The merge coordinator prepares merge entries and distributes them among active merge workers instead of relying only on independent merge selection.
 )", 0, \
         {"26.6", false, true, "Enable coordinated merges by default"}, \
         {"25.5", false, false, "New setting"}) \
@@ -2455,7 +2508,7 @@ ZooKeeper path for zero-copy table-independent info.
 Run zero-copy in compatible mode during conversion process.
 )", EXPERIMENTAL) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, R"(
-Force read-through filesystem cache for merges
+Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 )", EXPERIMENTAL) \
     DECLARE(Bool, cache_populated_by_fetch, false, R"(
 <Note>
@@ -2513,7 +2566,7 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
-The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
@@ -2555,10 +2608,10 @@ Compression encoding used by primary, primary key is small enough and cached,
 so the default compression is ZSTD(3).
 )", 0) \
     DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
-Mark compress block size, the actual size of the block to compress.
+Size, in uncompressed bytes, of blocks used when writing compressed mark files for new or rewritten data parts. Applies only when `compress_marks` is enabled. This controls compression framing and buffering; it does not change index granularity.
 )", 0) \
     DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
-Primary compress block size, the actual size of the block to compress.
+Size, in uncompressed bytes, of blocks used when writing a compressed primary-key index for new or rewritten data parts. Applies only when `compress_primary_key` is enabled. This controls compression framing and buffering; it does not change the primary key or index granularity.
 )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
     first use instead of on table initialization. This can save memory in the
@@ -2673,6 +2726,18 @@ The interval of refreshing statistics cache in seconds. If it is set to zero, th
 )", 0, \
         {"26.2", 0, 300, "Enable statistics cache"}, \
         {"25.11", 0, 0, "New setting"}) \
+    DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
+)", EXPERIMENTAL, \
+        {"26.10", "overwrite", "overwrite", "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite / ignore / abort)"}) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
 Minimal number of parts to activated distributed index analysis
 )", EXPERIMENTAL, \
@@ -3178,6 +3243,16 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
     impl->applyChanges(resolved_changes);
+}
+
+void MergeTreeSettings::applyChangesLeavingDiskUnresolved(const SettingsChanges & changes)
+{
+    SettingsChanges changes_without_disk;
+    changes_without_disk.reserve(changes.size());
+    for (const auto & change : changes)
+        if (change.name != "disk")
+            changes_without_disk.push_back(change);
+    impl->applyChanges(changes_without_disk);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)

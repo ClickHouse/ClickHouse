@@ -1,0 +1,90 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: reads an object from S3 through the `s3` table function.
+
+# Regression test for the progress bar history of a query whose progress switches its carrier.
+# The bar is drawn from the number of rows while the total number of rows is known, and from the
+# number of bytes otherwise, and one query can go from the second to the first: here the build
+# side of a JOIN is an object in S3, which reports only its size, and the probe side is a
+# `MergeTree` table, which adds a total number of rows when it starts. The counts at which the
+# stalled state flipped are recorded while the query reads the object, in bytes, and they mean
+# nothing once the counts are numbers of rows: the object is larger in bytes than the query is in
+# rows, so a byte count read as a number of rows lands past the end of the bar, and the whole bar
+# keeps the color of the state the query started in (green) instead of the yellow of the
+# throttled read it is in.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set local_path $CLICKHOUSE_TMP/$basename.path
+# The path comes from the environment: it is not sent to the shell as text, but inherited by the
+# spawned `bash` as a variable and expanded there inside double quotes, so no quoting is needed.
+set env(CLICKHOUSE_LOCAL_PATH) $local_path
+file delete -force -- $local_path
+
+log_user 0
+set timeout 120
+match_max 100000
+# A wide terminal, so that a cell of the bar is a small fraction of it.
+set stty_init "rows 25 cols 300"
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+# The object of the build side: 2000 rows of 100 bytes, that is 202 KB, read through a 50 KB/s
+# throttler below. The path holds the name of the database of this run, so that concurrent runs
+# of the test do not share it.
+send "\$CLICKHOUSE_LOCAL --query \"INSERT INTO FUNCTION s3('http://localhost:11111/test/05233_\$CLICKHOUSE_DATABASE/data.bin', 'clickhouse', 'clickhouse', 'RowBinary', 's String') SELECT substring(randomPrintableASCII(100), 1, 100) FROM numbers(2000) SETTINGS s3_truncate_on_insert = 1\" && echo uploaded\r"
+expect "uploaded"
+expect "bash) "
+
+# The table of the probe side: 20 thousand rows of 13 bytes, that is 260 KB, a single part, so
+# that its total is added to the query at once. It is deliberately smaller in rows (22 thousand
+# for the whole query) than the object of the build side is in bytes: a byte count recorded
+# before the switch is then past the end of the bar when it is read as a number of rows.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABLE probe_side (s String CODEC(NONE)) ENGINE = MergeTree ORDER BY (); INSERT INTO probe_side SELECT substring(randomPrintableASCII(12), 1, 12) FROM numbers(20000); OPTIMIZE TABLE probe_side FINAL' && echo created\r"
+expect "created"
+expect "bash) "
+
+# The phases of the query, in the order they are executed (the build side of a JOIN is read
+# before its probe side, and the tables are never swapped):
+# 1. the object in S3, 202 KB through a 50 KB/s throttler: the first 50 KB are the throttler's
+#    burst budget and are read at once, then the reads sleep and the state flips to yellow, at a
+#    count of about 50 thousand bytes. Only the size of the object is known, so the bar is drawn
+#    from the bytes and the recorded count is a number of bytes.
+# 2. `probe_side`, 20 thousand rows through a 50 KB/s throttler as well, which stays yellow: it
+#    adds a total number of rows, so the bar is drawn from the rows from this moment on, and the
+#    22 thousand rows of the whole query are fewer than the 50 thousand bytes recorded above.
+# The bandwidths are far below the pace of the query itself: the flaky check runs the client
+# under `ThreadFuzzer`, which slows the query down to a few hundred KB/s, and a throttler set
+# close to that pace would hardly ever sleep, so nothing would turn yellow. The reads are 8 KB
+# each, so that the throttler sleeps on every read for a fraction of a second: the sleeps are
+# reported to the client often enough for the meter of the waited time to warm up within a few
+# packets.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_block_size 500 --max_read_buffer_size 8192 --max_remote_read_network_bandwidth 50000 --max_local_read_bandwidth 50000 --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query \"SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(length(s)) AS n FROM s3('http://localhost:11111/test/05233_\$CLICKHOUSE_DATABASE/data.bin', 'clickhouse', 'clickhouse', 'RowBinary', 's String')) AS build ON toUInt64(length(probe_side.s)) = build.n\" >/dev/null 2>&1\r"
+
+# A repaint of the second phase with a yellow cell in it (`0;33` in the bar, or `30;43` in the
+# annotation rendered on top of it). The phases are told apart by the number of rows: the first
+# one reads 2 thousand rows in total, so a count of ten thousand or more is reached only after
+# the switch to the rows. Without the history of the previous carrier being dropped, every cell
+# of these repaints keeps the color of the first recorded state, green.
+expect -re {Progress: [1-9][0-9]\.[0-9][0-9] thousand rows[^\r]*[.)] [^\r]*(\x1b\[0;33m|\x1b\[30;43m)}
+
+send "\3"
+expect "bash) "
+
+send "exit\r"
+expect eof
+
+file delete -force -- $local_path
