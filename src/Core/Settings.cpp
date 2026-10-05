@@ -10001,6 +10001,13 @@ and the scalar functions for `ExponentialTimeDecaying` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."}) \
+    DECLARE(String, exponential_time_decay_default_mode, "compact", R"(
+Default storage mode used by `exponentialTimeDecaying` and by parameterless
+`ExponentialTimeDecaying64` / `ExponentialTimeDecaying128` casts.
+
+Allowed values are `compact` and `direct`. Explicit datatype mode parameters override this setting.
+)", EXPERIMENTAL, \
+        {"26.10", "compact", "compact", "New setting selecting the default storage mode for experimental exponential time-decay values."}) \
     DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
 Maximum distance, measured in decay lengths, between ordering-index timestamps when adding
 finalized `ExponentialTimeDecaying` values. The input value's cached `UInt64` ordering
