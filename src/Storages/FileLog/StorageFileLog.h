@@ -216,9 +216,9 @@ private:
     /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
     bool isTrackedByDirectoryEvents(const String & file_name) const;
 
-    /// A name that leads to another file and gets no event for it is re-keyed to that file, at offset 0.
-    /// False if that file is read under another name.
-    bool rekeyIfNoEvent(const String & file_name, FileContext & file_ctx);
+    /// A name that leads to another file and gets no event for it is re-keyed to that file, at offset 0: returns the inode
+    /// to read the name as (`file_ctx.inode` if it is not re-keyed), nullopt if that file is read under another name.
+    std::optional<UInt64> getInodeToRead(const String & file_name, const FileContext & file_ctx) const;
 
     void threadFunc();
 

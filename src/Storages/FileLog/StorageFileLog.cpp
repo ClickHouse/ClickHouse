@@ -602,7 +602,7 @@ bool StorageFileLog::isTrackedByDirectoryEvents(const String & file_name) const
     return directory_watch && !FS::isSymlinkNoThrow(getFullDataPath(file_name));
 }
 
-bool StorageFileLog::rekeyIfNoEvent(const String & file_name, FileContext & file_ctx)
+std::optional<UInt64> StorageFileLog::getInodeToRead(const String & file_name, const FileContext & file_ctx) const
 {
     const String file_path = getFullDataPath(file_name);
     struct stat file_stat{};
@@ -614,13 +614,10 @@ bool StorageFileLog::rekeyIfNoEvent(const String & file_name, FileContext & file
                 && entry_stat.st_ino == file_ctx.entry_inode)))
     {
         if (file_infos.meta_by_inode.contains(file_stat.st_ino))
-            return false;
-        file_infos.meta_by_inode.erase(file_ctx.inode);
-        disk->removeFileIfExists(getFullMetaPath(file_name));
-        file_ctx.inode = file_stat.st_ino;
-        file_infos.meta_by_inode.emplace(file_ctx.inode, FileMeta{.file_name = file_name});
+            return std::nullopt;
+        return file_stat.st_ino;
     }
-    return true;
+    return file_ctx.inode;
 }
 
 void StorageFileLog::openFilesAndSetPos()
@@ -642,10 +639,18 @@ void StorageFileLog::openFilesAndSetPos()
                 }
             };
 
-            if (!rekeyIfNoEvent(file, file_ctx))
+            const auto inode_to_read = getInodeToRead(file, file_ctx);
+            if (!inode_to_read)
             {
                 skip_file();
                 continue;
+            }
+            if (*inode_to_read != file_ctx.inode)
+            {
+                disk->removeFileIfExists(getFullMetaPath(file));
+                file_infos.meta_by_inode.erase(file_ctx.inode);
+                file_ctx.inode = *inode_to_read;
+                file_infos.meta_by_inode.emplace(file_ctx.inode, FileMeta{.file_name = file});
             }
 
             const String file_path = getFullDataPath(file);
@@ -1508,17 +1513,21 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
         {
             String name;
             FileContext * file_ctx;
+            UInt64 inode;
             FileMeta new_meta;
         };
         std::vector<Target> targets;
+        std::unordered_set<UInt64> rekeyed_inodes;
 
         auto add_target = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
         {
-            if (!rekeyIfNoEvent(name, file_ctx))
+            const auto inode = getInodeToRead(name, file_ctx);
+            const bool rekey = inode && *inode != file_ctx.inode;
+            if (!inode || (rekey && !rekeyed_inodes.insert(*inode).second))
                 return;
-            FileMeta new_meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+            FileMeta new_meta = rekey ? FileMeta{.file_name = name} : findInMap(file_infos.meta_by_inode, *inode);
             new_meta.last_writen_position = new_offset;
-            targets.push_back({name, &file_ctx, std::move(new_meta)});
+            targets.push_back({name, &file_ctx, *inode, std::move(new_meta)});
         };
 
         if (!file_name)
@@ -1547,7 +1556,7 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
         try
         {
             for (const auto & target : targets)
-                tmp_paths.push_back(writeTemporaryMeta(target.file_ctx->inode, target.new_meta));
+                tmp_paths.push_back(writeTemporaryMeta(target.inode, target.new_meta));
         }
         catch (...)
         {
@@ -1561,7 +1570,9 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
             auto & target = targets[i];
             disk->replaceFile(tmp_paths[i], getFullMetaPath(target.new_meta.file_name));
             LOG_INFO(log, "File {} will be read from offset {}", target.name, target.new_meta.last_writen_position);
-            findInMap(file_infos.meta_by_inode, target.file_ctx->inode) = std::move(target.new_meta);
+            file_infos.meta_by_inode.erase(target.file_ctx->inode);
+            target.file_ctx->inode = target.inode;
+            file_infos.meta_by_inode.insert_or_assign(target.inode, std::move(target.new_meta));
             target.file_ctx->status = FileStatus::UPDATED;
         }
     }
