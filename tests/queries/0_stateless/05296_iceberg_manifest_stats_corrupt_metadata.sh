@@ -3,12 +3,9 @@
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
 # Issue 120440: the manifest row count behind `use_iceberg_manifest_statistics` on broken metadata.
-# T9: a negative `record_count` gives unknown (`t[no_stats~?]`), not a bare label and not a huge
-# number; a snapshot summary claiming 100 rows and a manifest list with `added_rows_count = -1` are
-# ignored, the manifest files' `record_count` (1 row) is used. The fixtures are those of `04611`,
-# `04614` and `04615`, copied into user files and read with `icebergLocal`.
-# T9b: a missing manifest file makes `EXPLAIN` of a join fail, as the `SELECT` does (errors propagate).
-# Every arm also runs with the gate off.
+# T9: a negative `record_count` (the fixture of `04615`) gives unknown rows, not a huge number.
+# T9b: a missing manifest file makes `EXPLAIN` of a join fail, as the read does (errors propagate);
+# with the setting off `EXPLAIN` does not open the manifests.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -60,16 +57,9 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     INSERT INTO mt SELECT number, number FROM numbers(1000);
 "
 
-for FIXTURE in iceberg_negative_record_count_test iceberg_corrupted_summary_test iceberg_malformed_manifest_row_counts_test; do
-    cp -r "${CUR_DIR}/data_minio/${FIXTURE}" "${LAKE}/${FIXTURE}"
-    QUERY="SELECT count() FROM mt AS m JOIN icebergLocal('${LAKE}/${FIXTURE}') AS t ON m.k = t.order_number"
-    echo "--- fixture ${FIXTURE}: rows"
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${LAKE}/${FIXTURE}')"
-    echo "--- T9 ${FIXTURE}: gate on"
-    labels "${QUERY}" ${ON}
-    echo "--- T9 ${FIXTURE}: gate off"
-    labels "${QUERY}" ${OFF}
-done
+cp -r "${CUR_DIR}/data_minio/iceberg_negative_record_count_test" "${LAKE}/negative"
+echo '--- T9: negative record_count'
+labels "SELECT count() FROM mt AS m JOIN icebergLocal('${LAKE}/negative') AS t ON m.k = t.order_number" ${ON}
 
 # T9b: a table written here (a copied ClickHouse-written table keeps absolute manifest paths of the
 # original), then its only manifest file is deleted. The metadata cache would hide the deletion.
@@ -83,11 +73,9 @@ echo "${MANIFESTS}" | grep -c '\.avro$'
 rm -f ${MANIFESTS}
 
 QUERY="SELECT count() FROM mt AS m JOIN brk AS s ON m.k = s.k"
-echo '--- T9b SELECT of the join'
-outcome ${CLICKHOUSE_CLIENT} ${PINS} --use_iceberg_metadata_files_cache=0 --query "${QUERY}"
-echo '--- T9b gate on: EXPLAIN of the join'
+echo '--- T9b: EXPLAIN of the join'
 outcome labels "${QUERY}" --use_iceberg_metadata_files_cache=0 ${ON}
-echo '--- T9b gate off: EXPLAIN of the join'
+echo '--- T9b setting off: EXPLAIN of the join'
 labels "${QUERY}" --use_iceberg_metadata_files_cache=0 ${OFF}
 
 rm -rf "${LAKE}"

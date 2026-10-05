@@ -1535,6 +1535,7 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
                 estimate.rows.reset();
                 return estimate;
             }
+            /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
             *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
         }
     }

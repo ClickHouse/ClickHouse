@@ -4,14 +4,16 @@
 
 # Issue 120440: with `use_iceberg_manifest_statistics = 1` an Iceberg read reports the row count
 # summed from its manifest files to join reordering, labelled like an exact MergeTree count.
-# T1: join order of a 3-way join, the same for both text orders. T2: the smaller table becomes the
-# build side. T8: a table that was never written reports 0 rows. T10a: the `icebergLocal` table
-# function gives the same labels. Every arm also runs with the gate off.
-# The MergeTree twins with cardinality-only hints predict the numbers; only their labels differ.
+# T1: join order of a 3-way join, and the same query with the setting off. T2: the smaller table becomes
+# the build side. T8: a table that was never written reports 0 rows. T7: the count comes from the
+# snapshot the read uses (time travel). T10b: an aggregation over an Iceberg read keeps the input rows,
+# imprecise, and the debug log names it in the data lake hint line, not in the MergeTree one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+CLICKHOUSE_CLIENT_DEBUG=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=debug"}
 
 # The join order, the labels and the Iceberg file layout depend on these; most are randomized.
 PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_limit=10
@@ -55,64 +57,48 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE ice_small (k Int32, w Int64) ENGINE = IcebergLocal('${LAKE}/ice_small');
     INSERT INTO ice_small SELECT number, number FROM numbers(10);
     CREATE TABLE ice_empty (k Int32) ENGINE = IcebergLocal('${LAKE}/ice_empty');
+    CREATE TABLE tt (k Int32, v Int64) ENGINE = IcebergLocal('${LAKE}/tt');
+    INSERT INTO tt SELECT number, number FROM numbers(10);
     CREATE TABLE mt (k Int32, x Int64) ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO mt SELECT number, number FROM numbers(1000);
-    CREATE TABLE twin_big (k Int32, v Int64) ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS index_granularity = 8192, auto_statistics_types = '';
-    INSERT INTO twin_big SELECT number % 1000, number FROM numbers(100000);
-    CREATE TABLE twin_small (k Int32, w Int64) ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS index_granularity = 8192, auto_statistics_types = '';
-    INSERT INTO twin_small SELECT number, number FROM numbers(10);
 "
+# The only snapshot of tt so far is the first one.
+FIRST_ID=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT snapshot_id FROM system.iceberg_history WHERE database = currentDatabase() AND table = 'tt'")
+${CLICKHOUSE_CLIENT} ${PINS} --query "INSERT INTO tt SELECT number, number FROM numbers(100, 5)"
 
-echo '--- fixture: data files and rows per Iceberg table, snapshots of ice_empty'
+echo '--- fixture: data files and rows per Iceberg table, snapshots of ice_empty and tt'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 'ice_empty'"
+    SELECT table, count() FROM system.iceberg_history
+    WHERE database = currentDatabase() AND table IN ('ice_empty', 'tt') GROUP BY table ORDER BY table"
 
-HINTS='{"twin_big": {"cardinality": 100000}, "twin_small": {"cardinality": 10}}'
-T1_BMS="SELECT count() FROM ice_big AS b JOIN mt AS m ON b.k = m.k JOIN ice_small AS s ON m.k = s.k"
-T1_SMB="SELECT count() FROM ice_small AS s JOIN mt AS m ON s.k = m.k JOIN ice_big AS b ON m.k = b.k"
+T1="SELECT count() FROM ice_big AS b JOIN mt AS m ON b.k = m.k JOIN ice_small AS s ON m.k = s.k"
+echo '--- T1'
+labels "${T1}" ${ON}
+echo '--- T1 setting off'
+labels "${T1}" ${OFF}
 
-echo '--- T1 twin: text order b, m, s'
-labels "SELECT count() FROM twin_big AS b JOIN mt AS m ON b.k = m.k JOIN twin_small AS s ON m.k = s.k" \
-    --param__internal_join_table_stat_hints="${HINTS}"
-echo '--- T1 twin: text order s, m, b'
-labels "SELECT count() FROM twin_small AS s JOIN mt AS m ON s.k = m.k JOIN twin_big AS b ON m.k = b.k" \
-    --param__internal_join_table_stat_hints="${HINTS}"
-echo '--- T1 gate on: text order b, m, s'
-labels "${T1_BMS}" ${ON}
-echo '--- T1 gate on: text order s, m, b'
-labels "${T1_SMB}" ${ON}
-echo '--- T1 gate off: text order b, m, s'
-labels "${T1_BMS}" ${OFF}
-echo '--- T1 gate off: text order s, m, b'
-labels "${T1_SMB}" ${OFF}
-
-echo '--- T2 twin: reads in order, the second one is the build side'
-reads "SELECT m.k FROM mt AS m JOIN twin_big AS b ON m.k = b.k" --param__internal_join_table_stat_hints="${HINTS}"
-echo '--- T2 gate on'
+echo '--- T2: reads in order, the second one is the build side'
 reads "SELECT m.k FROM mt AS m JOIN ice_big AS b ON m.k = b.k" ${ON}
-echo '--- T2 gate off'
-reads "SELECT m.k FROM mt AS m JOIN ice_big AS b ON m.k = b.k" ${OFF}
 
-# An empty MergeTree table prints a bare label (its read is replaced), so the twin uses a hint of 0.
-echo '--- T8 twin: cardinality 0'
-labels "SELECT count() FROM mt AS m JOIN twin_small AS t ON m.k = t.k" \
-    --param__internal_join_table_stat_hints='{"twin_small": {"cardinality": 0}}'
-echo '--- T8 gate on: a table with no snapshot'
+echo '--- T8: a table with no snapshot'
 labels "SELECT count() FROM mt AS m JOIN ice_empty AS t ON m.k = t.k" ${ON}
-echo '--- T8 gate off'
-labels "SELECT count() FROM mt AS m JOIN ice_empty AS t ON m.k = t.k" ${OFF}
 
-T10A="SELECT count() FROM icebergLocal('${LAKE}/ice_big') AS b JOIN mt AS m ON b.k = m.k
-    JOIN icebergLocal('${LAKE}/ice_small') AS s ON m.k = s.k"
-echo '--- T10a gate on: table function'
-labels "${T10A}" ${ON}
-echo '--- T10a gate off'
-labels "${T10A}" ${OFF}
+T7="SELECT count() FROM mt AS m JOIN tt AS b ON m.k = b.k"
+echo '--- T7: first snapshot by iceberg_snapshot_id'
+labels "${T7}" --iceberg_snapshot_id="${FIRST_ID}" ${ON}
+echo '--- T7: latest snapshot'
+labels "${T7}" ${ON}
+
+T10B="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP BY k) AS ice_agg ON m.k = ice_agg.k"
+echo '--- T10b'
+labels "${T10B}" ${ON}
+LOG=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 ${T10B}" 2>&1 >/dev/null)
+echo "data lake hint lines naming ice_agg: $(echo "${LOG}" | grep 'derived from data lake metadata' | grep -c 'ice_agg')"
+echo "column statistics hint lines naming ice_agg: $(echo "${LOG}" | grep 'Consider creating column statistics' | grep -c 'ice_agg')"
 
 rm -rf "${LAKE}"

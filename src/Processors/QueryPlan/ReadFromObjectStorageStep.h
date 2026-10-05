@@ -101,6 +101,7 @@ private:
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
+    /// Unset until computed; a computed nullopt means the storage gives no estimate (only Iceberg implements `estimateRead`).
     mutable std::optional<std::optional<DataLakeReadEstimate>> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
