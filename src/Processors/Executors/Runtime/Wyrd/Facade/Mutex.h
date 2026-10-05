@@ -19,6 +19,7 @@ class TSA_CAPABILITY("mutex") Mutex
 {
 public:
     void lock(std::source_location location = std::source_location::current()) TSA_ACQUIRE();
+    bool try_lock(std::source_location location = std::source_location::current()) TSA_TRY_ACQUIRE(true);
     void unlock(std::source_location location = std::source_location::current()) TSA_RELEASE();
 
 private:

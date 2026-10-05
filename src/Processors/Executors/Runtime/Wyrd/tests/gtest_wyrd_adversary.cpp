@@ -3,6 +3,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
 #include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
@@ -37,7 +38,10 @@ WYRD_TEST(Wyrd, AdversarySpuriousFailureEveryTime, .runs = 1, .adversary = {.spu
     EXPECT_EQ(expected, 0);
     EXPECT_TRUE(value.compare_exchange_strong(expected, 1));
 
-    EXPECT_EQ(adversary()->report().spurious_failures, 1u);
+    Mutex mutex;
+    EXPECT_FALSE(mutex.try_lock());
+
+    EXPECT_EQ(adversary()->report().spurious_failures, 2u);
 }
 
 WYRD_TEST(

@@ -242,6 +242,9 @@ WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.s
     EXPECT_FALSE(value.compare_exchange_weak(expected, 1));
     EXPECT_EQ(expected, 0);
     EXPECT_TRUE(value.compare_exchange_strong(expected, 1));
+
+    Mutex mutex;
+    EXPECT_FALSE(mutex.try_lock());
 }
 
 #endif

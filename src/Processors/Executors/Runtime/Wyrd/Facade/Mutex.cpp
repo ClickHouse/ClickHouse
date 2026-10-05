@@ -1,7 +1,11 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
+#    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
+#elif defined(WYRD_ADVERSARY)
+#    include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #endif
 
 namespace DB::Runtime::Wyrd
@@ -16,6 +20,15 @@ void Mutex::lock(std::source_location location)
         UInt32 still_locked = 1;
         futexWaitFetch(locked, still_locked, location);
     }
+}
+
+bool Mutex::try_lock(std::source_location location)
+{
+    if (spuriousFailure(location))
+        return false;
+
+    UInt32 unlocked = 0;
+    return locked.compare_exchange_strong(unlocked, 1, location);
 }
 
 void Mutex::unlock(std::source_location location)
