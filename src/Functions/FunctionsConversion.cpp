@@ -3267,9 +3267,9 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             timestamps->reserve(source.size());
             for (size_t row = 0; row < source.size(); ++row)
             {
-                const auto direct = source.getDirectValueAt(row);
-                values->insertValue(direct.value_at_anchor);
-                timestamps->insertValue(direct.anchor_time);
+                const auto canonical = source.getCanonicalValueAt(row);
+                values->insertValue(canonical.value_at_anchor);
+                timestamps->insertValue(canonical.anchor_time);
             }
 
             auto direct_tuple = ColumnTuple::create(
