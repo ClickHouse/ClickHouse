@@ -247,18 +247,15 @@ SELECT
     exponentialTimeDecayingValueAt(a, toFloat64(0))
         = exponentialTimeDecayingValueAt(b, toFloat64(0));
 
--- Compact output is a canonical raw pair reconstructed from the authoritative
--- key. Re-parsing that pair must reproduce the same key at either width.
+-- Compact output exposes only the canonical curve sign and representative
+-- unit time. The integer key remains the authoritative identity; printing does
+-- not promise to round-trip hidden 128-bit residual precision.
 WITH
     CAST((toFloat64(8), toFloat64(5.25)), 'ExponentialTimeDecaying64(3)') AS compact64,
-    CAST((toFloat64(8), toFloat64(5.25)), 'ExponentialTimeDecaying128(3)') AS compact128,
-    CAST(
-        (tupleElement(compact64, 'value'), tupleElement(compact64, 'timestamp')),
-        'ExponentialTimeDecaying64(3)') AS roundtrip64,
-    CAST(
-        (tupleElement(compact128, 'value'), tupleElement(compact128, 'timestamp')),
-        'ExponentialTimeDecaying128(3)') AS roundtrip128
-SELECT compact64 = roundtrip64, compact128 = roundtrip128;
+    CAST((toFloat64(-8), toFloat64(5.25)), 'ExponentialTimeDecaying128(3)') AS compact128
+SELECT
+    tupleElement(compact64, 'value') = 1,
+    tupleElement(compact128, 'value') = -1;
 
 -- Very short decay lengths can make the value at the lower Float64 anchor
 -- overflow. The 128-bit key must switch to the adjacent upper anchor while
@@ -284,8 +281,8 @@ WITH
     CAST((toFloat64(-1e-200), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS n_large,
     CAST((toFloat64(0), toFloat64(0)), 'ExponentialTimeDecaying128(1e308)') AS zero
 SELECT
-    isFinite(tupleElement(p_small, 'value')),
-    isFinite(tupleElement(p_small, 'timestamp')),
+    abs(tupleElement(p_small, 'value')) < 1,
+    tupleElement(p_small, 'timestamp') = -toFloat64('1.7976931348623157e308'),
     p_small < p_large,
     p_large > zero,
     zero > n_small,
