@@ -14,26 +14,26 @@ namespace DB
 namespace Runtime::V2
 {
 
-class RemovalCoordinator
+class RemovalGroups
 {
     struct Group
     {
         Processors processors;
-        size_t not_finished = 0;
+        size_t unfinished = 0;
     };
 
 public:
-    void submit(Processors processors);
-    void onFinished(IProcessor * processor);
-    Processors takeReadyForRemoval();
+    void submitForRemoval(Processors processors);
+    void markFinished(IProcessor * processor);
 
-    bool hasReady() const;
+    bool hasReadyForRemoval() const;
+    Processors takeReadyForRemoval();
 
 private:
     std::mutex mutex;
     std::list<Group> groups;
-    std::unordered_map<const IProcessor *, Group *> pending;
-    std::unordered_set<const IProcessor *> finished;
+    std::unordered_map<const IProcessor *, Group *> pending_finish_groups;
+    std::unordered_set<const IProcessor *> finished_processors;
     std::atomic<size_t> ready_groups{0};
 };
 

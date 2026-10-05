@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Pipeline/RemovalCoordinator.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/State/RemovalGroups.h>
 #include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 
@@ -13,7 +13,7 @@ namespace ErrorCodes
 namespace Runtime::V2
 {
 
-void RemovalCoordinator::submit(Processors processors)
+void RemovalGroups::submitForRemoval(Processors processors)
 {
     std::lock_guard lock(mutex);
 
@@ -22,46 +22,46 @@ void RemovalCoordinator::submit(Processors processors)
 
     for (const auto & processor : group.processors)
     {
-        if (finished.erase(processor.get()))
+        if (finished_processors.erase(processor.get()))
             continue;
 
-        if (!pending.emplace(processor.get(), &group).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is already pending removal", processor->getName());
+        if (!pending_finish_groups.emplace(processor.get(), &group).second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is already pending_finish_groups removal", processor->getName());
 
-        ++group.not_finished;
+        ++group.unfinished;
     }
 
-    if (group.not_finished == 0)
+    if (group.unfinished == 0)
         ++ready_groups;
 }
 
-void RemovalCoordinator::onFinished(IProcessor * processor)
+void RemovalGroups::markFinished(IProcessor * processor)
 {
     std::lock_guard lock(mutex);
 
-    auto it = pending.find(processor);
-    if (it == pending.end())
+    auto it = pending_finish_groups.find(processor);
+    if (it == pending_finish_groups.end())
     {
-        finished.insert(processor);
+        finished_processors.insert(processor);
         return;
     }
 
     Group & group = *it->second;
-    group.not_finished -= 1;
-    pending.erase(it);
+    group.unfinished -= 1;
+    pending_finish_groups.erase(it);
 
-    if (group.not_finished == 0)
+    if (group.unfinished == 0)
         ++ready_groups;
 }
 
-Processors RemovalCoordinator::takeReadyForRemoval()
+Processors RemovalGroups::takeReadyForRemoval()
 {
     std::lock_guard lock(mutex);
 
     Processors result;
     for (auto it = groups.begin(); it != groups.end();)
     {
-        if (it->not_finished != 0)
+        if (it->unfinished != 0)
         {
             ++it;
             continue;
@@ -75,7 +75,7 @@ Processors RemovalCoordinator::takeReadyForRemoval()
     return result;
 }
 
-bool RemovalCoordinator::hasReady() const
+bool RemovalGroups::hasReadyForRemoval() const
 {
     return ready_groups.load() != 0;
 }
