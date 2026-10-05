@@ -191,21 +191,19 @@ Field ColumnExponentialTimeDecaying::operator[](size_t n) const
 
 void ColumnExponentialTimeDecaying::get(size_t n, Field & res) const
 {
-    if (mode == ExponentialTimeDecayingMode::Direct)
-    {
-        const auto direct = getDirectValueAt(n);
-        res = Tuple{direct.value_at_anchor, direct.anchor_time, decay_length};
-    }
-    else
-    {
-        res = Tuple{Int64(getSignAt(n)), getUnitTimestampAt(n), decay_length};
-    }
+    const auto direct = getDirectValueAt(n);
+    res = Tuple{direct.value_at_anchor, direct.anchor_time, decay_length};
 }
 
 void ColumnExponentialTimeDecaying::getValueNameImpl(
-    WriteBufferFromOwnString & name_buf, size_t n, const Options &) const
+    WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    name_buf << (*this)[n];
+    const auto direct = getDirectValueAt(n);
+    if (options.notFull(name_buf))
+        name_buf << "(";
+    name_buf << direct.value_at_anchor << ", " << direct.anchor_time << ", " << decay_length;
+    if (options.notFull(name_buf))
+        name_buf << ")";
 }
 
 void ColumnExponentialTimeDecaying::insertEncoded(
@@ -263,11 +261,13 @@ void ColumnExponentialTimeDecaying::insert(const Field & x)
     if (tuple.size() != 3)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "ExponentialTimeDecaying {} mode expects a three-field public tuple",
-            getExponentialTimeDecayingModeName(mode));
+            "ExponentialTimeDecaying expects (value, timestamp, decay_length)");
 
+    const Float64 value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[0]);
+    const Float64 timestamp = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[1]);
     const Float64 supplied_decay_length
         = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[2]);
+
     if (!std::isfinite(supplied_decay_length) || supplied_decay_length != decay_length)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -275,26 +275,15 @@ void ColumnExponentialTimeDecaying::insert(const Field & x)
             supplied_decay_length,
             decay_length);
 
-    if (mode == ExponentialTimeDecayingMode::Direct)
-    {
-        const Float64 value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[0]);
-        const Float64 timestamp = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[1]);
-        if (!isFiniteExponentialTimeDecayingCurve(value, timestamp, decay_length))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ExponentialTimeDecaying direct value");
+    if (!isFiniteExponentialTimeDecayingCurve(value, timestamp, decay_length))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ExponentialTimeDecaying value");
 
-        const auto normalized = normalizeExponentialTimeDecaying(value, timestamp, decay_length, key_width);
-        insertEncoded(normalized.ordering_key, ExponentialTimeDecayingCanonicalDirectValue{value, timestamp});
-        return;
-    }
-
-    const Float64 sign_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[0]);
-    const Float64 unit_timestamp = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tuple[1]);
-    if ((sign_value != -1 && sign_value != 0 && sign_value != 1) || !std::isfinite(unit_timestamp))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ExponentialTimeDecaying compact value");
-
-    const auto normalized = normalizeExponentialTimeDecaying(
-        sign_value, unit_timestamp, decay_length, key_width);
-    insertEncoded(normalized.ordering_key, std::nullopt);
+    const auto normalized = normalizeExponentialTimeDecaying(value, timestamp, decay_length, key_width);
+    const std::optional<ExponentialTimeDecayingCanonicalDirectValue> direct
+        = mode == ExponentialTimeDecayingMode::Direct
+        ? std::optional<ExponentialTimeDecayingCanonicalDirectValue>{{value, timestamp}}
+        : std::nullopt;
+    insertEncoded(normalized.ordering_key, direct);
 }
 
 bool ColumnExponentialTimeDecaying::tryInsert(const Field & x)
@@ -306,6 +295,7 @@ bool ColumnExponentialTimeDecaying::tryInsert(const Field & x)
     }
     catch (...)
     {
+        // Ok: `tryInsert` reports any invalid public representation as a failed insertion.
         return false;
     }
 }
