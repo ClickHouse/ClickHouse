@@ -51,6 +51,9 @@ public:
         return name;
     }
 
+    /// The setting decides the width for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(behavior); }
+
     size_t getNumberOfArguments() const override
     {
         return 1;

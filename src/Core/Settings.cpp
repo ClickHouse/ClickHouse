@@ -756,6 +756,10 @@ Check each uploaded object to s3 with head request to be sure that upload was su
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
         {"26.7", false, true, "New setting to detect concurrent in-place overwrites of S3/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."}) \
+    DECLARE(Bool, azure_validate_etag_on_read, true, R"(
+When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `azureBlobStorageCluster` table functions or the `AzureBlobStorage` table engine, pin every `GET` request to the generation of the blob that was observed when it was listed by sending its `ETag` in `If-Match`, and check the `ETag` of the response. A single file read issues many ranged `GET` requests; if the blob is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different generations of the blob and surface as a corrupted checksum or parse error. The size recorded at listing time is also used as the right bound of the read, so it is only correct for the generation it was recorded for. When a mismatch is detected the read fails with `AZURE_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read blobs that are being overwritten and can tolerate inconsistent reads.
+)", 0, \
+        {"26.10", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."}) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
@@ -966,6 +970,39 @@ Using the uncompressed cache (only for tables in the MergeTree family) can signi
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
+    DECLARE(Bool, use_columns_cache, false, R"(
+Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
+The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and a stripe of consecutive granules of about 65536 rows.
+
+Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud); `MergeTree` tables in legacy `Ordinary` databases have a nil UUID and silently ignore this setting.
+
+The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
+
+An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
+    DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA, \
+        {"26.10", true, true, "New setting to control reading from columns cache"}) \
+    DECLARE(Bool, enable_writes_to_columns_cache, true, R"(
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA, \
+        {"26.10", true, true, "New setting to control writing to columns cache"}) \
+    DECLARE(UInt64, columns_cache_max_estimated_bytes_to_write_to_cache, 0, R"(
+If the estimated size of the data a query reads from `MergeTree` parts exceeds this value, writes to the columns cache are inhibited for the entire query. The estimate is made in uncompressed bytes, which is what the cache is charged for, from the size of the columns the query reads (including `PREWHERE`, mutation and patch-part columns) scaled to the selected mark ranges, and the query is charged for all of it before it reads anything. This keeps a single large scan from displacing useful data from the cache, and from copying data into the cache that cannot stay there.
+
+A value of `0` means use half of the size limit the columns cache currently has. That is the configured `columns_cache_size` while the server has memory to spare, but the cache shrinks under memory pressure (see the `ColumnsCacheSizeLimit` metric), and the default budget shrinks with it. With the default `columns_cache_size_ratio`, half of the limit is the size of the probationary segment of the cache, so the data of a query that passes the gate can be cached completely in one pass.
+
+The gate does not apply to a read that drops mark ranges while it runs, which is the case when `use_indexes_refiner_in_read_pools` is enabled: how many of the selected marks such a read really touches is decided only when each task is cut, so the estimate above would be an upper bound that charges marks the query never reads. For those reads the amount written is bounded by `columns_cache_max_bytes_to_write_to_cache` instead.
+)", BETA, \
+        {"26.10", 0, 0, "New setting: cap on the estimated uncompressed bytes a query reads to permit columns cache writes (0 = half of the current columns cache size limit, which shrinks under memory pressure)."}) \
+    DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
+Soft per-query threshold on the bytes a single query writes to the columns cache. The bytes written during the query are counted, and once the counter reaches this value, further cache writes for the rest of the query are skipped. This is an advisory threshold, not a hard cap: a reader accumulates the entries of the granules it has read and writes them to the cache in one batch, and the batch that crosses the threshold is stored in full before the counter is charged. So the actual amount written may exceed this value by up to the entries one reader accumulates between two writes - the columns it reads, one entry per stripe of about 65536 rows each - and, with several readers running at once, by that much per reader. The purpose is to keep a single large scan from displacing useful data from the cache, not to bound cache usage exactly.
+
+A value of `0` means use half of the size limit the columns cache currently has: the configured `columns_cache_size`, or less while the cache is shrunk under memory pressure (see the `ColumnsCacheSizeLimit` metric).
+)", BETA, \
+        {"26.10", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to the entries one reader writes in a batch (0 = half of the current columns cache size limit, which shrinks under memory pressure)."}) \
     DECLARE(Bool, replace_running_query, false, R"(
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
 If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
@@ -5269,6 +5306,8 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
         {"25.2", 0., 0., "New setting"}) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
+
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
 Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
@@ -5949,6 +5988,19 @@ Possible values:
 - Positive integer (in seconds).
 - 0 — No locking timeout.
 )", 0) \
+    DECLARE(Milliseconds, get_zookeeper_lock_acquire_timeout_ms, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, R"(
+Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+
+The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+`SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
+
+Possible values:
+
+- Positive integer (in milliseconds).
+- 0 — No locking timeout.
+)", 0, \
+        {"26.10", 0, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, "New setting"}) \
     DECLARE(Bool, materialize_ttl_after_modify, true, R"(
 Apply TTL for old data, after ALTER MODIFY TTL query
 )", 0) \
@@ -6606,7 +6658,6 @@ Default value for Iceberg table property `history.expire.max-ref-age-ms` used by
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files smaller than this are selected for compaction.
 
 The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6616,7 +6667,6 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
     DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Data files larger than this are selected for compaction.
 
 The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
@@ -6626,7 +6676,6 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
         {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
         {"26.5", 10_GiB, 10_GiB, "New setting"}) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Threshold for compaction data files in iceberg.
 )", 0, \
         {"26.5", 1000, 1000, "New setting"}) \
@@ -6683,17 +6732,14 @@ Possible values:
 )", 0, \
         {"26.3", false, true, "Enables cache of parquet file metadata."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 The time after which the data will be deleted.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
 
 Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
@@ -7122,6 +7168,8 @@ For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
 - `/test/data.csv` resolves to `https://example.com/test/data.csv`
 - `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.5", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."}) \
     DECLARE(String, s3_base, "", R"(
@@ -7132,6 +7180,8 @@ When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, usi
 For example, if `s3_base` is `s3://clickhouse-public-datasets/`, then `s3('hits_compatible/hits.csv')` reads `s3://clickhouse-public-datasets/hits_compatible/hits.csv`.
 
 The base URL can use any form accepted by the `s3` table function, e.g. `s3://bucket/`, `https://bucket.s3.amazonaws.com/` or `https://endpoint/bucket/`.
+
+When the relative URL comes from a [named collection](/concepts/features/configuration/server-config/named-collections), resolving it counts as an override of the `url` key of the collection and requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection.
 )", 0, \
         {"26.8", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."}) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
@@ -7237,6 +7287,11 @@ Allow to execute correlated subqueries.
         {"26.9", true, true, "Added an alias for setting `allow_experimental_correlated_subqueries`."}, \
         {"25.8", false, true, "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}, \
         {"25.4", false, false, "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}) \
+    \
+    DECLARE(Bool, allow_experimental_lateral_join, false, R"(
+Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to allow `LATERAL JOIN` syntax."}) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](/reference/statements/select/union) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -8991,9 +9046,6 @@ a   Tuple(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0, \
         {"25.11", false, true, "Better usability"}) \
-    DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
-Allow named collections' fields override by default.
-)", 0) \
     DECLARE(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, R"(
 Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](/reference/statements/create/view#sql_security).
 
@@ -9681,7 +9733,6 @@ resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file in
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
 Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
@@ -9689,7 +9740,6 @@ Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
         {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
         {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
@@ -10200,6 +10250,11 @@ Whether to cache text index tokens that are absent from a data part.
 The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
 )", 0, \
         {"26.8", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."}) \
+    DECLARE(Bool, use_text_index_pattern_bypass_cache, true, R"(
+Whether to cache text index pattern dictionary scans that exceed `text_index_like_max_postings_to_read`.
+The pattern bypass cache uses the text index tokens cache and avoids repeating dictionary scans that previously fell back to evaluating the original predicate.
+)", 0, \
+        {"26.10", false, true, "New setting to cache text index pattern dictionary scans that exceeded the posting-list threshold."}) \
     DECLARE(Bool, use_text_index_header_cache, true, R"(
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
@@ -10366,13 +10421,11 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
-Only has an effect in ClickHouse Cloud, where it configures background Iceberg compaction.
 Allow to clean up old data files during Iceberg compaction.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
-In open-source builds only `OPTIMIZE TABLE ... MANIFEST` is supported; data compaction (`OPTIMIZE TABLE` without `MANIFEST`) reports `NOT_IMPLEMENTED`.
 )", EXPERIMENTAL, \
         {"25.8", 0, 0, "New setting"}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
@@ -10914,6 +10967,8 @@ Enable experimental table function `eval`.
         {"24.10", 1, 1, "A setting for ClickHouse Cloud"}) \
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f, \
         {"26.7", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."}) \
+    MAKE_OBSOLETE(M, Bool, allow_named_collection_override_by_default, true, \
+        {"26.10", true, true, "Obsolete. Overriding named collection keys requires `SHOW NAMED COLLECTIONS SECRETS`."}) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f, \
         {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
     MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \

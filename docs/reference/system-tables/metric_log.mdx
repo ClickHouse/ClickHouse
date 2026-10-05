@@ -181,6 +181,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
 - `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/reference/data-types/int-uint)) — Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.
+- `ProfileEvent_TextIndexPatternBypassCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 - `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the text index.
 - `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.
 - `ProfileEvent_QueryConditionCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.
@@ -815,6 +816,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/reference/data-types/int-uint)) — Number of times the global memory limit was exceeded.
 - `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/reference/data-types/int-uint)) — Number of times memory has been allocated without checking for memory constraints.
 - `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of bytes that has been allocated without checking for memory constraints.
+- `ProfileEvent_QueryMemoryDriftSettled` ([UInt64](/reference/data-types/int-uint)) — Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.
+- `ProfileEvent_QueryMemoryDriftSettledBytes` ([UInt64](/reference/data-types/int-uint)) — Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.
 - `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/reference/data-types/int-uint)) — Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.
 - `ProfileEvent_AzureGetObject` ([UInt64](/reference/data-types/int-uint)) — Number of Azure API GetObject calls.
 - `ProfileEvent_AzureUpload` ([UInt64](/reference/data-types/int-uint)) — Number of Azure blob storage API Upload calls
@@ -965,6 +968,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.
 - `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
 - `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
+- `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
@@ -1537,6 +1541,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetTopKSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
 - `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read
 - `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
@@ -1590,6 +1595,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits
 - `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/reference/data-types/int-uint)) — Number of granules examined for read time pruning by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/reference/data-types/int-uint)) — Number of granules pruned at read time by JOIN Runtime Filters
+- `ProfileEvent_RuntimeFilterLookupsBeforeBuildFinished` ([UInt64](/reference/data-types/int-uint)) — Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
 - `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
 - `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.

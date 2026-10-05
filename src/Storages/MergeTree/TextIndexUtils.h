@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Processors/ISimpleTransform.h>
 
+#include <optional>
 #include <span>
 
 namespace DB
@@ -213,18 +214,24 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-/// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
+/// Opens a substream of a text index.
+/// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size);
 
 /// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size);
+
+/// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
+size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
 }

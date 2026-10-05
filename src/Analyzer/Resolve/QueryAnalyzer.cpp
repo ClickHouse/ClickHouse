@@ -23,6 +23,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ValidationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
@@ -52,6 +53,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -113,6 +115,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_correlated_subqueries;
+    extern const SettingsBool allow_experimental_lateral_join;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -4462,8 +4465,7 @@ void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type,
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
     };
 
-    check(*sorting_key_type);
-    sorting_key_type->forEachChild(check);
+    forEachInTypeTree(*sorting_key_type, check);
 }
 
 namespace
@@ -5951,13 +5953,26 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpressionNode()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            "Correlated subqueries are not supported in the left side of JOINs, but found in expression: {}",
             join_node_typed.getLeftTableExpressionNode()->formatASTForErrorMessage());
 
+    /// Check the experimental setting for any LATERAL JOIN, regardless of whether the subquery is correlated
+    if (join_node_typed.isLateral())
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_lateral_join])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "LATERAL JOIN is experimental. Set 'allow_experimental_lateral_join = 1' to enable it");
+    }
+
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpressionNode()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
-            join_node_typed.getRightTableExpressionNode()->formatASTForErrorMessage());
+    {
+        if (!join_node_typed.isLateral())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported in JOINs. Use LATERAL JOIN to allow "
+                "the right side of a JOIN to reference columns from the left side. "
+                "Found in expression: {}",
+                join_node_typed.getRightTableExpressionNode()->formatASTForErrorMessage());
+    }
 
     if (!join_node_typed.getLeftTableExpressionNode()->hasAlias() && !join_node_typed.getRightTableExpressionNode()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
@@ -6587,24 +6602,26 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             {
                 auto materialized_cte_ptr = table_node->getMaterializedCTE();
 
+                /// Prevent recursive CTE references during subquery resolution: inside the body of the CTE its own
+                /// name refers to a table of that name, not to the CTE. The body is resolved at every reference
+                /// site (each clone gets its own copy), so the CTE is hidden at every site.
+                const auto & cte_name = materialized_cte_ptr->cte_name;
+                QueryTreeNodes cte_map_nodes;
+                for (auto * s = &scope; s; s = s->parent_scope)
+                {
+                    auto it = s->cte_name_to_query_node.find(cte_name);
+                    if (it != s->cte_name_to_query_node.end())
+                    {
+                        cte_map_nodes = it->second;
+                        break;
+                    }
+                }
+
                 /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
                 /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
-
-                    /// Prevent recursive CTE references during subquery resolution.
-                    const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodes cte_map_nodes;
-                    for (auto * s = &scope; s; s = s->parent_scope)
-                    {
-                        auto it = s->cte_name_to_query_node.find(cte_name);
-                        if (it != s->cte_name_to_query_node.end())
-                        {
-                            cte_map_nodes = it->second;
-                            break;
-                        }
-                    }
 
                     for (const auto & cte_map_node : cte_map_nodes)
                     {
@@ -6652,7 +6669,20 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// Resolve this clone's own subquery copy for correct EXPLAIN output,
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
+
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
+                        ctes_in_resolve_process.insert(cte_map_node);
+                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                    }
+
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
+                        ctes_in_resolve_process.erase(cte_map_node);
+                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                    }
 
                     /// A clone can resolve correlated even when the storage-initializing clone did not
                     /// (identifiers may bind to outer scope here). The first-reference branch above
@@ -7274,7 +7304,54 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasInterpolate())
+    {
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+        /// A column of `ORDER BY ... WITH FILL` must not also be an `INTERPOLATE` output: the fill
+        /// rows would overwrite the very column they are ordered by. The filling transform checks
+        /// this too, but its sort description carries the written name of the column only on some
+        /// read paths - over a `Distributed` table the query used to run and answer with the fill
+        /// column replaced by the interpolated expression.
+        if (query_node_typed.hasOrderBy())
+        {
+            const auto & interpolate_nodes = query_node_typed.getInterpolate()->as<const ListNode &>().getNodes();
+
+            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+            {
+                const auto & sort_node_typed = sort_node->as<const SortNode &>();
+                if (!sort_node_typed.withFill())
+                    continue;
+
+                /// The name of the fill column as it is written in the query. `SortNode::column_name` holds it when
+                /// the fill key is written as an identifier, as in `ORDER BY x WITH FILL ... INTERPOLATE (x AS ...)`.
+                /// For a positional fill key, as in `ORDER BY 1 WITH FILL ... INTERPOLATE (x AS ...)`, that name is
+                /// empty: `replaceNodesWithPositionalArguments` put a clone of the projection expression into the sort
+                /// key, along with the projection name of that expression - which is the output name of the column
+                /// at that position, its alias if it has one. Node equality is not usable here: an alias to another
+                /// column, as `a AS b`, resolves to the same expression as `a` and is still a distinct output column.
+                String fill_column_name = sort_node_typed.getColumnName();
+                if (fill_column_name.empty())
+                {
+                    auto sort_expression_it = resolved_expressions.find(sort_node_typed.getExpression());
+                    if (sort_expression_it != resolved_expressions.end() && sort_expression_it->second.size() == 1)
+                        fill_column_name = sort_expression_it->second.front();
+                }
+
+                if (fill_column_name.empty())
+                    continue;
+
+                for (const auto & interpolate_node : interpolate_nodes)
+                {
+                    const auto & interpolate_node_typed = interpolate_node->as<const InterpolateNode &>();
+                    if (fill_column_name == interpolate_node_typed.getExpressionName())
+                        throw Exception(
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                            interpolate_node_typed.getExpressionName());
+                }
+            }
+        }
+    }
 
     expandLimitByAll(query_node_typed);
 
@@ -7654,6 +7731,24 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                         "Recursive CTE '{}' cannot be correlated. In scope {}",
                         union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
+
+                /// A materialized CTE referenced from a recursive member is materialized once, before the recursion
+                /// starts, while the working table of this recursive CTE is still empty, so it cannot read the
+                /// working table: fail instead of snapshotting an empty table. Checked after every widening pass,
+                /// because a later pass would otherwise report a schema mismatch of the materialized CTE instead.
+                traverseQueryTree(query_node, Everything{}, [&](const QueryTreeNodePtr & node)
+                {
+                    auto * table_node = node->as<TableNode>();
+                    if (!table_node || !table_node->isMaterializedCTE())
+                        return;
+
+                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
+                            table_node->getMaterializedCTE()->cte_name,
+                            union_node_typed.getCTEName(),
+                            scope.scope_node->formatASTForErrorMessage());
+                });
             }
 
             final_temporary_table_holder = std::move(temporary_table_holder);
@@ -7733,6 +7828,27 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             "Recursive CTE subquery {} with {} union mode is unsupported, only UNION ALL union mode is supported",
             union_node_typed.formatASTForErrorMessage(),
             toString(union_node_typed.getUnionMode()));
+
+        /// The recursive evaluation itself cannot be materialized.
+        if (union_node_typed.isMaterialized())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "MATERIALIZED is not supported for the recursive CTE '{}' itself in recursive WITH. In scope {}",
+                union_node_typed.getCTEName(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
+        /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
+        /// would inline them and the subquery would be re-executed on every step. The non-recursive member
+        /// `queries_nodes[0]` is executed once, so a materialized CTE referenced only from it is not affected.
+        for (size_t i = 1; i < queries_nodes_size; ++i)
+        {
+            traverseQueryTree(queries_nodes[i], Everything{}, [&](const QueryTreeNodePtr & node)
+            {
+                auto * table_node = node->as<TableNode>();
+                if (table_node && table_node->isMaterializedCTE())
+                    table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
+            });
+        }
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }

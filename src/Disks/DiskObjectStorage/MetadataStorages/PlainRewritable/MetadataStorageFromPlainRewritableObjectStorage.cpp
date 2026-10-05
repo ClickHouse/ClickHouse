@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PrefixPath.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -46,6 +47,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -59,6 +61,19 @@ namespace
 fs::path normalizeDirectoryPath(const fs::path & path)
 {
     return path / "";
+}
+
+std::optional<std::string> getBlobKeyIfExists(const FsSnapshot & snapshot, const NormalizedPath & path)
+{
+    const auto directory = snapshot.getDirectoryRemoteInfo(path.parent_path());
+    if (!directory)
+        return std::nullopt;
+
+    const auto it = directory->files.find(path.filename());
+    if (it == directory->files.end())
+        return std::nullopt;
+
+    return getBlobKey(*directory, path.filename(), it->second);
 }
 
 /// The pages of one listing can only be fetched one after another, so enumerating a disk that holds
@@ -212,6 +227,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             shard[directory_remote_path].emplace(filename, FileRemoteInfo{
                 .bytes_size = remote_file->metadata->size_bytes,
                 .last_modified = remote_file->metadata->last_modified.epochTime(),
+                .blob_key = {},
             });
         }
 
@@ -223,16 +239,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
     {
-        /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
-        {
-            auto remote_file = iterator->current();
-            remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
-                .bytes_size = remote_file->metadata->size_bytes,
-                .last_modified = remote_file->metadata->last_modified.epochTime(),
-            });
-        }
-
         /// Enumerate the directories of the disk, that is, the `__meta/{directory}/prefix.path` objects.
         std::vector<DirectoryObject> directories;
 
@@ -368,6 +374,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
                 StoredObject object{object_path};
                 String local_path;
+                bool has_explicit_file_list = false;
                 /// Assuming that local and the object storage clocks are synchronized.
                 Poco::Timestamp last_modified = metadata->last_modified;
                 std::unordered_map<std::string, FileRemoteInfo> files;
@@ -379,7 +386,39 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     else
                     {
                         auto read_buf = object_storage->readObject(object, settings);
-                        readStringUntilEOF(local_path, *read_buf);
+                        String contents;
+                        readStringUntilEOF(contents, *read_buf);
+
+                        auto prefix_path = parsePrefixPath(contents);
+                        local_path = std::move(prefix_path.logical_path);
+                        has_explicit_file_list = prefix_path.has_explicit_file_list;
+
+                        /// In the explicit form, the list of files comes from the metadata object and the blobs are not listed.
+                        for (auto & listed_file : prefix_path.files)
+                        {
+                            if (listed_file.blob_key == getDefaultBlobKey(remote_path, listed_file.name))
+                                listed_file.blob_key.clear();
+
+                            files.emplace(std::move(listed_file.name), FileRemoteInfo{
+                                .bytes_size = listed_file.bytes_size,
+                                .last_modified = last_modified.epochTime(),
+                                .blob_key = std::move(listed_file.blob_key),
+                            });
+                        }
+                    }
+
+                    /// The root directory has a metadata object only in the explicit form, and it is stored under the reserved remote path.
+                    if (remote_path == PlainRewritableLayout::ROOT_DIRECTORY_TOKEN)
+                        local_path.clear();
+                    else if (normalizePath(local_path).empty())
+                    {
+                        /// Only the reserved metadata object maps to the logical root, so an empty logical path here means that
+                        /// the object does not describe a directory: it is either not written yet (`LocalObjectStorage` writes
+                        /// to the final key directly, so an interrupted write can leave the object empty and visible),
+                        /// or it is a leftover of a directory that has been removed. Loading it as the root would hide the real
+                        /// root and send lookups under it to the prefix of this directory.
+                        LOG_WARNING(log, "The object with the key '{}' does not contain the logical path of a directory, ignoring it", object_path);
+                        return;
                     }
 
                     if (do_not_load_unchanged_directories)
@@ -392,9 +431,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         }
                     }
 
-                    /// Load the list of files inside the directory. When they were listed up front, the
-                    /// listing may still be running, so they are taken from `prelisted_files` afterwards.
-                    if (!files_are_prelisted)
+                    /// In the implicit form, the files of the directory are the blobs stored under its prefix.
+                    /// When they were listed up front, the listing may still be running, so they are taken from
+                    /// `prelisted_files` afterwards.
+                    if (!has_explicit_file_list && !files_are_prelisted)
                     {
                         for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path), 0, /*with_tags=*/ false, std::nullopt); dir_iterator->isValid(); dir_iterator->next())
                         {
@@ -412,6 +452,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                             files.emplace(filename, FileRemoteInfo{
                                 .bytes_size = remote_file->metadata->size_bytes,
                                 .last_modified = remote_file->metadata->last_modified.epochTime(),
+                                .blob_key = {},
                             });
                         }
                     }
@@ -453,7 +494,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 result = DirectoryLoadResult{
                     true,
                     std::move(local_path),
-                    DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)}};
+                    DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files), has_explicit_file_list}};
             });
         }
 
@@ -474,13 +515,28 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         if (!result.loaded)
             continue;
 
-        if (files_are_prelisted)
+        /// A directory with the explicit file list takes its files from the metadata object, not from the listing.
+        if (files_are_prelisted && !result.info.has_explicit_file_list)
         {
             if (auto it = prelisted_files.find(result.info.remote_path); it != prelisted_files.end())
                 result.info.files = std::move(it->second);
         }
 
         remote_layout[std::move(result.local_path)] = std::move(result.info);
+    }
+
+    /// Root folder is a special case. Files are stored as /__root/{file-name}, unless the root has switched to the explicit file list.
+    if (!remote_layout[""].has_explicit_file_list)
+    {
+        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+        {
+            auto remote_file = iterator->current();
+            remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
+                .bytes_size = remote_file->metadata->size_bytes,
+                .last_modified = remote_file->metadata->last_modified.epochTime(),
+                .blob_key = {},
+            });
+        }
     }
 
     LOG_DEBUG(log, "Loaded metadata for {} directories (listed {}, files listed {})",
@@ -498,11 +554,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     previous_refresh.restart();
 }
 
-MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
+MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, bool hard_links_enabled_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    , hard_links_enabled(hard_links_enabled_)
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -593,17 +650,34 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
 {
     const auto tree = fs.takeReadOnlySnapshot();
 
-    const auto file_remote_info = tree->getFileRemoteInfo(path);
-    if (!file_remote_info)
-        return std::nullopt;
-
     const auto normalized_path = normalizePath(path);
     const auto directory_remote_info = tree->getDirectoryRemoteInfo(normalized_path.parent_path());
     if (!directory_remote_info)
         return std::nullopt;
 
-    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
-    return StoredObjects{StoredObject(object_key, path, file_remote_info->bytes_size)};
+    const auto file_it = directory_remote_info->files.find(normalized_path.filename());
+    if (file_it == directory_remote_info->files.end())
+        return std::nullopt;
+
+    auto object_key = layout->constructBlobObjectKey(getBlobKey(*directory_remote_info, normalized_path.filename(), file_it->second));
+    return StoredObjects{StoredObject(object_key, path, file_it->second.bytes_size)};
+}
+
+uint32_t MetadataStorageFromPlainRewritableObjectStorage::getHardlinkCount(const std::string & path) const
+{
+    const auto tree = fs.takeReadOnlySnapshot();
+
+    const auto normalized_path = normalizePath(path);
+    const auto directory_remote_info = tree->getDirectoryRemoteInfo(normalized_path.parent_path());
+    if (!directory_remote_info)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", path);
+
+    const auto file_it = directory_remote_info->files.find(normalized_path.filename());
+    if (file_it == directory_remote_info->files.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", path);
+
+    /// As for the other metadata storages, this is the number of links besides the file itself.
+    return tree->getBlobLinkCount(getBlobKey(*directory_remote_info, normalized_path.filename(), file_it->second)) - 1;
 }
 
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
@@ -637,7 +711,7 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 
 MetadataStorageFromPlainRewritableObjectStorageTransaction::MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_)
     : metadata_storage(metadata_storage_)
-    , commit_snapshot(std::make_shared<FsSnapshot>())
+    , commit_snapshot(metadata_storage.fs.takeReadWriteSnapshot())
     , uncommitted_state(metadata_storage.fs.takeReadWriteSnapshot())
 {
 }
@@ -673,13 +747,25 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageT
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
+    /// The blob has been written to the key chosen by `generateObjectKeyForPath`; if the key was not generated
+    /// by this transaction, the blob is expected at the default location.
+    std::string blob_key;
+    if (const auto it = generated_blob_keys.find(normalizePath(path).string()); it != generated_blob_keys.end())
+        blob_key = it->second;
+
+    /// The following operations of this transaction have to see the file: a hard link to it makes its blob shared,
+    /// and then rewriting it has to pick a new blob instead of clobbering the shared one.
+    uncommitted_state.recordCreatedFile(path, blob_key);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
         objects.front(),
+        std::move(blob_key),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory(const std::string & path)
@@ -722,9 +808,34 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         metadata_storage.metrics));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::markFallbackCopyMoved(const std::string & path_from, const std::string & path_to)
+{
+    /// The copy puts its blob at the default key of the original target, and the move carries it from there at commit.
+    /// A rewrite of either path cannot supersede the copy anymore: the move needs it as the source, and the blob that
+    /// the move or the copy produces at commit would overwrite the bytes that the caller writes before the commit.
+    if (const auto it = fallback_copies.find(path_from); it != fallback_copies.end())
+    {
+        it->second.moved = true;
+        fallback_copies[path_to] = FallbackCopy{.copy = it->second.copy, .moved = true};
+    }
+    else if (const auto it_to = fallback_copies.find(path_to); it_to != fallback_copies.end())
+    {
+        it_to->second.moved = true;
+    }
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
     uncommitted_state.moveDirectory(path_from, path_to);
+
+    const auto directory_from = normalizePath(path_from).string();
+    const auto directory_to = normalizePath(path_to).string();
+    std::vector<std::pair<std::string, std::string>> moved_copies;
+    for (const auto & [path, _] : fallback_copies)
+        if (directory_from.empty() || path.starts_with(directory_from + "/"))
+            moved_copies.emplace_back(path, (std::filesystem::path(directory_to) / path.substr(directory_from.empty() ? 0 : directory_from.size() + 1)).string());
+    for (const auto & [moved_from, moved_to] : moved_copies)
+        markFallbackCopyMoved(moved_from, moved_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
@@ -737,7 +848,13 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
-    uncommitted_state.useDirectory(normalizePath(path).parent_path());
+    const auto normalized_path = normalizePath(path);
+    uncommitted_state.useDirectory(normalized_path.parent_path());
+
+    /// Removing a file whose blob is shared switches the directory to the explicit file list.
+    if (const auto blob_key = getBlobKeyIfExists(uncommitted_state.getSnapshot(), normalized_path);
+        blob_key && uncommitted_state.getSnapshot().getBlobLinkCount(*blob_key) > 1)
+        uncommitted_state.markDirectoryExplicit(normalized_path.parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
         path,
@@ -778,10 +895,44 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    const auto normalized_path_from = normalizePath(path_from);
+    const auto normalized_path_to = normalizePath(path_to);
+    uncommitted_state.useDirectory(normalized_path_from.parent_path());
+    uncommitted_state.useDirectory(normalized_path_to.parent_path());
 
-    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+    /// A real hard link would make the metadata of the target directory unreadable by older servers, so it is opt-in.
+    if (!metadata_storage.hard_links_enabled)
+    {
+        /// The copy is a new file with its own blob. In an implicit target directory the blob goes to the default location.
+        /// A directory in the explicit form (written while hard links were enabled) may still have a blob at the default
+        /// location that is linked from elsewhere after its file there was removed, so the copy gets a fresh random key,
+        /// like any new file of such a directory (see `generateObjectKeyForPath`).
+        std::string blob_key;
+        if (const auto directory_to = uncommitted_state.getDirectoryRemoteInfo(normalized_path_to.parent_path());
+            directory_to && directory_to->has_explicit_file_list)
+            blob_key = getDefaultBlobKey(directory_to->remote_path, getRandomASCIIString(32));
+
+        /// The following operations of this transaction have to see the copy, like any other created file: otherwise
+        /// a rewrite of the target would plan as the creation of a missing file, and the copy would overwrite it at commit.
+        uncommitted_state.recordCreatedFile(path_to, blob_key);
+
+        auto copy = std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+            path_from,
+            path_to,
+            std::move(blob_key),
+            commit_snapshot,
+            metadata_storage.object_storage,
+            metadata_storage.layout,
+            metadata_storage.metrics);
+        fallback_copies[normalized_path_to.string()] = FallbackCopy{.copy = copy.get()};
+        operations.addOperation(std::move(copy));
+        return;
+    }
+
+    /// The target directory switches to the explicit file list and the blob becomes shared.
+    uncommitted_state.recordHardLink(path_from, path_to);
+
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageHardLinkOperation>(
         path_from,
         path_to,
         commit_snapshot,
@@ -790,10 +941,35 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         metadata_storage.metrics));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
+{
+    markFallbackCopyMoved(path_from.string(), path_to.string());
+
+    uncommitted_state.useDirectory(path_from.parent_path());
+    uncommitted_state.useDirectory(path_to.parent_path());
+
+    const auto & snapshot = uncommitted_state.getSnapshot();
+    const auto directory_from = snapshot.getDirectoryRemoteInfo(path_from.parent_path());
+    const auto directory_to = snapshot.getDirectoryRemoteInfo(path_to.parent_path());
+    const auto blob_key_from = getBlobKeyIfExists(snapshot, path_from);
+    if (!directory_from || !directory_to || !blob_key_from)
+        return;
+
+    const bool metadata_only = isMetadataOnlyMove(snapshot, *directory_from, *directory_to, *blob_key_from, getBlobKeyIfExists(snapshot, path_to));
+    if (metadata_only)
+    {
+        uncommitted_state.markDirectoryExplicit(path_from.parent_path());
+        uncommitted_state.markDirectoryExplicit(path_to.parent_path());
+    }
+
+    /// The moved file has to be visible at its new path: a hard link to it makes its blob shared, and then rewriting it
+    /// has to pick a new blob instead of clobbering the shared one.
+    uncommitted_state.recordMovedFile(path_from, path_to, /*keeps_blob=*/metadata_only);
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    planFileMove(normalizePath(path_from), normalizePath(path_to));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
@@ -808,8 +984,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    planFileMove(normalizePath(path_from), normalizePath(path_to));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,
@@ -827,6 +1002,22 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     const auto normalized_path = normalizePath(path);
     if (normalized_path.filename().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
+
+    /// The new blob replaces the copy that stood in for a hard link in this transaction, so the copy is redundant.
+    /// It would also go to the same default key at commit (the target directory keeps the implicit form, where a file
+    /// has one key) and overwrite the bytes that the caller writes to the key returned from here before the commit.
+    if (const auto it = fallback_copies.find(normalized_path.string()); it != fallback_copies.end())
+    {
+        if (it->second.moved)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot write the file '{}': the transaction has moved the copy of a file that stands in for a hard link "
+                "(the disk has hard links disabled) to or from this path",
+                path);
+
+        it->second.copy->supersede();
+        fallback_copies.erase(it);
+    }
 
     const auto parent_path = normalized_path.parent_path();
     const auto parent_info = uncommitted_state.getDirectoryRemoteInfo(parent_path);
@@ -846,7 +1037,21 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     }
 
     if (const auto directory_remote_info = uncommitted_state.getDirectoryRemoteInfo(parent_path))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+    {
+        const auto file_name = normalized_path.filename().string();
+
+        /// In a directory with the explicit file list the blob names are random: a new file must not clobber the blob
+        /// of a removed file that is still linked from elsewhere. The same applies to rewriting a file whose blob is shared.
+        bool use_random_name = directory_remote_info->has_explicit_file_list;
+        if (!use_random_name)
+            if (const auto it = directory_remote_info->files.find(file_name); it != directory_remote_info->files.end())
+                use_random_name = uncommitted_state.getSnapshot().getBlobLinkCount(getBlobKey(*directory_remote_info, file_name, it->second)) > 1;
+
+        auto blob_key = getDefaultBlobKey(directory_remote_info->remote_path, use_random_name ? getRandomASCIIString(32) : file_name);
+        auto object_key = ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructBlobObjectKey(blob_key));
+        generated_blob_keys[normalized_path.string()] = std::move(blob_key);
+        return object_key;
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
 }
