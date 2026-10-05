@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/CorrelatedScalarAggregateToWindowPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -282,9 +283,13 @@ private:
                     has_other_references |= subqueryReadsTable(subquery, target);
                 });
 
+            /// The windows are computed one after another, a filter passes all of them only if it is on the keys of each.
+            Names common_keys = target_candidates.front()->keys;
+            for (const auto * candidate : target_candidates)
+                std::erase_if(common_keys, [&](const String & key) { return !std::ranges::contains(candidate->keys, key); });
+
             /// A candidate that is not rewritten would refer to the table moved into the derived table.
-            if (!has_other_references
-                && std::ranges::all_of(target_candidates, [&](const Candidate * candidate) { return mayRestrictKeys(target, enforced, *candidate, runtime_join_filters); }))
+            if (!has_other_references && mayRestrictKeys(target, enforced, common_keys, runtime_join_filters))
                 rewriteTarget(query_node_ptr, *tables.at(target).slot, target_candidates);
         }
     }
@@ -312,6 +317,13 @@ private:
         {
             const auto & aggregate = aggregate_node->as<FunctionNode &>();
             if (hasAggregateFunctionNodes(aggregate.getArgumentsNode()))
+                return {};
+            /// The window function is created again by name, but the `Null` combinator resolves an aggregate over only NULLs
+            /// (e.g. `uniqUpTo(5)(NULL)`) to a `nothing` function with parameters, which it does not take.
+            const auto & name = aggregate.getFunctionName();
+            if (!aggregate.getParameters().getNodes().empty()
+                && (name == NameAggregateFunctionNothing::name || name == NameAggregateFunctionNothingNull::name
+                    || name == NameAggregateFunctionNothingUInt64::name))
                 return {};
             /// `count(x)` of a Nullable `x` is not supported as a window function.
             if (aggregate.getFunctionName() == "count")
@@ -468,7 +480,7 @@ private:
         return candidate;
     }
 
-    /// The window reads the whole table unless a condition restricts its keys:
+    /// The windows read the whole table unless a condition restricts `keys`, which all of them are partitioned by:
     /// - a deterministic one depending only on its keys, which is pushed below the window (as in the filter push-down
     ///   below a window, a non-deterministic one is not pushed, because it would also remove rows inside the partitions
     ///   it keeps);
@@ -476,9 +488,9 @@ private:
     ///   the join can build a runtime filter: it is on the join key, and only a filter on the `PARTITION BY` keys is
     ///   pushed below the window. The runtime filter is not built for a small probe side, but then the window is small.
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
-    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate, bool runtime_join_filters)
+    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys, bool runtime_join_filters)
     {
-        auto is_key = [&](const ColumnNode & column) { return std::ranges::contains(candidate.keys, column.getColumnName()); };
+        auto is_key = [&](const ColumnNode & column) { return std::ranges::contains(keys, column.getColumnName()); };
 
         /// The tables joined to the target on one of its keys, directly or through other joined tables.
         std::unordered_set<const IQueryTreeNode *> joined_on_keys;

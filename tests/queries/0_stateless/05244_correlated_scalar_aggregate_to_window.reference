@@ -371,6 +371,14 @@ NULL key and a condition that may throw without short-circuit: rewritten	0
 1	30	30
 2	5	1e308
 2	1e308	1e308
+=== conditions on the keys of different windows: rewritten 0 ===
+2	40	20
+=== aggregate with parameters over only NULLs: rewritten 0 ===
+1	0
+1	0
+2	0
+2	0
+3	0
 --- materialized view reading its source table in the subquery ---
 1	1	1
 2	2	2

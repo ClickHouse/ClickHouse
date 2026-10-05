@@ -193,6 +193,8 @@ check "condition on the key that also depends on the other table" "SELECT o.k AS
 check "condition on a table that is not joined on the key" "SELECT u.k AS k, x.z AS z, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k CROSS JOIN x WHERE x.z > 3 ORDER BY k, z, v"
 check "no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS enable_join_runtime_filters = 0"
 check "join algorithm without runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'full_sorting_merge'"
+check "conditions on the keys of different windows" "SELECT o.id AS id, (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AS a, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS b FROM tp AS o WHERE o.k = 1 AND o.id = 2"
+check "aggregate with parameters over only NULLs" "SELECT o.k AS k, (SELECT uniqUpTo(5)(NULL) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 0 ORDER BY k"
 
 run_all
 
