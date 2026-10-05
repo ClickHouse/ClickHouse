@@ -1,4 +1,4 @@
--- The MemoryCredits profile event is the time integral of memory usage (byte-microseconds).
+-- The MemoryCredits profile event is the time integral of memory usage (byte-seconds).
 -- A memory-using query must accumulate a strictly positive value, attributed to that query.
 
 SET log_queries = 1;

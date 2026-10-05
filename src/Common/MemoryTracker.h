@@ -151,7 +151,7 @@ private:
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
     void traceLargeAllocation(Int64 size) noexcept;
 
-    /// Compute and return the `MemoryCredits` increment (bytes * microseconds) for the interval that just
+    /// Compute and return the `MemoryCredits` increment (byte-seconds) for the interval that just
     /// elapsed, advancing the last-update timestamp. `current_amount` is the amount held during that interval.
     /// Returns 0 when nothing should be charged (not the outermost Process tracker, first update, or no memory
     /// held). This does the accounting only; the caller decides which profile counters to charge.
@@ -201,6 +201,8 @@ private:
     /// the elapsed interval. Atomic because several threads of the same query update it concurrently;
     /// only the outermost Process-level tracker ever touches it, so it is kept out of the hot cache line above.
     std::atomic<UInt64> memory_credits_last_update_us {0};
+    /// Sum of the sub-second parts (in byte-microseconds) of the `MemoryCredits` intervals, see `convertMemoryCreditsToByteSeconds`.
+    std::atomic<UInt64> memory_credits_remainder {0};
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -262,6 +264,10 @@ public:
     /// Process tracker right before its thread group's counters are snapshotted at query finish, so the event
     /// reflects the whole execution instead of stopping at the last allocation/free. A no-op on other trackers.
     void flushMemoryCredits(ProfileEvents::Counters & counters);
+
+    /// Convert an interval of `bytes` held for `microseconds` into the `MemoryCredits` increment in byte-seconds without
+    /// overflowing, carrying the sub-second part across calls in `remainder` (which must start at zero).
+    static UInt64 convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 microseconds, std::atomic<UInt64> & remainder);
 
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);

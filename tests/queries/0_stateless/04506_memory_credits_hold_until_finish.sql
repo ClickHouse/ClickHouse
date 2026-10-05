@@ -1,5 +1,5 @@
 -- Regression test for the MemoryCredits accounting of idle-held memory (the "tail" at query finish).
--- MemoryCredits is the time integral of memory usage (byte-microseconds). It is advanced only on
+-- MemoryCredits is the time integral of memory usage (byte-seconds). It is advanced only on
 -- allocation/free transitions of the query's memory tracker, so the interval between the last
 -- allocation/free and the moment the query finishes was previously lost: a query that allocates
 -- memory and then holds it idle (without allocating or freeing) must still account that held interval.
@@ -32,7 +32,7 @@ SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credit
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['MemoryCredits'] >= 16 * 1048576 * 5000000
+SELECT ProfileEvents['MemoryCredits'] >= 16 * 1048576 * 5
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04506_memory_credits_hold_long'

@@ -22,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
 #include "config.h"
@@ -930,7 +931,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
 UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
 {
-    /// MemoryCredits is the integral of memory usage over time, measured in bytes * microseconds.
+    /// MemoryCredits is the integral of memory usage over time, measured in byte-seconds (see `convertMemoryCreditsToByteSeconds`).
     /// It is accumulated only for the outermost Process-level tracker of a query or merge: the one whose
     /// parent is not itself a Process tracker. Its `amount` already aggregates all nested allocations, so
     /// charging there integrates the whole memory of the query. Nested Process trackers (created for
@@ -964,8 +965,40 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// The atomic exchange makes each elapsed interval be counted exactly once, with no gaps or overlaps,
     /// even when several threads of the same query allocate or free memory concurrently.
     if (prev != 0 && current_amount > 0 && now > prev)
-        return static_cast<UInt64>(current_amount) * (now - prev);
+        return convertMemoryCreditsToByteSeconds(static_cast<UInt64>(current_amount), now - prev, memory_credits_remainder);
     return 0;
+}
+
+
+UInt64 MemoryTracker::convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 microseconds, std::atomic<UInt64> & remainder)
+{
+    /// The product in byte-microseconds does not fit into 64 bits already for a few minutes of 64 GiB, and a published
+    /// value in byte-microseconds would wrap as fast, so the product is computed in 128 bits and published in byte-seconds.
+    /// The sub-second part of every interval is carried in `remainder`, so that the many short intervals between
+    /// allocations are not lost: the total published for a tracker never differs from the exact integral by a whole
+    /// byte-second. `remainder` only grows (by less than a byte-second at a time), so concurrent updates need no CAS loop:
+    /// the carry is the number of byte-second boundaries crossed by this addition.
+    static constexpr UInt64 microseconds_per_second = 1'000'000;
+
+    UInt64 whole;
+    UInt64 fraction;
+    UInt64 product;
+    if (!common::mulOverflow(bytes, microseconds, product))
+    {
+        whole = product / microseconds_per_second;
+        fraction = product % microseconds_per_second;
+    }
+    else
+    {
+        const unsigned __int128 wide_product = static_cast<unsigned __int128>(bytes) * microseconds;
+        const unsigned __int128 wide_whole = wide_product / microseconds_per_second;
+        whole = wide_whole > std::numeric_limits<UInt64>::max() ? std::numeric_limits<UInt64>::max() : static_cast<UInt64>(wide_whole);
+        fraction = static_cast<UInt64>(wide_product % microseconds_per_second);
+    }
+
+    const UInt64 previous_remainder = remainder.fetch_add(fraction, std::memory_order_relaxed);
+    const UInt64 carry = (previous_remainder + fraction) / microseconds_per_second - previous_remainder / microseconds_per_second;
+    return whole > std::numeric_limits<UInt64>::max() - carry ? std::numeric_limits<UInt64>::max() : whole + carry;
 }
 
 
