@@ -191,6 +191,7 @@ ObjectIterator PaimonMetadata::iterate(
     }
     auto read_files = [&](const PaimonManifestEntry & file_entry)
     {
+        Paimon::checkPathIsRelativeToTable(file_entry.file.file_name, "data file");
         if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
         {
             return;
