@@ -26,7 +26,10 @@
 #include <IO/WriteHelpers.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <limits>
+#include <tuple>
 #include <fmt/format.h>
 #include <utility>
 #include <boost/multiprecision/cpp_bin_float.hpp>
@@ -66,6 +69,125 @@ void forEachNestedDataType(const DataType & type, const Callback & callback)
 
 using ExtendedTimeDecayFloat = boost::multiprecision::cpp_bin_float_quad;
 
+// Adapted from Boost.Multiprecision `default_ops::eval_log`:
+// https://github.com/ClickHouse/boost/blob/e24b1b25e3349236a3c5aac792e3294f62eda1f2/boost/multiprecision/detail/functions/pow.hpp#L366-L456
+// Copyright 2011 - 2025 John Maddock.
+// Copyright Christopher Kormanyos 2002 - 2025.
+// Distributed under the Boost Software License, Version 1.0.
+// See https://www.boost.org/LICENSE_1_0.txt or `contrib/boost/LICENSE_1_0.txt`.
+// Based on the prior work "Algorithm 910: A Portable C++ Multiple-Precision System for
+// Special-Function Calculations", ACM TOMS, Vol. 37, Issue 4, 2011 (C) ACM.
+// https://doi.org/10.1145/1916461.1916469
+// Keep the pinned range reduction, summation, and rounding order, but use cached `et_off` epsilon.
+// The original `et_on` epsilon returns a lazy `ldexp` expression holding a temporary functor.
+void evaluateExponentialTimeDecayLog(
+    ExtendedTimeDecayFloat::backend_type & result, const ExtendedTimeDecayFloat::backend_type & arg)
+{
+    using T = ExtendedTimeDecayFloat::backend_type;
+    using boost::multiprecision::number;
+    using boost::multiprecision::number_category;
+    using boost::multiprecision::number_kind_floating_point;
+    using boost::multiprecision::default_ops::eval_add;
+    using boost::multiprecision::default_ops::eval_divide;
+    using boost::multiprecision::default_ops::eval_fpclassify;
+    using boost::multiprecision::default_ops::eval_frexp;
+    using boost::multiprecision::default_ops::eval_get_sign;
+    using boost::multiprecision::default_ops::eval_ldexp;
+    using boost::multiprecision::default_ops::eval_multiply;
+    using boost::multiprecision::default_ops::eval_signbit;
+    using boost::multiprecision::default_ops::eval_subtract;
+    using boost::multiprecision::default_ops::get_constant_ln2;
+    static_assert(number_category<T>::value == number_kind_floating_point, "The log function is only valid for floating point types.");
+    //
+    // We use a variation of http://dlmf.nist.gov/4.45#i
+    // using `frexp` to reduce the argument to x * 2^n,
+    // then let y = x - 1 and compute:
+    // log(arg) = log(2) * n + log1p(y)
+    //
+    using ui_type = typename boost::multiprecision::detail::canonical<unsigned, T>::type;
+    using exp_type = typename T::exponent_type;
+    using canonical_exp_type = typename boost::multiprecision::detail::canonical<exp_type, T>::type;
+    using fp_type = typename std::tuple_element<0, typename T::float_types>::type;
+
+    const int s = eval_signbit(arg);
+
+    switch (eval_fpclassify(arg))
+    {
+    case FP_NAN:
+        result = arg;
+        errno  = EDOM;
+        return;
+    case FP_INFINITE:
+        if (s)
+            break;
+        result = arg;
+        return;
+    case FP_ZERO:
+        result = std::numeric_limits<number<T>>::has_infinity
+            ? std::numeric_limits<number<T>>::infinity().backend()
+            : (std::numeric_limits<number<T>>::max)().backend();
+        result.negate();
+        errno = ERANGE;
+        return;
+    default:
+        break;
+    }
+    if (s)
+    {
+        result = std::numeric_limits<number<T> >::quiet_NaN().backend();
+        errno  = EDOM;
+        return;
+    }
+
+    exp_type e;
+    T t;
+    eval_frexp(t, arg, &e);
+    bool alternate = false;
+
+    if (t.compare(fp_type(2) / fp_type(3)) <= 0)
+    {
+        alternate = true;
+        eval_ldexp(t, t, 1);
+        --e;
+    }
+
+    eval_multiply(result, get_constant_ln2<T>(), canonical_exp_type(e));
+    eval_subtract(t, ui_type(1)); /* -0.3 <= t <= 0.3 */
+    if (!alternate)
+        t.negate(); /* 0 <= t <= 0.33333 */
+    T pow = t;
+    T lim;
+    T t2;
+
+    if (alternate)
+        eval_add(result, t);
+    else
+        eval_subtract(result, t);
+
+    eval_multiply(lim, result, std::numeric_limits<number<T, boost::multiprecision::et_off>>::epsilon().backend());
+    if (eval_get_sign(lim) < 0)
+        lim.negate();
+
+    ui_type k = 1;
+    do
+    {
+        ++k;
+        eval_multiply(pow, t);
+        eval_divide(t2, pow, k);
+        if (alternate && ((k & 1) != 0))
+            eval_add(result, t2);
+        else
+            eval_subtract(result, t2);
+    } while (lim.compare(t2) < 0);
+}
+
+ExtendedTimeDecayFloat logarithmExponentialTimeDecay(const ExtendedTimeDecayFloat & argument)
+{
+    ExtendedTimeDecayFloat result;
+    evaluateExponentialTimeDecayLog(result.backend(), argument.backend());
+    return result;
+}
+
 ExponentialTimeDecayingCanonicalDirectValue normalizeExponentialTimeDecaying128Direct(
     Float64 value, Float64 time, Float64 decay_length)
 {
@@ -75,7 +197,7 @@ ExponentialTimeDecayingCanonicalDirectValue normalizeExponentialTimeDecaying128D
     const bool negative = std::signbit(value);
     const ExtendedTimeDecayFloat unit_timestamp
         = ExtendedTimeDecayFloat(time)
-        + ExtendedTimeDecayFloat(decay_length) * log(ExtendedTimeDecayFloat(std::abs(value)));
+        + ExtendedTimeDecayFloat(decay_length) * logarithmExponentialTimeDecay(ExtendedTimeDecayFloat(std::abs(value)));
 
     Float64 anchor = static_cast<Float64>(unit_timestamp);
     if (ExtendedTimeDecayFloat(anchor) > unit_timestamp)
