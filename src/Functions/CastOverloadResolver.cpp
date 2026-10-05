@@ -311,7 +311,8 @@ protected:
                 : ExponentialTimeDecayingKeyWidth::Bits128;
             type = createDataTypeExponentialTimeDecaying(
                 inferExponentialTimeDecayingDecayLength(arguments.front()),
-                key_width);
+                key_width,
+                ExponentialTimeDecayingMode::Direct);
         }
         else
         {
