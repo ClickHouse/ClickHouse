@@ -2,7 +2,9 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <Columns/IColumn.h>
@@ -33,7 +35,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <fmt/format.h>
-#include <fmt/ranges.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -52,6 +53,7 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::FailPoints
@@ -489,6 +491,30 @@ enum class CommitOutcome : uint8_t
     Unknown,
 };
 
+/// The metadata file the catalog currently points at, resolved as at the start of a compaction attempt.
+MetadataFileWithInfo getCatalogCurrentMetadataFile(
+    const PersistentTableComponents & persistent_table_components,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const DataLakeStorageSettings & data_lake_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & table_id,
+    LoggerPtr log)
+{
+    return getLatestMetadataFileAndVersionWithCatalog(
+        object_storage,
+        catalog,
+        table_id.getTableName(),
+        persistent_table_components.table_path,
+        data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_table_components.table_uuid,
+        persistent_table_components.metadata_compression_method,
+        /* ignore_metadata_pointer_overrides */ true);
+}
+
 /// Publishes `metadata_object` with `new_snapshot` as the current snapshot: through the catalog when one owns the table,
 /// else as the next metadata file + version hint. Exceptions mean the outcome is unknown.
 CommitOutcome commitCompactedMetadata(
@@ -497,6 +523,8 @@ CommitOutcome commitCompactedMetadata(
     FileNamesGenerator & generator,
     Poco::JSON::Object::Ptr new_snapshot,
     const IcebergPathResolver & path_resolver,
+    const PersistentTableComponents & persistent_table_components,
+    const String & planned_metadata_file_path,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const DataLakeStorageSettings & data_lake_settings,
@@ -516,6 +544,18 @@ CommitOutcome commitCompactedMetadata(
     const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
     if (!catalog_writes_metadata_file)
     {
+        /// A non-transactional catalog swaps its pointer unconditionally, so a commit made since planning is checked here.
+        if (catalog)
+        {
+            const auto current_metadata_file = getCatalogCurrentMetadataFile(
+                persistent_table_components, object_storage, context, data_lake_settings, catalog, table_id, log);
+            if (current_metadata_file.path != planned_metadata_file_path)
+            {
+                LOG_INFO(log, "The catalog moved past the planned metadata, retrying");
+                return CommitOutcome::Conflict;
+            }
+        }
+
         switch (writeMetadataFileAndVersionHintWithOutcome(
             path_resolver,
             metadata_info,
@@ -542,11 +582,50 @@ CommitOutcome commitCompactedMetadata(
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
         if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
         {
-            /// A transactional catalog rejects a commit whose parent is no longer current without applying any of it.
             if (!catalog_writes_metadata_file)
                 return CommitOutcome::Unknown;
-            LOG_INFO(log, "Metadata commit conflict detected via catalog");
-            return CommitOutcome::Conflict;
+
+            /// The HTTP client re-sends the commit, so a rejection is checked against the catalog's snapshots.
+            try
+            {
+                const auto current_metadata_file = getCatalogCurrentMetadataFile(
+                    persistent_table_components, object_storage, context, data_lake_settings, catalog, table_id, log);
+                auto current_metadata = getMetadataJSONObject(
+                    current_metadata_file.path,
+                    object_storage,
+                    persistent_table_components.metadata_cache,
+                    context,
+                    log,
+                    current_metadata_file.compression_method,
+                    persistent_table_components.table_uuid);
+
+                const auto our_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                const auto parent_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+                auto snapshots = current_metadata->getArray(Iceberg::f_snapshots);
+                for (UInt32 i = 0; snapshots && i < snapshots->size(); ++i)
+                {
+                    if (snapshots->getObject(i)->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == our_id)
+                    {
+                        LOG_WARNING(
+                            log,
+                            "The catalog rejected the commit of snapshot {}, but the snapshot is in the table: "
+                            "an earlier attempt of the same request was applied",
+                            our_id);
+                        return CommitOutcome::Committed;
+                    }
+                }
+                if (current_metadata->has(Iceberg::f_current_snapshot_id)
+                    && current_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id) != parent_id)
+                {
+                    LOG_INFO(log, "Metadata commit conflict detected via catalog");
+                    return CommitOutcome::Conflict;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to check the rejected catalog commit");
+            }
+            return CommitOutcome::Unknown;
         }
     }
     return CommitOutcome::Committed;
@@ -582,6 +661,7 @@ void removeObjectsIfExist(const std::vector<IcebergPathFromMetadata> & paths, co
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
@@ -813,12 +893,24 @@ static bool writeConsolidatedManifestFile(
             generator,
             new_snapshot.snapshot,
             path_resolver,
+            persistent_table_components,
+            metadata_file_path,
             object_storage,
             context,
             data_lake_settings,
             catalog,
             table_id,
             log);
+    }
+    catch (const Exception & e)
+    {
+        /// Thrown before anything was written.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+        {
+            cleanup();
+            throw;
+        }
+        throwUnknownCommitStatus(path_resolver, generated_metadata_info, getCurrentExceptionMessage(false));
     }
     catch (...)
     {
@@ -907,6 +999,7 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
                 persistent_table_components,
                 object_storage_,
@@ -999,13 +1092,16 @@ RewrittenDataFile rewriteDataFile(
     read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(source_format, context);
     auto read_buffer = createReadBuffer(relative_path, object_storage, context, log, read_settings);
 
+    FormatSettings read_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    /// The output keeps the source's row order, so its `sort_order_id` stays true.
+    read_format_settings.parquet.preserve_order = true;
     auto input_format = FormatFactory::instance().getInput(
         source_format,
         *read_buffer,
         source_header,
         context,
         8192,
-        format_settings,
+        read_format_settings,
         parser_shared_resources,
         std::make_shared<FormatFilterInfo>(nullptr, context, schema_processor.getColumnMapperById(source_schema_id), nullptr, nullptr),
         true /* is_remote_fs */,
@@ -1045,6 +1141,13 @@ RewrittenDataFile rewriteDataFile(
 
         writer.finalize();
         writer.release();
+
+        result.path = writer.getDataFiles().front();
+        result.bytes = writer.getDataFileByteCounts().front();
+        /// Some storage backends (e.g. Azure) don't track bytes in the write buffer; query the object size.
+        if (result.bytes == 0)
+            result.bytes = object_storage->getObjectMetadata(persistent_table_components.path_resolver.resolve(result.path), /*with_tags=*/false).size_bytes;
+        result.statistics = writer.getPerFileStatistics().front();
     }
     catch (...)
     {
@@ -1059,13 +1162,6 @@ RewrittenDataFile rewriteDataFile(
         }
         throw;
     }
-
-    result.path = writer.getDataFiles().front();
-    result.bytes = writer.getDataFileByteCounts().front();
-    /// Some storage backends (e.g. Azure) don't track bytes in the write buffer; query the object size.
-    if (result.bytes == 0)
-        result.bytes = object_storage->getObjectMetadata(persistent_table_components.path_resolver.resolve(result.path), /*with_tags=*/false).size_bytes;
-    result.statistics = writer.getPerFileStatistics().front();
     return result;
 }
 
@@ -1086,12 +1182,13 @@ void compactIcebergTable(
     auto & schema_processor = *persistent_table_components.schema_processor;
 
     /// Rewritten files are reused by later attempts; keyed by the source path, its applied deletes and the target schema.
-    std::unordered_map<String, RewrittenDataFile> rewritten_files;
+    using RewriteKey = std::tuple<String, std::vector<String>, Int32>;
+    std::map<RewriteKey, RewrittenDataFile> rewritten_files;
     /// The manifests and the manifest list of the current attempt.
     std::vector<IcebergPathFromMetadata> attempt_files;
     bool commit_status_unknown = false;
 
-    auto remove_rewritten_files = [&](const std::unordered_set<String> & keep_keys)
+    auto remove_rewritten_files = [&](const std::set<RewriteKey> & keep_keys)
     {
         for (auto it = rewritten_files.begin(); it != rewritten_files.end();)
         {
@@ -1211,7 +1308,7 @@ void compactIcebergTable(
             /// "Source" = a live data file at least one position delete applies to, by the rule SELECT applies them with.
             std::sort(position_deletes.begin(), position_deletes.end());
             std::unordered_map<String, IcebergDataObjectInfoPtr> sources;
-            std::unordered_map<String, String> source_reuse_keys;
+            std::unordered_map<String, RewriteKey> source_reuse_keys;
             std::unordered_set<String> changed_partitions;
             for (const auto & [manifest_file, data_files] : data_manifests)
             {
@@ -1240,8 +1337,8 @@ void compactIcebergTable(
                         continue;
 
                     std::sort(applied_deletes.begin(), applied_deletes.end());
-                    String reuse_key = fmt::format("{}|{}|{}", data_file_path.serialize(), fmt::join(applied_deletes, ","), current_schema_id);
-                    source_reuse_keys.emplace(data_file_path.serialize(), std::move(reuse_key));
+                    source_reuse_keys.emplace(
+                        data_file_path.serialize(), RewriteKey{data_file_path.serialize(), std::move(applied_deletes), current_schema_id});
                     sources.emplace(data_file_path.serialize(), std::move(source));
 
                     String partition_key = std::to_string(manifest_file.partition_spec_id);
@@ -1259,7 +1356,7 @@ void compactIcebergTable(
                     affected_manifest_paths.push_back(manifest_file.manifest_file_path);
             checkManifestsHaveNoKeyMetadata(affected_manifest_paths, "OPTIMIZE TABLE", path_resolver, object_storage, context, log);
 
-            std::unordered_set<String> planned_reuse_keys;
+            std::set<RewriteKey> planned_reuse_keys;
             for (const auto & [_, reuse_key] : source_reuse_keys)
                 planned_reuse_keys.insert(reuse_key);
             remove_rewritten_files(planned_reuse_keys);
@@ -1471,12 +1568,22 @@ void compactIcebergTable(
                     generator,
                     new_snapshot.snapshot,
                     path_resolver,
+                    persistent_table_components,
+                    metadata_file_path,
                     object_storage,
                     context,
                     data_lake_settings,
                     catalog,
                     table_id,
                     log);
+            }
+            catch (const Exception & e)
+            {
+                /// Thrown before anything was written.
+                if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+                    throw;
+                commit_status_unknown = true;
+                throwUnknownCommitStatus(path_resolver, metadata_info, getCurrentExceptionMessage(false));
             }
             catch (...)
             {
