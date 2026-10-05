@@ -1099,9 +1099,11 @@ boundary, so the compact key remains representable.
 The 128-bit form uses the same sign-domain ordering but spends the remaining 127 bits on a canonical
 pair that is monotonic with unit time: a sortable Float64 anchor followed by 63 bits of the positive
 magnitude at that anchor. Normally the residual magnitude refines the unit time inside one Float64
-anchor slice. If the mathematical unit time lies outside the finite Float64 timestamp range, the
-anchor stays at `-DBL_MAX` or `+DBL_MAX` and the same residual field stores the value at that
-boundary. This extends the ordering into the extreme tails without a separate mode bit or an
+anchor slice. The lower adjacent anchor is preferred; for extremely short decay lengths, if its
+residual would overflow, the next Float64 anchor is used and the sub-unit residual there preserves
+the same monotonic order. If the mathematical unit time lies outside the finite Float64 timestamp
+range, the anchor stays at `-DBL_MAX` or `+DBL_MAX` and the same residual field stores the value at
+that boundary. This extends the ordering into the extreme tails without a separate mode bit or an
 exception.
 
 The type has two storage modes:
