@@ -20,14 +20,14 @@ SELECT count() FROM t_enum_key WHERE e IN ('a', 'c');
 SELECT count() FROM t_enum_key WHERE e = 'c' OR v = 2;
 SELECT count() FROM t_enum_key WHERE e != 'c' AND v = 2;
 SELECT count() FROM t_enum_key WHERE NOT (e = 'c');
-SELECT count() FROM t_enum_key WHERE e < 'c'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
-SELECT count() FROM t_enum_key WHERE e >= 'c'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_enum_key WHERE e < 'c' SETTINGS compare_enum_with_string_lexicographically = 0; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_enum_key WHERE e >= 'c' SETTINGS compare_enum_with_string_lexicographically = 0; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
 SELECT 'non-key column';
 SELECT count() FROM t_enum_nokey WHERE e = 'c';
 SELECT count() FROM t_enum_nokey WHERE e != 'c';
-SELECT count() FROM t_enum_nokey WHERE e < 'c'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
-SELECT count() FROM t_enum_nokey WHERE e >= 'c'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_enum_nokey WHERE e < 'c' SETTINGS compare_enum_with_string_lexicographically = 0; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_enum_nokey WHERE e >= 'c' SETTINGS compare_enum_with_string_lexicographically = 0; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
 SELECT 'bloom filter index';
 DROP TABLE IF EXISTS t_enum_bf;

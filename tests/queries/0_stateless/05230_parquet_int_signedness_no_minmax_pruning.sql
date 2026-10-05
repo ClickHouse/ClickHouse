@@ -71,7 +71,7 @@ select count() from file(currentDatabase() || '_05230_i32n.parquet', Parquet, 'x
     settings input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 
--- An Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
+-- Compared by value, an Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
 -- integer of that width: a UINT_8 column {5, 200} read 8-bit signed gives {5, -56}, and the stored max 200
 -- is not an upper bound. A range predicate is served by neither hash filter, so these four need no pinning
 -- and all four returned 0 at completely default settings.
@@ -81,10 +81,10 @@ insert into function file(currentDatabase() || '_05230_u16e.parquet', Parquet, '
     select arrayJoin([toUInt16(5), toUInt16(40000)]) as x;
 select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Int8') where x < 0;
 select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Enum8(''lo'' = 5, ''hi'' = -56)')
-    where x < 'lo';
+    where x < 'lo' settings compare_enum_with_string_lexicographically = 0;
 select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Int16') where x < 0;
 select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = -25536)')
-    where x < 'lo';
+    where x < 'lo' settings compare_enum_with_string_lexicographically = 0;
 
 -- A day number outside the requested date type's window is reinterpreted just like a narrowed integer,
 -- so `Date` and `Date32` hints reorder the same statistics. A plain INT32/INT64 column {65536, 65537}
@@ -254,10 +254,12 @@ select count() from file(currentDatabase() || '_05230_c_u16d.parquet', Parquet, 
     settings log_comment = '05230prune_date_u16', input_format_parquet_dictionary_filter_push_down = 1048576;
 select count() from file(currentDatabase() || '_05230_c_i8e.parquet', Parquet, 'x Enum8(''lo'' = -100, ''hi'' = 100)')
     where x > 'lo'
-    settings log_comment = '05230prune_i8e8', input_format_parquet_dictionary_filter_push_down = 1048576;
+    settings log_comment = '05230prune_i8e8', input_format_parquet_dictionary_filter_push_down = 1048576,
+             compare_enum_with_string_lexicographically = 0;
 select count() from file(currentDatabase() || '_05230_c_u8e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = 200)')
     where x > 'lo'
-    settings log_comment = '05230prune_u8e16', input_format_parquet_dictionary_filter_push_down = 1048576;
+    settings log_comment = '05230prune_u8e16', input_format_parquet_dictionary_filter_push_down = 1048576,
+             compare_enum_with_string_lexicographically = 0;
 -- An unsigned 32-bit column read as `IPv4`, and in-range timestamps in a UINT_64 column read as `DateTime`.
 select count() from file(currentDatabase() || '_05230_c_u32.parquet', Parquet, 'x IPv4') where x > toIPv4(3500)
     settings log_comment = '05230prune_u32ip', input_format_parquet_dictionary_filter_push_down = 1048576;
