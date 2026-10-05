@@ -59,6 +59,25 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 namespace detail
 {
 
+template <typename DataType, typename Callback>
+void forEachNestedDataType(const DataType & type, const Callback & callback)
+{
+    if constexpr (requires { type.forEachChild(callback); })
+    {
+        type.forEachChild(callback);
+    }
+    else
+    {
+        const size_t num_children = type.getNumberOfChildren();
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            const auto & child = *type.getChild(i);
+            callback(child);
+            forEachNestedDataType(child, callback);
+        }
+    }
+}
+
 static bool containsExperimentalTimeDecayTypeOrState(const DataTypePtr & type)
 {
     if (containsExponentialTimeDecaying(type))
@@ -74,7 +93,7 @@ static bool containsExperimentalTimeDecayTypeOrState(const DataTypePtr & type)
     };
 
     check(*type);
-    type->forEachChild(check);
+    forEachNestedDataType(*type, check);
     return found;
 }
 
