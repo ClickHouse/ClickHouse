@@ -28,7 +28,7 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO ta VALUES (1, ['xyz']), (2, ['Hello']), (3, ['foo']);
 
 SELECT 'tq', countIf(hasToken(s, 'hello')), countIf(hasAnyTokens(s, 'hello')), countIf(hasAllTokens(s, 'hello world')), countIf(hasPhrase(s, 'hello world')) FROM tq;
-SELECT 'tq where', countIf(hasToken(s, 'hello')), countIf(hasAnyTokens(s, 'hello')), countIf(hasAllTokens(s, 'hello world')), countIf(hasPhrase(s, 'hello world')) FROM tq WHERE id > 0;
+SELECT 'tq where', countIf(hasToken(s, 'hello')), countIf(hasAnyTokens(s, 'hello')), countIf(hasAllTokens(s, 'hello world')), countIf(hasPhrase(s, 'hello world')) FROM tq WHERE id > 0 SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SELECT 'tq where, no prewhere', countIf(hasAnyTokens(s, 'hello')) FROM tq WHERE id > 0 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
 SELECT 'tq where, subquery', countIf(hasAnyTokens(x, 'hello')) FROM (SELECT id, s AS x FROM tq WHERE id > 0);
 SELECT 'tq where, order by s', id, hasAnyTokens(s, 'hello') FROM tq WHERE id > 0 ORDER BY s;
