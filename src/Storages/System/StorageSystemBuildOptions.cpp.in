@@ -43,6 +43,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "OPENSSL_VERSION", "@OPENSSL_VERSION@",
     "USE_VECTORSCAN", "@USE_VECTORSCAN@",
+    "USE_AHO_CORASICK", "@USE_AHO_CORASICK@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
     "USE_GRPC", "@USE_GRPC@",
     "USE_LDAP", "@USE_LDAP@",

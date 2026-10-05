@@ -1,12 +1,12 @@
 -- Tags: no-fasttest, use-vectorscan
 
--- Tests that the text index runs the same argument validation as `multiSearchAny` and `multiMatchAny` before it
--- prunes granules. The skip-index path can decide a predicate is false without executing the real function, but the
--- functions reject some constant arguments (more than 255 needles for `multiSearchAny`; `allow_hyperscan`, the regexp
--- length limits, the expensive-regexp rejection and any pattern Hyperscan fails to compile for `multiMatchAny`)
--- before scanning. Without the shared validation, an invalid query could prune all granules and return 0 instead of
--- raising the exception the function itself would raise. Every invalid case below must throw the same exception with
--- and without the index.
+-- Tests that the text index runs the same argument validation as `multiMatchAny` before it prunes granules, and that
+-- `multiSearchAny` with large needle sets (now handled by Aho-Corasick, no 255 cap) still works through the index.
+-- The skip-index path can decide a predicate is false without executing the real function, but `multiMatchAny` rejects
+-- some constant arguments (`allow_hyperscan`, the regexp length limits, the expensive-regexp rejection and any pattern
+-- Hyperscan fails to compile) before scanning. Without the shared validation, an invalid query could prune all granules
+-- and return 0 instead of raising the exception the function itself would raise. Every invalid `multiMatchAny` case
+-- below must throw the same exception with and without the index.
 
 SET enable_analyzer = 1;
 
@@ -24,12 +24,13 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar baz');
 
-SELECT '-- multiSearchAny with more than 255 needles raises an exception, with and without the index';
-SELECT count() FROM tab WHERE multiSearchAny(str, arrayMap(x -> 'abc' || toString(x), range(256))) SETTINGS use_skip_indexes = 0; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
-SELECT count() FROM tab WHERE multiSearchAny(str, arrayMap(x -> 'abc' || toString(x), range(256))) SETTINGS use_skip_indexes = 1; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+SELECT '-- multiSearchAny with more than 255 needles is accepted (Aho-Corasick path), with and without the index';
+SELECT count() FROM tab WHERE multiSearchAny(str, arrayMap(x -> 'abc' || toString(x), range(256))) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE multiSearchAny(str, arrayMap(x -> 'abc' || toString(x), range(256))) SETTINGS use_skip_indexes = 1;
 
-SELECT '-- 255 needles is accepted by the index';
-SELECT count() FROM tab WHERE multiSearchAny(str, arrayMap(x -> 'abc' || toString(x), range(255))) SETTINGS use_skip_indexes = 1;
+SELECT '-- multiSearchAny with 256 needles that include a real match returns the matching rows';
+SELECT id FROM tab WHERE multiSearchAny(str, arrayConcat(['bar'], arrayMap(x -> 'abc' || toString(x), range(255)))) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE multiSearchAny(str, arrayConcat(['bar'], arrayMap(x -> 'abc' || toString(x), range(255)))) ORDER BY id SETTINGS use_skip_indexes = 1;
 
 SELECT '-- valid multiSearchAny uses the index and returns the matching rows';
 SELECT id FROM tab WHERE multiSearchAny(str, ['bar', 'qux']) ORDER BY id SETTINGS use_skip_indexes = 1;
