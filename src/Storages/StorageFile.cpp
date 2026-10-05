@@ -1353,7 +1353,15 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    /// The `.size` subcolumn of a String column is read by the format itself without materializing
+    /// the strings (see filterTupleColumnsToRead), so `length(s)`, `empty(s)` and `s != ''` can be
+    /// rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
+    if (supports_prewhere)
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+            if (column.type->getTypeId() == TypeIndex::String && names.contains(column.name))
+                names.insert(column.name + ".size");
+    return names;
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const

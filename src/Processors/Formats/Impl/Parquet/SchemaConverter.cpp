@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -230,6 +231,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     schema_idx += 1;
 
     std::optional<size_t> idx_in_output_block;
+    std::optional<size_t> also_sizes_idx_in_output_block;
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;
 
@@ -248,6 +250,15 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
             std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
+            bool string_sizes = false;
+            if (!pos.has_value() && !node.requested && levels.back().rep == 0)
+            {
+                /// The `.size` subcolumn of a String column, see TraversalNode::string_sizes.
+                pos = sample_block->findPositionByName(node.name + ".size", options.format.parquet.case_insensitive_column_matching);
+                if (pos.has_value() && sample_block->getByPosition(pos.value()).type->getTypeId() != TypeIndex::UInt64)
+                    pos.reset();
+                string_sizes = pos.has_value();
+            }
             if (pos.has_value())
             {
                 if (node.requested)
@@ -271,6 +282,20 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                     }
                 }
                 chassert(wrap_in_arrays == levels.back().rep);
+
+                if (string_sizes)
+                {
+                    /// Read it as String; the end of this function decides how to get the sizes.
+                    node.string_sizes = true;
+                    node.type_hint = std::make_shared<DataTypeString>();
+                    outer_type_hint = nullptr;
+                }
+                else if (levels.back().rep == 0)
+                {
+                    auto sizes_pos = sample_block->findPositionByName(node.name + ".size", options.format.parquet.case_insensitive_column_matching);
+                    if (sizes_pos.has_value() && sample_block->getByPosition(sizes_pos.value()).type->getTypeId() == TypeIndex::UInt64)
+                        also_sizes_idx_in_output_block = sizes_pos;
+                }
 
                 idx_in_output_block = pos;
             }
@@ -361,6 +386,66 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         OutputColumnInfo & output = output_columns.at(node.output_idx.value());
         output.output_type = outer_type_hint;
         output.needs_cast = !output.output_type->equals(*output.input_type);
+    }
+
+    if (node.string_sizes)
+        makeStringSizesOutput(node.output_idx.value());
+
+    if (also_sizes_idx_in_output_block.has_value())
+    {
+        /// Both `x` and `x.size` are requested (e.g. `x.size` in PREWHERE and `x` after it): read the
+        /// column a second time for the sizes, so that each one can be read in its own step.
+        const OutputColumnInfo & output = output_columns.at(node.output_idx.value());
+        if (!output.is_primitive)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading column {} together with its sizes is not supported", node.getNameForLogging());
+        OutputColumnInfo sizes_output = output;
+        sizes_output.name = sample_block->getByPosition(*also_sizes_idx_in_output_block).name;
+        sizes_output.idx_in_output_block = also_sizes_idx_in_output_block;
+        sizes_output.primitive_start = primitive_columns.size();
+        sizes_output.primitive_end = sizes_output.primitive_start + 1;
+
+        const PrimitiveColumnInfo & source = primitive_columns.at(output.primitive_start);
+        PrimitiveColumnInfo sizes_primitive;
+        sizes_primitive.column_idx = source.column_idx;
+        sizes_primitive.schema_idx = source.schema_idx;
+        sizes_primitive.name = sizes_output.name;
+        sizes_primitive.decoder = source.decoder;
+        sizes_primitive.decoded_type = source.decoded_type;
+        sizes_primitive.output_type = source.output_type;
+        sizes_primitive.output_nullable = source.output_nullable;
+        sizes_primitive.group_nullable = source.group_nullable;
+        sizes_primitive.levels = source.levels;
+        sizes_primitive.max_array_def = source.max_array_def;
+        primitive_columns.push_back(std::move(sizes_primitive));
+        output_columns.push_back(std::move(sizes_output));
+        makeStringSizesOutput(output_columns.size() - 1);
+    }
+}
+
+void SchemaConverter::makeStringSizesOutput(size_t output_idx)
+{
+    OutputColumnInfo & output = output_columns.at(output_idx);
+    /// Statistics, bloom filters and dictionaries describe the strings, not their sizes.
+    for (size_t i = output.primitive_start; i < output.primitive_end; ++i)
+        primitive_columns[i].decoder.allow_stats = false;
+
+    PrimitiveColumnInfo * primitive = output.is_primitive ? &primitive_columns.at(output.primitive_start) : nullptr;
+    if (primitive && primitive->decoder.string_converter && primitive->decoder.string_converter->isTrivial()
+        && !primitive->output_nullable && !output.needs_cast)
+    {
+        /// The column is read as the raw strings: decode only their lengths.
+        primitive->decoder.string_converter = std::make_shared<StringSizesConverter>();
+        primitive->decoded_type = std::make_shared<DataTypeUInt64>();
+        primitive->output_type = primitive->decoded_type;
+        output.input_type = primitive->output_type;
+        output.output_type = primitive->output_type;
+    }
+    else
+    {
+        /// Read the column as String (converted if needed) and output the sizes of the strings.
+        output.output_type = std::make_shared<DataTypeString>();
+        output.needs_cast = !output.output_type->equals(*output.input_type);
+        output.string_sizes = true;
     }
 }
 

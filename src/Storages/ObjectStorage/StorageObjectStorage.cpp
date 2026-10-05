@@ -477,8 +477,16 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
+    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(
         /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
+    /// The `.size` subcolumn of a String column is read by the format itself without materializing
+    /// the strings (see filterTupleColumnsToRead), so `length(s)`, `empty(s)` and `s != ''` can be
+    /// rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
+    if (supports_prewhere)
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+            if (column.type->getTypeId() == TypeIndex::String && names.contains(column.name))
+                names.insert(column.name + ".size");
+    return names;
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const

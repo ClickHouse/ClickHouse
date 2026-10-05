@@ -476,6 +476,28 @@ struct PlainStringDecoder : public PageDecoder
 
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
+        if (converter->isSizesOnly())
+        {
+            /// Only the sizes of the strings are needed (`s.size`), don't copy the strings.
+            auto & sizes = assert_cast<ColumnUInt64 &>(col).getData();
+            size_t prev_size = sizes.size();
+            sizes.resize(prev_size + num_values);
+            UInt64 * out = sizes.data() + prev_size;
+            size_t num_out = 0;
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                UInt32 x = 0;
+                memcpy(&x, data, 4); /// omitting range check because input is padded
+                size_t len = 4 + size_t(x);
+                requireRemainingBytes(len);
+                out[num_out] = x;
+                num_out += !filter || filter[filter_offset + i];
+                data += len;
+            }
+            sizes.resize(prev_size + num_out);
+            return;
+        }
+
         if (converter->isTrivial())
         {
             /// Fast path for directly appending to ColumnString.
@@ -846,7 +868,19 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
             idx += num_values;
             return;
         }
-        if (converter->isTrivial())
+        if (converter->isSizesOnly())
+        {
+            auto & sizes = assert_cast<ColumnUInt64 &>(col).getData();
+            const UInt64 * off = offsets.data() + idx;
+            size_t prev = idx ? off[-1] : 0;
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                if (filter[filter_offset + i])
+                    sizes.push_back(off[i] - prev);
+                prev = off[i];
+            }
+        }
+        else if (converter->isTrivial())
         {
             auto & col_str = assert_cast<ColumnString &>(col);
             const UInt64 * off = offsets.data() + idx;
@@ -1899,6 +1933,15 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
 std::optional<Field> TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     return Field(String(data.data(), data.size()));
+}
+
+void StringSizesConverter::convertColumn(std::span<const char> /*chars*/, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+{
+    auto & sizes = assert_cast<ColumnUInt64 &>(col).getData();
+    size_t prev_size = sizes.size();
+    sizes.resize(prev_size + num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        sizes[prev_size + i] = offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes;
 }
 
 /// Reverse bytes. Like std::byteswap, but works for Int128 and Int256 too.

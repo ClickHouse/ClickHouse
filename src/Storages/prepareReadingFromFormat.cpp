@@ -156,6 +156,7 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         String name;
         DataTypePtr type;
         bool is_duplicate = false;
+        bool is_string_sizes = false;
     };
 
     std::vector<SubcolumnInfo> columns_info(requested_columns.size());
@@ -175,7 +176,17 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         bool found_full_path = false;
         column_info.type = column_to_read.getTypeInStorage();
 
-        if (column_to_read.isSubcolumn())
+        if (column_to_read.isSubcolumn() && column_to_read.getSubcolumnName() == "size"
+            && column_info.type->getTypeId() == TypeIndex::String)
+        {
+            /// The sizes of a String column, e.g. `length(s)` rewritten to `s.size`. The format reads it
+            /// natively (Parquet decodes it from the string lengths without materializing the strings).
+            /// It is enumerated as a stream only together with virtual streams, so add it directly.
+            column_info.path.push_back(ISerialization::Substream::StringSizes);
+            column_info.type = std::make_shared<DataTypeUInt64>();
+            column_info.is_string_sizes = true;
+        }
+        else if (column_to_read.isSubcolumn())
         {
             /// Do subcolumn lookup similar to getColumnFromBlock.
 
@@ -246,7 +257,9 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
         bool ancestor_requested = false;
         const auto & column_info = columns_info[idx];
-        for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
+        /// `s.size` is read separately even if `s` is requested too: it may be needed in an earlier
+        /// PREWHERE step than `s`.
+        for (size_t prefix_len = 0; prefix_len < column_info.path.size() && !column_info.is_string_sizes; ++prefix_len)
         {
             String ancestor_name = column_to_read.getNameInStorage();
             if (prefix_len)

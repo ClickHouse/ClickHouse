@@ -3658,6 +3658,9 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         res = IColumn::mutate(std::move(col));
     }
 
+    if (output_info.string_sizes)
+        res = IColumn::mutate(assert_cast<const ColumnString &>(*res).createSizeSubcolumn());
+
     return res;
 }
 
