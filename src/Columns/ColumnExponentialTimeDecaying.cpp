@@ -142,6 +142,15 @@ IColumn & ColumnExponentialTimeDecaying::getOrderingKeyColumn()
     return assert_cast<ColumnTuple &>(*storage).getColumn(0);
 }
 
+ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getCanonicalValueAt(size_t n) const
+{
+    if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
+        return getExponentialTimeDecayingCanonicalDirectValue(
+            assert_cast<const ColumnUInt64 &>(getOrderingKeyColumn()).getData()[n]);
+    return getExponentialTimeDecayingCanonicalDirectValue(
+        assert_cast<const ColumnUInt128 &>(getOrderingKeyColumn()).getData()[n]);
+}
+
 ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getDirectValueAt(size_t n) const
 {
     if (mode == ExponentialTimeDecayingMode::Direct)
@@ -152,20 +161,16 @@ ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getDi
             assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[n]};
     }
 
-    if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
-        return getExponentialTimeDecayingCanonicalDirectValue(
-            assert_cast<const ColumnUInt64 &>(*storage).getData()[n]);
-    return getExponentialTimeDecayingCanonicalDirectValue(
-        assert_cast<const ColumnUInt128 &>(*storage).getData()[n]);
+    return getCanonicalValueAt(n);
 }
 
 Float64 ColumnExponentialTimeDecaying::getUnitTimestampAt(size_t n) const
 {
-    const auto direct = getDirectValueAt(n);
-    if (direct.value_at_anchor == 0)
+    const auto canonical = getCanonicalValueAt(n);
+    if (canonical.value_at_anchor == 0)
         return 0;
     return getExponentialTimeDecayingUnitTimestamp(
-        direct.value_at_anchor, direct.anchor_time, decay_length);
+        canonical.value_at_anchor, canonical.anchor_time, decay_length);
 }
 
 Int8 ColumnExponentialTimeDecaying::getSignAt(size_t n) const
