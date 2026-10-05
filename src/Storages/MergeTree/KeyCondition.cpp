@@ -6231,9 +6231,7 @@ std::optional<Field> getProjectedExponentialTimeDecayingKey(
         const Float64 time = tuple[1].safeGet<Float64>();
         const Float64 decay_length = tuple[2].safeGet<Float64>();
         if (decay_length != decay_type->getDecayLength()
-            || !std::isfinite(value)
-            || !std::isfinite(time)
-            || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
+            || !isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
             return std::nullopt;
 
         const auto normalized = normalizeExponentialTimeDecaying(
