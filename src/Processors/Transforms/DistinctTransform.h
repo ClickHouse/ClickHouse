@@ -21,12 +21,19 @@ namespace DB
 class DeduplicationAbandonController
 {
 public:
+    /// Number of chunks to observe before the rate is checked.
+    static constexpr size_t DEFAULT_OBSERVATION_CHUNK_COUNT = 5;
+
+    explicit DeduplicationAbandonController(size_t observation_chunk_count_ = DEFAULT_OBSERVATION_CHUNK_COUNT)
+        : observation_chunk_count(observation_chunk_count_)
+    {
+    }
+
     /// Updates the observations and returns whether the caller should abandon deduplication.
     bool update(size_t num_rows, size_t num_unique_rows, size_t set_bytes);
 
 private:
-    /// Number of chunks to observe before the rate is checked.
-    static constexpr size_t OBSERVATION_CHUNK_COUNT = 5;
+    const size_t observation_chunk_count;
 
     /// The observation itself retains memory: until the first check, the hash table keeps every unique
     /// key seen, which for wide keys is chunk count * block size * key size per stream. One chunk of
@@ -65,7 +72,8 @@ public:
         const Names & columns_,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
-        UInt64 max_bytes_before_pass_through_ = 0);
+        UInt64 max_bytes_before_pass_through_ = 0,
+        size_t abandon_observation_chunk_count_ = DeduplicationAbandonController::DEFAULT_OBSERVATION_CHUNK_COUNT);
 
     String getName() const override { return "DistinctTransform"; }
 

@@ -3,6 +3,7 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/Port.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -117,6 +118,10 @@ IProcessor::Status JoiningTransform::prepare()
             last_in.setNeeded();
             if (last_in.hasData())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+
+            /// The left side starts to work before the right one is filled, up to what the ports in between hold.
+            if (join->getTableJoin().readsLeftWhileFillingRight())
+                inputs.front().setNeeded();
 
             return Status::NeedData;
         }

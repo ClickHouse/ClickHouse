@@ -1,0 +1,19 @@
+a hash algorithm in the list does not make a float key safe
+0
+0
+0
+0
+0
+1
+different states of an aggregate function stay different
+0
+2
+the step is kept for these keys with a merge join enabled
+└──IntersectOrExcept
+└──IntersectOrExcept
+└──IntersectOrExcept
+and the results with only hash algorithms enabled are the same as of the step
+1
+1
+1
+1
