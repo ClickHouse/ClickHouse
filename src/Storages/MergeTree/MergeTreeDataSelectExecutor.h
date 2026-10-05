@@ -280,6 +280,10 @@ public:
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
+    /// A pending `RENAME COLUMN` / `DROP COLUMN` changes what a part returns before the part is renamed, and `KILL MUTATION` never
+    /// renames it, so the query condition cache is neither read nor written meanwhile.
+    static bool hasPendingMetadataMutations(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
@@ -290,6 +294,7 @@ public:
         bool use_sampling,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
+        UInt64 query_condition_cache_salt,
         const ContextPtr & context,
         LoggerPtr log);
 

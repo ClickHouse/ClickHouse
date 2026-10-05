@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
@@ -337,6 +338,10 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
+            if (!evaluated_non_deterministic_defaults)
+                evaluated_non_deterministic_defaults = std::ranges::any_of(
+                    dag->getOutputs(), [](const auto * output) { return !VirtualColumnUtils::isDeterministic(output); });
+
             dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
@@ -534,9 +539,18 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
-        DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+        const auto context = data_part_info_for_read->getContext();
+        auto dag = DB::requiredConversionsActions(
+            copy_block, getColumns(), context, storage_snapshot->metadata->getColumns().getDefaults());
+        if (dag)
+        {
+            if (!evaluated_non_deterministic_defaults)
+                evaluated_non_deterministic_defaults = std::ranges::any_of(
+                    dag->getOutputs(), [](const auto * output) { return !VirtualColumnUtils::isDeterministic(output); });
+
+            auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+            expression->execute(copy_block);
+        }
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

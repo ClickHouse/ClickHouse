@@ -582,6 +582,15 @@ bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
     return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
+bool MergeTreeReadTask::readersEvaluatedNonDeterministicDefaults(bool prewhere_readers_only) const
+{
+    for (const auto & reader : readers.prewhere)
+        if (reader && reader->hasEvaluatedNonDeterministicDefaults())
+            return true;
+
+    return !prewhere_readers_only && readers.main && readers.main->hasEvaluatedNonDeterministicDefaults();
+}
+
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
 {
     /// On-fly mutations (lightweight UPDATE/DELETE) and patch parts are spliced into the readers

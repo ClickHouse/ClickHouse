@@ -46,6 +46,10 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool save_unneeded_columns = true,
     bool null_as_default = false);
 
+/// The actions `performRequiredConversions` executes for `block`; nullopt if no column has to be converted.
+std::optional<ActionsDAG> requiredConversionsActions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
     const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);

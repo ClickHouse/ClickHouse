@@ -73,6 +73,8 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    bool hasEvaluatedNonDeterministicDefaults() const { return evaluated_non_deterministic_defaults; }
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
@@ -223,6 +225,10 @@ private:
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
+
+    /// A non-deterministic default (of a missing column, or replacing NULLs in a conversion to a non-`Nullable` type) changes between
+    /// reads of the same part, so a query condition cache verdict that used it must not be recorded.
+    mutable bool evaluated_non_deterministic_defaults = false;
 };
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
