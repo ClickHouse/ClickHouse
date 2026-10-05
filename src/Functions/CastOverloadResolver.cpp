@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_keep_nullable;
+    extern const SettingsString exponential_time_decay_default_mode;
 }
 
 namespace ErrorCodes
@@ -234,6 +235,7 @@ public:
         , keep_nullable(keep_nullable_)
         , data_type_validation_settings(data_type_validation_settings_)
         , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore))
+        , exponential_time_decay_default_mode(context_ ? context_->getSettingsRef()[Setting::exponential_time_decay_default_mode].value : "compact")
     {
     }
 
@@ -312,7 +314,7 @@ protected:
             type = createDataTypeExponentialTimeDecaying(
                 inferExponentialTimeDecayingDecayLength(arguments.front()),
                 key_width,
-                parseExponentialTimeDecayingMode(convert_settings->exponential_time_decay_default_mode));
+                parseExponentialTimeDecayingMode(exponential_time_decay_default_mode));
         }
         else
         {
@@ -367,6 +369,7 @@ private:
     /// Snapshot taken while the constructing context is alive: the cast this resolver builds may
     /// be executed after that context is gone (stored default or mutation expressions).
     FunctionConvertSettingsPtr convert_settings;
+    String exponential_time_decay_default_mode;
 };
 
 

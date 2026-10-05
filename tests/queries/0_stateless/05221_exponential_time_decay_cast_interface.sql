@@ -237,8 +237,8 @@ SET exponential_time_decay_default_mode = 'compact';
 -- Direct metadata is printable only. Curves with the same key remain equal and
 -- all mathematical operations use the same canonical key-defined curve.
 WITH
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
-    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    toFloat64(1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(t1) + 1) AS t2,
     CAST((toFloat64(1), t1), 'ExponentialTimeDecaying64(1, direct)') AS a,
     CAST((toFloat64(1), t2), 'ExponentialTimeDecaying64(1, direct)') AS b
 SELECT

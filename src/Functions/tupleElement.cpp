@@ -103,11 +103,11 @@ public:
         }
         else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecaying>(input_type))
         {
-            const auto & storage_tuple = assert_cast<const DataTypeTuple &>(*decaying->getNestedType());
-            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, storage_tuple, number_of_arguments);
+            const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*decaying->getLogicalTupleType());
+            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, logical_tuple, number_of_arguments);
             if (index.has_value())
             {
-                DataTypePtr element_type = storage_tuple.getElements()[index.value()];
+                DataTypePtr element_type = logical_tuple.getElements()[index.value()];
                 if (is_input_type_nullable)
                     element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
                 return wrapInArrays(std::move(element_type), count_arrays);
