@@ -278,6 +278,18 @@ FROM
     )
 );
 
+-- Explicit width/mode conversion is a semantic operation on the key-defined
+-- curve, not on Direct metadata. Equal source keys must convert identically.
+WITH
+    CAST((toFloat64(1), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS a,
+    CAST(
+        (toFloat64(1), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+        'ExponentialTimeDecaying64(1, direct)') AS b
+SELECT
+    CAST(a, 'ExponentialTimeDecaying128(1)') = CAST(b, 'ExponentialTimeDecaying128(1)'),
+    CAST(a, 'ExponentialTimeDecaying128(1, direct)')
+        = CAST(b, 'ExponentialTimeDecaying128(1, direct)');
+
 -- Compact output exposes only the canonical curve sign and representative
 -- unit time. The integer key remains the authoritative identity; printing does
 -- not promise to round-trip hidden 128-bit residual precision.
