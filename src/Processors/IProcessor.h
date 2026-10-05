@@ -38,7 +38,7 @@ class ExecutingGraph;
 
 namespace Runtime::V2
 {
-class ProcessorRunner;
+class TaskRunner;
 }
 
 
@@ -430,7 +430,7 @@ private:
     /// - output_wait_elapsed_ns
     friend class Runtime::V1::ExecutingGraph;
     /// For the same profiling fields
-    friend class Runtime::V2::ProcessorRunner;
+    friend class Runtime::V2::TaskRunner;
 
     std::string processor_description;
 

@@ -1,4 +1,7 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
+#include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -6,58 +9,51 @@ namespace DB
 namespace Runtime::V2
 {
 
-void WorkersCoordinator::ParkingSpot::park()
-{
-    wake_up.wait(false);
-    wake_up.store(false);
-}
-
-void WorkersCoordinator::ParkingSpot::unpark()
-{
-    wake_up.store(true);
-    wake_up.notify_one();
-}
-
-WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_, size_t max_workers)
-    : scheduler(scheduler_)
-    , poller(poller_)
+WorkersCoordinator::WorkersCoordinator(WorkerPool & pool_, size_t max_workers)
+    : pool(pool_)
     , is_registered(max_workers, false)
-    , sleeping_spots(max_workers)
 {
-    sleeping_threads.reserve(max_workers);
+    sleeping_workers.reserve(max_workers);
 }
 
-bool WorkersCoordinator::allIdle(size_t idle_workers) const
+size_t WorkersCoordinator::runnableTasks() const
 {
-    return idle_workers == registered_workers && scheduler.total() == 0;
+    size_t result = pool.global_tasks.size();
+    for (const auto & worker : pool.workers)
+        result += worker.taskCount();
+    return result;
 }
 
-std::optional<size_t> WorkersCoordinator::takeAnySleepingThread()
+bool WorkersCoordinator::allIdle() const
 {
-    if (sleeping_threads.empty())
-        return std::nullopt;
+    return idle_count == registered_workers && polling_count == 0 && runnableTasks() == 0 && pool.poller.pending() == 0;
+}
 
-    size_t worker_id = sleeping_threads.back();
-    sleeping_threads.pop_back();
-    sleeping_count.fetch_sub(1);
+Worker * WorkersCoordinator::takeAnySleepingWorker()
+{
+    if (sleeping_workers.empty())
+        return nullptr;
+
+    Worker * worker = sleeping_workers.back();
+    sleeping_workers.pop_back();
     idle_count.fetch_sub(1);
-    return worker_id;
+    return worker;
 }
 
 void WorkersCoordinator::wakeOneLocked()
 {
-    if (auto worker_id = takeAnySleepingThread())
-        sleeping_spots[*worker_id].unpark();
+    if (Worker * worker = takeAnySleepingWorker())
+        worker->wake();
     else if (polling_count > 0)
-        poller.wakeup();
+        pool.poller.wakeup();
 }
 
 void WorkersCoordinator::stopLocked()
 {
     is_stopped = true;
-    while (auto worker_id = takeAnySleepingThread())
-        sleeping_spots[*worker_id].unpark();
-    poller.wakeup();
+    while (Worker * worker = takeAnySleepingWorker())
+        worker->wake();
+    pool.poller.wakeup();
 }
 
 void WorkersCoordinator::enter(size_t worker_id)
@@ -80,15 +76,15 @@ void WorkersCoordinator::leave(size_t worker_id)
 
     is_registered[worker_id] = false;
     registered_workers.fetch_sub(1);
-    scheduler.drain(worker_id);
+    pool.workers[worker_id].drain();
 
-    if (allIdle(idle_count))
+    if (allIdle())
         stopLocked();
     else
         wakeOneLocked();
 }
 
-bool WorkersCoordinator::wait(size_t worker_id)
+bool WorkersCoordinator::wait(Worker & worker)
 {
     std::unique_lock lock(mutex);
 
@@ -97,65 +93,64 @@ bool WorkersCoordinator::wait(size_t worker_id)
 
     idle_count.fetch_add(1);
 
-    if (scheduler.queued() > 0)
+    if (runnableTasks() > 0)
     {
         idle_count.fetch_sub(1);
         return true;
     }
 
-    if (allIdle(idle_count))
+    if (allIdle())
     {
         idle_count.fetch_sub(1);
         stopLocked();
         return false;
     }
 
-    if (poller.pending() > 0 && polling_count == 0)
+    if (pool.poller.pending() > 0 && polling_count == 0)
     {
+        idle_count.fetch_sub(1);
         polling_count.fetch_add(1);
         lock.unlock();
-        scheduler.poll(worker_id, -1);
+        worker.poll(-1);
         lock.lock();
         polling_count.fetch_sub(1);
-        idle_count.fetch_sub(1);
         return !is_stopped;
     }
 
-    sleeping_threads.push_back(worker_id);
-    sleeping_count.fetch_add(1);
+    sleeping_workers.push_back(&worker);
     lock.unlock();
-    sleeping_spots[worker_id].park();
+    worker.park();
 
     return !is_stopped;
 }
 
 size_t WorkersCoordinator::wake(size_t to_wake)
 {
-    std::vector<size_t> woken;
+    std::vector<Worker *> woken;
     {
         std::lock_guard lock(mutex);
-        woken.reserve(std::min(to_wake, sleeping_threads.size()));
+        woken.reserve(std::min(to_wake, sleeping_workers.size()));
         while (woken.size() < to_wake)
         {
-            if (auto worker_id = takeAnySleepingThread())
-                woken.push_back(*worker_id);
+            if (Worker * worker = takeAnySleepingWorker())
+                woken.push_back(worker);
             else
                 break;
         }
     }
 
-    for (size_t worker_id : woken)
-        sleeping_spots[worker_id].unpark();
+    for (Worker * worker : woken)
+        worker->wake();
 
     if (woken.empty() && polling_count > 0)
-        poller.wakeup();
+        pool.poller.wakeup();
 
     return woken.size();
 }
 
 bool WorkersCoordinator::needsPoller() const
 {
-    return polling_count == 0 && sleeping_count > 0 && poller.pending() > 0;
+    return polling_count == 0 && idle_count > 0 && pool.poller.pending() > 0;
 }
 
 void WorkersCoordinator::stop()
@@ -171,12 +166,7 @@ bool WorkersCoordinator::stopped() const
 
 size_t WorkersCoordinator::idle() const
 {
-    return idle_count;
-}
-
-size_t WorkersCoordinator::registered() const
-{
-    return registered_workers;
+    return idle_count + polling_count;
 }
 
 }

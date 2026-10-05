@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/TaskScheduler.h>
-#include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
-#include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
-#include <Processors/Executors/Runtime/V2/Engine/ProcessorRunner.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
 #include <atomic>
 #include <optional>
@@ -16,24 +15,48 @@ namespace DB
 namespace Runtime::V2
 {
 
+class WorkerPool;
+
 class Worker
 {
     std::optional<Task> pickTask();
+    std::optional<Task> tryPickTask();
+    std::optional<Task> takeFromNext();
+    std::optional<Task> takeFromLocal();
+    std::optional<Task> takeFromGlobal();
+    std::optional<Task> takeFromOthers();
+    void pushToNext(Task task);
+    void pushToLocal(Task task);
     void wakeOrSpawn(size_t threads_needed);
     size_t runTask(Task task);
 
 public:
-    Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, WorkerPool & pool_);
+    Worker(WorkerPool & pool_, size_t worker_id_);
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
+    std::optional<Task> steal();
+    size_t poll(int timeout_ms);
+    void drain();
+    size_t taskCount() const;
+
+    void park();
+    void wake();
+
 private:
-    const size_t worker_id;
-    TaskScheduler & scheduler;
-    WorkersCoordinator & coordinator;
-    ExecutingPipeline & pipeline;
     WorkerPool & pool;
-    ProcessorRunner runner;
+    const size_t worker_id;
+    TaskRunner runner;
+
+    Wyrd::Mutex mutex;
+    TaskQueue local_tasks;
+    Wyrd::Atomic<size_t> local_tasks_count = 0;
+
+    std::optional<Task> next;
+    size_t next_streak = 0;
+    size_t picks_count = 0;
+
+    Wyrd::Atomic<bool> wake_up = false;
 };
 
 }

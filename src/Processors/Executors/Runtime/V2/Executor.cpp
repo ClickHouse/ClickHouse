@@ -50,12 +50,7 @@ void Executor::start(size_t num_threads, bool concurrency_control)
         pipeline.emplace(processors, process_list_element);
         pipeline->read_progress_callback = read_progress_callback.get();
         pipeline->step_profiler = step_profiler.get();
-
-        poller.emplace();
-        scheduler.emplace(*poller, num_threads);
-
-        coordinator.emplace(*scheduler, *poller, num_threads);
-        pool.emplace(*scheduler, *coordinator, *pipeline, num_threads, concurrency_control);
+        pool.emplace(*pipeline, num_threads, concurrency_control);
     }
     catch (Exception & exception)
     {
@@ -72,7 +67,7 @@ void Executor::start(size_t num_threads, bool concurrency_control)
         pipeline->cancel(*cancel_before_start);
 
     if (pipeline->cancelled())
-        coordinator->stop();
+        pool->stop();
 }
 
 void Executor::pushInitialTasks()
@@ -84,7 +79,7 @@ void Executor::pushInitialTasks()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is locked before the execution started", sink->processor->getName());
 
         sink->lock.setExecuting();
-        scheduler->push(Task{.state = sink, .kind = Task::Kind::Prepare});
+        pool->push(Task{.state = sink, .kind = Task::Kind::Prepare});
     }
 }
 
@@ -117,7 +112,7 @@ void Executor::execute(size_t num_threads, bool concurrency_control)
     {
         start(num_threads, concurrency_control);
         pool->run();
-        pool->stop();
+        pool->join();
 
         if (pipeline->exception)
             std::rethrow_exception(pipeline->exception);
@@ -138,10 +133,10 @@ bool Executor::executeUntil(std::atomic_bool * yield_flag)
 
     pool->runUntil(yield_flag);
 
-    if (!coordinator->stopped())
+    if (!pool->stopped())
         return true;
 
-    pool->stop();
+    pool->join();
 
     if (pipeline->exception)
         std::rethrow_exception(pipeline->exception);
@@ -162,7 +157,8 @@ void Executor::cancel(IProcessor::CancelReason reason)
     }
 
     pipeline->cancel(reason);
-    coordinator->stop();
+    if (pool)
+        pool->stop();
 }
 
 void Executor::cancelReading()

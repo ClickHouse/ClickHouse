@@ -1,5 +1,4 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
-#include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
@@ -90,15 +89,17 @@ SlotAllocationPtr allocateCPU(size_t max_threads, bool concurrency_control, Slot
 
 }
 
-WorkerPool::WorkerPool(TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control)
-    : scheduler(scheduler_)
-    , coordinator(coordinator_)
-    , pipeline(pipeline_)
+WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control)
+    : pipeline(pipeline_)
     , max_threads(max_threads_)
+    , coordinator(*this, max_threads)
     , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
     , cpu_slots(allocateCPU(max_threads, concurrency_control, requested_threads, coordinator))
     , threads(max_threads)
 {
+    for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
+        workers.emplace_back(*this, worker_id);
+
     if (pipeline.process_list_element)
     {
         reservation = pipeline.process_list_element->getMemoryReservation();
@@ -119,7 +120,7 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
     try
     {
         WorkerSlot worker_slot(std::move(slot), reservation, tracker);
-        Worker(worker_id, scheduler, coordinator, pipeline, *this).run(worker_slot, yield_flag);
+        workers[worker_id].run(worker_slot, yield_flag);
     }
     catch (...)
     {
@@ -129,6 +130,11 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
     coordinator.leave(worker_id);
 }
 
+void WorkerPool::push(Task task)
+{
+    global_tasks.push(task);
+}
+
 void WorkerPool::run()
 {
     auto slot = cpu_slots->acquire();
@@ -136,7 +142,7 @@ void WorkerPool::run()
 
     try
     {
-        if (const size_t initial_tasks = scheduler.queued(); initial_tasks > 1)
+        if (const size_t initial_tasks = global_tasks.size(); initial_tasks > 1)
             grow(initial_tasks - 1);
     }
     catch (...)
@@ -212,6 +218,16 @@ void WorkerPool::spawn(AcquiredSlotPtr slot)
 }
 
 void WorkerPool::stop()
+{
+    coordinator.stop();
+}
+
+bool WorkerPool::stopped() const
+{
+    return coordinator.stopped();
+}
+
+void WorkerPool::join()
 {
     {
         std::lock_guard lock(spawn_mutex);
