@@ -72,6 +72,7 @@ def get_profile_events(query_id, query_type="QueryFinish"):
             ProfileEvents['AIOutputTokens'] AS output_tokens,
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
             ProfileEvents['AIRowsSkipped'] AS rows_skipped,
+            ProfileEvents['AIReusedIdenticalInputs'] AS reused,
             peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = '{query_type}'
@@ -2406,3 +2407,277 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Reuse of identical inputs inside one query (`ai_function_reuse_identical`).
+# The cache is off by default, per query, and shared by every AI function.
+# ---------------------------------------------------------------------------
+
+REUSE_ON = {
+    "ai_function_reuse_identical": 1,
+    "max_threads": 1,
+    "max_block_size": 8,
+    "preferred_block_size_bytes": 0,
+}
+
+
+def test_reuse_identical_disabled_calls_provider_per_row(started_cluster):
+    """With the setting off, identical chat rows each dispatch their own request."""
+    qid = unique_query_id("reuse_off")
+    result = instance.query(
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(4)",
+        settings={"ai_function_reuse_identical": 0, "max_threads": 1},
+        query_id=qid,
+    )
+    assert result.splitlines() == ["positive"] * 4
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 4
+    assert int(events["reused"]) == 0
+    assert int(events["input_tokens"]) == 40
+    assert int(events["output_tokens"]) == 20
+    assert int(events["rows_processed"]) == 4
+
+
+def test_reuse_identical_chat_across_blocks(started_cluster):
+    """Copies of one text in several blocks cost one request. The mock bills 10 input and 5 output tokens per call."""
+    qid = unique_query_id("reuse_blocks")
+    result = instance.query(
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(8)",
+        settings={**REUSE_ON, "max_block_size": 2},
+        query_id=qid,
+    )
+    assert result.splitlines() == ["positive"] * 8
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["reused"]) == 7
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
+    assert int(events["rows_processed"]) == 8
+
+
+def test_reuse_identical_cache_is_per_query(started_cluster):
+    """A second query in the same session does not see the first query's cache."""
+    sql = (
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(4)"
+    )
+    qid1 = unique_query_id("reuse_query_a")
+    qid2 = unique_query_id("reuse_query_b")
+    instance.query(sql, settings=REUSE_ON, query_id=qid1)
+    instance.query(sql, settings=REUSE_ON, query_id=qid2)
+    for qid in (qid1, qid2):
+        events = get_profile_events(qid)
+        assert int(events["api_calls"]) == 1
+        assert int(events["reused"]) == 3
+
+
+def test_reuse_identical_different_categories_and_models_miss(started_cluster):
+    """A different category list or model is a different request, even for the same text."""
+    qid_categories = unique_query_id("reuse_categories")
+    instance.query(
+        "SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock')), "
+        "aiClassify('same', ['yes', 'no'], map('credentials', 'ai_mock'))",
+        settings=REUSE_ON,
+        query_id=qid_categories,
+    )
+    categories = get_profile_events(qid_categories)
+    assert int(categories["api_calls"]) == 2
+    assert int(categories["reused"]) == 0
+
+    qid_models = unique_query_id("reuse_models")
+    instance.query(
+        "SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', 'model-a')), "
+        "aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', 'model-b'))",
+        settings=REUSE_ON,
+        query_id=qid_models,
+    )
+    models = get_profile_events(qid_models)
+    assert int(models["api_calls"]) == 2
+    assert int(models["reused"]) == 0
+
+
+def test_reuse_identical_respects_api_call_quota(started_cluster):
+    """One stored outcome serves every copy, so a cap of one API call accepts the query.
+    The same rows without reuse hit the cap."""
+    sql = (
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(5)"
+    )
+    qid = unique_query_id("reuse_quota_on")
+    instance.query(
+        sql,
+        settings={**REUSE_ON, "ai_function_max_api_calls_per_query": 1},
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["reused"]) == 4
+    assert int(events["rows_processed"]) == 5
+
+    error = instance.query_and_get_error(
+        sql,
+        settings={
+            "ai_function_reuse_identical": 0,
+            "ai_function_max_api_calls_per_query": 1,
+            "max_threads": 1,
+        },
+    )
+    assert "LIMIT_EXCEEDED" in error
+
+
+def test_reuse_identical_embed_dedup_preserves_order(started_cluster):
+    """Repeated texts are embedded once. The mock bills one token per input character, so the
+    total is the sum of the distinct strings. Row order still matches the input."""
+    # One `numbers` scan stays in a single block at `max_block_size` 8, so the distinct
+    # texts are one embedding request. A `UNION ALL` of single-row arms can split blocks.
+    sql = (
+        "SELECT number + 1 AS id, "
+        "aiEmbed(transform(number, [0, 1, 2, 3, 4], ['alpha', 'beta', 'alpha', 'beta', 'gamma'], ''), "
+        "'test-embed-model', map('credentials', 'ai_embed')) "
+        "FROM numbers(5) ORDER BY id"
+    )
+    qid_off = unique_query_id("reuse_embed_off")
+    off_result = instance.query(
+        sql,
+        settings={"ai_function_reuse_identical": 0, "max_threads": 1},
+        query_id=qid_off,
+    )
+    qid_on = unique_query_id("reuse_embed_on")
+    on_result = instance.query(sql, settings=REUSE_ON, query_id=qid_on)
+
+    def rows(raw):
+        parsed = []
+        for line in raw.splitlines():
+            row_id, vec = line.split("\t")
+            parsed.append((int(row_id), parse_embedding(vec)))
+        return parsed
+
+    off_rows = rows(off_result)
+    on_rows = rows(on_result)
+    assert [row_id for row_id, _ in on_rows] == [1, 2, 3, 4, 5]
+    assert on_rows[0][1] == on_rows[2][1]
+    assert on_rows[1][1] == on_rows[3][1]
+    assert on_rows == off_rows
+
+    off_events = get_profile_events(qid_off)
+    on_events = get_profile_events(qid_on)
+    # 'alpha' + 'beta' + 'alpha' + 'beta' + 'gamma' = 5+4+5+4+5. Distinct is 5+4+5.
+    assert int(off_events["input_tokens"]) == 23
+    assert int(off_events["reused"]) == 0
+    assert int(on_events["api_calls"]) == 1
+    assert int(on_events["input_tokens"]) == 14
+    assert int(on_events["reused"]) == 2
+    assert int(on_events["rows_processed"]) == 5
+
+
+def test_reuse_identical_similarity_reuses_operands(started_cluster):
+    """Three rows of `aiSimilarity('a', 'q')` embed six operands but only two distinct texts."""
+    qid = unique_query_id("reuse_sim")
+    result = instance.query(
+        "SELECT aiSimilarity(materialize('a'), materialize('q'), 'test-embed-model', map('credentials', 'ai_embed')) "
+        "FROM numbers(3)",
+        settings=REUSE_ON,
+        query_id=qid,
+    )
+    scores = [parse_nullable_float(line) for line in result.splitlines()]
+    assert scores == [pytest.approx(expected_similarity("a", "q"), abs=1e-4)] * 3
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 2  # len('a') + len('q')
+    assert int(events["reused"]) == 4
+    assert int(events["rows_processed"]) == 3
+
+
+def test_reuse_identical_embed_and_similarity_share_embeddings(started_cluster):
+    """`aiEmbed` and `aiSimilarity` share one embedding key, so 'alpha' is sent once."""
+    qid = unique_query_id("reuse_share")
+    instance.query(
+        "SELECT length(aiEmbed('alpha', 'test-embed-model', map('credentials', 'ai_embed'))), "
+        "aiSimilarity('alpha', 'beta', 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=REUSE_ON,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    # len('alpha') + len('beta'). A second embedding of 'alpha' would bill 5 more tokens.
+    assert int(events["input_tokens"]) == 9
+    assert int(events["reused"]) == 1
+    assert 1 <= int(events["api_calls"]) <= 2
+
+
+def test_reuse_identical_parallel_singleflight(started_cluster):
+    """Several threads reading the same text still dispatch one request."""
+    qid = unique_query_id("reuse_parallel")
+    result = instance.query(
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(64)",
+        settings={
+            "ai_function_reuse_identical": 1,
+            "max_threads": 4,
+            "max_block_size": 8,
+            "preferred_block_size_bytes": 0,
+        },
+        query_id=qid,
+    )
+    assert result.splitlines() == ["positive"] * 64
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["reused"]) == 63
+    assert int(events["rows_processed"]) == 64
+
+
+def test_reuse_identical_evicts_when_over_byte_cap(started_cluster):
+    """A cap of one byte cannot retain an entry, so the second copy calls the provider again."""
+    qid = unique_query_id("reuse_evict")
+    instance.query(
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_mock')) "
+        "FROM numbers(2)",
+        settings={
+            "ai_function_reuse_identical": 1,
+            "ai_function_reuse_identical_max_size_bytes": 1,
+            "max_threads": 1,
+            "max_block_size": 2,
+            "preferred_block_size_bytes": 0,
+        },
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["reused"]) == 0
+
+
+def test_reuse_identical_caches_terminal_provider_error(started_cluster):
+    """A terminal provider failure is stored. Later copies do not retry it.
+    HTTP 500 is retried once, so the owner spends two API calls."""
+    qid = unique_query_id("reuse_error")
+    result = instance.query(
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], map('credentials', 'ai_error')) "
+        "FROM numbers(3)",
+        settings={
+            **REUSE_ON,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 1,
+            "ai_function_retry_initial_delay_ms": 1,
+        },
+        query_id=qid,
+    )
+    assert result.splitlines() == ["", "", ""]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["reused"]) == 2
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 3
+
+
+def test_reuse_identical_rejects_zero_cache_size(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock'))",
+        settings={
+            "ai_function_reuse_identical": 1,
+            "ai_function_reuse_identical_max_size_bytes": 0,
+        },
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "ai_function_reuse_identical_max_size_bytes" in error

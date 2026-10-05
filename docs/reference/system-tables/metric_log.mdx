@@ -1603,6 +1603,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
 - `ProfileEvent_AIRowsProcessed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received an AI result.
 - `ProfileEvent_AIRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received a default value due to quota or error.
+- `ProfileEvent_AIReusedIdenticalInputs` ([UInt64](/reference/data-types/int-uint)) — Number of AI function inputs served from a stored provider outcome in the same query without dispatching another request.
 - `ProfileEvent_StatelessWorkerRequested` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers requested by queries for distributed query execution.
 - `ProfileEvent_StatelessWorkerProvided` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers provided to queries for distributed query execution.
 - `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time queries spent waiting for stateless workers to be provisioned.
