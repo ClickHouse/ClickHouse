@@ -234,6 +234,19 @@ SET exponential_time_decay_default_mode = 'invalid';
 SELECT exponentialTimeDecaying(3)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SET exponential_time_decay_default_mode = 'compact';
 
+-- Direct metadata is printable only. Curves with the same key remain equal and
+-- all mathematical operations use the same canonical key-defined curve.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    CAST((toFloat64(1), t1), 'ExponentialTimeDecaying64(1, direct)') AS a,
+    CAST((toFloat64(1), t2), 'ExponentialTimeDecaying64(1, direct)') AS b
+SELECT
+    a = b,
+    tupleElement(a, 'timestamp') != tupleElement(b, 'timestamp'),
+    exponentialTimeDecayingValueAt(a, toFloat64(0))
+        = exponentialTimeDecayingValueAt(b, toFloat64(0));
+
 -- Compact output is a canonical raw pair reconstructed from the authoritative
 -- key. Re-parsing that pair must reproduce the same key at either width.
 WITH
