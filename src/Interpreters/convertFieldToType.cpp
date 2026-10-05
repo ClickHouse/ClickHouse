@@ -769,7 +769,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & src_tuple = src.safeGet<Tuple>();
             DataTypePtr raw_type;
             if (src_tuple.size() == 2)
-                raw_type = decaying_type->getNestedType();
+                raw_type = decaying_type->getDirectTupleType();
             else if (src_tuple.size() == 3)
                 raw_type = decaying_type->getLogicalTupleType();
             else
@@ -798,16 +798,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                         decay_length);
             }
 
-            if (!std::isfinite(value)
-                || !std::isfinite(time)
-                || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
+            if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
                 throw Exception(
                     ErrorCodes::TYPE_MISMATCH,
-                    "ExponentialTimeDecaying value and timestamp must define a finite decay curve");
+                    "ExponentialTimeDecaying value and timestamp must be finite");
+
+            if (decaying_type->getMode() == ExponentialTimeDecayingMode::Direct)
+                return Tuple{value, time, decay_length};
 
             const auto normalized = normalizeExponentialTimeDecaying(
                 value, time, decay_length, decaying_type->getKeyWidth());
-            return Tuple{normalized.value_at_anchor, normalized.anchor_time};
+            const auto canonical = decaying_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64
+                ? getExponentialTimeDecayingCanonicalDirectValue(static_cast<UInt64>(normalized.ordering_key))
+                : getExponentialTimeDecayingCanonicalDirectValue(normalized.ordering_key);
+            return Tuple{canonical.value_at_anchor, canonical.anchor_time, decay_length};
         }
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
