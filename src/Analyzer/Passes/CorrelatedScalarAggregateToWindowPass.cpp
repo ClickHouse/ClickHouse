@@ -457,20 +457,19 @@ private:
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
     static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate)
     {
-        NameSet keys(candidate.keys.begin(), candidate.keys.end());
-        auto is_key = [&](const ColumnNode & column)
-        { return column.getColumnSourceOrNull().get() == target && keys.contains(column.getColumnName()); };
-        auto is_other = [&](const ColumnNode & column) { return column.getColumnSourceOrNull().get() != target; };
+        auto reads = [&](const ColumnNode & column) { return column.getColumnSourceOrNull().get() == target; };
+        auto is_key = [&](const ColumnNode & column) { return std::ranges::contains(candidate.keys, column.getColumnName()); };
 
         bool joined_on_keys = false;
-        for (const auto & conjunct : enforced)
-            if (auto [lhs, rhs] = asColumnEquality(conjunct); lhs && rhs)
-                joined_on_keys |= (is_key(*lhs) && is_other(*rhs)) || (is_key(*rhs) && is_other(*lhs));
-
+        bool other_table_condition = false;
         for (const auto & conjunct : enforced)
         {
             if (auto [lhs, rhs] = asColumnEquality(conjunct); lhs && rhs)
+            {
+                if (reads(*lhs) != reads(*rhs))
+                    joined_on_keys |= is_key(reads(*lhs) ? *lhs : *rhs);
                 continue;
+            }
 
             bool reads_target = false;
             bool only_keys = true;
@@ -480,10 +479,10 @@ private:
                 [&](QueryTreeNodePtr & current)
                 {
                     const auto * column = current->as<ColumnNode>();
-                    if (!column || column->getColumnSourceOrNull().get() != target)
+                    if (!column || !reads(*column))
                         return;
                     reads_target = true;
-                    only_keys &= keys.contains(column->getColumnName());
+                    only_keys &= is_key(*column);
                 },
                 [&](QueryTreeNodePtr & subquery)
                 {
@@ -493,10 +492,11 @@ private:
                         only_keys = false;
                     }
                 });
-            if (reads_target ? only_keys : joined_on_keys)
+            if (reads_target && only_keys)
                 return true;
+            other_table_condition |= !reads_target;
         }
-        return false;
+        return other_table_condition && joined_on_keys;
     }
 
     void rewriteTarget(QueryTreeNodePtr & query_node_ptr, QueryTreeNodePtr & target_slot, const std::vector<Candidate *> & candidates)
