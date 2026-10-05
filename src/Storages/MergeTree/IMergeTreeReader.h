@@ -226,8 +226,7 @@ private:
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
 
-    /// A non-deterministic default (of a missing column, or replacing NULLs in a conversion to a non-`Nullable` type) changes between
-    /// reads of the same part, so a query condition cache verdict that used it must not be recorded.
+    /// A non-deterministic default differs between reads of the same part, so a query condition cache verdict using it is not recorded.
     mutable bool evaluated_non_deterministic_defaults = false;
 };
 

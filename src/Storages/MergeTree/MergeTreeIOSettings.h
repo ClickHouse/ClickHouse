@@ -71,8 +71,7 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
-    /// Folded into every query condition cache key: the query's `queryConditionCacheSettingsSalt` combined by `createForQuery` with the
-    /// schema hash of the metadata snapshot, because an `ALTER` changes what a part returns for a column without renaming the part.
+    /// Folded into every query condition cache key: settings salt plus schema hash (an `ALTER` changes what a part returns, not its name).
     UInt64 query_condition_cache_salt = 0;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
