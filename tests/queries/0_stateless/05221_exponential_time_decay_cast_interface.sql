@@ -264,6 +264,20 @@ FROM
     GROUP BY value
 );
 
+SELECT count()
+FROM
+(
+    SELECT DISTINCT value
+    FROM
+    (
+        SELECT CAST((toFloat64(1), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
+        UNION ALL
+        SELECT CAST(
+            (toFloat64(1), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            'ExponentialTimeDecaying64(1, direct)') AS value
+    )
+);
+
 -- Compact output exposes only the canonical curve sign and representative
 -- unit time. The integer key remains the authoritative identity; printing does
 -- not promise to round-trip hidden 128-bit residual precision.
