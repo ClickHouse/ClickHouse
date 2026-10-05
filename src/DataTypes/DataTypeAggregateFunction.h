@@ -72,6 +72,9 @@ public:
     /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state.
     static bool nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version);
 
+    /// Throws if `function` only works as a window function: its state cannot be used as a data type.
+    static void checkSupportedFunctions(const AggregateFunctionPtr & function);
+
     /// Same as equals() but ignores the state variant (Aggregation vs Window).
     bool equalsIgnoringVariant(const IDataType & rhs) const;
 

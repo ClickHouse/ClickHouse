@@ -79,7 +79,7 @@ When tracing is enabled, ClickHouse creates spans for both client-side and serve
 - `keeper.dispatcher.requests_queue` — Request queuing in the dispatcher
 - `keeper.write.pre_commit` — Preprocessing write requests before Raft commit
 - `keeper.write.commit` — Processing write requests after Raft commit
-- `keeper.read.wait_for_write` — Read requests waiting for dependent writes
+- `keeper.read.wait_for_write` — Read requests queued behind an in-flight request batch
 - `keeper.read.process` — Processing read requests
 - `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
 - `keeper.send_response` — Sending the response to the client

@@ -13,6 +13,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
+#include <Core/Field.h>
 #include <Interpreters/Context.h>
 
 #if USE_CLIENT_AI
@@ -108,7 +109,7 @@ public:
     bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
     void stopQuery() { query_interrupt_handler.stop(); }
 
-    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin = nullptr);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
@@ -157,12 +158,13 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+    /// The other side re-parses the outbound query text using the `dialect` it receives, so that
+    /// dialect must be the one the client accepted the text with. Pin the outbound `dialect` (and the
+    /// experimental JSON gate) to match the form of `outbound_query` actually being sent — a JSON body,
+    /// SQL produced by a client-side AST rewrite, or the text as it was typed — undoing a query-local
+    /// `SETTINGS dialect = ...` that only applies to the statements that follow. The change is
+    /// temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialect(const String & outbound_query);
 
     /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
     /// values kept but marked unchanged. They still select the client-side network codec, but they are not
@@ -374,7 +376,7 @@ protected:
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
 
-    String appendSmileyIfNeeded(const String & prompt);
+    static String appendSmileyIfNeeded(const String & prompt);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -405,7 +407,7 @@ protected:
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
     String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
-    bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool ignore_error = false; /// In case of errors, report the error, continue to the next query and do not fail the run. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
@@ -482,6 +484,9 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
+    /// A template for the prompt rendered by getPrompt: the `{display_name}` placeholder
+    /// is substituted there on every call (the current dialect is appended to it when
+    /// it is not the default one), and the `:) ` smiley is appended if missing.
     String prompt;
     String server_display_name;
 
@@ -595,9 +600,25 @@ protected:
     bool allow_merge_tree_settings = false;
 
     /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
+    /// before any in-query `SET` is applied, so `pinOutboundDialect` can keep the outbound
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
+
+    /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `allow_experimental_logsql_dialect`
+    /// values the current query text was accepted with, kept only when the query's own `SETTINGS` clause changed them.
+    /// `pinOutboundDialect` restores them for the outbound settings, so a query-local
+    /// `SETTINGS dialect = ...` cannot change how this very query text is parsed on the other side.
+    /// Empty when the query left the setting alone: the client must not override values that arrive
+    /// from elsewhere in the meantime, such as the user's profile applied by
+    /// `applySettingsFromServerIfNeeded`, which the server is entitled to parse with.
+    std::optional<Field> current_query_parse_dialect;
+    std::optional<Field> current_query_parse_json_ast_gate;
+    std::optional<Field> current_query_parse_trino_gate;
+    std::optional<Field> current_query_parse_logsql_gate;
+
+    /// True when the current query is a SQL `SET` escape parsed with `ParserQuery` while a
+    /// non-ClickHouse dialect was active. Its outbound transport dialect must be `clickhouse`.
+    bool current_query_is_set_escape = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

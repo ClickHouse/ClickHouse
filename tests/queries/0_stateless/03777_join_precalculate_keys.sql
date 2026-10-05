@@ -9,6 +9,7 @@ SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=1;
 SET join_runtime_filter_min_probe_rows=0;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+SET optimize_move_to_prewhere = 0; -- Pinned because `Memory` tables support PREWHERE and the move would change the asserted plan
 
 SELECT explain
 FROM (

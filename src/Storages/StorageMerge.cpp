@@ -25,11 +25,9 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -48,6 +46,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -77,7 +76,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -294,6 +292,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const Con
     auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this);
     if (res.empty())
         throw Exception{DB::ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
+    /// Merge does not support TTL.
+    res.clearColumnTTLs();
     return res;
 }
 
@@ -502,69 +502,31 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 namespace
 {
 
-/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
-/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
-/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
-bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
+/// The column a child table should be read through to serve `column_name`, a name the child cannot
+/// resolve on its own. A subcolumn of a column whose type differs between the child and the `Merge`
+/// table exists only in the `Merge` type: `Merge` derives `seed Variant(String, UInt8)` from children
+/// declaring `seed Nullable(String)` and `seed Nullable(UInt8)`, and neither of them has `seed.UInt8`.
+/// Reading the whole column instead lets `convertAndFilterSourceStream` extract the subcolumn after
+/// the cast to the `Merge` type. Dropping the name, as a name no child declares at all is dropped,
+/// would leave it to `addMissingDefaults`, which fills every row with the subcolumn's default value -
+/// wrong results rather than an error. `optimize_functions_to_subcolumns` reaches this on its own by
+/// rewriting `variantElement(seed, 'UInt8')` into `seed.UInt8`.
+std::optional<String> getColumnToReadInsteadOfSubcolumn(
+    const String & column_name, const ColumnsDescription & child_columns, const ColumnsDescription & merge_columns)
 {
-    if (from.equals(to))
-        return true;
+    /// A column of that exact name wins over any subcolumn of the same name - `Merge` resolves the
+    /// name that way itself - so such a name is genuinely missing from the child and gets a default.
+    if (merge_columns.has(column_name))
+        return {};
 
-    const WhichDataType which_from(from);
-    const WhichDataType which_to(to);
-
-    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
-    /// mapping is the identity: the target must agree on the values AND be wide enough not to
-    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
-    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
+    for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
-        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
-        {
-            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
-                return true;
-        }
-        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
-            return true;
+        auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
+        if (merge_column && merge_column->type->tryGetSubcolumnType(String(subcolumn_name)) && child_columns.has(String(name_in_storage)))
+            return String(name_in_storage);
     }
 
-    /// Widening an integer keeps the order when the signedness is preserved or the target is
-    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
-    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
-    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
-    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
-    if (which_from.isInteger() && which_to.isInteger()
-        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
-        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
-            || !to.isValueRepresentedByUnsignedInteger()))
-        return true;
-
-    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
-    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
-    /// side; it never nests, so the stripped side is not `LowCardinality` again.
-    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
-    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
-    if (from_lc || to_lc)
-        return conversionPreservesOrder(
-            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
-
-    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
-    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
-    /// then has to become a concrete one and NULL placement changes.
-    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
-    {
-        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
-        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
-    }
-
-    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
-    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
-    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
-    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
-    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
-    if (from_array && to_array)
-        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
-
-    return false;
+    return {};
 }
 
 }
@@ -1113,28 +1075,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     size_t remaining_streams = num_streams;
 
     if (order_info)
-    {
         query_info_.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
-        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-        {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
-            if (it == selected_tables.begin())
-                input_sorting_info = current_info;
-            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-                input_sorting_info.reset();
-
-            if (!input_sorting_info)
-                break;
-        }
-
-        query_info_.input_order_info = input_sorting_info;
-    }
 
     auto logger = getLogger("StorageMerge");
 
@@ -1397,7 +1338,35 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
+            /// A name the child declares neither as a column nor as a subcolumn is dropped here and
+            /// filled with the default value by `convertAndFilterSourceStream`. The exception is a
+            /// subcolumn of a column the child does have under a different type: that one is read
+            /// through the whole column - see `getColumnToReadInsteadOfSubcolumn`.
+            {
+                const auto child_columns = nested_storage_snapshot->getAllColumnsDescription();
+                const auto & merge_columns = merge_storage_snapshot->metadata->getColumns();
+
+                Names resolved_column_names;
+                NameSet resolved_column_names_set;
+                resolved_column_names.reserve(column_names_to_read.size());
+
+                for (auto & column_name : column_names_to_read)
+                {
+                    String name_to_read = std::move(column_name);
+                    if (!child_columns.has(name_to_read) && !child_columns.hasSubcolumn(GetColumnsOptions::All, name_to_read))
+                    {
+                        auto column_to_read = getColumnToReadInsteadOfSubcolumn(name_to_read, child_columns, merge_columns);
+                        if (!column_to_read)
+                            continue;
+                        name_to_read = std::move(*column_to_read);
+                    }
+
+                    if (resolved_column_names_set.emplace(name_to_read).second)
+                        resolved_column_names.push_back(std::move(name_to_read));
+                }
+
+                column_names_to_read = std::move(resolved_column_names);
+            }
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,
@@ -1417,7 +1386,17 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(
+                    *common_header,
+                    query_info,
+                    modified_query_info,
+                    nested_storage_snapshot,
+                    merge_storage_snapshot->metadata->getColumns(),
+                    aliases,
+                    row_policy_data_opt,
+                    context,
+                    child,
+                    is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1505,6 +1484,24 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // GROUP BY should be removed as well.
 
     auto * modified_query_node = modified_query->as<QueryNode>();
+
+    /// An `ARRAY JOIN` result column is produced above the table, so a filter over it is not a filter
+    /// over the table's own columns, and the child must not be asked to read it: `StorageMerge` reads
+    /// its children with `FetchColumns` and performs the array join on the initiator, where the filter
+    /// is applied. Replacing the join tree below rewires every column sourced from the `ARRAY JOIN`
+    /// node onto the child table expression, which makes such a filter indistinguishable from a filter
+    /// over the child's own columns, so drop those filters here, while the columns still point at the
+    /// `ARRAY JOIN` node. Filters over the table's columns are unaffected: they were rewired onto the
+    /// child table expression by the replacement above and are kept.
+    if (join_tree_type == QueryTreeNodeType::ARRAY_JOIN)
+    {
+        if (modified_query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getPrewhere(), replacement_table_expression, context);
+        if (modified_query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getWhere(), replacement_table_expression, context);
+    }
 
     // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
     modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
@@ -1663,18 +1660,68 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             if (!merge_column)
                 continue;
 
-            column_name_to_node.emplace(column_name,
-                std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
+            /// A subcolumn of a column the child has under a different type is not missing: the child
+            /// cannot resolve it only because its type lacks it (see `getColumnToReadInsteadOfSubcolumn`).
+            /// A child that runs the query above `FetchColumns` (e.g. `Distributed`) evaluates this
+            /// query tree itself, so the subcolumn is derived there from the whole column cast to the
+            /// `Merge` type, as `convertAndFilterSourceStream` does for a child read at `FetchColumns`.
+            if (auto column_to_read = getColumnToReadInsteadOfSubcolumn(column_name, storage_columns, merge_storage_snapshot->metadata->getColumns()))
+            {
+                auto child_column = storage_snapshot_->tryGetColumn(get_column_options, *column_to_read);
+                auto merge_root_column = merge_storage_snapshot->metadata->getColumns().tryGetColumn(GetColumnsOptions::All, *column_to_read);
+                if (child_column && merge_root_column)
+                {
+                    auto column_node = std::make_shared<ColumnNode>(*child_column, modified_query_info.table_expression);
+                    auto cast_node = buildCastFunction(column_node, merge_root_column->type, modified_context);
+
+                    auto get_subcolumn_node = std::make_shared<FunctionNode>("getSubcolumn");
+                    auto & arguments = get_subcolumn_node->getArguments().getNodes();
+                    arguments.push_back(std::move(cast_node));
+                    arguments.push_back(std::make_shared<ConstantNode>(column_name.substr(column_to_read->size() + 1)));
+                    get_subcolumn_node->resolveAsFunction(
+                        FunctionFactory::instance().get("getSubcolumn", modified_context)->build(get_subcolumn_node->getArgumentColumns()));
+
+                    column_name_to_node.emplace(column_name, std::move(get_subcolumn_node));
+                    continue;
+                }
+            }
+
+            /// A subcolumn of a missing column is the subcolumn of the column's default: `x.null` of a NULL is 1.
+            Field default_value = merge_column->type->getDefault();
+            if (merge_column->isSubcolumn())
+            {
+                const auto & type_in_storage = merge_column->getTypeInStorage();
+                auto subcolumn = type_in_storage->getSubcolumn(
+                    merge_column->getSubcolumnName(), type_in_storage->createColumnConstWithDefaultValue(1));
+                default_value = (*subcolumn)[0];
+            }
+
+            column_name_to_node.emplace(column_name, std::make_shared<ConstantNode>(std::move(default_value), merge_column->type));
         }
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
         if (with_aliases)
         {
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
-            for (const auto & column : required_column_names)
+            for (const auto & required_column_name : required_column_names)
             {
+                String column = required_column_name;
+
                 /// Try to resolve column, including subcolumns (e.g. JSON sub-paths like json.x).
                 auto resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
+
+                /// A subcolumn of a column the child has under a different type is served by reading
+                /// the whole column and extracting the subcolumn from it after the cast to the `Merge`
+                /// type (see `getColumnToReadInsteadOfSubcolumn`), so read that column instead.
+                if (!resolved_pair && !isSubcolumnOfAliasColumn(storage_columns, column))
+                {
+                    if (auto column_to_read = getColumnToReadInsteadOfSubcolumn(
+                            column, storage_columns, merge_storage_snapshot->metadata->getColumns()))
+                    {
+                        column = std::move(*column_to_read);
+                        resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
+                    }
+                }
 
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
@@ -2207,6 +2254,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const SelectQueryInfo & outer_query_info,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
+    const ColumnsDescription & merge_columns,
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
@@ -2277,6 +2325,76 @@ void ReadFromMerge::convertAndFilterSourceStream(
         }
     }
 
+    /** A subcolumn of a column whose type differs between this child and the `Merge` table was
+      * replaced by the whole column in the child's read list (see `getColumnToReadInsteadOfSubcolumn`),
+      * because the child's type does not have that subcolumn. Cast the column to the `Merge` type
+      * and extract the subcolumn from the result, so the stream carries the column the query asked
+      * for. The cast is what makes the subcolumn exist: `seed Nullable(UInt8)` has no `UInt8`
+      * subcolumn, `seed Variant(String, UInt8)` does.
+      */
+    {
+        auto child_header_ptr = child.plan.getCurrentHeader();
+        const auto & child_header = *child_header_ptr;
+
+        ActionsDAG extract_subcolumns_dag(child_header.getColumnsWithTypeAndName());
+        std::unordered_map<String, const ActionsDAG::Node *> converted_columns;
+        ActionsDAG::NodeRawConstPtrs extracted_subcolumns;
+        NameSet columns_to_drop;
+
+        for (const auto & required_column : header)
+        {
+            /// See `getColumnToReadInsteadOfSubcolumn`: the child either produces the name already,
+            /// or it is a column of its own that the child does not have - and gets a default below.
+            if (child_header.has(required_column.name) || merge_columns.has(required_column.name))
+                continue;
+
+            for (auto [name_in_storage_view, subcolumn_name_view] : Nested::getAllColumnAndSubcolumnPairs(required_column.name))
+            {
+                String name_in_storage(name_in_storage_view);
+                String subcolumn_name(subcolumn_name_view);
+
+                if (!child_header.has(name_in_storage))
+                    continue;
+
+                auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions::All, name_in_storage);
+                if (!merge_column || !merge_column->type->tryGetSubcolumnType(subcolumn_name))
+                    continue;
+
+                auto [it, inserted] = converted_columns.emplace(name_in_storage, nullptr);
+                if (inserted)
+                    it->second = &extract_subcolumns_dag.addCast(
+                        extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, {}, local_context);
+
+                auto subcolumn_name_type = std::make_shared<DataTypeString>();
+                auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
+                const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+                    std::move(subcolumn_name_column), std::move(subcolumn_name_type), "'" + subcolumn_name + "'");
+
+                const auto & get_subcolumn_node = extract_subcolumns_dag.addFunction(
+                    FunctionFactory::instance().get("getSubcolumn", local_context), {it->second, &subcolumn_name_node}, {});
+
+                extracted_subcolumns.push_back(&extract_subcolumns_dag.addAlias(get_subcolumn_node, required_column.name));
+
+                /// The column itself is not in the result unless the query asked for it too.
+                if (!header.has(name_in_storage))
+                    columns_to_drop.insert(name_in_storage);
+
+                break;
+            }
+        }
+
+        if (!extracted_subcolumns.empty())
+        {
+            auto & outputs = extract_subcolumns_dag.getOutputs();
+            std::erase_if(outputs, [&](const auto * output) { return columns_to_drop.contains(output->result_name); });
+            outputs.insert(outputs.end(), extracted_subcolumns.begin(), extracted_subcolumns.end());
+
+            auto extract_subcolumns_step = std::make_unique<ExpressionStep>(child_header_ptr, std::move(extract_subcolumns_dag));
+            extract_subcolumns_step->setStepDescription("Extract subcolumns of the columns converted to the Merge table types");
+            child.plan.addStep(std::move(extract_subcolumns_step));
+        }
+    }
+
     /** Convert types of columns according to the resulting Merge table.
       * And convert column names to the expected ones.
        */
@@ -2335,13 +2453,43 @@ void ReadFromMerge::convertAndFilterSourceStream(
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
             inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
+        /// A subcolumn of a column the child does not have is extracted from that column once it is filled.
+        const auto & current_header = *child.plan.getCurrentHeader();
+        NamesAndTypesList columns_to_fill;
+        NameSet columns_to_fill_names;
+        bool has_subcolumns_of_missing_columns = false;
+        for (const auto & column : header)
+        {
+            NameAndTypePair column_to_fill(column.name, column.type);
+            if (!current_header.has(column.name) && !merge_columns.has(column.name))
+            {
+                auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
+                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage()))
+                {
+                    column_to_fill = NameAndTypePair(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
+                    has_subcolumns_of_missing_columns = true;
+                }
+            }
+
+            if (columns_to_fill_names.insert(column_to_fill.name).second)
+                columns_to_fill.push_back(std::move(column_to_fill));
+        }
+
         auto adding_missing_defaults_dag = addMissingDefaults(
-            *child.plan.getCurrentHeader(),
-            header.getNamesAndTypesList(),
+            current_header,
+            columns_to_fill,
             snapshot->getAllColumnsDescription(),
             local_context,
             false,
             inner_share_nested_offsets);
+
+        if (has_subcolumns_of_missing_columns)
+        {
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
+                Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
+            adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
+            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
+        }
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -2392,7 +2540,7 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
     filterTablesAndCreateChildrenPlans();
 }
 
-QueryPlanRawPtrs ReadFromMerge::getChildPlans()
+QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
 {
     filterTablesAndCreateChildrenPlans();
 

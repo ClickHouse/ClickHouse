@@ -35,7 +35,13 @@ class KeeperDispatcher
 private:
     friend class KeeperDispatcherTestAccessor;
 
-    using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
+    struct QueuedClusterUpdate
+    {
+        ClusterUpdateAction action;
+        /// Set by `clusterUpdateThread` once the update is accepted, if the producer waits for that.
+        std::shared_ptr<std::atomic<bool>> accepted;
+    };
+    using ClusterUpdateQueue = ConcurrentBoundedQueue<QueuedClusterUpdate>;
 
     SnapshotsQueue snapshots_queue{1};
 
@@ -125,7 +131,13 @@ private:
     void clusterUpdateThread();
 
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
-    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
+    void executeClusterUpdateActionAndWaitConfigChange(
+        const ClusterUpdateAction & action,
+        ConfigCheckCallback check_callback,
+        UInt64 max_action_wait_time_ms,
+        UInt64 retry_count,
+        const Stopwatch & total_watch,
+        UInt64 max_total_wait_time_ms);
 
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
@@ -164,7 +176,7 @@ public:
     bool isServerActive() const;
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
-    void pushClusterUpdates(ClusterUpdateActions && actions);
+    void pushClusterUpdates(ClusterUpdateActions && actions, std::shared_ptr<std::atomic<bool>> accepted = nullptr);
     bool reconfigEnabled() const;
 
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
@@ -216,7 +228,7 @@ public:
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
+    void updateKeeperStatLatency(uint64_t process_time_ms);
 
     /// Are we leader
     bool isLeader() const

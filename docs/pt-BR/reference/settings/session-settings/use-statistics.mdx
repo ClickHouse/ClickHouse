@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 /// preferido em vez de &#39;allow&#95;statistics&#95;optimize&#39; por consistência com &#39;use&#95;primary&#95;key&#39; e &#39;use&#95;skip&#95;indexes&#39;
 Permite usar estatísticas para otimizar consultas
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ Permite usar estatísticas para otimizar consultas
 
 Use o cache de estatísticas em uma consulta para evitar a sobrecarga do carregamento das estatísticas de todas as partes
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para responder às agregações `min`, `max` e `count` sem `GROUP BY` e sem filtros a partir das estatísticas de colunas por parte, nas partes que as têm materializadas, lendo apenas as partes restantes. previous_value=false, de modo que a `compatibility` com versões anteriores à 26.9 mantém a otimização desabilitada e restaura o plano preexistente."}]}]} />
+
+Responde às agregações `min`, `max` e `count` a partir das estatísticas de colunas por parte, em vez de ler os dados.
+
+Quando habilitada, uma consulta no formato `SELECT min(column), max(column), count() FROM table` sem `GROUP BY` e sem filtros
+é respondida a partir das estatísticas de colunas (por exemplo, estatísticas MinMax; veja a configuração de MergeTree `auto_statistics_types`)
+nas partes de dados que as têm materializadas, e apenas as partes restantes são lidas.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
