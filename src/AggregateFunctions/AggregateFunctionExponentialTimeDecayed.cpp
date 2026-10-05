@@ -46,26 +46,6 @@ enum class ExponentialTimeDecayedResult
     Count,
 };
 
-Float64 getExponentialTimeDecayingIndexTime(
-    Float64 value,
-    Float64 time,
-    Float64 decay_length,
-    ExponentialTimeDecayingKeyWidth key_width)
-{
-    const auto normalized = normalizeExponentialTimeDecaying(
-        value, time, decay_length, key_width);
-
-    if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
-        return getExponentialTimeDecayingCanonicalDirectValue(
-            static_cast<UInt64>(normalized.ordering_key)).anchor_time;
-
-    /// The high 64 bits of the 128-bit identity are the canonical Float64
-    /// anchor. Using that finite indexed coordinate keeps the significance
-    /// cutoff conservative even when the true unit time lies beyond Float64.
-    return getExponentialTimeDecayingCanonicalDirectValue(
-        normalized.ordering_key).anchor_time;
-}
-
 struct ExponentialTimeDecayedState
 {
     /// Every state is evaluated at max_time:
@@ -81,8 +61,8 @@ struct ExponentialTimeDecayedState
         Float64 value,
         Float64 time,
         Float64 decay_length,
-        Float64 max_decay_distance,
-        std::optional<Float64> input_index_time,
+        Float64 max_decay_lengths,
+        std::optional<UInt128> input_ordering_key,
         std::optional<ExponentialTimeDecayingKeyWidth> key_width)
     {
         ExponentialTimeDecayedState rhs;
@@ -92,7 +72,7 @@ struct ExponentialTimeDecayedState
 
         /// The significance cutoff is an input-row optimization for finalized
         /// `ExponentialTimeDecaying` values only. It must never affect state merges.
-        if (input_index_time && key_width && std::isfinite(max_decay_distance) && !empty())
+        if (input_ordering_key && key_width && std::isfinite(max_decay_lengths) && !empty())
         {
             if (weighted_sum == 0)
             {
@@ -100,16 +80,21 @@ struct ExponentialTimeDecayedState
                 return;
             }
 
-            const Float64 current_index_time = getExponentialTimeDecayingIndexTime(
-                weighted_sum, max_time, decay_length, *key_width);
-            const Float64 index_distance = *input_index_time - current_index_time;
+            const UInt128 current_ordering_key = normalizeExponentialTimeDecaying(
+                weighted_sum, max_time, decay_length, *key_width).ordering_key;
+            const int distance = compareExponentialTimeDecayingOrderingKeyDistance(
+                *input_ordering_key,
+                current_ordering_key,
+                *key_width,
+                decay_length,
+                max_decay_lengths);
 
-            if (index_distance > max_decay_distance)
+            if (distance > 0)
             {
                 *this = rhs;
                 return;
             }
-            if (-index_distance > max_decay_distance)
+            if (distance < 0)
                 return;
         }
 
@@ -176,7 +161,7 @@ public:
         const DataTypes & argument_types_,
         const Array & parameters_,
         Float64 decay_length_,
-        Float64 max_decay_distance_,
+        Float64 max_decay_lengths_,
         DataTypePtr result_type_,
         std::optional<ExponentialTimeDecayingKeyWidth> key_width_ = std::nullopt)
         : IAggregateFunctionDataHelper<
@@ -185,7 +170,7 @@ public:
               argument_types_, parameters_, std::move(result_type_))
         , name(std::move(name_))
         , decay_length(decay_length_)
-        , max_decay_distance(max_decay_distance_)
+        , max_decay_lengths(max_decay_lengths_)
         , key_width(key_width_)
         , input_is_decaying_value(key_width.has_value())
     {
@@ -207,7 +192,7 @@ public:
     {
         Float64 value = 1;
         Float64 time = std::numeric_limits<Float64>::quiet_NaN();
-        std::optional<Float64> input_index_time;
+        std::optional<UInt128> input_ordering_key;
         if (input_is_decaying_value)
         {
             const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
@@ -222,16 +207,13 @@ public:
             {
                 const auto & keys
                     = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
-                input_index_time
-                    = getExponentialTimeDecayingCanonicalDirectValue(keys[row_num]).anchor_time;
+                input_ordering_key = UInt128(keys[row_num]);
             }
             else
             {
                 const auto & keys
                     = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
-                const auto indexed_direct
-                    = getExponentialTimeDecayingCanonicalDirectValue(keys[row_num]);
-                input_index_time = indexed_direct.anchor_time;
+                input_ordering_key = keys[row_num];
             }
         }
         else
@@ -248,7 +230,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
         this->data(place).add(
-            value, time, decay_length, max_decay_distance, input_index_time, key_width);
+            value, time, decay_length, max_decay_lengths, input_ordering_key, key_width);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -327,12 +309,12 @@ public:
 private:
     const String name;
     const Float64 decay_length;
-    const Float64 max_decay_distance;
+    const Float64 max_decay_lengths;
     const std::optional<ExponentialTimeDecayingKeyWidth> key_width;
     const bool input_is_decaying_value;
 };
 
-Float64 getMaxDecayDistance(const String & name, const Settings * settings, Float64 decay_length)
+Float64 getMaxDecayLengths(const String & name, const Settings * settings)
 {
     /// Aggregate functions embedded in AggregateFunction/SimpleAggregateFunction
     /// data types are constructed without query settings. Keeping this path
@@ -351,7 +333,7 @@ Float64 getMaxDecayDistance(const String & name, const Settings * settings, Floa
     if (max_distance_in_decay_lengths == 0)
         return std::numeric_limits<Float64>::infinity();
 
-    return max_distance_in_decay_lengths * decay_length;
+    return max_distance_in_decay_lengths;
 }
 
 Float64 getDecayLength(const String & name, const Array & parameters)
@@ -441,7 +423,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
                 argument_types,
                 parameters,
                 decay_length,
-                getMaxDecayDistance(name, settings, decay_length),
+                getMaxDecayLengths(name, settings),
                 argument_types[0],
                 *tryGetExponentialTimeDecayingKeyWidth(argument_types[0]));
         }
@@ -454,7 +436,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
         argument_types,
         parameters,
         decay_length,
-        getMaxDecayDistance(name, settings, decay_length),
+        getMaxDecayLengths(name, settings),
         std::make_shared<DataTypeFloat64>());
 }
 
@@ -471,7 +453,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecaying(
         argument_types,
         parameters,
         decay_length,
-        getMaxDecayDistance(name, settings, decay_length),
+        getMaxDecayLengths(name, settings),
         std::make_shared<DataTypeFloat64>());
 }
 
@@ -488,7 +470,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
         argument_types,
         parameters,
         decay_length,
-        getMaxDecayDistance(name, settings, decay_length),
+        getMaxDecayLengths(name, settings),
         std::make_shared<DataTypeFloat64>());
 }
 
@@ -505,7 +487,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
         argument_types,
         parameters,
         decay_length,
-        getMaxDecayDistance(name, settings, decay_length),
+        getMaxDecayLengths(name, settings),
         std::make_shared<DataTypeFloat64>());
 }
 
