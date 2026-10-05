@@ -92,6 +92,12 @@ size_t AggregateFunctionTuple::getVersionFromRevision(size_t revision) const
     return version;
 }
 
+bool AggregateFunctionTuple::requiresExplicitStateVersionForWrite() const
+{
+    return std::ranges::any_of(
+        nested_functions, [](const auto & nested) { return nested->requiresExplicitStateVersionForWrite(); });
+}
+
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const
 {
     size_t i = 0;

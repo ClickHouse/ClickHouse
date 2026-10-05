@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -112,6 +113,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_TABLE;
@@ -1809,6 +1811,47 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [column_name, _] : stage.column_to_updated)
             columns_written_by_stages.insert(column_name);
+    }
+
+    /// Unlike an ordinary INSERT, a mutation does not go through InsertDependenciesBuilder. Reject
+    /// only columns that this mutation actually regenerates: untouched legacy states can still be
+    /// hardlinked or rewritten by background maintenance, while UPDATE, MATERIALIZE COLUMN and
+    /// dependent MATERIALIZED-column recomputation cannot create new lossy version-0 states.
+    if (source.getMergeTreeData())
+    {
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        for (const auto & column_name : columns_written_by_stages)
+        {
+            auto column = storage_columns.tryGetColumn(GetColumnsOptions::AllPhysical, column_name);
+            if (!column)
+                continue;
+
+            DataTypePtr target_type = column->type;
+            for (const auto & command : commands)
+            {
+                if (command.type == MutationCommand::READ_COLUMN
+                    && command.column_name == column_name
+                    && command.data_type)
+                    target_type = command.data_type;
+            }
+
+            if (!hasLegacyUnversionedAggregateStateRequiringMigration(target_type))
+                continue;
+
+            DataTypePtr migration_type = target_type;
+            pinCurrentStateVersionToAggregateFunctions(migration_type);
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot write legacy unversioned aggregate state column {} of table {} during mutation because its old "
+                "serialization is not safe for new writes. Migrate the column first with "
+                "ALTER TABLE {} MODIFY COLUMN {} {}",
+                backQuote(column_name),
+                source.getStorage()->getStorageID().getNameForLogs(),
+                source.getStorage()->getStorageID().getNameForLogs(),
+                backQuote(column_name),
+                migration_type->getName());
+        }
     }
 
     for (const auto & column : metadata_snapshot->getColumns())

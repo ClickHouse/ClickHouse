@@ -1,0 +1,2 @@
+AggregateFunction(1, singleValueOrNullIf, UInt64, UInt8)
+\N

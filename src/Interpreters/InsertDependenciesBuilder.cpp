@@ -1,6 +1,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -18,6 +19,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -68,6 +70,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
@@ -143,6 +146,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
 }
@@ -157,6 +161,36 @@ size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
         return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
     return value;
+}
+
+void checkLegacyAggregateStateInsert(const StoragePtr & storage, const StorageMetadataPtr & metadata)
+{
+    /// Remote storages negotiate aggregate-state versions with the peer and must keep accepting
+    /// legacy states during rolling upgrades. Local storages, including Memory, may later serialize
+    /// their blocks through Native (for example during BACKUP), so legacy local metadata must reject
+    /// fresh writes.
+    if (storage->isRemote())
+        return;
+
+    for (const auto & column : metadata->getSampleBlock())
+    {
+        if (!hasLegacyUnversionedAggregateStateRequiringMigration(column.type))
+            continue;
+
+        DataTypePtr migration_type = column.type;
+        pinCurrentStateVersionToAggregateFunctions(migration_type);
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot insert into legacy unversioned aggregate state column {} of table {} because its old "
+            "serialization is not safe for new writes. Migrate the column first with "
+            "ALTER TABLE {} MODIFY COLUMN {} {}",
+            backQuote(column.name),
+            storage->getStorageID().getNameForLogs(),
+            storage->getStorageID().getNameForLogs(),
+            backQuote(column.name),
+            migration_type->getName());
+    }
 }
 
 /// True when `target` is an Enum that contains `source` with the same in-memory width, i.e. `source`
@@ -1800,6 +1834,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     const auto & insert_context = insert_contexts.at(view_id);
     const auto & header = output_headers.at(view_id);
 
+    checkLegacyAggregateStateInsert(inner_storage, inner_metadata);
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
 
     Chain result;
