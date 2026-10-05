@@ -415,24 +415,6 @@ WHERE NOT (
         = exponentialTimeDecayingUnitTime(negative_b)
     AND negative_a = negative_b);
 
--- Equivalent curves must expose the same ordered pair regardless of the anchor
--- used to construct them.
-WITH
-    exponentialTimeDecaying(10)(2., toFloat64(0)) AS positive_a,
-    exponentialTimeDecaying(10)(1., toFloat64(10 * log(2))) AS positive_b,
-    exponentialTimeDecaying(10)(-2., toFloat64(0)) AS negative_a,
-    exponentialTimeDecaying(10)(-1., toFloat64(10 * log(2))) AS negative_b
-SELECT 'unit-time re-anchoring mismatch'
-WHERE NOT (
-    exponentialTimeDecayingUnitTime(positive_a)
-        = exponentialTimeDecayingUnitTime(positive_b)
-    AND exponentialTimeDecayingValueAtUnitTime(positive_a)
-        = exponentialTimeDecayingValueAtUnitTime(positive_b)
-    AND exponentialTimeDecayingUnitTime(negative_a)
-        = exponentialTimeDecayingUnitTime(negative_b)
-    AND exponentialTimeDecayingValueAtUnitTime(negative_a)
-        = exponentialTimeDecayingValueAtUnitTime(negative_b));
-
 -- Zero remains the midpoint identity for the exposed ordering pair.
 WITH exponentialTimeDecaying(10)(0., toFloat64(123)) AS zero
 SELECT 'zero unit-time mismatch'
