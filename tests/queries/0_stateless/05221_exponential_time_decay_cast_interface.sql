@@ -208,6 +208,44 @@ SELECT
     (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM compact_state),
     (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM precise_state);
 
+-- Finalized aggregation and State/Merge preserve Direct mode as well as width.
+SELECT
+    (
+        SELECT toTypeName(exponentialTimeDecayedSum(value))
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying64(10, direct)') AS value
+        )
+    ),
+    (
+        SELECT toTypeName(exponentialTimeDecayedSum(value))
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying128(10, direct)') AS value
+        )
+    );
+
+WITH
+    direct64_state AS
+    (
+        SELECT exponentialTimeDecayedSumState(value) AS state
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying64(10, direct)') AS value
+        )
+    ),
+    direct128_state AS
+    (
+        SELECT exponentialTimeDecayedSumState(value) AS state
+        FROM
+        (
+            SELECT CAST((1., 0.), 'ExponentialTimeDecaying128(10, direct)') AS value
+        )
+    )
+SELECT
+    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM direct64_state),
+    (SELECT toTypeName(exponentialTimeDecayedSumMerge(state)) FROM direct128_state);
+
 -- Compact is the default, but the query setting can select direct storage
 -- for constructors and parameterless inferred casts. Explicit datatype modes win.
 SET exponential_time_decay_default_mode = 'direct';
