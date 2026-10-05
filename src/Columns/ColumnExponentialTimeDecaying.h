@@ -158,6 +158,7 @@ public:
     const IColumn & getOrderingKeyColumn() const;
     IColumn & getOrderingKeyColumn();
     ExponentialTimeDecayingCanonicalDirectValue getDirectValueAt(size_t n) const;
+    ExponentialTimeDecayingCanonicalDirectValue getCanonicalValueAt(size_t n) const;
     Float64 getUnitTimestampAt(size_t n) const;
     Int8 getSignAt(size_t n) const;
 };
