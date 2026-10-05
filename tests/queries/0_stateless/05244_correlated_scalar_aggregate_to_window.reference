@@ -213,6 +213,8 @@ NULL key and a condition that may throw without short-circuit: rewritten	0
 1	30	30
 2	5	1e308
 2	1e308	1e308
+=== non-deterministic condition on the key, not pushed below the window: rewritten 0 ===
+0
 === correlated table on the NULL-extended side: rewritten 0 ===
 1	10	30
 1	10	30
