@@ -1312,8 +1312,10 @@ void registerDataTypeExponentialTimeDecaying(DataTypeFactory & factory)
 Represents an exponentially time-decaying curve whose complete logical identity is a naturally
 ordered `UInt64` key. Curves mapping to the same key compare equal and have the same hash.
 `compact` is the default storage mode and stores only that key. `direct` stores the same
-authoritative key plus the original `(value, timestamp)` pair as non-identity metadata.
-The public tuple representation is always `(value, timestamp, decay_length)`.
+authoritative key plus `(value, timestamp)` as non-identity display metadata. Key-only operations
+such as `GROUP BY` or `DISTINCT` may choose any metadata representative for equal keys.
+Compact values normally print as `(-1/0/+1, unit_timestamp, decay_length)`; extreme 128-bit
+tails use their finite edge value and edge timestamp instead.
 )",
         .syntax = "ExponentialTimeDecaying64(decay_length[, mode])",
         .examples = {},
@@ -1327,9 +1329,10 @@ ordered `UInt128` key. The upper part stores a canonical Float64 anchor and the 
 timestamp bits store the positive magnitude at that anchor. This preserves additional unit-time
 precision and continues monotonically beyond the finite Float64 timestamp range by holding the
 anchor at the nearest finite boundary and using the residual magnitude there.
-`compact` stores only the key; `direct` additionally retains the original
-`(value, timestamp)` pair as non-identity metadata. The public tuple representation is always
-`(value, timestamp, decay_length)`.
+`compact` stores only the key; `direct` additionally retains `(value, timestamp)` as
+non-identity display metadata. Key-only operations may choose any metadata representative for
+equal keys. Compact values normally print the curve sign at the representative unit time; extreme
+tail keys print the residual value at the finite boundary timestamp.
 )",
         .syntax = "ExponentialTimeDecaying128(decay_length[, mode])",
         .examples = {},
