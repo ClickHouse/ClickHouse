@@ -16,7 +16,8 @@ CREATE TABLE ref ENGINE = Memory AS
 SELECT
     number AS k,
     if(number % 14 = 7, 'x\\', ['', 'a', 'ab', 'b\0c', 'Google'][number % 5 + 1]) AS s,
-    if(number % 14 = 7, 'garbage', toString(toDate('2020-01-01') + number % 10)) AS d
+    if(number % 14 = 7, 'garbage', toString(toDate('2020-01-01') + number % 10)) AS d,
+    toFixedString(s, 16) AS f
 FROM numbers(30000);
 
 -- Row groups of exactly 10000 rows, written in order.
@@ -45,6 +46,8 @@ SELECT 'Q8', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE s != 'a' AND (k % 3 = 0 OR s = 'ab');
 SELECT 'Q9', count(), sum(cityHash64(upper(s))) = (SELECT sum(cityHash64(upper(s))) FROM ref WHERE k % 3 = 0 AND upper(s) != 'A')
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE k % 3 = 0 AND upper(s) != 'A';
+SELECT 'F', count(), sum(cityHash64(k, f)) = (SELECT sum(cityHash64(k, f)) FROM ref WHERE f != toFixedString('a', 16))
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE f != toFixedString('a', 16) SETTINGS log_comment = '05331:f';
 
 -- Throwing values are only in rows that the first step rejects. The references do not evaluate the
 -- throwing expressions: d = '2020-01-01' + k % 10 outside the rows with k % 14 = 7.
@@ -88,7 +91,7 @@ SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block
 
 SELECT 'C', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)) FROM ref WHERE k BETWEEN 15000 AND 15100 AND s != '')
 FROM file(currentDatabase() || '_05331_c.parquet') PREWHERE k BETWEEN 15000 AND 15100 AND s != ''
-SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1;
+SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1, log_comment = '05331:c';
 
 -- Rows read as dictionary indexes: all rows passing the earlier steps for the eligible queries, none otherwise.
 SYSTEM FLUSH LOGS query_log;
