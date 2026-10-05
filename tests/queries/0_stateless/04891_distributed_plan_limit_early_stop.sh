@@ -44,11 +44,16 @@ SOURCE_ACTIONS="'NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes
 
 # Streams between the LIMIT and the sleeping scan, as `EXPLAIN PLAN distributed = 1` lays them out:
 # the shuffle that carries the scan into the join (3 reader buckets x 3 join buckets) and the
-# gather directly below the LIMIT (3 join buckets x 1). The two dimension-table shuffles and
-# everything downstream of the LIMIT are excluded: they run out of data instead of being stopped.
+# gather directly below the LIMIT (3 join buckets x 1). Everything downstream of the LIMIT is
+# excluded: it runs out of data instead of being stopped.
 EXPECTED_STREAMS="arraySort(arrayConcat(
     arrayMap(i -> 'exchange_0__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)),
     arrayMap(i -> 'exchange_2__' || toString(i) || '_0', range(3))))"
+
+# The dimension-table shuffle into the join (3 x 3) is allowed but not required: it usually runs
+# out of data first, but when the LIMIT fires while a join bucket is still reading it, the stop
+# reaches it too.
+OPTIONAL_STREAMS="arrayMap(i -> 'exchange_1__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9))"
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE t_dp_limit_stop (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000;
@@ -97,6 +102,7 @@ function assert_stop_propagated()
     $CLICKHOUSE_CLIENT --query "
     WITH
         $EXPECTED_STREAMS AS expected,
+        $OPTIONAL_STREAMS AS optional,
         (
             SELECT arraySort(groupArray(stream)) FROM
             (
@@ -111,11 +117,12 @@ function assert_stop_propagated()
                 HAVING countIf(message_format_string IN ($SINK_ACTIONS)) > 0
                    AND countIf(message_format_string IN ($SOURCE_ACTIONS)) > 0
             )
-        ) AS matched
-    SELECT '$label: ' || if(matched = expected,
+        ) AS matched,
+        arrayFilter(s -> NOT has(matched, s), expected) AS missing,
+        arrayFilter(s -> NOT has(expected, s) AND NOT has(optional, s), matched) AS unexpected
+    SELECT '$label: ' || if(empty(missing) AND empty(unexpected),
         'stop propagated on every expected exchange stream',
-        'MISMATCH missing=' || toString(arrayFilter(s -> NOT has(matched, s), expected)) ||
-        ' unexpected=' || toString(arrayFilter(s -> NOT has(expected, s), matched)))
+        'MISMATCH missing=' || toString(missing) || ' unexpected=' || toString(unexpected))
     SETTINGS max_rows_to_read = 0"
 }
 

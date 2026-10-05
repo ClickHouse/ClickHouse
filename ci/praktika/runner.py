@@ -1054,6 +1054,11 @@ class Runner:
                     file=f,
                 )
 
+        # Before the CIDB insert: it serializes result.info eagerly, so a
+        # traceback lifted afterwards lands in the report but not in CIDB.
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
+
         ci_db = None
         if workflow.enable_cidb and not Settings.SECRET_CI_DB_CONNECTION:
             # Clear, non-fatal message instead of a cryptic
@@ -1105,8 +1110,6 @@ class Runner:
                 print(f"ERROR: {error}")
                 env.add_workflow_error(error)
 
-        if env.TRACEBACKS:
-            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
