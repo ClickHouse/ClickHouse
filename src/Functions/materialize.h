@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool isNullPropagating(const DataTypePtr & /*result_type*/) const override { return true; }
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
 
     bool useDefaultImplementationForNothing() const override { return false; }
 

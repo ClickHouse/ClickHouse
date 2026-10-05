@@ -38,6 +38,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
+    extern const char local_object_storage_network_error_during_every_remove[];
 }
 
 namespace ErrorCodes
@@ -139,6 +140,14 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
+    /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
+    /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
+    /// the NUL. A path shaped as `<target>\0/<traversal back into the base directory>` would therefore
+    /// pass the containment check below and still make the kernel operate on `<target>`, anywhere on the
+    /// filesystem. `listObjects` rejects such a path for its own reason - keep both checks.
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
+
     auto configured_base = fs::path(base_path).lexically_normal();
 
     auto is_inside = [&](const String & candidate)
@@ -675,8 +684,12 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             error_code,
             error_message);
 
-    fs::path dir = fs::path(resolved_path).parent_path();
+    /// Both paths have to be brought into the same form before they are compared: `resolved_path` is
+    /// relative or otherwise not canonical when the `path` of the disk is (e.g. contains `..`), and then `dir`
+    /// never compares equal to the canonicalized `root`, so the loop below would remove the root directory
+    /// of the object storage itself.
     fs::path root = fs::weakly_canonical(settings.key_prefix);
+    fs::path dir = fs::weakly_canonical(fs::path(resolved_path).parent_path());
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
@@ -708,13 +721,24 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
     });
+
+    fiu_do_on(FailPoints::local_object_storage_network_error_during_every_remove, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
+    });
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
@@ -948,6 +972,11 @@ void LocalObjectStorage::throwIfReadonly() const
 ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
+}
+
+ObjectStoragePtr LocalObjectStorage::cloneImpl() const
+{
+    return std::make_shared<LocalObjectStorage>(settings);
 }
 
 }

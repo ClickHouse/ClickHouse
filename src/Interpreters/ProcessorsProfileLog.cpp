@@ -15,6 +15,7 @@
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/printPipeline.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/logger_useful.h>
@@ -32,6 +33,8 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the event happened."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the event happened."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time with microseconds precision when the event happened."},
@@ -63,6 +66,8 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

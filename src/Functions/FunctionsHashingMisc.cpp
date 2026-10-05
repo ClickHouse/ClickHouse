@@ -23,10 +23,10 @@ It then combines the hashes using the following algorithm:
 2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
 3. This calculation is repeated for all remaining hash values of the original input.
 
-:::note
+<Note>
 the calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax sipHash64_syntax = "sipHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash64_arguments = {
@@ -77,11 +77,11 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     FunctionDocumentation::Description sipHash128_description = R"(
 Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
-:::tip use sipHash128Reference for new projects
+<Tip title="use sipHash128Reference for new projects">
 This 128-bit variant differs from the reference implementation and is weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax sipHash128_syntax = "sipHash128(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128_arguments = {
@@ -109,11 +109,11 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
 Same as [`sipHash128`](#sipHash128) but additionally takes an explicit key argument instead of using a fixed key.
 
-:::tip use sipHash128ReferenceKeyed for new projects
+<Tip title="use sipHash128ReferenceKeyed for new projects">
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax sipHash128Keyed_syntax = "sipHash128Keyed((k0, k1), [arg1, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Keyed_arguments = {
@@ -193,16 +193,16 @@ This is a fast non-cryptographic hash function.
 It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types.
 The function uses the CityHash combinator to get the final results.
 
-:::info
+<Info>
 Google changed the algorithm of CityHash after it was added to ClickHouse.
 In other words, ClickHouse's cityHash64 and Google's upstream CityHash now produce different results.
 ClickHouse cityHash64 corresponds to CityHash v1.0.2.
-:::
+</Info>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax cityHash64_syntax = "cityHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments cityHash64_arguments = {
@@ -253,14 +253,14 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
     FunctionDocumentation::Description farmFingerprint64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) value using the `Fingerprint64` method.
 
-:::tip
+<Tip>
 `farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmHash64).
-:::
+</Tip>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax farmFingerprint64_syntax = "farmFingerprint64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments farmFingerprint64_arguments = {
@@ -286,14 +286,14 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description farmHash64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) using the `Hash64` method.
 
-:::tip
+<Tip>
 [`farmFingerprint64`](#farmFingerprint64) is preferred for a stable and portable value.
-:::
+</Tip>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax farmHash64_syntax = "farmHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments farmHash64_arguments = {
@@ -318,10 +318,10 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description metroHash64_description = R"(
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax metroHash64_syntax = "metroHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments metroHash64_arguments = {
@@ -395,15 +395,15 @@ Calculates JavaHash from:
 - [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 - [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-:::caution
+<Warning>
 This hash function is unperformant.
 Use it only when this algorithm is already in use in another system and you need to calculate the same result.
-:::
+</Warning>
 
-:::note
+<Note>
 Java only supports calculating the hash of signed integers,
 so if you want to calculate a hash of unsigned integers you must cast them to the proper signed ClickHouse types.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax javaHash_syntax = "javaHash(arg)";
     FunctionDocumentation::Arguments javaHash_arguments = {
@@ -466,10 +466,10 @@ Calculates a "HiveHash" from a string.
 This is just [`JavaHash`](#javaHash) with zeroed out sign bits.
 This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
-:::caution
+<Warning>
 This hash function is unperformant.
 Use it only when this algorithm is already used in another system and you need to calculate the same result.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax hiveHash_syntax = "hiveHash(arg)";
     FunctionDocumentation::Arguments hiveHash_arguments = {

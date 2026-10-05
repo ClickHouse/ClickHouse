@@ -1,4 +1,8 @@
 #include <IO/S3/Requests.h>
+#include <Common/StringUtils.h>
+
+#include <algorithm>
+#include <cctype>
 
 #if USE_AWS_S3
 
@@ -68,36 +72,90 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     return RequestChecksum::Algorithm::MD5;
 }
 
-Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
+namespace
 {
-    auto headers = Model::CopyObjectRequest::GetRequestSpecificHeaders();
-    if (api_mode != ApiMode::GCS)
-        return headers;
 
+/// Translated in both directions; a name added here is renamed going out and recognised coming back.
+constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
+    {"x-amz-copy-source", "x-goog-copy-source"},
+    {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
+    /// reaches GCS as 400 InvalidStorageClass.
+    {"x-amz-storage-class", "x-goog-storage-class"},
+};
+
+/// Object metadata is a family rather than one name, so it is matched by prefix.
+constexpr std::string_view AMZ_META_PREFIX = "x-amz-meta-";
+constexpr std::string_view GCS_META_PREFIX = "x-goog-meta-";
+
+/// No GCS counterpart, and some GCS requests reject them. `amz-sdk-invocation-id` and
+/// `amz-sdk-request` carry no `x-amz-` prefix, so they survive.
+constexpr std::string_view GCS_DROPPED_HEADERS[] = {
+    "x-amz-api-version",
+};
+
+}
+
+std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
+{
+    for (const auto & [amz_header, gcs_header] : GCS_TRANSLATED_HEADERS)
+        if (equalsCaseInsensitive(name, gcs_header))
+            return std::string(amz_header);
+
+    /// Lower-case the whole name: the SDK makes the part after the prefix a key in a case-sensitive map.
+    if (name.size() > GCS_META_PREFIX.size()
+        && equalsCaseInsensitive(std::string_view(name).substr(0, GCS_META_PREFIX.size()), GCS_META_PREFIX))
+    {
+        auto suffix = name.substr(GCS_META_PREFIX.size());
+        std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+        return std::string(AMZ_META_PREFIX) + suffix;
+    }
+
+    return {};
+}
+
+void translateHeadersToGCS(Aws::Http::HttpRequest & request)
+{
+    const auto before = request.GetHeaders();
+    const auto after = translateHeadersToGCS(before);
+
+    for (const auto & [name, _] : before)
+        if (!after.contains(name))
+            request.DeleteHeader(name.c_str());
+
+    for (const auto & [name, value] : after)
+        if (!before.contains(name))
+            request.SetHeaderValue(name, value);
+}
+
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers)
+{
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz
     /// we have to replace all the prefixes client set internally
-    const auto replace_with_gcs_header = [&](const std::string & amz_header, const std::string & gcs_header)
+    const auto replace_with_gcs_header = [&](std::string_view amz_header, std::string_view gcs_header)
     {
-        if (const auto it = headers.find(amz_header); it != headers.end())
+        if (const auto it = headers.find(std::string(amz_header)); it != headers.end())
         {
             auto header_value = std::move(it->second);
             headers.erase(it);
-            headers.emplace(gcs_header, std::move(header_value));
+            headers.emplace(std::string(gcs_header), std::move(header_value));
         }
     };
 
-    replace_with_gcs_header("x-amz-copy-source", "x-goog-copy-source");
-    replace_with_gcs_header("x-amz-metadata-directive", "x-goog-metadata-directive");
-    replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
+    for (const auto & [amz_header, gcs_header] : GCS_TRANSLATED_HEADERS)
+        replace_with_gcs_header(amz_header, gcs_header);
+
+    for (const auto & dropped_header : GCS_DROPPED_HEADERS)
+        headers.erase(std::string(dropped_header));
 
     /// replace all x-amz-meta- headers
     VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
-        if (it->first.starts_with("x-amz-meta-"))
+        if (it->first.starts_with(AMZ_META_PREFIX))
         {
             auto value = std::move(it->second);
-            auto header = "x-goog" + it->first.substr(/* x-amz */ 5);
+            auto header = std::string(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
             new_meta_headers.emplace_back(std::pair{std::move(header), std::move(value)});
             it = headers.erase(it);
         }

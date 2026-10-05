@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS test;

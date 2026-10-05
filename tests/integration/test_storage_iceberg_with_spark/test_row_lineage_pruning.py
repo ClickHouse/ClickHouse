@@ -24,6 +24,7 @@ import pytest
 
 from helpers.iceberg_utils import (
     check_validity_and_get_prunned_files_general,
+    create_iceberg_table,
     default_upload_directory,
     get_creation_expression,
     get_uuid_str,
@@ -542,4 +543,164 @@ def test_unrepresentable_row_id_block_does_not_prune(
             settings=PRUNING_ENABLED,
         ).strip()
         == "6"
+    )
+
+
+# The tests above read what Spark wrote. The ones below prune over metadata ClickHouse wrote itself:
+# the inherited row id range of a manifest entry is only as good as the `first_row_id` the writer put
+# into the manifest list, so the same filters are replayed against a table of its own making.
+INSERT_SETTINGS = {"allow_insert_into_iceberg": 1}
+
+
+def _clickhouse_table_with_five_appends(
+    started_cluster, storage_type, table_name, schema="(id Int32, s String)", payload="'a'"
+):
+    """Five inserts of ten rows: file k holds row ids [10k, 10k + 10) and sequence number k + 1."""
+    instance = started_cluster.instances["node1"]
+    create_iceberg_table(
+        storage_type,
+        instance,
+        table_name,
+        started_cluster,
+        schema,
+        format_version=3,
+    )
+    for lo in range(0, 50, 10):
+        instance.query(
+            f"INSERT INTO {table_name} SELECT number, {payload} FROM numbers({lo}, 10)",
+            settings=INSERT_SETTINGS,
+        )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_row_id_filter_prunes_files_clickhouse(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_row_id_pruning_clickhouse_" + storage_type + "_" + get_uuid_str()
+
+    _clickhouse_table_with_five_appends(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    assert _pruned_files(instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} ORDER BY ALL") == 0
+
+    # A point lookup touches the one file whose row id range contains the value.
+    assert (
+        _pruned_files(
+            instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id = 25 ORDER BY ALL"
+        )
+        == 4
+    )
+
+    # A half-open range keeps the two files above it.
+    assert (
+        _pruned_files(
+            instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id >= 35 ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        _pruned_files(
+            instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id < 10 ORDER BY ALL"
+        )
+        == 4
+    )
+
+    # A range spanning everything prunes nothing.
+    assert (
+        _pruned_files(
+            instance, TABLE_NAME, f"SELECT id FROM {TABLE_NAME} WHERE _row_id >= 0 ORDER BY ALL"
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_incremental_read_by_sequence_number_prunes_files_clickhouse(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_sequence_number_pruning_clickhouse_" + storage_type + "_" + get_uuid_str()
+
+    _clickhouse_table_with_five_appends(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
+        )
+        == 3
+    )
+
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number = 2 ORDER BY ALL",
+        )
+        == 4
+    )
+
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 0 ORDER BY ALL",
+        )
+        == 0
+    )
+
+    # An incremental consumer reads exactly the rows of the two newest files, not the whole table.
+    assert (
+        _read_rows(
+            instance,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 FORMAT Null",
+            PRUNING_ENABLED,
+        )
+        == 20
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_row_id_pruning_is_skipped_for_orc_clickhouse(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_row_lineage_pruning_orc_clickhouse_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(id Int32, s String)",
+        format_version=3,
+        format="ORC",
+    )
+    for lo in range(0, 50, 10):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} SELECT number, 'a' FROM numbers({lo}, 10)",
+            settings=INSERT_SETTINGS,
+        )
+
+    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
+    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
+    assert (
+        instance.query(
+            f"SELECT count() FROM {TABLE_NAME} WHERE _row_id IS NULL", settings=PRUNING_ENABLED
+        ).strip()
+        == "50"
+    )
+
+    # The sequence number does not depend on row numbers, so it prunes as usual.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {TABLE_NAME} WHERE _last_updated_sequence_number > 3 ORDER BY ALL",
+        )
+        == 3
     )

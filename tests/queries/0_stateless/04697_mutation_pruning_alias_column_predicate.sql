@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-old-analyzer
+-- Tags: zookeeper
 -- An `ALIAS` column is not physically present, so the pruning analysis has to know it anyway:
 -- it is not part of the partition key, so the predicate is simply opaque to the pruner and every
 -- partition is mutated.

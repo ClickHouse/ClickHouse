@@ -38,7 +38,8 @@ INSERT INTO t SELECT
     number
 FROM numbers(8192 * 3);
 
--- Expecting 2 virtual rows + one chunk (8192) for result. The limit is reached before the source is asked for the next chunk.
+-- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
+-- both chunks come from the same part.
 SELECT x
 FROM t
 ORDER BY x ASC
@@ -84,7 +85,8 @@ ORDER BY query_start_time DESC
 LIMIT 1;
 
 SELECT '========';
--- Expecting 2 virtual rows + one chunk (8192) for result. The limit is reached before the source is asked for the next chunk.
+-- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
+-- both chunks come from the same part.
 SELECT x
 FROM t
 ORDER BY x ASC

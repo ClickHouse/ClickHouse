@@ -161,7 +161,17 @@ RUN arch=${TARGETARCH} \
 
 COPY requirements.txt /
 RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+ARG AWSCLI_VERSION=2.36.41
+ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
+ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
+RUN arch="$(uname -m)" \
+    && case "$arch" in \
+        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
+        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
+    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
     && unzip -q awscliv2.zip \
     && ./aws/install \
     && rm -rf awscliv2.zip aws

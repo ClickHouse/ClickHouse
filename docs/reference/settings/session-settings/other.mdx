@@ -43,7 +43,7 @@ Write add http CORS header.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis. Currently, 2D analysis skips curves with `UInt64` arguments because the curve implementations use only 32 bits per argument.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -94,6 +94,16 @@ See also:
 
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` now returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements. Set this setting to `true` to return `UInt32` as before."}]}]}/>
+
+If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
+
+During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -105,6 +115,14 @@ Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset na
 Possible values:
 - 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
+
+## arrow_flight_request_timeout_sec {#arrow_flight_request_timeout_sec}
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}]}]}/>
+
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -179,6 +197,9 @@ whole query; with `N` replicas and `T` tries each, the total wait can reach
 because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
+
+`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
+slot for was never contacted, so the shard is not treated as unavailable.
 
 Possible values:
 
@@ -358,6 +379,8 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `allow_experimental_logsql_dialect`.
+- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -774,6 +797,8 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 
 Maximum number of allowed addresses (For external storages, table functions, etc).
 
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
+
 ## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -861,6 +886,21 @@ The interval in microseconds for checking whether request execution has been can
 
 Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+
+If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+
+Possible values:
+
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -869,6 +909,14 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated like with the `ARRAY JOIN` clause."}]}]}/>
+
+How non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated. By default `rand()` gives a different value on every output row and `runningDifference` or `neighbor` see the blocks of the expansion, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions.
+
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -876,6 +924,25 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "Add this setting only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher"}]}]}/>
 
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join` alone."}]}]}/>
+
+Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the trigger, for
+the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query.
+`join_algorithm = 'grace_hash'` then spills on those two alone and ignores `max_bytes_before_external_join` entirely, zero
+included. `hash` / `parallel_hash` still go to disk on the spill threshold and spill on either one afterwards; their
+in-memory phase keeps treating the two as a hard cap, as it did before.
+
+For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
+
+A server that predates this setting applies the old meaning, and cannot be told otherwise, so with
+`serialize_query_plan = 1` a join whose spilling depends on the new meaning is not sent to such a server at all:
+the query fails instead of quietly running with the other contract. Turning this setting on makes those queries
+work across the two versions, with the old meaning on both sides.
 
 ## limit {#limit}
 
@@ -938,7 +1005,6 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
-- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 
@@ -957,7 +1023,7 @@ If there is a larger number of tables, the schema will be inferred from the firs
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "1"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting."}]}]}/>
 
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.
 
 ## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 
@@ -1165,6 +1231,16 @@ Priority of the query. 1 - the highest, higher value - lower priority; 0 - do no
 
 Enable pushing user roles from originator to other nodes while performing a query.
 
+## qbit_one_bit_symmetric_distance {#qbit_one_bit_symmetric_distance}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"}]}]}/>
+
+When a `QBit` distance function (`L2DistanceTransposed`, `cosineDistanceTransposed`, `dotProductTransposed` and their `...Quantized` variants) is called with precision 1, also reduce the reference vector to the signs of its elements and derive the result from the Hamming distance between the two sign vectors, computed with XOR and popcount.
+
+By default the reference vector keeps its full precision at precision 1 and only the stored vector is reduced to signs (an asymmetric distance). The symmetric distance is several times faster, but it ignores the magnitudes of the reference elements: a dimension where the reference is large counts as much as one where it is close to zero.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1196,6 +1272,8 @@ The wait time for reading from RabbitMQ before retry.
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
+
+Do not make `readonly` itself changeable under `readonly = 1`: a session can then clear it with `SET readonly = 0`, unless the same constraint also forbids `0`. See [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 
 ## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
@@ -1343,7 +1421,7 @@ entries of batches that already completed. Only available in ClickHouse Cloud, f
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"}]}]}/>
 
-When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregatio
+When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1361,11 +1439,13 @@ Applies to queries received over the native TCP and HTTP protocols. Over HTTP, p
 
 The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Aliases**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
 
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 
@@ -1406,6 +1486,22 @@ See also:
 - [insert_quorum_timeout](/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 - [insert_quorum_parallel](/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
 
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."}]}]}/>
+
+The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/reference/system-tables/session_query_ids) system table.
+The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
+
+The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
+
+Possible values:
+
+- Positive integer.
+- 0 — Recording is disabled; entries recorded earlier stay in the table.
+
 ## session_timezone {#session_timezone}
 
 <BetaBadge/>
@@ -1420,6 +1516,9 @@ You can use functions `timeZone()` and `serverTimeZone()` to get the session tim
 Possible values:
 
 -    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+-    A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`. The offset has to be a whole number of quarters of an hour and no further from UTC than 14 hours, which covers every offset a real time zone has.
+
+Only these names are accepted. A name that only the operating system's time zone database has is not, because ClickHouse ships its own copy of the time zone database so that results do not depend on the host.
 
 Examples:
 
@@ -1757,6 +1856,29 @@ Wait for committed changes to become actually visible in the latest snapshot
 <SettingsInfoBlock type="String" default_value="default" />
 
 Name of workload to be used to access resources
+
+## workload_admission_timeout_ms {#workload_admission_timeout_ms}
+
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."}]}]}/>
+
+The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
+It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
+the workload's `max_concurrent_queries`) and for a memory reservation (from a
+`CREATE RESOURCE ... (MEMORY RESERVATION)` resource together with the `reserve_memory` setting). Both are
+acquired before the query starts running, so this is the only way to bound that pre-execution wait:
+`max_execution_time` does not apply yet because the query has not started.
+
+When the timeout expires the query fails with one of two distinct errors, depending on which resource it
+was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` for a memory reservation.
+
+Possible values:
+
+- Positive integer — timeout in milliseconds.
+- 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
+  immediately when the workload's `max_waiting_queries` limit is reached.
 
 ## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 

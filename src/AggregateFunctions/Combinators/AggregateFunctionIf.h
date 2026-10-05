@@ -157,16 +157,37 @@ public:
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
-    void addBatchSinglePlace(
+    void addBatchWithNonNullPlaces(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr * __restrict places,
+        size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
         ssize_t) const override
     {
         if (only_null_condition)
             return;
+        nested_func->addBatchWithNonNullPlaces(
+            row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (only_null_condition)
+            return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
     }
 
@@ -177,10 +198,17 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlaceNotNull(
+                row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 
@@ -225,6 +253,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -238,6 +276,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override

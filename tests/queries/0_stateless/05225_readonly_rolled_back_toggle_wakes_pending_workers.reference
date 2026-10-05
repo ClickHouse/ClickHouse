@@ -1,0 +1,6 @@
+mutation pending: 1
+mutation still pending inside the window: 1
+toggle failed at the commit: 1
+mutation executed after failed toggle: 1
+rows after failed toggle: 9
+rows after insert into the writable table: 10

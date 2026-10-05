@@ -13,8 +13,8 @@ class QueryPipeline;
 class PullingOutputFormat;
 struct ProfileInfo;
 
-class Executor;
-using ExecutorPtr = std::shared_ptr<Executor>;
+class IExecutor;
+using ExecutorPtr = std::shared_ptr<IExecutor>;
 
 /// Pulling executor for QueryPipeline. Always execute pipeline in single thread.
 /// Typical usage is:

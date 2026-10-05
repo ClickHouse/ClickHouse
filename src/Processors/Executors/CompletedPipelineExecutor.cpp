@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/Runtime/Executor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 struct CompletedPipelineExecutor::Data
 {
-    std::shared_ptr<Executor> executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
@@ -70,8 +70,9 @@ void CompletedPipelineExecutor::initialize()
         return;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<Executor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
+    data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
 }
 
 void CompletedPipelineExecutor::execute()

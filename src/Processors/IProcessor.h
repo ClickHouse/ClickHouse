@@ -30,6 +30,17 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
+namespace Runtime::V1
+{
+class ExecutionThreadContext;
+class ExecutingGraph;
+}
+
+namespace Runtime::V2
+{
+class Worker;
+}
+
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -275,6 +286,14 @@ public:
     /// May be used to stop execution in rare cases.
     virtual void onUpdatePorts() {}
 
+    /// Called by the executor once the whole pipeline has finished successfully, and the read progress of every
+    /// source has been reported. The progress of a source may arrive after all its consumers have finished
+    /// (e.g. `RemoteSource` drains the remaining packets of a connection after `LIMIT`), so anything that depends
+    /// on the final statistics, such as the epilogue of an output format, belongs here.
+    /// A query broken off by `timeout_overflow_mode = 'break'` also returns its partial result as a success,
+    /// so the hook is called for it as well, even though not every processor is finished in that case.
+    virtual void onPipelineFinished() {}
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
@@ -389,6 +408,10 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
+    /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
+    /// accepted a share of the current one, so it cannot progress while an output is undemanded.
+    virtual bool requiresAllOutputsPushable() const { return false; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
@@ -397,8 +420,17 @@ protected:
     bool spillable = false;
 
 private:
-    /// For the profiling fields: elapsed_ns, num_executed_jobs, query_plan_step_wall_clock_ptr, input_wait_elapsed_ns, output_wait_elapsed_ns
-    friend class Worker;
+    /// For:
+    /// - elapsed_ns
+    /// - num_executed_jobs
+    /// - query_plan_step_wall_clock_ptr
+    friend class Runtime::V1::ExecutionThreadContext;
+    /// For
+    /// - input_wait_elapsed_ns
+    /// - output_wait_elapsed_ns
+    friend class Runtime::V1::ExecutingGraph;
+    /// For the same profiling fields
+    friend class Runtime::V2::Worker;
 
     std::string processor_description;
 

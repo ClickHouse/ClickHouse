@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/Executor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -96,8 +96,9 @@ void PushingPipelineExecutor::start()
         return;
 
     started = true;
-    executor = std::make_shared<Executor>(pipeline.processors, pipeline.process_list_element);
+    executor = createExecutor(pipeline.processors, pipeline.process_list_element);
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    executor->setStepProfiler(pipeline.getStepProfiler());
 
     if (!executor->executeUntil(&input_wait_flag))
         throwOnUnexpectedPipelineFinish(*pushing_source);
@@ -127,7 +128,7 @@ void PushingPipelineExecutor::finish()
 
     if (executor)
     {
-        [[maybe_unused]] auto res = executor->executeUntil();
+        [[maybe_unused]] auto res = executor->executeUntil(nullptr);
         chassert(!res);
     }
 }

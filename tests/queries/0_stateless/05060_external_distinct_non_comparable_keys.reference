@@ -1,0 +1,18 @@
+1
+1000
+499500	0	999
+2000
+1000	1
+4	[1,2,3,4]
+1000
+499500	0	999
+2000
+disabled_count	0	0
+disabled_mixed_keys	0	0
+disabled_values	0	0
+mixed_keys	1	1
+ordered	1	1
+plan	0	0
+state_count	1	1
+state_values	1	1
+variable_length	1	1

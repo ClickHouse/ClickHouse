@@ -125,7 +125,7 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
-        openFileIfExists((path.value() + filename).c_str(), out);
+        openFileIfExists((path.value() + "/" + filename).c_str(), out);
 };
 
 #endif
@@ -1108,7 +1108,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
+                "Microseconds of stall time since last measurement. "
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
@@ -1303,7 +1303,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1455,8 +1455,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             const size_t page_size = jemalloc_page_size_mib.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
-                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
-                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "
+                "and not only MergeTree: the storage object and its metadata as built by `StorageFactory::get`, "
+                "and for MergeTree also per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
@@ -1498,7 +1499,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1524,18 +1525,20 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD)
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
+#if !defined(OS_SUNOS)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
+#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);

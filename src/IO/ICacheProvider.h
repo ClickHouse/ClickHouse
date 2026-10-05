@@ -2,7 +2,6 @@
 
 #include <IO/ChainedBuffers.h>
 #include <algorithm>
-#include <IO/IntervalSet.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
 
@@ -189,5 +188,8 @@ public:
     virtual VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) = 0;
 };
+
+/// The cache tiers a read is layered through, fastest-first (e.g. page cache over filesystem cache).
+using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
 
 }

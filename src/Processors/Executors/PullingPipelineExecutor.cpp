@@ -1,11 +1,11 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/Runtime/Executor.h>
-#include <Interpreters/ProcessList.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -50,14 +50,19 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
-        executor = std::make_shared<Executor>(pipeline.processors, pipeline.process_list_element);
+        executor = createExecutor(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        executor->setStepProfiler(pipeline.getStepProfiler());
     }
 
+    /// Throws when the time limit is exceeded with `timeout_overflow_mode = 'throw'`. With 'break' the partial result
+    /// is returned as a success: the execution is cancelled with `CancelledByTimeout`, and `executeUntil` below
+    /// finalizes it - the pending read progress is reported and the format is finalized - before the end of the
+    /// data is reported.
     if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
     {
         executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
-        return false;
+        pipeline.process_list_element->checkTimeLimit();
     }
 
     if (!executor->executeUntil(&has_data_flag))

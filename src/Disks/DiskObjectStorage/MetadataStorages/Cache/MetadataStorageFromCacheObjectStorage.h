@@ -66,10 +66,10 @@ public:
     std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     bool isReadOnly() const override;
+    bool isRemote() const override;
     bool isTransactional() const override;
     bool isPlain() const override;
     bool isWriteOnce() const override;
-    bool supportsHardLinks() const override;
     bool supportWritingWithAppend() const override;
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
