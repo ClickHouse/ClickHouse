@@ -136,6 +136,11 @@ WITH CAST(
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS forbidden_tuple
 SELECT forbidden_tuple::ExponentialTimeDecaying128(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+WITH CAST(
+    (1., 123., 3.),
+    'Tuple(sign Float64, unit_timestamp Float64, decay_length Float64)') AS forbidden_tuple
+SELECT forbidden_tuple::ExponentialTimeDecaying64(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- The same rejection applies when the invalid derived-field tuple is nested;
 -- container conversion must not reinterpret it as a decaying value.
 SELECT CAST(
@@ -225,6 +230,8 @@ SELECT
         explicit_compact,
         tupleElement(explicit_compact, 'timestamp')) = tupleElement(explicit_compact, 'value');
 
+SET exponential_time_decay_default_mode = 'invalid';
+SELECT exponentialTimeDecaying(3)(toFloat64(1), toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 SET exponential_time_decay_default_mode = 'compact';
 
 -- Compact output is a canonical raw pair reconstructed from the authoritative
