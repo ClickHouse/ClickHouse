@@ -65,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -176,7 +177,6 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
-    extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
@@ -275,7 +275,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load))
             return true;
         /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
         /// prunes them with this predicate. The initiator's plan for such a read stops at
@@ -1270,6 +1270,14 @@ void addTotalsHavingStep(QueryPlan & query_plan,
 
     /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
     /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
+    /// The decorrelation joins the aggregated stream, which drops the `AggregatedChunkInfo` of its chunks
+    /// and mixes the overflow row (the keys not included in `max_rows_to_group_by`) into the ordinary rows,
+    /// so it cannot be combined with the overflow row that `TotalsHavingStep` expects.
+    if (query_analysis_result.aggregate_overflow_row && having_analysis_result.correlated_subtrees.notEmpty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries in HAVING are not supported yet with WITH TOTALS, max_rows_to_group_by, "
+            "group_by_overflow_mode = 'any' and totals_mode other than 'after_having_exclusive'");
+
     for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
@@ -2941,11 +2949,11 @@ void Planner::buildPlanForQueryNode()
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
-            /// Start with query settings and apply the changes attached to this query node.
-            /// A top-level `SETTINGS make_distributed_plan = 1` is held by the query context,
-            /// while nested query settings are attached to their respective query nodes.
+            /// `settings` holds this node's SETTINGS clause as constrained and clamped. A nested change equal to the inherited
+            /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
             Settings query_settings = settings;
-            query_settings.applyChanges(query_node.getSettingsChanges());
+            if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
+                query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
             std::optional<UInt64> trivial_group_by_limit;
             if (!query_settings[Setting::make_distributed_plan]
@@ -3284,11 +3292,9 @@ void Planner::buildPlanForQueryNode()
     // we will have `BlocksMarshallingStep` added to the query plan, but not for
     // select * from remote('127.0.0.{1,2}', numbers_mt(1e6))
     // because `to_stage` for it will be `QueryProcessingStage::Complete`.
-    if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
+    if (contextAllowsBlocksMarshalling(*query_context)
         && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
-        && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
-        && !client_info.is_replicated_database_internal
         // A local shard/replica plan is united into the parent pipeline in this process, where
         // nothing unmarshalls the blocks.
         && !select_query_options.is_local_plan_for_distributed_query

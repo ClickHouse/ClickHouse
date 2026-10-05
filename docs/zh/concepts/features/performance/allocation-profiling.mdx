@@ -13,6 +13,7 @@ ClickHouse 和 Keeper 允许你使用 config、查询 settings、`SYSTEM` 命令
 * 将 samples 收集到 `system.trace_log` 中，类型为 `JemallocSample`，以便进行按查询分析。
 * 通过内置的 [jemalloc web UI](#jemalloc-web-ui) 查看实时内存统计信息，并拉取堆内存剖析 (26.2+) 。
 * 使用 SQL 通过 [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) 直接查询当前堆内存剖析 (26.2+) 。
+* 使用 SQL 通过 [`system.jemalloc_sampled_allocations`](#analyzing-fragmentation-from-sql) 分析内存碎片 (26.9+) 。
 * 将堆内存剖析刷新到 disk，并使用 [`jeprof`](#analyzing-heap-profile-files-with-jeprof) 进行分析。
 
 <Note>
@@ -20,9 +21,7 @@ ClickHouse 和 Keeper 允许你使用 config、查询 settings、`SYSTEM` 命令
   对于更早的版本，请参阅[25.9 之前版本的内存分配剖析](/zh/concepts/features/performance/allocation-profiling-old)。
 </Note>
 
-<div id="sampling-allocations">
-  ## 内存分配采样
-</div>
+## 内存分配采样 {#sampling-allocations}
 
 要对内存分配进行采样和分析，请先启用 `jemalloc_enable_global_profiler` 配置项，然后启动 ClickHouse/Keeper：
 
@@ -42,9 +41,7 @@ ClickHouse 和 Keeper 允许你使用 config、查询 settings、`SYSTEM` 命令
   由于 ClickHouse 是一个内存分配频繁的应用，jemalloc 采样可能会带来性能开销。
 </Warning>
 
-<div id="storing-jemalloc-samples-in-system-trace-log">
-  ## 在 `system.trace_log` 中存储 jemalloc 采样数据
-</div>
+## 在 `system.trace_log` 中存储 jemalloc 采样数据 {#storing-jemalloc-samples-in-system-trace-log}
 
 你可以将 jemalloc 采样数据以 `JemallocSample` 类型存储在 `system.trace_log` 中。
 如需全局启用，请使用 `jemalloc_collect_global_profile_samples_in_trace_log` 配置项：
@@ -63,9 +60,7 @@ ClickHouse 和 Keeper 允许你使用 config、查询 settings、`SYSTEM` 命令
 
 你也可以通过 `jemalloc_collect_profile_samples_in_trace_log` 设置为单个查询启用此功能。
 
-<div id="example-analyzing-memory-usage-trace-log">
-  ### 示例：分析查询的内存使用情况
-</div>
+### 示例：分析查询的内存使用情况 {#example-analyzing-memory-usage-trace-log}
 
 首先，在启用 jemalloc Profiler 的情况下运行查询，并将 samples 收集到 `system.trace_log` 中：
 
@@ -183,9 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-<div id="jemalloc-web-ui">
-  ## Jemalloc web UI
-</div>
+## Jemalloc web UI {#jemalloc-web-ui}
 
 <Note>
   本节适用于 26.2 及以上版本。
@@ -201,7 +194,7 @@ ClickHouse 在 `/jemalloc` HTTP 端点提供了一个内置的 web UI，用于�
     http://localhost:8123/jemalloc
     ```
 
-    服务器 UI 包含所有选项卡：Summary、Allocations、Arenas、Operations、Global Profiler、Query Profiler 和 Raw Output。
+    服务器 UI 包含所有选项卡：Summary、Allocations、Arenas、Operations、Global Profiler、Query Profiler、Fragmentation 和 Raw Output。
   </Tab>
 
   <Tab title="Keeper">
@@ -221,7 +214,7 @@ ClickHouse 在 `/jemalloc` HTTP 端点提供了一个内置的 web UI，用于�
     </clickhouse>
     ```
 
-    启用后，该 UI 提供与服务器相同的可视化内容 —— Summary、Allocations、Arenas、Operations、Global Profiler 和 Raw Output —— 但不包括 Query Profiler 选项卡，因为它需要 SQL 和 `system.trace_log`。
+    启用后，该 UI 提供与服务器相同的可视化内容 —— Summary、Allocations、Arenas、Operations、Global Profiler 和 Raw Output —— 但不包括 Query Profiler 和 Fragmentation 选项卡，因为它们需要通过 SQL 访问系统表。
 
     <Warning>
       **安全**
@@ -235,13 +228,11 @@ ClickHouse 在 `/jemalloc` HTTP 端点提供了一个内置的 web UI，用于�
 
     * `GET /jemalloc/stats` — 原始 `malloc_stats_print` 输出
     * `GET /jemalloc/status` — 以 JSON 返回剖析状态 (`prof_enabled`、`prof_active`、`thread_active_init`、`lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — 刷写堆内存剖析并执行 server-side 符号化，返回适合 flame graph 渲染的 collapsed stacks (默认) 或原始 jemalloc 转储
+    * `GET /jemalloc/profile?format={collapsed|raw}` — 刷写堆内存剖析并执行 server-side 符号化，返回适合 火焰图 渲染的 collapsed stacks (默认) 或原始 jemalloc 转储
   </Tab>
 </Tabs>
 
-<div id="fetching-heap-profiles-from-sql">
-  ## 从 SQL 获取堆内存剖析
-</div>
+## 从 SQL 获取堆内存剖析 {#fetching-heap-profiles-from-sql}
 
 <Note>
   本节适用于 26.2 及以上版本。
@@ -261,9 +252,7 @@ ClickHouse 在 `/jemalloc` HTTP 端点提供了一个内置的 web UI，用于�
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-<div id="output-format">
-  ### 输出格式
-</div>
+### 输出格式 {#output-format}
 
 输出格式由 `jemalloc_profile_text_output_format` 设置控制，它支持三个值：
 
@@ -285,16 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-<div id="fetching-heap-profiles-settings">
-  ### 其他设置
-</div>
+### 其他设置 {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool, default: `true`) — 符号化时是否包含内联窗口帧。禁用此项可显著加快符号化速度，但会损失精度，因为内联函数调用将不会出现在堆栈中。仅影响 `symbolized` 和 `collapsed` 格式。
 * `jemalloc_profile_text_collapsed_use_count` (Bool, default: `false`) — 使用 `collapsed` 格式时，按分配次数而非字节数聚合。
 
-<div id="example-flamegraph-from-sql">
-  ### 示例：从 SQL 生成火焰图
-</div>
+### 示例：从 SQL 生成火焰图 {#example-flamegraph-from-sql}
 
 由于默认输出格式为 `collapsed`，因此可将输出直接通过管道传给 FlameGraph：
 
@@ -308,9 +293,85 @@ clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.p
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-<div id="flushing-heap-profiles">
-  ## 将堆内存剖析刷写到磁盘
-</div>
+## 通过 SQL 分析内存碎片 {#analyzing-fragmentation-from-sql}
+
+<Note>
+  本节适用于 26.9 及更高版本。
+</Note>
+
+jemalloc 通过 slab 来满足小内存分配请求：slab 是固定大小的内存块，被切分为同一大小类的多个 region。只有当 slab 中所有 region 都被释放后，该 slab 才会被释放。如果某个大小类的大多数分配很快就被释放，但其中少数存活时间很长，这些 slab 就会被&quot;钉住&quot;，尽管其中绝大部分 region 都是空闲的。这部分内存仍然驻留，却并未被分配。这就是这里所说的内存碎片。
+
+有两个系统表可以帮助定位碎片的来源：
+
+* [`system.jemalloc_arena_bins`](/zh/reference/system-tables/jemalloc_bins) 显示每个 arena 中每个大小类浪费了多少内存。`waste` 表示被 slab 持有但未被存活分配使用的字节数。`purpose` 标记专用 arena (`mergetree`、`jit`、`cache`) ；它们在设计上就用于存放长期存活的数据，因此排查异常碎片时应使用 `purpose = ''` 将其过滤掉。`system.jemalloc_bins` 提供的是跨 arena 汇总后的相同数据。
+* `system.jemalloc_sampled_allocations` 列出当前仍然存活的采样分配，每个 sample 一行：调用栈 (`trace`) 、已存活时长 (`age_ns`) 、大小与大小类，以及所属 arena。读取该表会触发一次新的堆内存剖析刷写。
+
+将两者按 arena 和大小类连接起来，即可看出是哪些代码在这些高浪费的大小类中分配了长期存活的对象。
+
+阅读结果时请注意：
+
+* 只有启用了 profiler 的线程才会产生 sample (配置中的 `jemalloc_enable_global_profiler` 或 `jemalloc_enable_profiler` 设置) 。
+* 每一行大约代表 `weight` 次真实分配，而小分配被采样到的概率很低。如果你关注的大小类没有 sample，可调整 `jemalloc_profiler_sampling_rate`。
+* 采样分配不存放在 slab 中，因此其本身不会增加 `waste`。它们只是告诉你哪些代码会在该大小类中进行分配。
+* 每个存活的 sample 都会额外占用两个数据页 (在 64 KiB 数据页的构建中为 128 KiB) ，直到该分配被释放为止。禁用 profiler 只会停止产生新的 sample，但不会释放已有的 sample。
+
+以下查询会列出浪费超过 1 MiB 的大小类中，存活时间超过一分钟的分配的调用栈：
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT
+    b.arena,
+    b.size AS reg_size,
+    b.waste AS class_waste,
+    s.est_old_objects,
+    s.stack
+FROM system.jemalloc_arena_bins AS b
+INNER JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
+ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
+```
+
+### 示例：生成碎片化火焰图 {#example-fragmentation-flamegraph}
+
+同一个查询还可以按各回溯 (backtrace) 中较旧分配 (allocation) 数量的比例，将每个大小类的浪费量分摊到这些回溯上，并以 `flamegraph.pl` 所需的 collapsed 格式输出结果。存在浪费但没有足够旧的样本的大小类会被归入 `[unattributed]` 帧，因此火焰图的总量即为总浪费量。每个查询只应读取一次 `system.jemalloc_sampled_allocations`：每次读取都会刷写一份新的 profile，因此两个子查询看到的数据会不一致。
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
+```
+
+```sh
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+```
+
+## 将堆内存剖析刷写到磁盘 {#flushing-heap-profiles}
 
 如果你需要将堆内存剖析保存为文件，以便使用 `jeprof` 进行离线分析，可以将其刷写到磁盘。
 
@@ -344,9 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 生成的文件名后将附加此前缀、PID 和序列号。
 
-<div id="analyzing-heap-profile-files-with-jeprof">
-  ## 使用 `jeprof` 分析堆内存剖析文件
-</div>
+## 使用 `jeprof` 分析堆内存剖析文件 {#analyzing-heap-profile-files-with-jeprof}
 
 将堆内存剖析写入磁盘后，可以使用 `jemalloc` 提供的工具 [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) 进行分析。可通过多种方式安装：
 
@@ -355,9 +414,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 可用的输出格式有很多。运行 `jeprof --help` 可查看完整的选项列表。
 
-<div id="symbolized-heap-profiles">
-  ### 符号化的堆内存剖析
-</div>
+### 符号化的堆内存剖析 {#symbolized-heap-profiles}
 
 自 26.1+ 版本起，ClickHouse 会在你使用 `SYSTEM JEMALLOC FLUSH PROFILE` 执行 flush 时自动生成符号化的堆内存剖析。
 符号化的堆内存剖析 (带有 `.symbolized` 扩展名) 包含已嵌入的函数符号，因此可由 `jeprof` 直接分析，而无需 ClickHouse 可执行文件。
@@ -408,9 +465,7 @@ jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-<div id="examples">
-  ### 示例
-</div>
+### 示例 {#examples}
 
 使用符号化的堆内存剖析 (推荐) ：
 
@@ -440,9 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-<div id="generating-flame-graph">
-  ### 生成火焰图
-</div>
+### 生成火焰图 {#generating-flame-graph}
 
 `jeprof` 支持生成用于构建火焰图的折叠栈。
 
@@ -468,9 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 另一个有趣的工具是 [speedscope](https://www.speedscope.app/)，它可以让你以更交互的方式分析已收集的调用栈。
 
-<div id="additional-options-for-profiler">
-  ## Profiler 的其他选项
-</div>
+## Profiler 的其他选项 {#additional-options-for-profiler}
 
 `jemalloc` 提供了许多与 Profiler 相关的选项，这些选项可通过修改 `MALLOC_CONF` 环境变量来控制。
 例如，可使用 `lg_prof_sample` 控制分配样本之间的时间间隔。
@@ -478,9 +529,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 建议查阅 `jemalloc` 的[参考页](https://jemalloc.net/jemalloc.3.html)，以获取完整的选项列表。
 
-<div id="other-resources">
-  ## 其他资源
-</div>
+## 其他资源 {#other-resources}
 
 ClickHouse/Keeper 通过多种方式公开与 `jemalloc` 相关的指标。
 
@@ -490,9 +539,7 @@ ClickHouse/Keeper 通过多种方式公开与 `jemalloc` 相关的指标。
   请务必注意，这些指标彼此之间并未同步，数值可能会出现漂移。
 </Warning>
 
-<div id="system-table-asynchronous_metrics">
-  ### 系统表 `asynchronous_metrics`
-</div>
+### 系统表 `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -503,17 +550,13 @@ FORMAT Vertical
 
 [参考](/zh/reference/system-tables/asynchronous_metrics)
 
-<div id="system-table-jemalloc_bins">
-  ### 系统表 `jemalloc_bins`
-</div>
+### 系统表 `jemalloc_bins` {#system-table-jemalloc_bins}
 
 包含从所有 arena 汇总而来的、通过 jemalloc 分配器在不同大小类 (bins) 中的内存分配信息。
 
 [参考](/zh/reference/system-tables/jemalloc_bins)
 
-<div id="system-table-jemalloc_stats">
-  ### 系统表 `jemalloc_stats` (26.2+)
-</div>
+### 系统表 `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 将 `malloc_stats_print()` 的完整输出作为单个字符串返回。等同于 `SYSTEM JEMALLOC STATS` 命令。
 
@@ -521,17 +564,13 @@ FORMAT Vertical
 SELECT * FROM system.jemalloc_stats
 ```
 
-<div id="prometheus">
-  ### Prometheus
-</div>
+### Prometheus {#prometheus}
 
 `asynchronous_metrics` 中所有与 `jemalloc` 相关的指标，也会通过 ClickHouse 和 Keeper 的 Prometheus 端点公开。
 
 [参考](/zh/reference/settings/server-settings/settings/other#prometheus)
 
-<div id="jmst-4lw-command-in-keeper">
-  ### Keeper 中的 `jmst` 4LW 命令
-</div>
+### Keeper 中的 `jmst` 4LW 命令 {#jmst-4lw-command-in-keeper}
 
 Keeper 支持 `jmst` 4LW 命令，用于返回[基础分配器统计信息](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics)：
 

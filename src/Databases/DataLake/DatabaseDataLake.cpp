@@ -931,6 +931,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached_storage)
         {
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
@@ -1086,6 +1087,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         {
             /// Lost a race to another query; keep the already-cached storage and drop ours.
             result_storage->shutdown(/*is_drop*/ false);
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
@@ -1364,6 +1366,8 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
     return create_query;
 }
 
@@ -1451,6 +1455,8 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->setDatabase(getDatabaseName());
     new_create_query->set(new_create_query->storage, new_engine_definition);
     new_create_query->uuid = db_uuid;
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+        new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
@@ -1589,7 +1595,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             if (pos != std::string::npos)
             {
                 DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
-                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_entries);
             }
             else
             {

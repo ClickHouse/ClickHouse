@@ -66,7 +66,10 @@ public:
     {
         std::lock_guard lock(mutex);
         if (requests.empty())
+        {
+            flushThroughputOnDeactivation();
             return {nullptr, false};
+        }
         ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
@@ -75,7 +78,7 @@ public:
             cancelActivation();
         }
         queue_cost -= result->cost;
-        incrementDequeued(result->cost);
+        incrementDequeued(result->cost, !requests.empty());
         SCHED_DBG("{} -- dequeue(cost={}, queued={})", getPath(), result->cost, requests.size());
         return {result, !requests.empty()};
     }

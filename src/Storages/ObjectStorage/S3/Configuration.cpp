@@ -146,7 +146,7 @@ void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -214,7 +214,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const String raw_collection_url = collection.get<String>("url");
     const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
     if (collection_url != raw_collection_url)
+    {
+        /// Resolving against `s3_base` replaces the stored `url`, which could send the stored credentials to another host.
+        checkNamedCollectionOverride(collection, "url", context);
         url_overridden_by_base_setting = collection_url;
+    }
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
