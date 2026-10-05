@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -81,12 +82,17 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
   *
   * `duplicate_to_representative` is written only when an `ActionsDAG` is returned; it is left empty on `std::nullopt`.
   * A caller that stores it unconditionally therefore never applies a collapse the returned plan does not perform.
+  *
+  * `rewrite_for_shard`, when set, returns a rewritten clone of an expression as the shard received it, and is applied
+  * before the `ALIAS` inlining. An expected column whose rewritten expression has no aggregate or window function is
+  * computed from that expression when the shard does not return it, like an `ALIAS` body.
   */
 std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
     const Block & expected_header,
-    std::unordered_map<String, String> * duplicate_to_representative = nullptr);
+    std::unordered_map<String, String> * duplicate_to_representative = nullptr,
+    const std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> & rewrite_for_shard = {});
 
 }
