@@ -45,9 +45,9 @@ std::string formatTail(const std::vector<SyscallRecord> & trace, size_t count)
 
 }
 
-Simulation::Simulation(SimulationParams params_, SchedulerParams scheduler_params)
+Simulation::Simulation(SimulationParams params_)
     : params(params_)
-    , scheduler(scheduler_params)
+    , scheduler(params)
 {
 }
 
@@ -138,7 +138,15 @@ Simulation * Simulation::current()
 void Simulation::sync(const char * operation, std::source_location location)
 {
     recordSyscall(operation, location);
-    scheduler.onSync();
+    if (scheduler.shouldHold())
+    {
+        recordSyscall("held", location);
+        scheduler.onHold();
+    }
+    else
+    {
+        scheduler.onSync();
+    }
     running_thread->suspend();
 }
 
@@ -152,14 +160,15 @@ void Simulation::yield(std::source_location location)
 void Simulation::futexWait(void * address, std::source_location location)
 {
     recordSyscall("futexWait", location);
-    if (randomEventEvery(params.spurious_wakeup_every))
+    if (scheduler.shouldWakeSpuriously())
     {
+        recordSyscall("spuriousWakeup", location);
         scheduler.onYield();
     }
     else
     {
         futexes.park(address, running_thread);
-        scheduler.onSuspend();
+        scheduler.onPark();
     }
     running_thread->suspend();
 }
@@ -181,6 +190,24 @@ bool Simulation::spuriousFailure(std::source_location location)
 {
     recordSyscall("spuriousFailure", location);
     return randomEventEvery(params.spurious_failure_every);
+}
+
+void Simulation::enterLockFreeScope(std::source_location location)
+{
+    recordSyscall("enterLockFreeScope", location);
+    scheduler.onLockFreeEnter();
+}
+
+void Simulation::leaveLockFreeScope(std::source_location location)
+{
+    recordSyscall("leaveLockFreeScope", location);
+    scheduler.onLockFreeLeave();
+}
+
+void Simulation::progressHint(std::source_location location)
+{
+    recordSyscall("progressHint", location);
+    scheduler.onProgress();
 }
 
 }

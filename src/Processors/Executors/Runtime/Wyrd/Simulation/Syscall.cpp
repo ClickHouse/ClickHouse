@@ -34,4 +34,22 @@ void spawn(std::function<void()> body, std::source_location location)
         simulation->spawn(std::move(body), location);
 }
 
+void enterLockFreeScope(std::source_location location)
+{
+    if (auto * simulation = Simulation::current())
+        simulation->enterLockFreeScope(location);
+}
+
+void leaveLockFreeScope(std::source_location location)
+{
+    if (auto * simulation = Simulation::current())
+        simulation->leaveLockFreeScope(location);
+}
+
+void progressHint(std::source_location location)
+{
+    if (auto * simulation = Simulation::current())
+        simulation->progressHint(location);
+}
+
 }

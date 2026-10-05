@@ -2,7 +2,7 @@
 
 #include <Processors/Executors/Runtime/Wyrd/Simulation/FutexTable.h>
 #include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
-#include <Common/CoroutineStack.h>
+#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulationParams.h>
 #include <Common/SipHash.h>
 
 #include <exception>
@@ -35,16 +35,6 @@ struct SimulationResult
     std::string last_syscalls;
 };
 
-struct SimulationParams
-{
-    UInt64 seed = 42;
-    size_t spurious_wakeup_every = 7;
-    size_t spurious_failure_every = 7;
-    size_t step_limit = 100'000;
-    size_t printed_syscalls = 100;
-    size_t stack_size = CoroutineStack::default_stack_size;
-};
-
 class Simulation
 {
     SimulationResult::Status runLoop();
@@ -52,7 +42,7 @@ class Simulation
     void createThread(std::function<void()> user_body);
 
 public:
-    Simulation(SimulationParams params_, SchedulerParams scheduler_params);
+    explicit Simulation(SimulationParams params_);
     ~Simulation();
 
     /// Test entry point
@@ -66,6 +56,9 @@ public:
     void futexWake(void * address, size_t count, std::source_location location);
     void spawn(std::function<void()> body, std::source_location location);
     bool spuriousFailure(std::source_location location);
+    void enterLockFreeScope(std::source_location location);
+    void leaveLockFreeScope(std::source_location location);
+    void progressHint(std::source_location location);
 
 private:
     const SimulationParams params;
