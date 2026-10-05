@@ -804,7 +804,7 @@ static bool writeConsolidatedManifestFile(
         throw;
     }
 
-    CommitOutcome outcome;
+    CommitOutcome outcome = CommitOutcome::Unknown;
     try
     {
         outcome = commitCompactedMetadata(
@@ -1462,7 +1462,7 @@ void compactIcebergTable(
 
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_compaction_pause_before_metadata_commit);
 
-            CommitOutcome outcome;
+            CommitOutcome outcome = CommitOutcome::Unknown;
             try
             {
                 outcome = commitCompactedMetadata(

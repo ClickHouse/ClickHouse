@@ -54,7 +54,7 @@ void writeMessageToFile(
 enum class MetadataWriteOutcome : uint8_t
 {
     Written,
-    /// The metadata file already existed, nothing was written.
+    /// The metadata file holds another writer's content.
     TargetExisted,
     /// The write was attempted and failed, so the metadata file may or may not exist.
     WriteFailed,
@@ -62,6 +62,7 @@ enum class MetadataWriteOutcome : uint8_t
 
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
 /// Will try to write hint multiple times, but will not report failure to write hint.
+/// After a failed write, reads the metadata file back to tell a lost race from an unknown outcome.
 MetadataWriteOutcome writeMetadataFileAndVersionHintWithOutcome(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -71,7 +72,7 @@ MetadataWriteOutcome writeMetadataFileAndVersionHintWithOutcome(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
-/// `writeMetadataFileAndVersionHintWithOutcome(...) == MetadataWriteOutcome::Written`.
+/// Whether the metadata file was written, without the read-back of `writeMetadataFileAndVersionHintWithOutcome`.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
