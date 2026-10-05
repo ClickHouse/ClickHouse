@@ -3452,6 +3452,7 @@ public:
     {
         return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
     }
+    bool isNameInsensitive() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));

@@ -442,6 +442,17 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
+const ActionsDAG::Node & ActionsDAG::addInputAt(size_t position, std::string name, DataTypePtr type)
+{
+    if (position > inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add input {} at position {}, there are {} inputs", name, position, inputs.size());
+
+    const auto & node = addInput(std::move(name), std::move(type));
+    inputs.pop_back();
+    inputs.insert(inputs.begin() + position, &node);
+    return node;
+}
+
 const ActionsDAG::Node & ActionsDAG::addColumn(
     ColumnConstPtr column,
     DataTypePtr type,
@@ -1295,11 +1306,7 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        /// a masked secret must not be collapsed onto an equal plain constant: the class
-        /// representative would render the value instead of `[HIDDEN]` in plan dumps
-        return a.sample->is_masked_secret == b.sample->is_masked_secret
-            && a.sample->result_type->equals(*b.sample->result_type)
-            && constColumnsEqual(a.sample->column, b.sample->column);
+        return ActionsDAG::isSameOperation(*a.sample, *b.sample);
     }
 };
 
@@ -1394,9 +1401,9 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         bool merged = false;
         for (const auto & cand : candidates)
         {
-            if (!cand.representative->result_type->equals(*node.result_type))
-                continue;
             if (!same_arg_classes(cand.arg_classes))
+                continue;
+            if (!ActionsDAG::isSameOperation(*cand.representative, node))
                 continue;
             ec.unite(cand.representative, &node);
             merged = true;
@@ -1409,6 +1416,43 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
     return ec;
 }
 
+}
+
+bool ActionsDAG::isSameOperation(const Node & lhs, const Node & rhs)
+{
+    if (!lhs.isDeterministic() || !rhs.isDeterministic() || !lhs.result_type->equals(*rhs.result_type))
+        return false;
+    /// Lambda-typed values carry an inner DAG that is not compared
+    if (WhichDataType(lhs.result_type).isFunction())
+        return false;
+
+    if (isConstant(lhs) || isConstant(rhs))
+    {
+        /// a masked secret must not be collapsed onto an equal plain constant: the class
+        /// representative would render the value instead of `[HIDDEN]` in plan dumps
+        return isConstant(lhs) && isConstant(rhs) && lhs.is_masked_secret == rhs.is_masked_secret
+            && constColumnsEqual(lhs.column, rhs.column);
+    }
+
+    if (lhs.type == ActionType::COLUMN && rhs.type == ActionType::COLUMN)
+        return lhs.column && lhs.column == rhs.column && lhs.is_masked_secret == rhs.is_masked_secret;
+
+    if (lhs.type != ActionType::FUNCTION || rhs.type != ActionType::FUNCTION || !lhs.function_base || !rhs.function_base
+        || lhs.children.size() != rhs.children.size())
+        return false;
+
+    if (lhs.function_base == rhs.function_base)
+        return true;
+
+    const auto * factory_handle = lhs.function_base->getFactoryHandle();
+    if (!factory_handle || factory_handle != rhs.function_base->getFactoryHandle())
+        return false;
+
+    SipHash lhs_hash;
+    lhs.function_base->updateHash(lhs_hash);
+    SipHash rhs_hash;
+    rhs.function_base->updateHash(rhs_hash);
+    return lhs_hash.get128() == rhs_hash.get128();
 }
 
 void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
