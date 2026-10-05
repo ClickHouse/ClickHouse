@@ -148,6 +148,21 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
 
+    /// The rewrite below runs before the column commands of this query. For a mutation, a name is a column if an earlier
+    /// command leaves it added or renamed to, or a later command adds or renames to it, and is not if an earlier command
+    /// leaves it dropped or renamed away.
+    std::unordered_map<String, size_t> later_new_column_names;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (command && command->type == ASTAlterCommand::ADD_COLUMN)
+            ++later_new_column_names[command->col_decl->as<ASTColumnDeclaration &>().name];
+        else if (command && command->type == ASTAlterCommand::RENAME_COLUMN)
+            ++later_new_column_names[getIdentifierName(command->rename_to)];
+    }
+    NameSet new_column_names;
+    NameSet dropped_column_names;
+
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
@@ -157,6 +172,27 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }
         else if (auto alter_command = AlterCommand::parse(command_ast))
         {
+            const String & column_name = alter_command->column_name;
+            if (alter_command->type == AlterCommand::ADD_COLUMN)
+            {
+                --later_new_column_names[column_name];
+                new_column_names.insert(column_name);
+                dropped_column_names.erase(column_name);
+            }
+            else if (alter_command->type == AlterCommand::RENAME_COLUMN)
+            {
+                --later_new_column_names[alter_command->rename_to];
+                new_column_names.erase(column_name);
+                dropped_column_names.insert(column_name);
+                new_column_names.insert(alter_command->rename_to);
+                dropped_column_names.erase(alter_command->rename_to);
+            }
+            else if (alter_command->type == AlterCommand::DROP_COLUMN && !alter_command->clear)
+            {
+                new_column_names.erase(column_name);
+                dropped_column_names.insert(column_name);
+            }
+
             auto reset_command = alter_command->extractSettingsResets();
             auto & alter_commands = segments_holder.take<AlterCommands>();
             /// The reset goes first, as it does inside one command, where the resets are applied
@@ -180,8 +216,14 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
+                NameSet column_names = new_column_names;
+                for (const auto & [name, count] : later_new_column_names)
+                    if (count)
+                        column_names.insert(name);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// TODO: add a check for result query size.
-                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, context);
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(
+                    *command_ast, context, &metadata_snapshot->getColumns(), column_names, dropped_column_names);
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();

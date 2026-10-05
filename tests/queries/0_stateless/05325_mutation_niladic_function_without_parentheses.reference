@@ -1,0 +1,30 @@
+not pruned
+0000000000	(DELETE WHERE d < today())	['20000101','21000101']
+0000000001	(DELETE WHERE d < today)	['20000101','21000101']
+0000000002	(DELETE WHERE d < CURRENT_DATE)	['20000101','21000101']
+0000000003	(DELETE WHERE toDateTime(d) < now)	['20000101','21000101']
+0000000004	(DELETE WHERE d < r)	['20000101','21000101']
+0000000005	(DELETE WHERE (d < \'2050-01-01\') AND arrayExists(x -> (x <= today), [d]))	['20000101','21000101']
+0000000006	(DELETE WHERE d = \'2000-01-01\')	['20000101']
+rejected on a replicated table
+replaced with the value on the initiator
+(DELETE WHERE (d < _CAST(N, \'Date\')) AND (k = 100))
+(DELETE WHERE (d < (_CAST(N, \'Date\') AS today)) AND (k = 101))
+(UPDATE v = toUnixTimestamp(_CAST(N, \'DateTime\')) WHERE k = 102)
+(DELETE WHERE (d < (_CAST(N, \'Date\') AS t1)) AND (t1 > \'2000-01-01\') AND (k = 103))
+(DELETE WHERE (d < (_CAST(N, \'Date\') AS t0)) AND (t0 > \'2000-01-01\') AND (k = 104))
+(DELETE WHERE (d IN toDate(_CAST(N, \'Date\'))) AND (k = 105))
+(DELETE WHERE ((k AS today) = 106) AND arrayExists(x -> ((today AS today) > 0), [k]))
+a column, a lambda parameter or an alias with the same name
+0000000000	(UPDATE v = 1 WHERE (p = 1) AND (user = \'a\') AND (today = \'2000-01-01\'))	['1']
+0000000001	(UPDATE v = 2 WHERE (p = 1) AND arrayExists(now -> (now > 0), [v]))	['1']
+0000000002	(UPDATE v = 3 WHERE ((p AS now) = 1) AND (now = 1))	['1']
+0000000003	(UPDATE v = (p AS now) WHERE now = 1)	['1','2']
+a column added, renamed or dropped by the same query
+1	7	8	9	10	11	12
+(UPDATE v1 = 7 WHERE today = \'2000-01-01\')
+(UPDATE v2 = 8 WHERE d < _CAST(N, \'Date\'))
+(UPDATE v3 = 9 WHERE now = 1)
+(UPDATE v4 = 10 WHERE d < _CAST(N, \'Date\'))
+(UPDATE v5 = 11 WHERE toUnixTimestamp(_CAST(N, \'DateTime\')) > 0)
+(UPDATE v6 = 12 WHERE toUnixTimestamp(_CAST(N, \'DateTime\')) > 0)
