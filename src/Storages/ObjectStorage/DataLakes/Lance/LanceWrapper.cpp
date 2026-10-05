@@ -182,15 +182,22 @@ ch_lance_snapshot_info toNativeSnapshot(const TableStateSnapshot & snapshot)
 String DatasetOptions::identityKey() const
 {
     SipHash hash;
-    hash.update(uri);
+    /// Hash the length before the bytes of every string, so that adjacent fields cannot shift into
+    /// each other: `(region = 'ab', endpoint = 'c')` and `(region = 'a', endpoint = 'bc')` differ.
+    auto update_string = [&hash](const String & value)
+    {
+        hash.update(value.size());
+        hash.update(value);
+    };
+    update_string(uri);
     hash.update(static_cast<UInt8>(use_s3));
-    hash.update(s3_region);
-    hash.update(s3_endpoint);
-    hash.update(s3_access_key_id);
-    hash.update(s3_secret_access_key);
-    hash.update(s3_session_token);
-    hash.update(s3_role_arn);
-    hash.update(s3_role_session_name);
+    update_string(s3_region);
+    update_string(s3_endpoint);
+    update_string(s3_access_key_id);
+    update_string(s3_secret_access_key);
+    update_string(s3_session_token);
+    update_string(s3_role_arn);
+    update_string(s3_role_session_name);
     hash.update(static_cast<UInt8>(s3_use_environment_credentials));
     hash.update(static_cast<UInt8>(s3_no_sign_request));
     hash.update(static_cast<UInt8>(s3_allow_http));

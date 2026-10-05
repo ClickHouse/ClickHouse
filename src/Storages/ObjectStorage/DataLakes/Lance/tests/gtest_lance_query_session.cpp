@@ -270,6 +270,13 @@ TEST(LanceQuerySession, IdentityKeyStableAndSensitiveToCredentials)
     EXPECT_NE(a.identityKey(), b.identityKey());
 }
 
+TEST(LanceQuerySession, IdentityKeyDelimitsAdjacentFields)
+{
+    Lance::DatasetOptions a{.uri = "s3://bucket/ds", .use_s3 = true, .s3_region = "ab", .s3_endpoint = "c"};
+    Lance::DatasetOptions b{.uri = "s3://bucket/ds", .use_s3 = true, .s3_region = "a", .s3_endpoint = "bc"};
+    EXPECT_NE(a.identityKey(), b.identityKey());
+}
+
 TEST(LanceQuerySession, PinSnapshotIsIdempotent)
 {
     auto context = Context::createCopy(getContext().context);
