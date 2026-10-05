@@ -229,9 +229,40 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     }
 }
 
-void ManifestColumnStatistics::finalize(UInt64 rows, DataLakeReadEstimate & estimate) const
+UInt64 ManifestColumnStatistics::estimateDistinctValues(
+    const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
-    if (rows == 0)
+    const UInt64 nulls = column.null_fraction ? static_cast<UInt64>(std::llround(*column.null_fraction * static_cast<Float64>(rows))) : 0;
+    const UInt64 non_null_rows = rows - std::min(nulls, rows);
+
+    std::optional<UInt64> range_width;
+    if (column.min_value && column.max_value && hasCountableValues(*target.nested_type))
+        range_width = valueRangeWidth(*column.min_value, *column.max_value);
+
+    UInt64 num_distinct_values = 1;
+    if (non_null_rows == 0)
+        num_distinct_values = 1;
+    else if (inputs.identity_partition_known)
+        num_distinct_values = inputs.identity_partition_values.size();
+    else if (range_width)
+        num_distinct_values = *range_width;
+    /// TODO AI made this decision: rule 3 divides column_sizes by the fixed width of the type and skips variable-width types (issue 120440, plan O6)
+    else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
+        num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
+    else if (isBool(target.nested_type))
+        num_distinct_values = 2;
+    else if (isString(target.nested_type))
+        num_distinct_values = rows / 2;
+    else
+        num_distinct_values = rows / 10 * 3 + rows % 10 * 3 / 10;
+
+    /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
+    return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
+}
+
+void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate) const
+{
+    if (!estimate.rows || *estimate.rows == 0)
         return;
 
     estimate.column_statistics = statistics_builder.getEstimator();
@@ -240,42 +271,9 @@ void ManifestColumnStatistics::finalize(UInt64 rows, DataLakeReadEstimate & esti
 
     const auto merged = estimate.column_statistics->estimateRelationProfile();
     for (size_t i = 0; i < targets.size(); ++i)
-    {
-        const auto & target = targets[i];
-        const auto & inputs = distinct_values_inputs[i];
-        const auto it = merged.column_stats.find(target.name);
-        if (it == merged.column_stats.end())
-            continue;
-
-        const auto & column = it->second;
-        const UInt64 nulls = column.null_fraction ? static_cast<UInt64>(std::llround(*column.null_fraction * static_cast<Float64>(rows))) : 0;
-        const UInt64 non_null_rows = rows - std::min(nulls, rows);
-
-        std::optional<UInt64> range_width;
-        if (column.min_value && column.max_value && hasCountableValues(*target.nested_type))
-            range_width = valueRangeWidth(*column.min_value, *column.max_value);
-
-        UInt64 num_distinct_values = 1;
-        if (non_null_rows == 0)
-            num_distinct_values = 1;
-        else if (inputs.identity_partition_known)
-            num_distinct_values = inputs.identity_partition_values.size();
-        else if (range_width)
-            num_distinct_values = *range_width;
-        /// TODO AI made this decision: rule 3 divides column_sizes by the fixed width of the type and skips variable-width types (issue 120440, plan O6)
-        else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
-            num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
-        else if (isBool(target.nested_type))
-            num_distinct_values = 2;
-        else if (isString(target.nested_type))
-            num_distinct_values = rows / 2;
-        else
-            num_distinct_values = rows / 10 * 3 + rows % 10 * 3 / 10;
-
-        /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
-        estimate.num_distinct_values.emplace(
-            target.name, std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1)));
-    }
+        if (const auto it = merged.column_stats.find(targets[i].name); it != merged.column_stats.end())
+            estimate.num_distinct_values.emplace(
+                targets[i].name, estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, *estimate.rows));
 }
 
 }
