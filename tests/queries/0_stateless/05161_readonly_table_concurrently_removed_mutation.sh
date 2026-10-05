@@ -17,7 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 disk_args="type = object_storage, object_storage_type = local, metadata_type = plain_rewritable,
-           enable_hard_links = 1, path = 'disks/05161/${CLICKHOUSE_DATABASE}/'"
+           enable_hard_links = 1, path = '${CLICKHOUSE_DISKS_FILES}/05161/${CLICKHOUSE_DATABASE}/'"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE writer (key Int32, value UInt32) ENGINE = MergeTree ORDER BY key
