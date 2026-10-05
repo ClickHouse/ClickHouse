@@ -176,6 +176,10 @@ Float64 ColumnExponentialTimeDecaying::getUnitTimestampAt(size_t n) const
     if (canonical.value_at_anchor == 0)
         return 0;
 
+    const Float64 edge = std::numeric_limits<Float64>::max();
+    if (std::abs(canonical.anchor_time) == edge && std::abs(canonical.value_at_anchor) != 1)
+        return canonical.anchor_time;
+
     const Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(
         canonical.value_at_anchor, canonical.anchor_time, decay_length);
     return std::isfinite(unit_timestamp) ? unit_timestamp : canonical.anchor_time;
@@ -186,6 +190,10 @@ ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getPr
     const auto canonical = getCanonicalValueAt(n);
     if (canonical.value_at_anchor == 0)
         return {0, 0};
+
+    const Float64 edge = std::numeric_limits<Float64>::max();
+    if (std::abs(canonical.anchor_time) == edge && std::abs(canonical.value_at_anchor) != 1)
+        return canonical;
 
     const Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(
         canonical.value_at_anchor, canonical.anchor_time, decay_length);
