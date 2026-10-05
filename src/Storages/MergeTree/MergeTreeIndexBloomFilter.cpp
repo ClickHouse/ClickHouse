@@ -641,7 +641,8 @@ static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const Col
 }
 
 /// True when converting the constant to the element type yields the exact bytes the index holds, so
-/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart, and the
+/// `IN` path casts the whole set to the element type. The `equals` path allows floats, see below.
 static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
 {
     if (!value_type)
@@ -654,6 +655,21 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
         return false;
 
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
+}
+
+/// `bloomFilterHashDomainMatches` for `arrayJoin(col) = constant`, which also allows a float element with an
+/// integer or float constant. `convertFieldToType` converts such a constant to the float exactly or returns
+/// Null, and the caller looks up both zeros with `hashWithFieldAndOtherZero`.
+static bool bloomFilterHashDomainMatchesForEquals(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    if (isFloat(removeLowCardinalityAndNullable(nested_type)))
+        return isInteger(value) || isFloat(value);
+
+    return bloomFilterHashDomainMatches(value_type, nested_type);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -1062,7 +1078,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 size_t position = header.getPositionByName(array_column_name);
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
+                if (array_type && bloomFilterHashDomainMatchesForEquals(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     if (!validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
@@ -1076,7 +1092,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
                     return true;
                 }
             }
@@ -1141,14 +1157,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             bool has_float_zero = false;
             ColumnPtr hashes = hashWithColumnAndOtherZeros(actual_type, column, has_float_zero);
 
-            /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
             if (function_name == "hasAll" && has_float_zero)
-                return false;
-
-            out.function = function_name == "hasAny" ?
-                RPNElement::FUNCTION_HAS_ANY :
-                RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
+            {
+                /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
+                /// A granule matches only if each predicate entry matches, and under `FUNCTION_HAS_ANY` an entry
+                /// matches if any of its hashes does. So one entry per element, with both hashes for a zero, is
+                /// exactly `hasAll`.
+                out.function = RPNElement::FUNCTION_HAS_ANY;
+                for (size_t i = 0; i < column->size(); ++i)
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, (*column)[i])));
+            }
+            else
+            {
+                out.function = function_name == "hasAny" ?
+                    RPNElement::FUNCTION_HAS_ANY :
+                    RPNElement::FUNCTION_HAS_ALL;
+                out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
+            }
         }
         else
         {
