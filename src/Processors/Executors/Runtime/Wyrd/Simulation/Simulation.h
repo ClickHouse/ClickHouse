@@ -16,7 +16,7 @@ namespace DB::Runtime::Wyrd
 {
 
 struct SimulatedThread;
-struct SyscallRecord;
+struct TraceRecord;
 
 struct SimulationResult
 {
@@ -32,13 +32,13 @@ struct SimulationResult
     std::string exception_message;
     size_t total_steps;
     UInt64 digest;
-    std::string last_syscalls;
+    std::string timeline;
 };
 
 class Simulation
 {
     SimulationResult::Status runLoop();
-    void recordSyscall(const char * operation, std::source_location location);
+    void traceEvent(std::string event, std::source_location location);
     void createThread(std::function<void()> user_body);
 
 public:
@@ -64,7 +64,7 @@ private:
     const SimulationParams params;
     Scheduler scheduler;
 
-    std::vector<SyscallRecord> trace;
+    std::vector<TraceRecord> trace;
 
     FutexTable futexes;
     std::vector<std::unique_ptr<SimulatedThread>> threads;

@@ -10,11 +10,11 @@
 namespace DB::Runtime::Wyrd
 {
 
-struct SyscallRecord
+struct TraceRecord
 {
     size_t step;
     UInt32 thread_id;
-    const char * operation;
+    std::string event;
     std::source_location location;
 };
 
@@ -24,22 +24,22 @@ namespace
 
 Simulation * current_simulation = nullptr;
 
-std::string formatRecord(const SyscallRecord & record)
+std::string formatRecord(const TraceRecord & record)
 {
     return fmt::format(
-        "#{} thread {}: {} at {}:{}\n",
+        "#{} thread {}: {} at {}:{}",
         record.step,
         record.thread_id,
-        record.operation,
+        record.event,
         record.location.file_name(),
         record.location.line());
 }
 
-std::string formatTail(const std::vector<SyscallRecord> & trace, size_t count)
+std::string formatTimeline(const std::vector<TraceRecord> & trace)
 {
     std::string out;
-    for (size_t i = trace.size() > count ? trace.size() - count : 0; i < trace.size(); ++i)
-        out += formatRecord(trace[i]);
+    for (const auto & record : trace)
+        out += formatRecord(record) + "\n";
     return out;
 }
 
@@ -67,7 +67,7 @@ SimulationResult Simulation::run(std::function<void()> main)
         .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
         .total_steps = steps,
         .digest = digest.get64(),
-        .last_syscalls = formatTail(trace, params.printed_syscalls),
+        .timeline = formatTimeline(trace),
     };
 }
 
@@ -100,11 +100,11 @@ SimulationResult::Status Simulation::runLoop()
     }
 }
 
-void Simulation::recordSyscall(const char * operation, std::source_location location)
+void Simulation::traceEvent(std::string event, std::source_location location)
 {
     digest.update(running_thread->id);
     digest.update(location.line());
-    trace.push_back(SyscallRecord{.step = steps, .thread_id = running_thread->id, .operation = operation, .location = location});
+    trace.push_back(TraceRecord{.step = steps, .thread_id = running_thread->id, .event = std::move(event), .location = location});
 }
 
 void Simulation::createThread(std::function<void()> user_body)
@@ -137,10 +137,10 @@ Simulation * Simulation::current()
 
 void Simulation::sync(const char * operation, std::source_location location)
 {
-    recordSyscall(operation, location);
+    traceEvent(operation, location);
     if (scheduler.shouldHold())
     {
-        recordSyscall("held", location);
+        traceEvent("held", location);
         scheduler.onHold();
     }
     else
@@ -152,17 +152,17 @@ void Simulation::sync(const char * operation, std::source_location location)
 
 void Simulation::yield(std::source_location location)
 {
-    recordSyscall("yield", location);
+    traceEvent("yield", location);
     scheduler.onYield();
     running_thread->suspend();
 }
 
 void Simulation::futexWait(void * address, std::source_location location)
 {
-    recordSyscall("futexWait", location);
+    traceEvent("futexWait", location);
     if (scheduler.shouldWakeSpuriously())
     {
-        recordSyscall("spuriousWakeup", location);
+        traceEvent("spuriousWakeup", location);
         scheduler.onYield();
     }
     else
@@ -175,38 +175,38 @@ void Simulation::futexWait(void * address, std::source_location location)
 
 void Simulation::futexWake(void * address, size_t count, std::source_location location)
 {
-    recordSyscall("futexWake", location);
+    traceEvent("futexWake", location);
     for (SimulatedThread * waiter : futexes.wake(address, count))
         scheduler.onRunnable(waiter);
 }
 
 void Simulation::spawn(std::function<void()> body, std::source_location location)
 {
-    recordSyscall("spawn", location);
+    traceEvent("spawn", location);
     createThread(std::move(body));
 }
 
 bool Simulation::spuriousFailure(std::source_location location)
 {
-    recordSyscall("spuriousFailure", location);
+    traceEvent("spuriousFailure", location);
     return randomEventEvery(params.spurious_failure_every);
 }
 
 void Simulation::enterLockFreeScope(std::source_location location)
 {
-    recordSyscall("enterLockFreeScope", location);
+    traceEvent("enterLockFreeScope", location);
     scheduler.onLockFreeEnter();
 }
 
 void Simulation::leaveLockFreeScope(std::source_location location)
 {
-    recordSyscall("leaveLockFreeScope", location);
+    traceEvent("leaveLockFreeScope", location);
     scheduler.onLockFreeLeave();
 }
 
 void Simulation::progressHint(std::source_location location)
 {
-    recordSyscall("progressHint", location);
+    traceEvent("progressHint", location);
     scheduler.onProgress();
 }
 

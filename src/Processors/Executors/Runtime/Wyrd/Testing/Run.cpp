@@ -42,8 +42,12 @@ void runTest(std::function<void()> body, TestParams params)
 
         if (first.status != SimulationResult::Status::Ok)
             throw std::runtime_error(fmt::format(
-                "Simulation with seed {} ended with {} after {} steps. {}\nLast syscalls:\n{}",
-                simulation.seed, magic_enum::enum_name(first.status), first.total_steps, first.exception_message, first.last_syscalls));
+                "Simulation with seed {} ended with {} after {} steps. {}\nTimeline:\n{}",
+                simulation.seed,
+                magic_enum::enum_name(first.status),
+                first.total_steps,
+                first.exception_message,
+                first.timeline));
 
         results.push_back(std::move(first));
     }

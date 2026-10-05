@@ -89,7 +89,8 @@ TEST(Wyrd, SimulationFindsLockOrderDeadlock)
         if (result.status == SimulationResult::Status::Deadlock)
         {
             found = true;
-            EXPECT_FALSE(result.last_syscalls.empty());
+            EXPECT_NE(result.timeline.find("thread 2: futexWait at"), std::string::npos) << result.timeline;
+            EXPECT_NE(result.timeline.find("thread 3: futexWait at"), std::string::npos) << result.timeline;
         }
     }
     EXPECT_TRUE(found);
@@ -146,13 +147,12 @@ TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 
     EXPECT_EQ(result.status, SimulationResult::Status::Ok);
     EXPECT_TRUE(done);
-    EXPECT_NE(result.last_syscalls.find("preemptionPoint"), std::string::npos);
+    EXPECT_NE(result.timeline.find("preemptionPoint"), std::string::npos);
 }
 
 TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 {
     SimulationParams params;
-    params.printed_syscalls = 100'000;
     params.hold_every = 1;
     params.held_threads_limit = 2;
 
@@ -179,7 +179,7 @@ TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
         });
 
     EXPECT_EQ(result.status, SimulationResult::Status::Ok);
-    EXPECT_NE(result.last_syscalls.find("held"), std::string::npos);
+    EXPECT_NE(result.timeline.find("held"), std::string::npos);
 }
 
 TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
@@ -222,7 +222,13 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
         SimulationParams params;
         params.seed = seed;
         params.hold_every = 1;
-        found = Simulation(params).run(block_on_a_lock_free_peer).status == SimulationResult::Status::Deadlock;
+        SimulationResult result = Simulation(params).run(block_on_a_lock_free_peer);
+        if (result.status == SimulationResult::Status::Deadlock)
+        {
+            found = true;
+            EXPECT_NE(result.timeline.find("held at"), std::string::npos) << result.timeline;
+            EXPECT_NE(result.timeline.find("futexWait at"), std::string::npos) << result.timeline;
+        }
     }
 
     EXPECT_TRUE(found);

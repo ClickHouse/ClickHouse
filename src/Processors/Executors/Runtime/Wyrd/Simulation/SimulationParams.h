@@ -16,7 +16,6 @@ struct SimulationParams
     size_t held_threads_limit = 1;
     size_t progress_to_resume = 4;
     size_t step_limit = 100'000;
-    size_t printed_syscalls = 100;
     size_t stack_size = CoroutineStack::default_stack_size;
 };
 
