@@ -43,6 +43,8 @@ def clear_workloads_and_resources():
         drop workload if exists admin;
         drop workload if exists all;
         drop resource if exists cpu;
+        drop resource if exists master_cpu;
+        drop resource if exists worker_cpu;
     """
     )
     yield
@@ -628,3 +630,29 @@ def test_create_workload_under_load():
     development2.stop()
     assert development2.get_errors() == 0, "Errors occurred in development2 workload"
     assert production2.get_errors() == 0, "Errors occurred in production2 workload"
+
+
+def test_separate_master_worker_resources():
+    node.query(
+        """
+        create resource master_cpu (master thread);
+        create resource worker_cpu (worker thread);
+        create workload all;
+        create workload test_sep in all settings max_concurrent_threads=10;
+    """
+    )
+
+    query_id = "test_separate_master_worker"
+    node.query(
+        f"select count(*) from numbers_mt(100000000) settings workload='test_sep', max_threads=8",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert_profile_event(
+        node,
+        query_id,
+        "ConcurrencyControlSlotsAcquired",
+        lambda x: x > 0 and x <= 8,
+    )
+
