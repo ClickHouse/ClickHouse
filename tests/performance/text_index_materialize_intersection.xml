@@ -1,0 +1,28 @@
+<test>
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_materialize_all
+        (
+            id UInt64,
+            s String,
+            INDEX idx s TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'none')
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- Ten tokens per row, Zipf-like: w1 is in 44% of the rows, w2 in 29%, w3 in 21% (several posting list
+         blocks each), w10 in 7.5% (one block). -->
+    <fill_query>INSERT INTO text_index_materialize_all SELECT number, arrayStringConcat(arrayMap(i -> concat('w', toString(toUInt64(exp((cityHash64(number, i) % 1000000000) / 1e9 * log(200000))))), range(10)), ' ') FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_materialize_all FINAL</fill_query>
+
+    <query>SELECT count() FROM text_index_materialize_all WHERE hasAllTokens(s, ['w1', 'w10'])</query>
+    <query>SELECT count() FROM text_index_materialize_all WHERE hasAllTokens(s, ['w1', 'w2', 'w3'])</query>
+    <query>SELECT sum(id) FROM text_index_materialize_all WHERE hasAllTokens(s, ['w1', 'w2'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_materialize_all</drop_query>
+</test>

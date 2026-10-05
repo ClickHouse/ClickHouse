@@ -162,6 +162,7 @@
     M(TextIndexPhraseFallbacks, "Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
+    M(TextIndexPostingsIntersectionsReused, "Number of times a granule reused the intersection of posting lists kept for the previous granules in the same range of 65536 rows instead of computing it again, when posting lists are applied in 'materialize' mode.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(TextIndexTemporarySegmentsWritten, "Number of temporary segments written while building text indexes.", ValueType::Number) \
