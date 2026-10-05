@@ -9,6 +9,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -130,6 +132,23 @@ static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, Acti
     return dag;
 }
 
+static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (typeid_cast<const CommonSubplanStep *>(node->step.get())
+            || typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+            return true;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -192,6 +211,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check input and output type match
     if (!join->typeChangingSides().empty())
+        return 0;
+
+    /// A `CommonSubplanReferenceStep` holds a raw pointer to a node that must still hold a
+    /// `CommonSubplanStep` when the second pass resolves it. The rewrite below installs new steps at
+    /// both input node addresses and splices the right input into the IN set's own plan.
+    if (hasCommonSubplanNodes(*parent_node->children.at(0))
+        || hasCommonSubplanNodes(*parent_node->children.at(1)))
         return 0;
 
     // {

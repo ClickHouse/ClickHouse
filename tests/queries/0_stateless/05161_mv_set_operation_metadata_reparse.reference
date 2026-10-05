@@ -1,0 +1,5 @@
+before attach union	[13]
+before attach except	[11]
+after attach union	[13,23]
+after attach except	[11,21]
+after restore	[11,21]

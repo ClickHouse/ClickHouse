@@ -47,7 +47,10 @@ struct BitRotateLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// `apply` above refuses a big integer on either side, and the compiled body cannot throw: with
+    /// `compilable` unconditional, the same query raised an exception until the expression got
+    /// compiled and then silently returned a value.
+    static constexpr bool compilable = !is_big_int_v<A> && !is_big_int_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {

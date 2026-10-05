@@ -1,5 +1,6 @@
 import random
 import string
+import threading
 import time
 
 import pytest
@@ -145,6 +146,15 @@ def count_log_message(node, db_name, msg):
     return int(
         node.query(
             f"SELECT count() FROM system.text_log WHERE logger_name='DatabaseReplicated ({db_name})' AND message ='{msg}'"
+        ).strip()
+    )
+
+
+def count_log_message_like(node, db_name, msg_pattern):
+    node.query("SYSTEM FLUSH LOGS")
+    return int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE logger_name='DatabaseReplicated ({db_name})' AND message LIKE '{msg_pattern}'"
         ).strip()
     )
 
@@ -676,3 +686,125 @@ def test_restore_db_replica_on_cluster(
     check_contains_table(
         node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table
     )
+
+
+def test_restore_db_replica_stops_ddl_worker_before_touching_keeper(
+    start_cluster,
+    exclusive_database_name,
+):
+    # `SYSTEM RESTORE DATABASE REPLICA` re-initialises the replica in place. While it does
+    # so, the DDL worker's own startup recovery reads the same replication state
+    # (`max_log_ptr_at_creation`, which selects the log-entry range the recovering replica
+    # marks finished). The restore must therefore stop the worker before it touches Keeper,
+    # not afterwards.
+    db = exclusive_database_name
+    failpoint = "database_replicated_pause_after_snapshot_identity_check"
+    seed_table = "seed_table"
+    restore_msg = "Metadata was restored previously%"
+    recovery_msg = "Will create new replica from log pointer%"
+    replica_zk_path = f"/clickhouse/{db}/replicas/shard1|replica1"
+
+    # One replica only: a second replica changes which branch of `recoverLostReplica` the
+    # recovery takes, and the reported read is on the `new_replica` branch.
+    node_1.query(
+        f"CREATE DATABASE {db} ENGINE=Replicated('/clickhouse/{db}', '{{shard}}', '{{replica}}')"
+    )
+    create_table(node_1, f"{db}.{seed_table}")
+
+    zk = cluster.get_kazoo_client("zoo1")
+
+    restore_2_query_id = f"restore2_{generate_random_string(10)}"
+    restore_2_error = {}
+
+    def run_restore_2():
+        try:
+            node_1.query(
+                f"SYSTEM RESTORE DATABASE REPLICA `{db}`", query_id=restore_2_query_id
+            )
+            restore_2_error["value"] = None
+        except Exception as ex:
+            restore_2_error["value"] = str(ex)
+
+    try:
+        # Remove only the replica subtree, not the whole database path. `/clickhouse/{db}`
+        # survives, so a restore's Keeper create hits ZNODEEXISTS and logs `restore_msg`
+        # (the oracle's marker), and the recreated replica starts at `log_ptr = 0`, which
+        # is the `new_replica` recovery branch that reads `max_log_ptr_at_creation`.
+        zk_rmr_with_retries(zk, replica_zk_path)
+        assert zk.exists(replica_zk_path) is None
+
+        node_1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+        # Restore #1 recreates the replica nodes and starts a fresh DDL worker. The
+        # statement itself returns (`DDLWorker::startup` only spawns threads); the worker
+        # enters `recoverLostReplica` on its own thread and parks at the failpoint, which
+        # fires inside the metadata snapshot read, before the `max_log_ptr_at_creation` read.
+        node_1.query(f"SYSTEM RESTORE DATABASE REPLICA `{db}`")
+
+        # Assert the worker really is parked inside recovery rather than inferring it.
+        node_1.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=120)
+        assert count_log_message_like(node_1, db, recovery_msg) >= 1
+
+        baseline = count_log_message_like(node_1, db, restore_msg)
+        # Anti-vacuity control: restore #1 produced this line through the very code path
+        # the oracle watches, so a broken predicate shows up here as 0.
+        assert baseline >= 1
+
+        restore_2_thread = threading.Thread(target=run_restore_2)
+        restore_2_thread.start()
+
+        observed_running = False
+        try:
+            # The worker is parked inside recovery, so restore #2 must block stopping it
+            # before it can touch Keeper. Reaching `restore_msg` means restore #2 got past
+            # the point where the stop must have blocked it and is re-initialising the
+            # replica under the parked recovery. Latched: `text_log` rows never disappear,
+            # so a slow poll cannot miss the transition.
+            for _ in range(15):
+                if (
+                    node_1.query(
+                        f"SELECT count() FROM system.processes WHERE query_id='{restore_2_query_id}'"
+                    ).strip()
+                    != "0"
+                ):
+                    observed_running = True
+                current = count_log_message_like(node_1, db, restore_msg)
+                assert current == baseline, (
+                    f"restore #2 re-initialised the replica while the DDL worker was parked inside "
+                    f"recoverLostReplica: '{restore_msg}' count moved {baseline} -> {current}"
+                )
+                time.sleep(1)
+        finally:
+            node_1.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        # Without this a restore #2 that never started would satisfy the loop above.
+        assert observed_running, "restore #2 was never running; the oracle above was vacuous"
+
+        restore_2_thread.join(timeout=180)
+        assert not restore_2_thread.is_alive()
+
+        # Restoring a replica that already holds valid metadata is refused. Pre-existing
+        # intended behaviour (see `test_failed_restore_db_replica_on_normal_replica`),
+        # asserted by name so a change of outcome is visible here.
+        assert restore_2_error["value"] is not None
+        assert (
+            "in ZooKeeper already exists and contains unexpected value"
+            in restore_2_error["value"]
+        )
+
+        # The database survives a refused restore: the failure path must leave a working
+        # DDL worker behind, otherwise the next DDL query hits a null worker.
+        assert node_1.query("SELECT 1") == TSV([1])
+        assert zk.exists(replica_zk_path)
+        assert seed_table in get_tables_from_replicated(node_1, db)
+        node_1.query_with_retry(
+            f"CREATE TABLE {db}.after_refused_restore (n UInt32) ENGINE = ReplicatedMergeTree ORDER BY n",
+            retry_count=10,
+            sleep_time=3,
+        )
+
+    finally:
+        node_1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node_1.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node_1.query(f"DROP DATABASE IF EXISTS {db}_broken_tables SYNC")
+        node_1.query(f"DROP DATABASE IF EXISTS {db}_broken_replicated_tables SYNC")

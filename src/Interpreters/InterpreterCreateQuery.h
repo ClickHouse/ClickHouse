@@ -63,6 +63,12 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    /// Only `loadMetadata` may set this: it is the sole caller that executes a definition this server wrote.
+    void setIsMetadataReplay(bool is_metadata_replay_)
+    {
+        is_metadata_replay = is_metadata_replay_;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -73,7 +79,7 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, bool make_columns_nullable, bool pin_current_state_version);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
@@ -91,6 +97,11 @@ public:
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
+    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
+    /// Both routes converting a table to a replicated engine call it: `ATTACH TABLE ... AS REPLICATED` and the
+    /// `convert_to_replicated` flag `DatabaseOrdinary` acts upon while loading the table.
+    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+
 private:
     struct TableProperties
     {
@@ -107,7 +118,7 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
+    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -184,9 +195,6 @@ private:
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
-
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 #if CLICKHOUSE_CLOUD
     static bool allowPreserveEngine(ASTStorage & storage, ContextPtr context_);
@@ -202,6 +210,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool is_metadata_replay = false;
 
     String as_database_saved;
     String as_table_saved;

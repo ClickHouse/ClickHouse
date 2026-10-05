@@ -81,7 +81,7 @@ Malformed Native payloads detected by the Rust codec raise `DataError`.
 pip install --upgrade clickhouse-connect-core
 ```
 
-Codec fixes and performance improvements ship as `clickhouse-connect-core` releases and can be picked up with a wheel upgrade alone, without waiting for a `clickhouse-connect` release.
+Fixes and performance improvements in the compiled codec ship as `clickhouse-connect-core` releases and can be picked up with a compatible core wheel upgrade. Changes to the driver's Rust integration require a `clickhouse-connect` upgrade.
 
 ## Known behavior differences {#known-behavior-differences}
 

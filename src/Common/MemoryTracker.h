@@ -141,15 +141,40 @@ private:
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void traceLargeAllocation(Int64 size) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
 
-    /// helper fields for analyzing MemoryTracker
-    /// amount which is not corrected by external source like RSS
+    /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
+    /// moving on to the parent. Returns what was actually removed. The total does not change.
+    Int64 adjustLocally(Int64 size);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    std::atomic_bool drift_expected = false;
+    /// A starting point, lowered as flagged sites get fixed.
+    static constexpr Int64 drift_warn_threshold = 1024 * 1024;
+#endif
+
+    /// `Process` trackers whose parent is this one; only a `User` tracker counts them.
+    std::atomic<Int64> children_count = 0;
+
+    void attachChild();
+    /// When the last child goes, nothing should be charged here any more, so whatever is left is settled.
+    void detachChild();
+
+    /// Whatever a query still holds when it ends is taken off its user, so the user ends at zero for that query.
+    void settleDriftOnQueryEnd();
+
+    /// Helper fields for analyzing the global memory tracker. Both are touched only by the
+    /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
+    /// no synchronization.
+    /// The value `amount` would have had with no corrections from a measurement applied:
+    /// a plain counter of allocations, as of the last tick of the worker.
     int64_t uncorrected_amount = 0;
-    /// last corrected amount we set to memory tracker
+    /// The value of `amount` right after the last tick of the worker, either the corrected
+    /// value it was set to or the value it had when the tick just took a snapshot of it.
     int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
@@ -181,12 +206,26 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
-    // MemoryTracker for background task may have a non-zero counter.
-    // This method is intended to fix the counter inside of background_memory_tracker.
-    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
-    // of total_memory_tracker.
-    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
+    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table), so
+    /// that `unexpectedDrift` does not report it. Marks every task tracker up the chain.
+    void setDriftExpected()
+    {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            if (tracker->level == VariableContext::Process)
+                tracker->drift_expected.store(true, std::memory_order_relaxed);
+        }
+#endif
+    }
+
+    /// Debug builds only: what a query's tracker still holds (or is over-credited by) when that is large and
+    /// not marked expected, else 0. Points at the query that allocated something outliving it.
+    Int64 unexpectedDrift() const;
+
+    /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
+    /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
+    void reparent(MemoryTracker * new_parent);
 
     Int64 getPeak() const
     {
@@ -306,6 +345,11 @@ public:
         description_ptr.store(description, std::memory_order_relaxed);
     }
 
+    const char * getDescription() const
+    {
+        return description_ptr.load(std::memory_order_relaxed);
+    }
+
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
@@ -342,9 +386,29 @@ public:
     /// Reset the accumulated data.
     void reset();
 
+    /// Not below what is currently held, which belongs to whoever is still charged here.
+    void resetPeak()
+    {
+        peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
+    }
+
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
+    /// Refresh `MemoryTrackingUncorrected` from the current value of the global tracker without
+    /// correcting it. The background memory worker calls this on the ticks that do not call
+    /// `updateAllocated`, so the metric is a snapshot of the plain counter that is at most one
+    /// tick old no matter whether the correction is enabled.
+    static void updateUncorrected();
+
+    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
+    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
+    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
+    static void setMinAllocationSizeToLogStackTrace(UInt64 value);
+    static UInt64 getMinAllocationSizeToLogStackTrace();
+
+    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
+    static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

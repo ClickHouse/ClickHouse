@@ -217,6 +217,12 @@ bool isLowCardinalityType(const IDataType & type);
 bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args);
 /// Returns true if all of the arguments have constant columns.
 bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args);
+/// Whether `plus`/`minus` is injective in its varying argument, given the other one fixed. Only
+/// integer arithmetic qualifies: integer wrap-around is a bijection, while every other operand class
+/// collapses distinct arguments somewhere - an `Interval` at end-of-month days and DST transitions, a
+/// float or `Decimal` by rounding or rescaling, a narrower date constant, a NULL constant.
+bool plusMinusWithConstantsIsInjective(
+    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type);
 bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);

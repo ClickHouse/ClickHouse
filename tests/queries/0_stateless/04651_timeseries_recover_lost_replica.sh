@@ -149,9 +149,9 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
                   max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))
               ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name
               ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1"
-${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family_name String, type LowCardinality(String),
+${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCardinality(String),
                                              unit LowCardinality(String), help String)
-              ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name"
+              ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family"
 ${CLIENT} --allow_experimental_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
         DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics"

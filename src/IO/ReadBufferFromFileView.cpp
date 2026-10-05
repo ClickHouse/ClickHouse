@@ -19,6 +19,17 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     , file_offset_of_buffer_end(left_bound_)
     , original_working_buffer(working_buffer)
 {
+    /// Bound the underlying buffer to the slice of the archive that belongs to this file. Otherwise a read of a
+    /// file inside an archive on object storage becomes an open-ended range request: it transfers the rest of the
+    /// archive instead of the file, and the HTTP connection cannot be returned to the pool.
+    if (right_bound > left_bound)
+    {
+        impl->setReadUntilPosition(right_bound);
+        ByteRangeSet slice;
+        slice.add({left_bound, right_bound - left_bound});
+        impl->setRequestMap(std::move(slice));
+    }
+
     /// Seek to the begin of file.
     impl->seek(left_bound, SEEK_SET);
     swap(*impl);
@@ -51,6 +62,20 @@ void ReadBufferFromFileView::setReadUntilEnd()
     resizeWorkingBuffer();
 }
 
+void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
+{
+    if (right_bound == left_bound)
+        return;
+    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
+}
+
+ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
+{
+    auto result = ranges.intersect({0, right_bound - left_bound});
+    result.shift(left_bound);
+    return result;
+}
+
 off_t ReadBufferFromFileView::getPosition()
 {
     return (file_offset_of_buffer_end - left_bound) - (working_buffer.end() - pos);
@@ -69,6 +94,8 @@ bool ReadBufferFromFileView::nextImpl()
     {
         file_offset_of_buffer_end += available();
         resizeWorkingBuffer();
+        /// After `next`, `impl` may leave `pos` past the start of its working buffer.
+        nextimpl_working_buffer_offset = offset();
     }
 
     return result;

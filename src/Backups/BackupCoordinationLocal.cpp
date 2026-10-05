@@ -91,6 +91,18 @@ Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & load
     return replicated_sql_objects.getDirectories(loader_zk_path, object_type, "");
 }
 
+void BackupCoordinationLocal::addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path)
+{
+    std::lock_guard lock{replicated_workload_entities_mutex};
+    replicated_workload_entities.addDirectory({loader_zk_path, entity_type, "", dir_path});
+}
+
+Strings BackupCoordinationLocal::getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const
+{
+    std::lock_guard lock{replicated_workload_entities_mutex};
+    return replicated_workload_entities.getDirectories(loader_zk_path, entity_type, "");
+}
+
 void BackupCoordinationLocal::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
 {
     std::lock_guard lock(keeper_map_tables_mutex);
@@ -101,6 +113,24 @@ String BackupCoordinationLocal::getKeeperMapDataPath(const String & table_zookee
 {
     std::lock_guard lock(keeper_map_tables_mutex);
     return keeper_map_tables.getDataPath(table_zookeeper_root_path);
+}
+
+void BackupCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup)
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    rocksdb_tables.addTable(rocksdb_dir, election_id, data_path_in_backup);
+}
+
+String BackupCoordinationLocal::getRocksDBDataPath(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getDataPath(rocksdb_dir);
+}
+
+String BackupCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getTableId(rocksdb_dir);
 }
 
 

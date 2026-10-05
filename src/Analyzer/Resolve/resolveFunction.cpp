@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -48,6 +48,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -92,7 +93,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -437,9 +438,7 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -669,9 +668,9 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
     /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
     /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
-    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
-    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
-    /// default.
+    /// rejected when the column is created. `Tuple(...)` is left as it is as well: a tuple array
+    /// that contains `NULL` already has `Nullable(Tuple(...))` elements, and the tuple comparison
+    /// gives the same results as the scalar one without the wrapper.
     if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
@@ -1536,7 +1535,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
 
                 auto & table_node_typed = table_node->as<TableNode &>();
-                if (!std::dynamic_pointer_cast<StorageJoin>(table_node_typed.getStorage()))
+                if (!castStorage<StorageJoin>(table_node_typed.getStorage(), DeferredTable::Load))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} table '{}' should have engine StorageJoin. In scope {}",
                         function_name,
@@ -1845,10 +1844,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the single-key shape just identified, which stays on the regular `IN` path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
@@ -2337,24 +2336,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-        {
-            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
-            {{
-                {"in", "nullIn"},
-                {"notIn", "notNullIn"},
-                {"globalIn", "globalNullIn"},
-                {"globalNotIn", "globalNotNullIn"},
-            }};
-
-            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
-            {
-                if (function_name == in_function_name)
-                {
-                    function_name = in_function_name_to_replace;
-                    break;
-                }
-            }
-        }
+            function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
@@ -2450,8 +2432,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 
@@ -2541,7 +2524,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element into the tuple type, so a non-parseable value raises the same parsing
                     /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
                     /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
-                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
+                    /// columns are gated by `enable_nullable_tuple_type`, and the
                     /// constant `Set` path throws for a non-parseable tuple element rather than
                     /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)
@@ -2838,9 +2821,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
-                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
-                    argument_column.type = get_scalar_function_node->getResultType();
-                    argument_is_constant = true;
+                    const auto & scalar_column = scalar.getByPosition(0).column;
+                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
+                    /// The column comes from the scalars map while the type comes from the resolved node, and the
+                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
+                    {
+                        argument_column.column = ColumnConst::create(scalar_column, 1);
+                        argument_column.type = get_scalar_result_type;
+                        argument_is_constant = true;
+                    }
                 }
             }
         }
@@ -3009,6 +2999,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function

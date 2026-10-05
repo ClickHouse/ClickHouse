@@ -49,8 +49,9 @@ private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = VectorWithMemoryTracking<T>;
-    using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
-    using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
+    static constexpr bool use_roaring64 = sizeof(T) >= 8;
+    using RoaringBitmap = std::conditional_t<use_roaring64, roaring::Roaring64Map, roaring::Roaring>;
+    using Value = std::conditional_t<use_roaring64, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
 
     void toLarge()
@@ -85,6 +86,31 @@ public:
         else
         {
             roaring_bitmap->add(static_cast<Value>(value));
+        }
+    }
+
+    void remove(T value)
+    {
+        if (isSmall())
+        {
+            if (small.find(value) == small.end())
+                return;
+
+            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
+            /// `small_set_size` values, so this is a bounded amount of work.
+            std::array<T, small_set_size> kept{};
+            size_t kept_size = 0;
+            for (const auto & x : small)
+                if (x.getValue() != value)
+                    kept[kept_size++] = x.getValue();
+
+            small.clear();
+            for (size_t i = 0; i < kept_size; ++i)
+                small.insert(kept[i]);
+        }
+        else
+        {
+            roaring_bitmap->remove(static_cast<Value>(value));
         }
     }
 
@@ -311,14 +337,9 @@ public:
                     ++ret;
             }
         }
-        else if constexpr (sizeof(T) < 8)
-        {
-            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
-        }
         else
         {
-            /// Roaring64Map exposes no and_cardinality, so the intersection must be materialized.
-            ret = (*roaring_bitmap & *r1.roaring_bitmap).cardinality();
+            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
         }
         return ret;
     }
@@ -398,15 +419,9 @@ public:
                     return 1;
             }
         }
-        else if constexpr (sizeof(T) < 8)
-        {
-            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
-                return 1;
-        }
         else
         {
-            /// Roaring64Map exposes no intersect, so the intersection must be materialized.
-            if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
+            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
                 return 1;
         }
 
