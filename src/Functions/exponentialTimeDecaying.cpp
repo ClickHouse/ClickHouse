@@ -540,9 +540,9 @@ It can be combined by `exponentialTimeDecayedSum`, including as a
 
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
-Adds two exponentially time-decaying values using their direct value/anchor payloads.
-Both inputs must have the same key width and identical decay lengths encoded in their types. The function rebases the older direct payload to
-`ct = greatest(A.anchor_time, B.anchor_time)` and stores `A.value_at(ct) + B.value_at(ct)` at that anchor.
+Adds two exponentially time-decaying values using the canonical curves reconstructed from their authoritative keys.
+Both inputs must have the same key width, storage mode, and identical decay lengths encoded in their types. The function rebases the older canonical curve to
+`ct = greatest(A.anchor_time, B.anchor_time)` and stores `A.value_at(ct) + B.value_at(ct)` at that anchor. Direct-mode metadata does not affect the result.
 Because values are stored as `Float64`, large signed values that nearly cancel can be sensitive to
 addition order and grouping. Normalize magnitudes or use a numerically stable method to pre-aggregate
 sensitive inputs when stronger numerical reproducibility is required.
@@ -564,7 +564,7 @@ sensitive inputs when stronger numerical reproducibility is required.
 
     factory.registerFunction<FunctionExponentialTimeDecayingValueAt>(FunctionDocumentation{
         .description = R"(
-Evaluates an exponentially time-decaying value at any target time from its stored direct value and anchor.
+Evaluates the canonical exponentially time-decaying curve reconstructed from the authoritative ordering key at any target time. Direct-mode metadata is ignored by the calculation.
 Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` and `now64()` can be used.
 )",
         .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
