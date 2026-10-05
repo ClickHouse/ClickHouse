@@ -20,7 +20,7 @@ WYRD_TEST(Wyrd, ThreadRaceGivesEveryIndexOnce)
     std::array<Atomic<int>, 4> seen{};
 
     Race race;
-    race.add(4, [&](size_t index) { ++seen[index]; });
+    race.add(4, [&](size_t index) { seen[index].fetch_add(1); });
     race.run();
 
     for (const auto & slot : seen)

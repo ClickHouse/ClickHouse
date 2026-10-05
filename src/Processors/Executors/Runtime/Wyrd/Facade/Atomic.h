@@ -2,8 +2,9 @@
 
 
 #include <atomic>
-#include <type_traits>
 #include <limits>
+#include <source_location>
+#include <type_traits>
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
@@ -31,124 +32,94 @@ public:
     Atomic(const Atomic &) = delete;
     Atomic & operator=(const Atomic &) = delete;
 
-    T load() const
+    T load(std::source_location location = std::source_location::current()) const
     {
-        injectFault("atomic::load");
+        injectFault("atomic::load", location);
         T result = impl.load();
         return result;
     }
 
-    void store(T desired)
+    void store(T desired, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::store");
+        injectFault("atomic::store", location);
         impl.store(desired);
     }
 
-    T exchange(T desired)
+    T exchange(T desired, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::exchange");
+        injectFault("atomic::exchange", location);
         T result = impl.exchange(desired);
         return result;
     }
 
-    bool compare_exchange_weak(T & expected, T desired)
+    bool compare_exchange_weak(T & expected, T desired, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::compare_exchange_weak");
-        bool result = !spuriousFailure() && impl.compare_exchange_weak(expected, desired);
+        injectFault("atomic::compare_exchange_weak", location);
+        bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired);
         if (!result)
             expected = impl.load();
         return result;
     }
 
-    bool compare_exchange_strong(T & expected, T desired)
+    bool compare_exchange_strong(T & expected, T desired, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::compare_exchange_strong");
+        injectFault("atomic::compare_exchange_strong", location);
         bool result = impl.compare_exchange_strong(expected, desired);
         return result;
     }
 
-    T fetch_add(T delta) requires std::is_integral_v<T>
+    T fetch_add(T delta, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
     {
-        injectFault("atomic::fetch_add");
+        injectFault("atomic::fetch_add", location);
         T result = impl.fetch_add(delta);
         return result;
     }
 
-    T fetch_sub(T delta) requires std::is_integral_v<T>
+    T fetch_sub(T delta, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
     {
-        injectFault("atomic::fetch_sub");
+        injectFault("atomic::fetch_sub", location);
         T result = impl.fetch_sub(delta);
         return result;
     }
 
-    T operator++() requires std::is_integral_v<T>
-    {
-        return fetch_add(1) + 1;
-    }
-
-    T operator++(int) requires std::is_integral_v<T>
-    {
-        return fetch_add(1);
-    }
-
-    T operator--() requires std::is_integral_v<T>
-    {
-        return fetch_sub(1) - 1;
-    }
-
-    T operator--(int) requires std::is_integral_v<T>
-    {
-        return fetch_sub(1);
-    }
-
-    T operator+=(T delta) requires std::is_integral_v<T>
-    {
-        return fetch_add(delta) + delta;
-    }
-
-    T operator-=(T delta) requires std::is_integral_v<T>
-    {
-        return fetch_sub(delta) - delta;
-    }
-
 #if defined(WYRD_SIMULATION)
 
-    void wait(T old)
+    void wait(T old, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::wait");
+        injectFault("atomic::wait", location);
         while (impl.load() == old)
-            futexWait(this);
+            futexWait(this, location);
     }
 
-    void notify_one()
+    void notify_one(std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::notify_one");
-        futexWake(this, 1);
+        injectFault("atomic::notify_one", location);
+        futexWake(this, 1, location);
     }
 
-    void notify_all()
+    void notify_all(std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::notify_all");
-        futexWake(this, std::numeric_limits<size_t>::max());
+        injectFault("atomic::notify_all", location);
+        futexWake(this, std::numeric_limits<size_t>::max(), location);
     }
 
 #else
 
-    void wait(T old)
+    void wait(T old, std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::wait");
+        injectFault("atomic::wait", location);
         impl.wait(old);
     }
 
-    void notify_one()
+    void notify_one(std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::notify_one");
+        injectFault("atomic::notify_one", location);
         impl.notify_one();
     }
 
-    void notify_all()
+    void notify_all(std::source_location location = std::source_location::current())
     {
-        injectFault("atomic::notify_all");
+        injectFault("atomic::notify_all", location);
         impl.notify_all();
     }
 

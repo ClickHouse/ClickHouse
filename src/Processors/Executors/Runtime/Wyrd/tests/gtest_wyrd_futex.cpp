@@ -20,7 +20,7 @@ WYRD_TEST(Wyrd, FutexWakeAllReleasesEveryWaiter)
             while (value == 0)
                 futexWaitFetch(fired, value);
             EXPECT_TRUE(data);
-            ++released;
+            released.fetch_add(1);
         });
     race.add(
         1,
@@ -52,7 +52,7 @@ WYRD_TEST(Wyrd, FutexWakeOneHandsTokensOneByOne)
                     futexWaitFetch(tokens, value);
                 if (tokens.compare_exchange_strong(value, value - 1))
                 {
-                    ++consumed;
+                    consumed.fetch_add(1);
                     return;
                 }
             }
@@ -63,7 +63,7 @@ WYRD_TEST(Wyrd, FutexWakeOneHandsTokensOneByOne)
         {
             for (size_t i = 0; i < 2; ++i)
             {
-                ++tokens;
+                tokens.fetch_add(1);
                 futexWakeOne(tokens);
             }
         });

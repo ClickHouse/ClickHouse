@@ -14,45 +14,45 @@ namespace DB::Runtime::Wyrd
 
 #if defined(WYRD_SIMULATION)
 
-void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value)
+void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
 {
-    if (address.load() == value)
-        futexWait(&address);
-    value = address.load();
+    if (address.load(location) == value)
+        futexWait(&address, location);
+    value = address.load(location);
 }
 
-void futexWakeOne(Atomic<UInt32> & address)
+void futexWakeOne(Atomic<UInt32> & address, std::source_location location)
 {
-    injectFault("futex::wakeOne");
-    futexWake(&address, 1);
+    injectFault("futex::wakeOne", location);
+    futexWake(&address, 1, location);
 }
 
-void futexWakeAll(Atomic<UInt32> & address)
+void futexWakeAll(Atomic<UInt32> & address, std::source_location location)
 {
-    injectFault("futex::wakeAll");
-    futexWake(&address, std::numeric_limits<size_t>::max());
+    injectFault("futex::wakeAll", location);
+    futexWake(&address, std::numeric_limits<size_t>::max(), location);
 }
 
 #elif defined(WYRD_ADVERSARY)
 
-void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value)
+void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
 {
-    injectFault("futex::waitFetch");
-    if (spuriousFailure())
-        value = address.load();
+    injectFault("futex::waitFetch", location);
+    if (spuriousFailure(location))
+        value = address.load(location);
     else
         DB::futexWaitFetch(address.underlying(), value);
 }
 
-void futexWakeOne(Atomic<UInt32> & address)
+void futexWakeOne(Atomic<UInt32> & address, std::source_location location)
 {
-    injectFault("futex::wakeOne");
+    injectFault("futex::wakeOne", location);
     DB::futexWakeOne(address.underlying());
 }
 
-void futexWakeAll(Atomic<UInt32> & address)
+void futexWakeAll(Atomic<UInt32> & address, std::source_location location)
 {
-    injectFault("futex::wakeAll");
+    injectFault("futex::wakeAll", location);
     DB::futexWakeAll(address.underlying());
 }
 

@@ -3,6 +3,7 @@
 #include <base/defines.h>
 
 #include <mutex>
+#include <source_location>
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
@@ -17,8 +18,8 @@ namespace DB::Runtime::Wyrd
 class TSA_CAPABILITY("mutex") Mutex
 {
 public:
-    void lock() TSA_ACQUIRE();
-    void unlock() TSA_RELEASE();
+    void lock(std::source_location location = std::source_location::current()) TSA_ACQUIRE();
+    void unlock(std::source_location location = std::source_location::current()) TSA_RELEASE();
 
 private:
     Atomic<UInt32> locked{0};

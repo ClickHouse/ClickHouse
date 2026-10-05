@@ -15,10 +15,6 @@ WYRD_TEST(Wyrd, AtomicIntegerOperations)
     EXPECT_EQ(counter.exchange(1), 7u);
     EXPECT_EQ(counter.fetch_add(2), 1u);
     EXPECT_EQ(counter.fetch_sub(1), 3u);
-    EXPECT_EQ(++counter, 3u);
-    EXPECT_EQ(counter++, 3u);
-    EXPECT_EQ(--counter, 3u);
-    EXPECT_EQ(counter--, 3u);
     EXPECT_EQ(counter.load(), 2u);
 
     UInt64 expected = 0;
@@ -36,9 +32,7 @@ WYRD_TEST(Wyrd, AtomicIntegerOperations)
     UInt64 copy = counter;
     EXPECT_EQ(copy, 4u);
 
-    EXPECT_EQ(counter += 3, 7u);
-    EXPECT_EQ(counter -= 2, 5u);
-    EXPECT_EQ(counter.load(), 5u);
+    EXPECT_EQ(counter.load(), 4u);
 }
 
 WYRD_TEST(Wyrd, AtomicWaitAndNotify)
@@ -52,7 +46,7 @@ WYRD_TEST(Wyrd, AtomicWaitAndNotify)
         [&](size_t)
         {
             stage.wait(0);
-            ++woken;
+            woken.fetch_add(1);
         });
     race.add(
         1,

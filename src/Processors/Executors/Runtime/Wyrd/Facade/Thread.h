@@ -2,6 +2,7 @@
 
 
 #include <functional>
+#include <source_location>
 
 #if defined(WYRD_SIMULATION)
 #    include <base/types.h>
@@ -18,9 +19,9 @@ namespace DB::Runtime::Wyrd
 class Thread
 {
 public:
-    explicit Thread(std::function<void()> body_);
+    explicit Thread(std::function<void()> body_, std::source_location location = std::source_location::current());
 
-    void join();
+    void join(std::source_location location = std::source_location::current());
 
 private:
     std::shared_ptr<UInt32> done;
@@ -31,9 +32,9 @@ private:
 class Thread
 {
 public:
-    explicit Thread(std::function<void()> body_);
+    explicit Thread(std::function<void()> body_, std::source_location location = std::source_location::current());
 
-    void join();
+    void join(std::source_location location = std::source_location::current());
 
 private:
     ThreadFromGlobalPool impl;

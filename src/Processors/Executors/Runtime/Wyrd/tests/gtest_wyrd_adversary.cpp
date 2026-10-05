@@ -15,7 +15,7 @@ WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.yiel
 {
     Atomic<size_t> counter{0};
     for (size_t i = 0; i < 100; ++i)
-        ++counter;
+        counter.fetch_add(1);
     EXPECT_EQ(counter.load(), 100u);
 
     EXPECT_GE(adversary()->report().yields, 100u);
@@ -53,7 +53,7 @@ WYRD_TEST(
         3,
         [&](size_t)
         {
-            ++arrived;
+            arrived.fetch_add(1);
             arrived.notify_all();
             for (UInt32 seen = arrived.load(); seen < 3; seen = arrived.load())
                 arrived.wait(seen);
@@ -61,7 +61,7 @@ WYRD_TEST(
             LockFreeScope scope;
             for (size_t i = 0; i < 200; ++i)
             {
-                ++counter;
+                counter.fetch_add(1);
                 progress();
             }
         });

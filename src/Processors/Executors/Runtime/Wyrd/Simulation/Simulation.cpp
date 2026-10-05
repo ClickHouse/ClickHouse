@@ -12,7 +12,6 @@ namespace DB::Runtime::Wyrd
 
 struct TraceRecord
 {
-    size_t step;
     UInt32 thread_id;
     std::string event;
     std::source_location location;
@@ -24,22 +23,17 @@ namespace
 
 Simulation * current_simulation = nullptr;
 
-std::string formatRecord(const TraceRecord & record)
-{
-    return fmt::format(
-        "#{} thread {}: {} at {}:{}",
-        record.step,
-        record.thread_id,
-        record.event,
-        record.location.file_name(),
-        record.location.line());
-}
-
 std::string formatTimeline(const std::vector<TraceRecord> & trace)
 {
     std::string out;
-    for (const auto & record : trace)
-        out += formatRecord(record) + "\n";
+    for (size_t i = 0; i < trace.size(); ++i)
+        out += fmt::format(
+            "#{} thread {}: {} at {}:{}\n",
+            i + 1,
+            trace[i].thread_id,
+            trace[i].event,
+            trace[i].location.file_name(),
+            trace[i].location.line());
     return out;
 }
 
@@ -104,7 +98,7 @@ void Simulation::traceEvent(std::string event, std::source_location location)
 {
     digest.update(running_thread->id);
     digest.update(location.line());
-    trace.push_back(TraceRecord{.step = steps, .thread_id = running_thread->id, .event = std::move(event), .location = location});
+    trace.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(event), .location = location});
 }
 
 void Simulation::createThread(std::function<void()> user_body)
@@ -182,7 +176,7 @@ void Simulation::futexWake(void * address, size_t count, std::source_location lo
 
 void Simulation::spawn(std::function<void()> body, std::source_location location)
 {
-    traceEvent("spawn", location);
+    traceEvent(fmt::format("spawn thread {}", next_thread_id), location);
     createThread(std::move(body));
 }
 

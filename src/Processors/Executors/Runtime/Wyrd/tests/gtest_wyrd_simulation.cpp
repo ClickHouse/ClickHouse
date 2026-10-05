@@ -28,7 +28,7 @@ void incrementInThreeThreads()
         [&](size_t)
         {
             for (size_t i = 0; i < 20; ++i)
-                ++counter;
+                counter.fetch_add(1);
         });
     race.run();
     EXPECT_EQ(counter.load(), 60u);
@@ -122,7 +122,7 @@ TEST(Wyrd, SimulationStopsAtTheStepLimit)
         {
             Atomic<size_t> spinner{0};
             while (true)
-                ++spinner;
+                spinner.fetch_add(1);
         });
 
     EXPECT_EQ(result.status, SimulationResult::Status::StepLimit);
@@ -169,7 +169,7 @@ TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
                     LockFreeScope scope;
                     for (size_t i = 0; i < 50; ++i)
                     {
-                        ++counter;
+                        counter.fetch_add(1);
                         progress();
                     }
                 });
@@ -198,7 +198,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
                 busy.store(1);
                 for (size_t i = 0; i < 10; ++i)
                 {
-                    ++work;
+                    work.fetch_add(1);
                     progress();
                 }
                 busy.store(0);
@@ -222,6 +222,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
         SimulationParams params;
         params.seed = seed;
         params.hold_every = 1;
+        params.time_slice = 1;
         SimulationResult result = Simulation(params).run(block_on_a_lock_free_peer);
         if (result.status == SimulationResult::Status::Deadlock)
         {
