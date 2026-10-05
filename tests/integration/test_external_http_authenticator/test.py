@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import typing
 
 import pytest
@@ -16,6 +17,10 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
 )
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+# A native protocol client that can send the `ResetSession` packet, shared with the stateless tests.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "../../queries/0_stateless/helpers"))
+from native_session_client import NativeSessionClient
 
 
 def run_echo_server():
@@ -139,3 +144,22 @@ def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster)
         if isinstance(response, dict):
             for key, value in response.get("settings", {}).items():
                 assert query_settings.get(key) == value
+
+
+def test_reset_session_restores_settings_from_auth_response(started_cluster: ClickHouseCluster):
+    # The `ResetSession` packet makes the session again as at login, so the settings that the
+    # authentication server returned come back after the session changed them.
+    with NativeSessionClient(
+        user="test_user_1",
+        password=GOOD_PASSWORD,
+        database="default",
+        host=instance.ip_address,
+        port=9000,
+    ) as client:
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "15"
+
+        client.query("SET auth_num = 99")
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "99"
+
+        client.reset_session()
+        assert client.value("SELECT toString(getSetting('auth_num'))") == "15"

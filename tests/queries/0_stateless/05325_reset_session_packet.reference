@@ -1,0 +1,9 @@
+server revision supports the packet: True
+before reset: 3 12345 mango one system
+settings are restored: True True
+database is restored: True
+after reset: two
+in-memory backup is dropped
+session is unchanged after a failed reset: 12345
+connection is closed
+connection is closed

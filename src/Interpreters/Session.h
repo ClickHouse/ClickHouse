@@ -9,6 +9,7 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -95,6 +96,15 @@ public:
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
 
+    /// Replaces the session context with a new one, made the same way as at login: the authenticated
+    /// user, the external roles, and the settings from the authentication server. Settings changed
+    /// during the session, the current roles and database, temporary tables, query parameters and
+    /// impersonation by `EXECUTE AS` are not kept. The client info of the connection is kept.
+    /// `prepare` is called for the new context before it replaces the current one. If an exception
+    /// is thrown, the current context stays unchanged.
+    /// Throws `INVALID_TRANSACTION` if the session is inside a transaction.
+    void resetSessionContext(const std::function<void(const ContextMutablePtr &)> & prepare);
+
     ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
     ContextPtr  globalContext() const { return global_context; }
 
@@ -121,6 +131,12 @@ private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
     void recordLoginSuccess(ContextPtr login_context) const;
+
+    /// Makes a new session context for the authenticated user: current profiles, roles, access rights.
+    ContextMutablePtr createSessionContextForUser(const ClientInfo & client_info) const;
+
+    /// Applies the settings returned by the authentication server, with the constraints of the context.
+    void applySettingsFromAuthServer(const ContextMutablePtr & context) const;
 
     /// Returns the GRANTS clause of the authentication method the user logged in with
     /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.

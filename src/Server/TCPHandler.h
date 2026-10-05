@@ -333,6 +333,13 @@ private:
 
     void processTablesStatusRequest();
 
+    /// Handles the `ResetSession` packet: replaces the session context with a new one, made as at login,
+    /// and replies with `EndOfStream`. On failure, replies with `Exception` and keeps the session unchanged.
+    void processResetSession();
+
+    /// Sets the database from the handshake as the current database of `context`, if the handshake has one.
+    void applyHandshakeDatabase(const ContextMutablePtr & context) const;
+
     void sendHello();
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
