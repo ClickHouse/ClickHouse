@@ -1817,6 +1817,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         bool all_advanced = true;
         bool all_kind_every = true;
         std::chrono::sys_time<std::chrono::nanoseconds> max_time {};
+        /// The latest refresh of any dependency, unlike `max_time`, which uses `seen_dep_refresh_times`.
+        std::chrono::sys_time<std::chrono::nanoseconds> newest_dependency_refresh {};
         auto min_next_refresh_timeslot = std::chrono::sys_seconds::max();
         for (const DependencyRefreshInfo & info : dependencies.tables)
         {
@@ -1829,6 +1831,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
             auto current = info.last_success_end_time;
             if (current > threshold)
             {
+                newest_dependency_refresh = std::max(newest_dependency_refresh, current);
+
                 /// The dependency has refreshed since our last refresh.
                 auto & seen = scheduling.seen_dep_refresh_times[info.database_and_table];
                 if (seen > threshold)
@@ -1871,12 +1875,22 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 
                 /// After the retries ran out, a view on a DEPENDS ON cycle keeps the dependency refreshes it
                 /// failed to process (see `executeRefresh`). Retry them, but not more often than
-                /// `refresh_retry_max_backoff_ms`. A dependency refresh that finished after the failed
-                /// attempt started is new, so it is not delayed. (`last_attempt_time` is rounded down to
-                /// seconds, too coarse for both.)
-                if (retries_exhausted && max_time <= scheduling.last_attempt_start_time)
-                    when = std::max(
-                        when, scheduling.last_attempt_start_time + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]));
+                /// `refresh_retry_max_backoff_ms`. A dependency refresh that finished after the failed attempt
+                /// started is new, so it is not delayed. `seen_dep_refresh_times` keeps the first refresh it saw
+                /// while the dependency refreshes are not consumed, so this looks at the latest refresh instead.
+                if (retries_exhausted)
+                {
+                    /// `last_attempt_time` comes from the coordination znode, so all replicas see the same value,
+                    /// but it is the end of the failed attempt rounded down to seconds. Only the replica that made
+                    /// the attempt knows its start precisely.
+                    const auto attempt_time = std::chrono::system_clock::time_point(znode.last_attempt_time);
+                    const auto tried_until = std::max(scheduling.last_attempt_start_time, attempt_time);
+                    if (newest_dependency_refresh <= tried_until)
+                        when = std::max(
+                            when,
+                            attempt_time + std::chrono::seconds(1)
+                                + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]));
+                }
             }
         }
     }
