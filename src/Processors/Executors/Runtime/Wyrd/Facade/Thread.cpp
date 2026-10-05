@@ -4,7 +4,7 @@
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
 #    include <limits>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/Syscall.h>
 #endif
 
 namespace DB::Runtime::Wyrd
@@ -36,11 +36,9 @@ Thread::Thread(std::function<void()> body_)
     : impl(
           [body = std::move(body_)]
           {
-              if (auto * current = adversary())
-                  current->threadEnter();
+              enterThread();
               body();
-              if (auto * current = adversary())
-                  current->threadExit();
+              exitThread();
           })
 {
 }

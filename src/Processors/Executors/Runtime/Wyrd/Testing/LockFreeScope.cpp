@@ -3,13 +3,13 @@
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/Syscall.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(WYRD_SIMULATION)
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
 
 LockFreeScope::LockFreeScope()
 {
@@ -24,26 +24,6 @@ LockFreeScope::~LockFreeScope()
 void progress()
 {
     progressHint();
-}
-
-#elif defined(WYRD_ADVERSARY)
-
-LockFreeScope::LockFreeScope()
-{
-    if (auto * current = adversary())
-        current->threadEnterLockFreeScope();
-}
-
-LockFreeScope::~LockFreeScope()
-{
-    if (auto * current = adversary())
-        current->threadLeaveLockFreeScope();
-}
-
-void progress()
-{
-    if (auto * current = adversary())
-        current->threadProgress();
 }
 
 #else
