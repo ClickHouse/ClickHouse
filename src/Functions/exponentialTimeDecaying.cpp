@@ -534,7 +534,7 @@ It can be combined by `exponentialTimeDecayedSum`, including as a
             "Construct a decaying value",
             "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
-            "(8,0,10)"}},
+            "(1,20.79441541679836,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
