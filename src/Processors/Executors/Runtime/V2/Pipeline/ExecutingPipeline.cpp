@@ -117,17 +117,17 @@ std::vector<ProcessorState *> ExecutingPipeline::updateProcessors(ProcessorState
 
 void ExecutingPipeline::submitForRemoval(Processors group)
 {
-    removals.submit(std::move(group));
+    removals.submitForRemoval(std::move(group));
 }
 
 void ExecutingPipeline::recordAsFinished(IProcessor & processor)
 {
-    removals.onFinished(&processor);
+    removals.markFinished(&processor);
 }
 
 bool ExecutingPipeline::hasReadyForRemoval() const
 {
-    return removals.hasReady();
+    return removals.hasReadyForRemoval();
 }
 
 void ExecutingPipeline::removeReady()

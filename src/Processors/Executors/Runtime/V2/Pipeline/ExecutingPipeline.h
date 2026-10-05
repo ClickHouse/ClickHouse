@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorStates.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/RemovalCoordinator.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorStates.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/State/RemovalGroups.h>
 #include <Processors/IProcessor.h>
 
 #include <atomic>
@@ -53,7 +53,7 @@ public:
 
 private:
     ProcessorStates states;
-    RemovalCoordinator removals;
+    RemovalGroups removals;
     std::atomic_bool failed = false;
 };
 
