@@ -648,9 +648,14 @@ When reading in text form, ClickHouse parses the value as a string and searches 
 When writing in text form, it writes the value as the corresponding string. If column data contains garbage (numbers that are not from the valid set), an exception is thrown. When reading and writing in binary form, it works the same way as for Int8 and Int16 data types.
 The implicit default value is the value with the lowest number.
 
-During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same way as the corresponding numbers. For example, ORDER BY sorts them numerically. Equality and comparison operators work the same way on Enums as they do on the underlying numeric values.
+During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same way as the corresponding numbers. For example, ORDER BY sorts them numerically. Equality and comparison operators between two values of the same `Enum` type work the same way as on the underlying numeric values.
 
-Enum values cannot be compared with numbers. Enums can be compared to a constant string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
+Enum values cannot be compared with numbers. Enums can be compared with a `String` or a `FixedString`:
+
+- The operators `=` and `!=` compare the `Enum` name with the string. If a constant string is not a valid `Enum` value, the result is `0` for `=` and `1` for `!=`. If the setting `validate_enum_literals_in_operators` is enabled, an exception is thrown.
+- The operators `<`, `>`, `<=` and `>=` convert the `Enum` value to its name and compare the strings. DuckDB and MySQL use the same rule. Thus, this order can be different from the `ORDER BY` order. If the setting `compare_enum_with_string_lexicographically` is disabled, the string is converted to the `Enum` type and the numeric values are compared. If the string is not a valid `Enum` value, an exception is thrown.
+
+The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
 
 Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum.
 However, the Enum has a natural `toString` function that returns its string value.
