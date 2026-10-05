@@ -178,7 +178,7 @@ void Worker::notifyOwner(ProcessorState & owner)
 template <class PortT>
 void Worker::visitNeighbour(PortT & neighbour)
 {
-    ProcessorState & owner = neighbour.getUpdateChannel().getOwner();
+    ProcessorState & owner = neighbour.getRoundUpdatesChannel().getOwner();
     if (owner.lock.isFinished())
         return;
 

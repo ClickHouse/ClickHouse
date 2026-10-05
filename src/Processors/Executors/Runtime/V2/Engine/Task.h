@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorState.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
 
 namespace DB
 {
