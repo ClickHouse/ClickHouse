@@ -2,14 +2,16 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: the manifest row count of an Iceberg read under a filter, as MergeTree without
-# column statistics reports it. A filter that drops at least one live data file gives the rows of
-# the remaining files, imprecise; a filter that drops nothing gives unknown; a filter that drops
-# every file gives a precise 0. Delete files are not opened: rows before deletes, imprecise.
-# T1: partition pruning by the manifest list, and the same query with the setting off. T2: min/max
-# pruning. T3: partition pruning per data file (bucket transform). T4: every file pruned. T5: a filter
-# that prunes nothing. T6: position deletes. T7: the walk at planning does not count its pruning in the
-# read's counters. T8: it builds no `IN` set.
+# Issue 120440: the manifest row count under a filter, as MergeTree without column statistics reports it:
+# the rows of the remaining files (imprecise), unknown if nothing is pruned, 0 if everything is.
+# - T1: partition pruning by the manifest list, with the setting off and on.
+# - T2: min/max pruning.
+# - T3: partition pruning per data file (bucket transform).
+# - T4: every file pruned.
+# - T5: a filter that prunes nothing.
+# - T6: position deletes are not subtracted.
+# - T7: no double counting of pruned files between planning and the read.
+# - T8: planning builds no `IN` set.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
