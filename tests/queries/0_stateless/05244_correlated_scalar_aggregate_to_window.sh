@@ -39,6 +39,7 @@ INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);
 
 # Starting a client per query is too slow in sanitizer builds, so the cases are collected first and then sent
 # in three batches: without the rewrite, with it, and the plans. A marker line separates the results of the cases.
+# The rewrite relies on runtime join filters, which are randomized.
 MARKER='--- next case ---'
 ITEMS=()
 QUERIES=()
@@ -79,7 +80,7 @@ function run_batch()
     local query
     for query in "${QUERIES[@]}"; do
         printf "SELECT '%s';\n%s%s%s;\n" "$MARKER" "$prefix" "$query" "$suffix"
-    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window="$setting"
+    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window="$setting" --enable_join_runtime_filters=1
 }
 
 function run_all()
@@ -143,7 +144,7 @@ check "third table joined to the other relation" "SELECT u.k AS k, x.z AS z, t.v
 check "join_use_nulls" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_use_nulls = 1"
 check "LIMIT" "SELECT c = multiIf(k = 1, 30, k = 2, 1e308, nan), v > 0 FROM (SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 LIMIT 1)"
 check "IN subquery in WHERE" "SELECT count() FROM u, t WHERE u.k = t.k AND u.w IN (SELECT w FROM x) AND t.v >= (SELECT max(v) FROM t AS s WHERE s.k = u.k)"
-check "non-deterministic condition" "SELECT countIf(c != multiIf(k = 1, 30, k = 2, 1e308, nan) OR v < -100) FROM (SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE rand() % 2 = 0)"
+check "non-deterministic condition" "SELECT countIf(c != multiIf(k = 1, 30, k = 2, 1e308, nan) OR v < -100) FROM (SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE rand(u.w) % 2 = 0)"
 check "inside a correlated subquery" "SELECT o, (SELECT max(t.v) FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 100 AND z.o = 1 AND t.v >= (SELECT max(v) FROM t AS s WHERE s.k = u.k)) AS c FROM (SELECT number + 1 AS o FROM numbers(3)) AS z ORDER BY o"
 check "FINAL on both" "SELECT u.k AS k, r.v AS v, (SELECT max(v) FROM r AS s FINAL WHERE s.k = u.k) AS c FROM u INNER JOIN r FINAL ON u.k = r.k WHERE u.w > 0 ORDER BY k, v"
 check "additional_table_filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS additional_table_filters = {'t': 'v < 20'}"
@@ -188,6 +189,10 @@ check "PASTE JOIN" "SELECT n.number AS n, o.id AS id, (SELECT sum(v) FROM tp AS 
 check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
 check "joined on a column other than the key" "SELECT o.id AS id, o.v AS v, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS c FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 ORDER BY id"
 check "joined on the key of only one of the windows" "SELECT o.id AS id, o.k AS k FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 AND o.v >= (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AND o.v <= (SELECT max(v) FROM tp AS s WHERE s.id = o.id) ORDER BY id"
+check "condition on the key that also depends on the other table" "SELECT o.k AS k, o.v AS v, u.w AS w, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN u ON o.k = u.k WHERE o.k < u.w ORDER BY k, v, w"
+check "condition on a table that is not joined on the key" "SELECT u.k AS k, x.z AS z, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k CROSS JOIN x WHERE x.z > 3 ORDER BY k, z, v"
+check "no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS enable_join_runtime_filters = 0"
+check "join algorithm without runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'full_sorting_merge'"
 
 run_all
 

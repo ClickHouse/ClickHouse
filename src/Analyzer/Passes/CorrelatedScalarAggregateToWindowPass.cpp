@@ -8,6 +8,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -18,6 +19,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
@@ -30,6 +33,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool optimize_correlated_scalar_aggregate_to_window;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
@@ -258,6 +262,10 @@ private:
         for (auto & candidate : candidates)
             by_target[candidate.target].push_back(&candidate);
 
+        const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
+        const bool runtime_join_filters = QueryPlanOptimizationSettings(getContext()).enable_join_runtime_filters
+            && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter);
+
         for (auto & [target, target_candidates] : by_target)
         {
             /// Any other subquery reading the target (including candidates for other targets) would still
@@ -276,7 +284,7 @@ private:
 
             /// A candidate that is not rewritten would refer to the table moved into the derived table.
             if (!has_other_references
-                && std::ranges::all_of(target_candidates, [&](const Candidate * candidate) { return mayRestrictKeys(target, enforced, *candidate); }))
+                && std::ranges::all_of(target_candidates, [&](const Candidate * candidate) { return mayRestrictKeys(target, enforced, *candidate, runtime_join_filters); }))
                 rewriteTarget(query_node_ptr, *tables.at(target).slot, target_candidates);
         }
     }
@@ -460,28 +468,49 @@ private:
         return candidate;
     }
 
-    /// The window reads the whole table unless a condition restricts its keys: a deterministic one only on its
-    /// keys (pushed below the window), or one not on the target while the target is joined on one of its keys
-    /// (the runtime join filter is on the join key, and only a filter on the `PARTITION BY` keys is pushed below
-    /// the window).
+    /// The window reads the whole table unless a condition restricts its keys:
+    /// - a deterministic one depending only on its keys, which is pushed below the window (as in the filter push-down
+    ///   below a window, a non-deterministic one is not pushed, because it would also remove rows inside the partitions
+    ///   it keeps);
+    /// - one only on tables joined to the target on one of its keys (directly or through other joined tables), when
+    ///   the join can build a runtime filter: it is on the join key, and only a filter on the `PARTITION BY` keys is
+    ///   pushed below the window. The runtime filter is not built for a small probe side, but then the window is small.
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
-    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate)
+    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate, bool runtime_join_filters)
     {
-        auto reads = [&](const ColumnNode & column) { return column.getColumnSourceOrNull().get() == target; };
         auto is_key = [&](const ColumnNode & column) { return std::ranges::contains(candidate.keys, column.getColumnName()); };
 
-        bool joined_on_keys = false;
-        bool other_table_condition = false;
+        /// The tables joined to the target on one of its keys, directly or through other joined tables.
+        std::unordered_set<const IQueryTreeNode *> joined_on_keys;
+        auto reached = [&](const ColumnNode & column, const IQueryTreeNode * source)
+        { return (source == target && is_key(column)) || joined_on_keys.contains(source); };
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & conjunct : enforced)
+            {
+                auto [lhs, rhs] = asColumnEquality(conjunct);
+                if (!lhs || !rhs)
+                    continue;
+                const auto * lhs_source = lhs->getColumnSourceOrNull().get();
+                const auto * rhs_source = rhs->getColumnSourceOrNull().get();
+                if (!lhs_source || !rhs_source)
+                    continue;
+                if (reached(*lhs, lhs_source) && rhs_source != target)
+                    changed |= joined_on_keys.insert(rhs_source).second;
+                if (reached(*rhs, rhs_source) && lhs_source != target)
+                    changed |= joined_on_keys.insert(lhs_source).second;
+            }
+        }
+
+        bool joined_table_condition = false;
         for (const auto & conjunct : enforced)
         {
             if (auto [lhs, rhs] = asColumnEquality(conjunct); lhs && rhs)
-            {
-                if (reads(*lhs) != reads(*rhs))
-                    joined_on_keys |= is_key(reads(*lhs) ? *lhs : *rhs);
                 continue;
-            }
 
-            bool reads_target = false;
+            /// The table expressions the condition depends on, `nullptr` for an unknown one.
+            std::unordered_set<const IQueryTreeNode *> sources;
             bool only_keys = true;
             QueryTreeNodePtr node = conjunct;
             visitExpression(
@@ -489,26 +518,38 @@ private:
                 [&](QueryTreeNodePtr & current)
                 {
                     const auto * column = current->as<ColumnNode>();
-                    if (!column || !reads(*column))
+                    if (!column)
                         return;
-                    reads_target = true;
-                    only_keys &= is_key(*column);
+                    auto source = column->getColumnSourceOrNull();
+                    if (source && source->as<LambdaNode>())
+                        return;
+                    sources.insert(source.get());
+                    if (source.get() == target)
+                        only_keys &= is_key(*column);
                 },
                 [&](QueryTreeNodePtr & subquery)
                 {
-                    if (subqueryReadsTable(subquery, target))
+                    const auto * query = subquery->as<QueryNode>();
+                    if (!query)
                     {
-                        reads_target = true;
-                        only_keys = false;
+                        sources.insert(nullptr);
+                        return;
+                    }
+                    for (const auto & column : query->getCorrelatedColumns().getNodes())
+                    {
+                        const auto * source = column->as<ColumnNode &>().getColumnSourceOrNull().get();
+                        sources.insert(source);
+                        if (source == target)
+                            only_keys = false;
                     }
                 });
-            /// As in the filter push-down below a window: a non-deterministic condition is not pushed, because it
-            /// would also remove rows inside the partitions it keeps.
-            if (reads_target && only_keys && isDeterministicExpression(conjunct))
+
+            if (sources.size() == 1 && sources.contains(target) && only_keys && isDeterministicExpression(conjunct))
                 return true;
-            other_table_condition |= !reads_target;
+            joined_table_condition |= !sources.empty()
+                && std::ranges::all_of(sources, [&](const IQueryTreeNode * source) { return joined_on_keys.contains(source); });
         }
-        return other_table_condition && joined_on_keys;
+        return joined_table_condition && runtime_join_filters;
     }
 
     void rewriteTarget(QueryTreeNodePtr & query_node_ptr, QueryTreeNodePtr & target_slot, const std::vector<Candidate *> & candidates)
