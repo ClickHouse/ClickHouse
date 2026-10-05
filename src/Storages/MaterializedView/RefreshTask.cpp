@@ -1881,10 +1881,13 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
                 if (retries_exhausted)
                 {
                     /// `last_attempt_time` comes from the coordination znode, so all replicas see the same value,
-                    /// but it is the end of the failed attempt rounded down to seconds. Only the replica that made
-                    /// the attempt knows its start precisely.
+                    /// but it is the end of the failed attempt rounded down to seconds.
                     const auto attempt_time = std::chrono::system_clock::time_point(znode.last_attempt_time);
-                    const auto tried_until = std::max(scheduling.last_attempt_start_time, attempt_time);
+                    /// The replica that made the failed attempt knows when it started: dependency refreshes after that
+                    /// are new. Other replicas, and this one after a restart, only have the shared `last_attempt_time`.
+                    const bool attempted_here = znode.last_attempt_replica == coordination.replica_name
+                        && scheduling.last_attempt_start_time != std::chrono::system_clock::time_point{};
+                    const auto tried_until = attempted_here ? scheduling.last_attempt_start_time : attempt_time;
                     if (newest_dependency_refresh <= tried_until)
                         when = std::max(
                             when,
