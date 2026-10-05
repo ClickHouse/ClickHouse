@@ -1,7 +1,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 
 using namespace DB::Runtime::Wyrd;
 
@@ -11,8 +11,8 @@ WYRD_TEST(Wyrd, FutexWakeAllReleasesEveryWaiter)
     Atomic<size_t> released{0};
     bool data = false;
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         2,
         [&](size_t)
         {
@@ -22,7 +22,7 @@ WYRD_TEST(Wyrd, FutexWakeAllReleasesEveryWaiter)
             EXPECT_TRUE(data);
             ++released;
         });
-    group.add(
+    race.add(
         1,
         [&](size_t)
         {
@@ -30,7 +30,7 @@ WYRD_TEST(Wyrd, FutexWakeAllReleasesEveryWaiter)
             fired.store(1);
             futexWakeAll(fired);
         });
-    group.join();
+    race.run();
 
     EXPECT_EQ(released.load(), 2u);
 }
@@ -40,8 +40,8 @@ WYRD_TEST(Wyrd, FutexWakeOneHandsTokensOneByOne)
     Atomic<UInt32> tokens{0};
     Atomic<size_t> consumed{0};
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         2,
         [&](size_t)
         {
@@ -57,7 +57,7 @@ WYRD_TEST(Wyrd, FutexWakeOneHandsTokensOneByOne)
                 }
             }
         });
-    group.add(
+    race.add(
         1,
         [&](size_t)
         {
@@ -67,7 +67,7 @@ WYRD_TEST(Wyrd, FutexWakeOneHandsTokensOneByOne)
                 futexWakeOne(tokens);
             }
         });
-    group.join();
+    race.run();
 
     EXPECT_EQ(consumed.load(), 2u);
     EXPECT_EQ(tokens.load(), 0u);

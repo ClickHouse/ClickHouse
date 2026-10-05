@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>

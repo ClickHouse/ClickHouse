@@ -1,6 +1,6 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 #include <base/types.h>
 
 using namespace DB::Runtime::Wyrd;
@@ -46,26 +46,26 @@ WYRD_TEST(Wyrd, AtomicWaitAndNotify)
     Atomic<UInt32> stage{0};
     Atomic<size_t> woken{0};
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         2,
         [&](size_t)
         {
             stage.wait(0);
             ++woken;
         });
-    group.add(
+    race.add(
         1,
         [&](size_t)
         {
             stage.store(1);
             stage.notify_all();
         });
-    group.join();
+    race.run();
 
     EXPECT_EQ(woken.load(), 2u);
 
-    WaitGroup pair;
+    Race pair;
     pair.add(
         1,
         [&](size_t)
@@ -80,7 +80,7 @@ WYRD_TEST(Wyrd, AtomicWaitAndNotify)
             stage.store(2);
             stage.notify_one();
         });
-    pair.join();
+    pair.run();
 }
 
 WYRD_TEST(Wyrd, AtomicEnumAndPointer)

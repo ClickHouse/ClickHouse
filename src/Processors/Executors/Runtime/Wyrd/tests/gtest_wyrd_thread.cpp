@@ -1,7 +1,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 
 #include <array>
 
@@ -15,13 +15,13 @@ WYRD_TEST(Wyrd, ThreadJoinWaitsForBody)
     EXPECT_EQ(ran.load(), 1);
 }
 
-WYRD_TEST(Wyrd, ThreadWaitGroupGivesEveryIndexOnce)
+WYRD_TEST(Wyrd, ThreadRaceGivesEveryIndexOnce)
 {
     std::array<Atomic<int>, 4> seen{};
 
-    WaitGroup group;
-    group.add(4, [&](size_t index) { ++seen[index]; });
-    group.join();
+    Race race;
+    race.add(4, [&](size_t index) { ++seen[index]; });
+    race.run();
 
     for (const auto & slot : seen)
         EXPECT_EQ(slot.load(), 1);

@@ -11,12 +11,12 @@
 namespace DB::Runtime::Wyrd
 {
 
-/// A group of threads that start together on join and are joined together; the body gets the thread's index.
-class WaitGroup
+/// Threads released at one instant by run
+class Race
 {
 public:
-    WaitGroup & add(size_t count, std::function<void(size_t)> body);
-    void join();
+    Race & add(size_t count, std::function<void(size_t)> body);
+    void run();
 
 private:
     Atomic<UInt32> started{0};

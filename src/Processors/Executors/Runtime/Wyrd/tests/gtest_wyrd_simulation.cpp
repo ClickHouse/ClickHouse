@@ -6,9 +6,9 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 #include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 
 #include <mutex>
 #include <set>
@@ -22,15 +22,15 @@ namespace
 void incrementInThreeThreads()
 {
     Atomic<size_t> counter{0};
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         3,
         [&](size_t)
         {
             for (size_t i = 0; i < 20; ++i)
                 ++counter;
         });
-    group.join();
+    race.run();
     EXPECT_EQ(counter.load(), 60u);
 }
 
@@ -61,22 +61,22 @@ TEST(Wyrd, SimulationFindsLockOrderDeadlock)
         Mutex first;
         Mutex second;
 
-        WaitGroup group;
-        group.add(
+        Race race;
+        race.add(
             1,
             [&](size_t)
             {
                 std::lock_guard lock_first(first);
                 std::lock_guard lock_second(second);
             });
-        group.add(
+        race.add(
             1,
             [&](size_t)
             {
                 std::lock_guard lock_second(second);
                 std::lock_guard lock_first(first);
             });
-        group.join();
+        race.run();
     };
 
     bool found = false;
@@ -161,8 +161,8 @@ TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
         {
             Atomic<size_t> counter{0};
 
-            WaitGroup group;
-            group.add(
+            Race race;
+            race.add(
                 3,
                 [&](size_t)
                 {
@@ -173,7 +173,7 @@ TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
                         progress();
                     }
                 });
-            group.join();
+            race.run();
 
             EXPECT_EQ(counter.load(), 150u);
         });
@@ -189,8 +189,8 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
         Atomic<UInt32> busy{0};
         Atomic<size_t> work{0};
 
-        WaitGroup group;
-        group.add(
+        Race race;
+        race.add(
             1,
             [&](size_t)
             {
@@ -204,7 +204,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
                 busy.store(0);
                 futexWakeAll(busy);
             });
-        group.add(
+        race.add(
             1,
             [&](size_t)
             {
@@ -213,7 +213,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
                 while (value == 1)
                     futexWaitFetch(busy, value);
             });
-        group.join();
+        race.run();
     };
 
     bool found = false;

@@ -1,6 +1,6 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 
 #include <mutex>
 
@@ -11,8 +11,8 @@ WYRD_TEST(Wyrd, MutexProtectsPlainCounter)
     Mutex mutex;
     size_t counter = 0;
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         3,
         [&](size_t)
         {
@@ -22,7 +22,7 @@ WYRD_TEST(Wyrd, MutexProtectsPlainCounter)
                 ++counter;
             }
         });
-    group.join();
+    race.run();
 
     EXPECT_EQ(counter, 300u);
 }
@@ -33,8 +33,8 @@ WYRD_TEST(Wyrd, MutexUniqueLockHandsOver)
     size_t owner_changes = 0;
     size_t last_owner = 0;
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         2,
         [&](size_t index)
         {
@@ -46,7 +46,7 @@ WYRD_TEST(Wyrd, MutexUniqueLockHandsOver)
                 last_owner = index + 1;
             }
         });
-    group.join();
+    race.run();
 
     EXPECT_GE(owner_changes, 2u);
 }

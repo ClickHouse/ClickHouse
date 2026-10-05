@@ -4,9 +4,9 @@
 #include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 #include <base/types.h>
 
 using namespace DB::Runtime::Wyrd;
@@ -48,8 +48,8 @@ WYRD_TEST(
     Atomic<size_t> counter{0};
     Atomic<UInt32> arrived{0};
 
-    WaitGroup group;
-    group.add(
+    Race race;
+    race.add(
         3,
         [&](size_t)
         {
@@ -65,7 +65,7 @@ WYRD_TEST(
                 progress();
             }
         });
-    group.join();
+    race.run();
 
     EXPECT_EQ(counter.load(), 600u);
     EXPECT_GT(adversary()->report().suspends, 0u);
