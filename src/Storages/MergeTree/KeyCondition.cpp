@@ -6282,10 +6282,18 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 key_range.right_included = true;
         }
 
+        const bool range_may_hold_null = key_range.right.isPositiveInfinity() && isNullableOrLowCardinalityNullable(current_type);
         current_type = result_type;
 
         if (!monotonicity.is_positive)
-            key_range.invert();
+        {
+            /// NULL (`+inf`) stays NULL while the values flip, so a range holding both has no one-interval image:
+            /// take the whole universe. A range of only NULL is kept as is.
+            if (!range_may_hold_null)
+                key_range.invert();
+            else if (!key_range.left.isPositiveInfinity())
+                key_range = Range::createWholeUniverse();
+        }
     }
     return key_range;
 }
@@ -6311,6 +6319,10 @@ bool KeyCondition::matchesExactContinuousRange() const
                 return {false, false};
 
             const auto monotonicity = func->getMonotonicityForRange(*arg_type, field, field);
+            /// A decreasing step maps a range holding NULL to more than one interval.
+            if (!monotonicity.is_positive && isNullableOrLowCardinalityNullable(arg_type))
+                return {false, false};
+
             all_always_monotonic &= monotonicity.is_always_monotonic;
             all_strict &= monotonicity.is_strict;
 
