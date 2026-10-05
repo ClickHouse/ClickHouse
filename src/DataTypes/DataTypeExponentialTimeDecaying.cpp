@@ -108,7 +108,7 @@ void evaluateExponentialTimeDecayLog(
     using ui_type = typename boost::multiprecision::detail::canonical<unsigned, T>::type;
     using exp_type = typename T::exponent_type;
     using canonical_exp_type = typename boost::multiprecision::detail::canonical<exp_type, T>::type;
-    using fp_type = typename std::tuple_element<0, typename T::float_types>::type;
+    using fp_type = std::tuple_element_t<0, typename T::float_types>;
 
     const int s = eval_signbit(arg);
 
@@ -140,7 +140,7 @@ void evaluateExponentialTimeDecayLog(
         return;
     }
 
-    exp_type e;
+    exp_type e = 0;
     T t;
     eval_frexp(t, arg, &e);
     bool alternate = false;
