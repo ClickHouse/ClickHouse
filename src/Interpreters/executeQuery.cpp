@@ -2422,7 +2422,8 @@ static BlockIO executeQueryImpl(
             /// applied only to the JSON-deserialization branch — otherwise a session with
             /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
-            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            if (isClickHouseJSONSetEscape(
+                    begin, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -3077,8 +3078,8 @@ static BlockIO executeQueryImpl(
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
-        /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        /// another overflow mode. This is only needed if the query result cache can actually store the result.
+        if (settings[Setting::use_query_cache] && canWriteToQueryResultCache(context) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
             || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
             || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
             || settings[Setting::sort_overflow_mode] != OverflowMode::THROW

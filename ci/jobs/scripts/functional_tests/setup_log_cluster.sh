@@ -170,7 +170,11 @@ function setup_logs_replication()
         # (~1500 columns, each with a long description) expand into a `CREATE`
         # larger than the remote server's default `max_query_size` (256 KiB)
         # and the parse fails with `Code: 62. Max query size exceeded`.
-        echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
+        # Even without comments, the `bucketed` schema of `metric_log` (the default)
+        # has a `Map` keyed by an `Enum16` of every metric plus an `ALIAS` column per
+        # metric, which is still larger than 256 KiB, so raise the limit as well.
+        echo "$statement" | clickhouse-client --max_query_size=$((16 * 1024 * 1024)) \
+            --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
             "${CONNECTION_ARGS[@]:?}" || continue
 
