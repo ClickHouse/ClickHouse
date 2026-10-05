@@ -1075,9 +1075,11 @@ ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
 
     for (size_t row = 0; row < decaying.size(); ++row)
     {
-        const auto direct = decaying.getDirectValueAt(row);
-        values->insertValue(direct.value_at_anchor);
-        timestamps->insertValue(direct.anchor_time);
+        const auto printable = decaying.getMode() == ExponentialTimeDecayingMode::Direct
+            ? decaying.getDirectValueAt(row)
+            : decaying.getPrintableValueAt(row);
+        values->insertValue(printable.value_at_anchor);
+        timestamps->insertValue(printable.anchor_time);
     }
 
     return ColumnTuple::create(
