@@ -882,6 +882,7 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             auto manifest = getManifest(meta.file_name, snapshot_state->schema_id);
             for (const auto & entry : manifest->entries)
             {
+                Paimon::checkPathIsRelativeToTable(entry.file.file_name, "data file");
                 String file_path = (std::filesystem::path(persistent_components.table_path)
                     / entry.file.bucket_path / entry.file.file_name);
 
