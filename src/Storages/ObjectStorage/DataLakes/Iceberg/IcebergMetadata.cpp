@@ -1732,7 +1732,7 @@ IcebergMetadata::estimateRead(
             column_statistics.addFile(*data_file, manifest_list_entry.manifest_file_path);
         }
     }
-    column_statistics.finalize(*estimate.rows, estimate);
+    column_statistics.finalize(estimate);
     return estimate;
 }
 
