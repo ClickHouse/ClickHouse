@@ -2,6 +2,7 @@
 
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 #include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
@@ -123,6 +124,27 @@ TEST(Wyrd, SimulationStopsAtTheStepLimit)
 
     EXPECT_EQ(result.status, SimulationResult::Status::StepLimit);
     EXPECT_EQ(result.total_steps, 50u);
+}
+
+TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
+{
+    SimulationParams params;
+    params.step_limit = 1000;
+    params.seed = 43;
+
+    bool done = false;
+    SimulationResult result = Simulation(params, {}).run(
+        [&]
+        {
+            Thread setter([&] { done = true; });
+            while (!done)
+                preemptionPoint();
+            setter.join();
+        });
+
+    EXPECT_EQ(result.status, SimulationResult::Status::Ok);
+    EXPECT_TRUE(done);
+    EXPECT_NE(result.last_syscalls.find("preemptionPoint"), std::string::npos);
 }
 
 WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_every = 1})

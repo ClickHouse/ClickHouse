@@ -3,6 +3,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
 #include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFree.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/WaitGroup.h>
@@ -18,6 +19,14 @@ WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.yiel
     EXPECT_EQ(counter.load(), 100u);
 
     EXPECT_GE(adversary()->report().yields, 100u);
+}
+
+WYRD_TEST(Wyrd, AdversaryYieldsAtEveryPreemptionPoint, .runs = 1, .adversary = {.yield_freq = 1, .suspend_freq = 0, .pin_to_single_core = false})
+{
+    for (size_t i = 0; i < 100; ++i)
+        preemptionPoint();
+
+    EXPECT_EQ(adversary()->report().yields, 100u);
 }
 
 WYRD_TEST(Wyrd, AdversarySpuriousFailureEveryTime, .runs = 1, .adversary = {.spurious_failure_every = 1, .suspend_freq = 0, .pin_to_single_core = false})
