@@ -2,6 +2,8 @@
 -- `if(isNull(x), default, assumeNotNull(x))`, instead of a serialized `tuple(x)`.
 
 SET enable_analyzer = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+SET query_plan_join_swap_table = 0;
 
 DROP TABLE IF EXISTS t_ns_left;
 DROP TABLE IF EXISTS t_ns_right;
