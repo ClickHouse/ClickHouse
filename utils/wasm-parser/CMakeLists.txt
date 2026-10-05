@@ -92,6 +92,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/typeid_cast.cpp"
     "${CH}/src/Core/DecimalFunctions.cpp"
     "${CH}/src/Core/Field.cpp"
+    "${CH}/src/Core/IdentifierName.cpp"
     "${CH}/src/Core/Joins.cpp"
     "${CH}/src/Core/QualifiedTableName.cpp"
     "${CH}/src/Core/SettingsSecrets.cpp"

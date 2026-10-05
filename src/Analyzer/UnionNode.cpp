@@ -235,6 +235,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
+        && cte_name_quote == rhs_typed.cte_name_quote
         && union_mode == rhs_typed.union_mode;
 }
 
@@ -254,6 +255,8 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+    if (cte_name_quote != IdentifierPartQuote::Unquoted)
+        state.update(static_cast<UInt8>(cte_name_quote));
 
     state.update(static_cast<size_t>(union_mode));
 }
@@ -268,6 +271,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->cte_name_quote = cte_name_quote;
 
     return result_union_node;
 }
@@ -290,6 +294,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
+        with_element_ast->name_quote = cte_name_quote;
         with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 
@@ -298,15 +303,36 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
 
+        /// A union takes its column names from its first select, and so do the pinned (double-quoted) ones.
+        /// Keep their quotes, so the round trip preserves `standard` name matching.
+        const QueryNode * first_query = nullptr;
+        for (const IQueryTreeNode * current = this; current && !first_query;)
+        {
+            if (const auto * query_node = current->as<QueryNode>())
+                first_query = query_node;
+            else if (const auto * union_node = current->as<UnionNode>(); union_node && !union_node->getQueries().getNodes().empty())
+                current = union_node->getQueries().getNodes().front().get();
+            else
+                break;
+        }
+        const Names empty_pinned_names;
+        const Names & pinned_column_names = first_query ? first_query->getPinnedProjectionColumnNames() : empty_pinned_names;
+
         auto select_expression_list_ast = make_intrusive<ASTExpressionList>();
         select_expression_list_ast->children.reserve(recursive_cte_table->columns.size());
         for (const auto & recursive_cte_table_column : recursive_cte_table->columns)
-            select_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(recursive_cte_table_column.name));
+        {
+            auto column_quote = std::binary_search(pinned_column_names.begin(), pinned_column_names.end(), recursive_cte_table_column.name)
+                ? IdentifierPartQuote::DoubleQuoted
+                : IdentifierPartQuote::Unquoted;
+            select_expression_list_ast->children.push_back(
+                make_intrusive<ASTIdentifier>(IdentifierName({IdentifierPart{recursive_cte_table_column.name, column_quote}})));
+        }
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list_ast));
 
         auto table_expression_ast = make_intrusive<ASTTableExpression>();
-        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(cte_name));
+        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(IdentifierName({IdentifierPart{cte_name, cte_name_quote}})));
         table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
         auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();

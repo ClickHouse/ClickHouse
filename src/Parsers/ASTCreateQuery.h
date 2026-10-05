@@ -129,6 +129,10 @@ public:
     String as_table;
     String attach_from_path;
 
+    /// Quoting of the `AS [db.]table` source parts as written in the query.
+    IdentifierPartQuote as_database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote as_table_quote = IdentifierPartQuote::Unquoted;
+
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 

@@ -34,6 +34,27 @@ void ASTQueryWithTableAndOutput::setTable(const String & name)
         set(table, make_intrusive<ASTIdentifier>(name));
 }
 
+static ASTPtr makeQuotedIdentifier(const String & name, IdentifierPartQuote quote)
+{
+    IdentifierName parts(std::vector<String>{name});
+    parts.front().quote = quote;
+    return make_intrusive<ASTIdentifier>(std::move(parts));
+}
+
+void ASTQueryWithTableAndOutput::setDatabase(const String & name, IdentifierPartQuote quote)
+{
+    reset(database);
+    if (!name.empty())
+        set(database, makeQuotedIdentifier(name, quote));
+}
+
+void ASTQueryWithTableAndOutput::setTable(const String & name, IdentifierPartQuote quote)
+{
+    reset(table);
+    if (!name.empty())
+        set(table, makeQuotedIdentifier(name, quote));
+}
+
 void ASTQueryWithTableAndOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// Neither `TEMPORARY` nor `uuid` is a child, so without hashing them `DROP TABLE t` and

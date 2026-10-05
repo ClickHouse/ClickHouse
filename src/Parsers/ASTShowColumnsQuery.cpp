@@ -102,6 +102,8 @@ void ASTShowColumnsQuery::writeJSON(WriteBuffer & out) const
     if (!database.empty())
         w.writeString("database", database);
     w.writeString("table", table);
+    w.writeQuote("database_quote", database_quote);
+    w.writeQuote("table_quote", table_quote);
     if (has_like)
         w.writeString("like", like);
     if (not_like)
@@ -120,6 +122,8 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     full = r.getBool("full");
     database = r.getString("database");
     table = r.getString("table");
+    database_quote = r.readQuote("database_quote");
+    table_quote = r.readQuote("table_quote");
     if (table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW COLUMNS requires a non-empty 'table' field during AST JSON deserialization");
     like = r.getString("like");

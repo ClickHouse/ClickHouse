@@ -540,8 +540,10 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
 
     if (!as_database.empty())
         w.writeString("as_database", as_database);
+    w.writeQuote("as_database_quote", as_database_quote);
     if (!as_table.empty())
         w.writeString("as_table", as_table);
+    w.writeQuote("as_table_quote", as_table_quote);
     if (!attach_from_path.empty())
         w.writeString("attach_from_path", attach_from_path);
 
@@ -620,6 +622,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     cluster = r.getString("cluster");
     as_database = r.getString("as_database");
     as_table = r.getString("as_table");
+    as_database_quote = r.readQuote("as_database_quote");
+    as_table_quote = r.readQuote("as_table_quote");
     attach_from_path = r.getString("attach_from_path");
 
     attach = r.getBool("attach");

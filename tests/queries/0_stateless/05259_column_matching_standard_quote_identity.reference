@@ -1,0 +1,29 @@
+--- quoted lambda arguments are pinned
+[2,3]
+[3]
+UNKNOWN_IDENTIFIER
+--- quoted table function arguments stay exact
+1
+UNKNOWN_FORMAT
+--- the query result cache distinguishes quoted and unquoted references
+-1
+-2
+-3
+-3
+-2
+-1
+--- EXCEPT targets folding to one column are ambiguous
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+--- an EXCEPT or REPLACE target naming a subcolumn matches the whole name
+k	data.name
+1	['n']
+k	data.Name	data.name
+1	['R']	['n']
+AMBIGUOUS_IDENTIFIER
+--- JOIN USING through a projection alias folds
+1	a
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
+UNKNOWN_IDENTIFIER
+--- an unqualified name of a temporary table takes precedence over a case sibling in the database
+temporary	0

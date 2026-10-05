@@ -86,7 +86,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 if (!rendered.empty())
                     rendered += '.';
-                rendered += backQuoteIfNeed(part);
+                rendered += backQuoteIfNeed(part.spelling);
             }
             copy_element->table_name = rendered;
         }
