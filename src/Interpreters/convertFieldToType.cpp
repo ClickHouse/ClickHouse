@@ -759,11 +759,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 const auto & names = tuple_hint->getElementNames();
                 if (names.size() == 3
                     && names[0] == "sign"
-                    && names[1] == "signed_unit_time"
+                    && (names[1] == "unit_timestamp" || names[1] == "signed_unit_time")
                     && names[2] == "decay_length")
                     throw Exception(
                         ErrorCodes::TYPE_MISMATCH,
-                        "Tuple(sign, signed_unit_time, decay_length) is not a representation of ExponentialTimeDecaying");
+                        "Tuple(sign, unit_timestamp, decay_length) is not a representation of ExponentialTimeDecaying");
             }
 
             const auto & src_tuple = src.safeGet<Tuple>();
