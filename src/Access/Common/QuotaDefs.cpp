@@ -292,7 +292,7 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         }
         case QuotaKeyType::NORMALIZED_QUERY_HASH:
         {
-            static const auto info = make_info("NORMALIZED_QUERY_HASH");
+            static const auto info = make_info("NORMALIZED_QUERY_HASH"); // NOLINT(misc-static-initialization-cycle)
             return info;
         }
         case QuotaKeyType::MAX: break;

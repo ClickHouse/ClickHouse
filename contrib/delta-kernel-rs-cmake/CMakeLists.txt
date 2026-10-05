@@ -40,7 +40,9 @@ set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/"
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
-        "OPENSSL_LIBS=ssl:crypto"
+        # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+        # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto` below.
+        "OPENSSL_LIBS="
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/"

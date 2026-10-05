@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-distributed-cache, no-parallel-replicas
-# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the read may run on a remote replica
+# Tags: no-fasttest, no-random-settings, no-distributed-cache
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

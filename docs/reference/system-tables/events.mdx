@@ -4188,6 +4188,10 @@ The total number of row groups read from parquet data
 
 The total number of rows that were passed through filter
 
+### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
+
+The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
 Total time spent holding data parts lock in MergeTree tables
@@ -4895,6 +4899,10 @@ Number of granules examined for read time pruning by JOIN Runtime Filters
 ### RuntimeFilterGranulesDropped {#runtimefiltergranulesdropped}
 
 Number of granules pruned at read time by JOIN Runtime Filters
+
+### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
+
+Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -5987,6 +5995,10 @@ Number of fully-dense segments padded as a whole (memset for OR, increment for A
 ### TextIndexLazySegmentsSkippedResolved {#textindexlazysegmentsskippedresolved}
 
 Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+
+### TextIndexPatternBypassCacheHits {#textindexpatternbypasscachehits}
+
+Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 

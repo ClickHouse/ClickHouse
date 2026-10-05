@@ -128,16 +128,16 @@ public:
         /// What to count.
         Names keys;
         size_t keys_size = 0;
-        const AggregateDescriptions aggregates;
-        const size_t aggregates_size = 0;
+        AggregateDescriptions aggregates;
+        size_t aggregates_size = 0;
 
         ///
         /// The settings of approximate calculation of GROUP BY.
         ///
         /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
         const bool overflow_row = false;
-        const size_t max_rows_to_group_by = 0;
-        const OverflowMode group_by_overflow_mode = OverflowMode::THROW;
+        size_t max_rows_to_group_by = 0;
+        OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,
@@ -349,6 +349,14 @@ public:
             new_params.keys = keys_;
             new_params.keys_size = keys_.size();
             new_params.only_merge = only_merge_;
+            return new_params;
+        }
+
+        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        {
+            Params new_params = cloneWithKeys(keys_, only_merge_);
+            new_params.aggregates = aggregates_;
+            new_params.aggregates_size = aggregates_.size();
             return new_params;
         }
 
@@ -626,6 +634,10 @@ public:
     void consumeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryData() const;
+
+    /// Peak memory of the aggregation state across all threads. Unavailable when the states
+    /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
+    std::optional<UInt64> getPeakMemoryUsage() const;
 
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
