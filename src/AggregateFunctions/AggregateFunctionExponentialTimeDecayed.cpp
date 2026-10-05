@@ -211,9 +211,9 @@ public:
         if (input_is_decaying_value)
         {
             const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
-            const auto direct = decaying.getDirectValueAt(row_num);
-            value = direct.value_at_anchor;
-            time = direct.anchor_time;
+            const auto canonical = decaying.getCanonicalValueAt(row_num);
+            value = canonical.value_at_anchor;
+            time = canonical.anchor_time;
             if (value == 0)
                 return;
 
