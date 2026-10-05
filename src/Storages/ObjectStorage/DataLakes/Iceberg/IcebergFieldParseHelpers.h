@@ -39,11 +39,6 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
 std::optional<Field> deserializeDecimalFromBinaryRepr(
     const String & str, const IDataType & decimal_type, bool lower_bound = false, bool compensate_rounding = false);
 
-/// A non-NULL partition value as a value of `type`, the type of its partition key column: a `DateTime64` that older
-/// ClickHouse writers stored as a plain `long` gets the type's scale, and a decimal's unscaled bytes are decoded.
-/// Returns nothing for decimal bytes that do not fit the type.
-std::optional<Field> partitionValueToFieldOfType(const Field & value, const IDataType & type);
-
 }
 
 #endif
