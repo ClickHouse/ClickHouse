@@ -213,20 +213,21 @@ public:
         }
         else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecaying>(input_type))
         {
-            const auto & type_storage_tuple
-                = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getNestedType());
-            const auto & decaying_column = checkAndGetColumn<ColumnExponentialTimeDecaying>(*input_col);
-            const auto & storage_tuple = decaying_column.getStorageTuple();
+            const auto & logical_type
+                = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getLogicalTupleType());
             std::optional<size_t> index
-                = getTupleElementIndex(arguments[1].column, type_storage_tuple, arguments.size());
+                = getTupleElementIndex(arguments[1].column, logical_type, arguments.size());
 
             if (!index.has_value())
                 return arguments[2].column;
 
-            res = storage_tuple.getColumnPtr(*index);
+            const auto logical_column = materializeExponentialTimeDecayingLogicalColumn(
+                *input_col, input_type_as_decaying->getDecayLength());
+            const auto & logical_tuple = assert_cast<const ColumnTuple &>(*logical_column);
+            res = logical_tuple.getColumnPtr(*index);
 
             if (null_map_column)
-                res = applyOuterNullMap(res, type_storage_tuple.getElements()[*index], null_map_column);
+                res = applyOuterNullMap(res, logical_type.getElements()[*index], null_map_column);
         }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
