@@ -21,6 +21,10 @@ class SchemaCache;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 
+/// Replaces the identity-partition columns of `header` with their values from the manifest: a data file may not store them.
+std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns);
+
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;

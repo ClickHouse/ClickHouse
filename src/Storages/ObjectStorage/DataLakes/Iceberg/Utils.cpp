@@ -351,7 +351,7 @@ void writeMessageToFile(
     }
 }
 
-bool writeMetadataFileAndVersionHint(
+MetadataWriteOutcome writeMetadataFileAndVersionHintWithOutcome(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
@@ -365,7 +365,7 @@ bool writeMetadataFileAndVersionHint(
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
-            return false;
+            return MetadataWriteOutcome::TargetExisted;
 
         Iceberg::writeMessageToFile(
             metadata_file_content,
@@ -384,12 +384,12 @@ bool writeMetadataFileAndVersionHint(
         if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        return MetadataWriteOutcome::WriteFailed;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        return MetadataWriteOutcome::WriteFailed;
     }
 
     /// Once any writer has created `version-hint.text`, every subsequent writer must keep it in
@@ -454,7 +454,21 @@ bool writeMetadataFileAndVersionHint(
         ++i;
     }
 
-    return true;
+    return MetadataWriteOutcome::Written;
+}
+
+bool writeMetadataFileAndVersionHint(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool try_write_version_hint)
+{
+    return writeMetadataFileAndVersionHintWithOutcome(
+               resolver, metadata_file_info, metadata_file_content, version_hint_path, object_storage, context, try_write_version_hint)
+        == MetadataWriteOutcome::Written;
 }
 
 

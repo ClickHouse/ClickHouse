@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Poco/JSON/Object.h>
 
 
@@ -46,7 +47,9 @@ public:
         std::optional<Int64> user_defined_timestamp = std::nullopt,
         SnapshotOperation operation = SnapshotOperation::Append,
         /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
-        const std::optional<String> & refresh_cursor = std::nullopt);
+        const std::optional<String> & refresh_cursor = std::nullopt,
+        /// The complete summary of the new snapshot, written instead of one derived from the counts above and the parent's totals.
+        const std::optional<Iceberg::SnapshotSummary> & precomputed_summary = std::nullopt);
 
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(

@@ -35,6 +35,13 @@
 namespace DB
 {
 
+namespace Iceberg
+{
+/// Registers the schemas, `last-column-id` and snapshot -> schema-id bindings of `metadata_object`: manifest entries
+/// resolve the schema of their data file through these bindings.
+void registerIcebergMetadataSchemas(Poco::JSON::Object::Ptr metadata_object, IcebergSchemaProcessor & schema_processor);
+}
+
 struct IcebergFileRecord
 {
     Int64 snapshot_id = 0;
@@ -151,7 +158,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const std::optional<FormatSettings> & format_settings,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & storage_id) override;
     bool optimizeManifestFiles(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
