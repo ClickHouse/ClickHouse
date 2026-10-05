@@ -3249,9 +3249,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     {
         const auto & target = assert_cast<const DataTypeExponentialTimeDecaying &>(*to_type);
         const auto target_key_width = target.getKeyWidth();
+        const auto target_mode = target.getMode();
         const Float64 decay_length = target.getDecayLength();
 
-        return [target_key_width, decay_length](
+        return [target_key_width, target_mode, decay_length](
                    ColumnsWithTypeAndName & arguments,
                    const DataTypePtr &,
                    const ColumnNullable *,
@@ -3259,11 +3260,26 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         {
             ColumnPtr full = arguments[0].column->convertToFullColumnIfConst();
             const auto & source = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
+
+            auto values = ColumnFloat64::create();
+            auto timestamps = ColumnFloat64::create();
+            values->reserve(source.size());
+            timestamps->reserve(source.size());
+            for (size_t row = 0; row < source.size(); ++row)
+            {
+                const auto direct = source.getDirectValueAt(row);
+                values->insertValue(direct.value_at_anchor);
+                timestamps->insertValue(direct.anchor_time);
+            }
+
+            auto direct_tuple = ColumnTuple::create(
+                Columns{std::move(values), std::move(timestamps)});
             return materializeExponentialTimeDecayingStorageColumn(
-                source.getStorageColumn(),
+                *direct_tuple,
                 decay_length,
-                "explicit ExponentialTimeDecaying width conversion",
-                target_key_width);
+                "explicit ExponentialTimeDecaying width/mode conversion",
+                target_key_width,
+                target_mode);
         };
     }
 
@@ -3501,7 +3517,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
             DataTypePtr raw_type;
             if (from_tuple->getElements().size() == 2)
-                raw_type = decaying_type.getNestedType();
+                raw_type = decaying_type.getDirectTupleType();
             else if (from_tuple->getElements().size() == 3)
                 raw_type = decaying_type.getLogicalTupleType();
             else
@@ -3514,7 +3530,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             auto raw_wrapper = createTupleWrapper(from_type, &raw_tuple);
             const Float64 decay_length = decaying_type.getDecayLength();
             const auto key_width = decaying_type.getKeyWidth();
-            return [wrapper = std::move(raw_wrapper), raw_type, decay_length, key_width]
+            const auto mode = decaying_type.getMode();
+            return [wrapper = std::move(raw_wrapper), raw_type, decay_length, key_width, mode]
                 (ColumnsWithTypeAndName & arguments,
                  const DataTypePtr &,
                  const ColumnNullable * nullable_source,
@@ -3523,7 +3540,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                 auto raw_column
                     = wrapper(arguments, raw_type, nullable_source, input_rows_count);
                 return materializeExponentialTimeDecayingStorageColumn(
-                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying", key_width);
+                    *raw_column, decay_length, "CAST to ExponentialTimeDecaying", key_width, mode);
             };
         }
         case TypeIndex::Map:
