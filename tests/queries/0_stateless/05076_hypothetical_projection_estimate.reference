@@ -101,7 +101,6 @@ ReadFromMergeTree (p_b)
 Granules: 10
 reason: Query has no filter predicate, and reading in order is disabled
 reason: Query has no filter predicate, and reading in order is disabled
-reason: Query has no filter predicate, and reading in order is disabled
 --- the INDEX form, which the optimizer serves the read from ---
 hypothetical:
 marks: 10

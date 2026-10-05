@@ -48,6 +48,7 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
     bool supportsTruncate() const override { return false; }
 

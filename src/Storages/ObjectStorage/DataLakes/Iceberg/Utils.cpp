@@ -458,6 +458,19 @@ bool writeMetadataFileAndVersionHint(
 }
 
 
+String normalizeIcebergTransformFunctionName(const String & function_name)
+{
+    if (function_name == "toYearNumSinceEpoch")
+        return "icebergYear";
+    if (function_name == "toMonthNumSinceEpoch")
+        return "icebergMonth";
+    if (function_name == "toRelativeDayNum")
+        return "icebergDay";
+    if (function_name == "toRelativeHourNum")
+        return "icebergHour";
+    return function_name;
+}
+
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
@@ -832,39 +845,40 @@ static Poco::JSON::Object::Ptr getPartitionField(
     result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
     result->set(Iceberg::f_field_id, ++partition_iter);
 
-    if (partition_function->name == "identity")
+    const String function_name = normalizeIcebergTransformFunctionName(partition_function->name);
+    if (function_name == "identity")
     {
         result->set(Iceberg::f_transform, "identity");
         return result;
     }
-    else if (partition_function->name == "icebergYear" || partition_function->name == "toYearNumSinceEpoch")
+    else if (function_name == "icebergYear")
     {
         result->set(Iceberg::f_transform, "year");
         return result;
     }
-    else if (partition_function->name == "icebergMonth" || partition_function->name == "toMonthNumSinceEpoch")
+    else if (function_name == "icebergMonth")
     {
         result->set(Iceberg::f_transform, "month");
         return result;
     }
-    else if (partition_function->name == "icebergDay" || partition_function->name == "toRelativeDayNum")
+    else if (function_name == "icebergDay")
     {
         result->set(Iceberg::f_transform, "day");
         return result;
     }
-    else if (partition_function->name == "icebergHour" || partition_function->name == "toRelativeHourNum")
+    else if (function_name == "icebergHour")
     {
         result->set(Iceberg::f_transform, "hour");
         return result;
     }
-    else if (partition_function->name == "icebergTruncate")
+    else if (function_name == "icebergTruncate")
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
-    else if (partition_function->name == "icebergBucket")
+    else if (function_name == "icebergBucket")
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
@@ -930,11 +944,7 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
             {"icebergYear", "year"},
             {"icebergMonth", "month"},
             {"icebergDay", "day"},
-            {"icebergHour", "hour"},
-            {"toYearNumSinceEpoch", "year"},
-            {"toMonthNumSinceEpoch", "month"},
-            {"toRelativeDayNum", "day"},
-            {"toRelativeHourNum", "hour"}
+            {"icebergHour", "hour"}
         };
 
     const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
@@ -942,7 +952,7 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
 
     const String & clickhouse_name = func->name;
-    const auto it = clickhouse_name_to_iceberg.find(clickhouse_name);
+    const auto it = clickhouse_name_to_iceberg.find(normalizeIcebergTransformFunctionName(clickhouse_name));
     if (it == clickhouse_name_to_iceberg.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
 
@@ -1143,9 +1153,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, 0);
+    /// The spec reserves sort order id 0 for the unsorted order.
+    const Int64 sort_order_id = order_by ? 1 : 0;
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, 0);
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     if (order_by)
     {
@@ -1829,10 +1841,125 @@ void forEachAvroEntry(
         callback(datum);
 }
 
+namespace
+{
+
+/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
+/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
+/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
+/// bits, so that the sign extension comes out of the shifts themselves.
+///
+/// The result always uses `Decimal256` as its carrier, whatever the width of the ClickHouse type of the
+/// column is: Iceberg allows widening `decimal(P, S)` to `decimal(P', S)`, and `Field` ordering and
+/// equality dispatch on the variant tag before they look at the number, so a `Decimal64` written before
+/// the widening would never match the `Decimal128` of a manifest written after it. Keeping one carrier
+/// makes the normalized tuple of a partition independent of the schema of the manifest that wrote it.
+/// The scale is unaffected: widening a decimal may not change it.
+template <typename DecimalType>
+Field decodePartitionDecimal(const String & bytes, const IDataType & type)
+{
+    using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
+    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            bytes.size(),
+            sizeof(NativeType),
+            type.getName());
+
+    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+    for (const auto byte : bytes)
+        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
+
+    return DecimalField<Decimal256>(Int256(static_cast<NativeType>(unscaled_value)), getDecimalScale(type));
+}
+
+Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+{
+    if (checkDecimal<Decimal32>(type))
+        return decodePartitionDecimal<Decimal32>(bytes, type);
+    if (checkDecimal<Decimal64>(type))
+        return decodePartitionDecimal<Decimal64>(bytes, type);
+    if (checkDecimal<Decimal128>(type))
+        return decodePartitionDecimal<Decimal128>(bytes, type);
+    if (checkDecimal<Decimal256>(type))
+        return decodePartitionDecimal<Decimal256>(bytes, type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
+}
+
+}
+
+Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
+{
+    const auto & value_type = removeNullable(type);
+
+    /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
+    if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
+        return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
+
+    /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
+    /// too, so that it matches the value decoded from the raw `fixed` of another manifest.
+    if (Field::isDecimal(value.getType()) && value.getType() != Field::Types::Decimal256
+        && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(value, DataTypeDecimal<Decimal256>(DecimalUtils::max_precision<Decimal256>, getDecimalScale(*value_type)));
+
+    return value;
+}
+
+Field convertPartitionValueToType(const Field & value, const DataTypePtr & type)
+{
+    Field normalized = normalizePartitionValue(value, type);
+
+    /// Partition values are kept in a canonical decimal carrier, which is not the carrier of the column
+    /// type in general; a consumer that hands the value to code typed by the column has to bring it back.
+    const auto & value_type = removeNullable(type);
+    if (Field::isDecimal(normalized.getType()) && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(normalized, *value_type);
+
+    return normalized;
+}
+
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id)
+{
+    DB::Row result = partition_key_value;
+
+    for (const auto & partition_field : partition_specification)
+    {
+        /// Only these transforms keep the type of the source column, so only for them the ClickHouse
+        /// type of the source column tells how the stored partition value has to be interpreted.
+        /// A `bucket`, `year`, `month`, `day` or `hour` value is an integer of its own, unrelated to
+        /// the type of the source column, and must be left alone.
+        const auto transform_name = Poco::toLower(partition_field.transform_name);
+        if (transform_name != "identity" && !transform_name.starts_with("truncate"))
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= result.size())
+            continue;
+
+        const auto name_and_type = schema_processor.tryGetFieldCharacteristics(schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        auto & value = result[partition_field.tuple_index];
+        value = normalizePartitionValue(value, name_and_type->type);
+    }
+
+    return result;
+}
+
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
 {
-    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    const auto & partition_key_value = manifest_file_entry.normalized_partition_key_value;
     if (partition_key_value.empty())
         return {};
 
@@ -1850,7 +1977,8 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         if (!name_and_type.has_value())
             continue;
 
-        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        Field value = convertFieldToTypeOrThrow(
+            normalizePartitionValue(partition_key_value[partition_field.tuple_index], name_and_type->type), *name_and_type->type);
         if (value.isNull())
             continue;
 

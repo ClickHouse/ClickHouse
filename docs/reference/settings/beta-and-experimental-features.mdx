@@ -78,7 +78,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_database_glue_catalog](/reference/settings/session-settings/allow#allow_database_glue_catalog) | `0` |
 | [session_timezone](/reference/settings/session-settings/other#session_timezone) | `` |
 | [low_priority_query_wait_time_ms](/reference/settings/session-settings/other#low_priority_query_wait_time_ms) | `1000` |
-| [enable_json_lazy_type_hints](/reference/settings/session-settings/enable#enable_json_lazy_type_hints) | `0` |
 | [ai_function_request_timeout_sec](/reference/settings/session-settings/ai-function#ai_function_request_timeout_sec) | `60` |
 | [ai_function_max_retries](/reference/settings/session-settings/ai-function#ai_function_max_retries) | `1` |
 | [ai_function_retry_initial_delay_ms](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms) | `1000` |
@@ -170,6 +169,11 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_experimental_polyglot_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_polyglot_dialect) | `0` |
 | [enable_json_ast_dialect](/reference/settings/session-settings/enable#enable_json_ast_dialect) | `0` |
 | [polyglot_dialect](/reference/settings/session-settings/other#polyglot_dialect) | `` |
+| [allow_experimental_logsql_dialect](/reference/settings/session-settings/allow-experimental#allow_experimental_logsql_dialect) | `0` |
+| [logsql_database](/reference/settings/session-settings/logsql#logsql_database) | `` |
+| [logsql_table](/reference/settings/session-settings/logsql#logsql_table) | `` |
+| [logsql_time_column](/reference/settings/session-settings/logsql#logsql_time_column) | `_time` |
+| [logsql_message_column](/reference/settings/session-settings/logsql#logsql_message_column) | `_msg` |
 | [enable_trino_dialect](/reference/settings/session-settings/enable#enable_trino_dialect) | `0` |
 | [enable_adaptive_memory_spill_scheduler](/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) | `0` |
 | [allow_delta_lake_create_table](/reference/settings/session-settings/allow#allow_delta_lake_create_table) | `0` |
@@ -187,6 +191,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [distributed_plan_force_exchange_kind](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind) | `` |
 | [distributed_plan_max_rows_to_broadcast](/reference/settings/session-settings/distributed-plan#distributed_plan_max_rows_to_broadcast) | `20000` |
 | [distributed_plan_read_in_order](/reference/settings/session-settings/distributed-plan#distributed_plan_read_in_order) | `0` |
+| [distributed_plan_max_buffered_log_rows](/reference/settings/session-settings/distributed-plan#distributed_plan_max_buffered_log_rows) | `100000` |
 | [allow_experimental_ytsaurus_table_engine](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine) | `0` |
 | [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) | `0` |
 | [allow_experimental_ytsaurus_dictionary_source](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source) | `0` |

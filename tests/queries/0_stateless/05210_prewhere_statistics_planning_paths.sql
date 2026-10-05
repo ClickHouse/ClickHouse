@@ -1,9 +1,9 @@
 SET use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
--- `query_plan_optimize_prewhere` is pinned because the test harness randomizes it off, and the
+-- `optimize_move_to_prewhere` is pinned because the test harness randomizes it off, and the
 -- probe below counts the locks that the plan-level `PREWHERE` optimization takes.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_parallel_replicas = 0;
+SET optimize_move_to_prewhere = 1, enable_parallel_replicas = 0;
 
 CREATE TABLE prewhere_planning_statistics (p UInt64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()

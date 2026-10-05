@@ -1424,7 +1424,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 {
     const auto & using_expression = using_column_node.getExpression();
     if (!using_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected list of expressions for USING, but got {}", using_expression->dumpTree());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected list of expressions for USING column {}, but got nullptr", using_column_node.getColumnName());
 
     auto arguments = using_expression->as<const ListNode &>().getNodes();
 

@@ -24,15 +24,26 @@ $CLICKHOUSE_CLIENT --query "
     (
         id UInt64,
         s String,
-        INDEX idx_s s TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+        INDEX idx_s s TYPE tokenbf_v1(1024, 3, 0) GRANULARITY 1
     )
     ENGINE = MergeTree ORDER BY id
-    SETTINGS storage_policy = 's3_cache', index_granularity = 512, min_bytes_for_wide_part = 0;
+    SETTINGS storage_policy = 's3_cache', index_granularity = 64, min_bytes_for_wide_part = 0;
 
     INSERT INTO t_marks_cancel
     SELECT number, 'tok' || toString(number % 5000) || ' filler text to make the part wide'
     FROM numbers(200000);
 "
+
+# The first arm resumes exactly one buffer fill and then asks whether the read unwound, so a marks
+# file that one fill covers would make it pass without testing cancellation at all. Assert that
+# premise on the fixture rather than leaving it to the read buffer size chosen below.
+marks_bytes=$($CLICKHOUSE_CLIENT --query "
+    SELECT secondary_indices_marks_bytes FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_marks_cancel' AND active
+")
+if [ "${marks_bytes:-0}" -le 500 ]; then
+    echo "FAIL: the index marks are $marks_bytes bytes, which one read buffer fill covers"
+fi
 
 # Cold caches, so the index marks are really read from object storage.
 $CLICKHOUSE_CLIENT --query "
@@ -45,15 +56,13 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
 
 query_id="04741_${CLICKHOUSE_DATABASE}"
 
-# A small read buffer makes the marks read span several buffer fills, so a second fill exists for
-# the assertion below to be about cancellation rather than about the read simply having finished.
-#
-# query_plan_direct_read_from_text_index reads a text index in the query plan instead of through
-# MergeTreeIndexReader, so with it enabled this query never performs the marks read the test is
-# about. It is pinned off in every arm that has to reach the interruption point.
+# A read buffer smaller than the marks file makes the marks read span several buffer fills, so a
+# second fill exists for the assertion below to be about cancellation rather than about the read
+# simply having finished. Both settings are needed for that: the filesystem cache otherwise grows
+# the buffer up to prefetch_buffer_size and serves the whole file in one fill.
 $CLICKHOUSE_CLIENT --query_id "$query_id" \
     --max_read_buffer_size 500 \
-    --query_plan_direct_read_from_text_index 0 \
+    --filesystem_cache_prefer_bigger_buffer_size 0 \
     --query "SELECT count() FROM t_marks_cancel WHERE hasToken(s, 'tok4242')" > /dev/null 2>&1 &
 query_pid=$!
 
@@ -130,7 +139,6 @@ $CLICKHOUSE_CLIENT --query_id "$exec_query_id" \
     --max_read_buffer_size 500 \
     --use_reader_executor 1 \
     --remote_filesystem_read_method read \
-    --query_plan_direct_read_from_text_index 0 \
     --query "SELECT count() FROM t_marks_cancel WHERE hasToken(s, 'tok4242')" > /dev/null 2>&1 &
 exec_query_pid=$!
 
