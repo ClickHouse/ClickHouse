@@ -620,7 +620,11 @@ CommitOutcome commitCompactedMetadata(
                     /// Our snapshot, or a snapshot built on top of it, is in the table: some request of ours was applied.
                     if (id == our_id || snapshot_parent == our_id)
                         applied = true;
-                    retained.emplace(id, RetainedSnapshot{snapshot_parent, snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)});
+                    /// Snapshots written before the table was upgraded to v2 have no sequence number, which reads as 0.
+                    const Int64 sequence_number = snapshot->has(Iceberg::f_metadata_sequence_number)
+                        ? snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)
+                        : 0;
+                    retained.emplace(id, RetainedSnapshot{snapshot_parent, sequence_number});
                 }
                 if (applied)
                 {

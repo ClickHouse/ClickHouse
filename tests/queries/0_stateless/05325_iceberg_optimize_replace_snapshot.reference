@@ -34,3 +34,8 @@ hint names the latest version: 1
 data files: 1, delete files: 0
 2	b
 3	c
+--- equality deletes are refused
+NOT_IMPLEMENTED
+equality deletes is not supported
+history unchanged: 1
+881

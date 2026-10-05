@@ -128,6 +128,20 @@ ${CH} --allow_experimental_expire_snapshots=1 --query "ALTER TABLE t4 EXECUTE ex
 echo "data files: $(ls "${T4}/data" | grep -c -v 'deletes'), delete files: $(ls "${T4}/data" | grep -c 'deletes')"
 ${CH} --query "SELECT x, t FROM t4 ORDER BY x"
 
+echo '--- equality deletes are refused'
+# The shared read-only fixture of 04613 (position and equality deletes; ClickHouse cannot write the latter).
+# Parallel replicas cannot read deletes, so they are off for this table.
+EQ="${CH} --enable_parallel_replicas=0"
+${EQ} --query "CREATE TABLE t_eq ENGINE = IcebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')"
+eq_history() { ${EQ} --query "SELECT count() FROM system.iceberg_history WHERE database = currentDatabase() AND table = 't_eq'"; }
+HISTORY_BEFORE=$(eq_history)
+ERR=$(${OPTIMIZE} --enable_parallel_replicas=0 --query "OPTIMIZE TABLE t_eq" 2>&1)
+grep -oF NOT_IMPLEMENTED <<< "${ERR}" | head -n1
+grep -oF 'equality deletes is not supported' <<< "${ERR}" | head -n1
+echo "history unchanged: $([[ "$(eq_history)" == "${HISTORY_BEFORE}" ]] && echo 1 || echo 0)"
+${EQ} --query "SELECT count() FROM t_eq"
+${EQ} --query "DROP TABLE t_eq"
+
 ${CH} --query "DROP TABLE t1_by_uuid"
 ${CH} --query "DROP TABLE t3_hinted"
 for t in t1 t2 t3 t4; do ${CH} --query "DROP TABLE ${t}"; done
