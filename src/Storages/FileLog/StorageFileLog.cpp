@@ -1524,10 +1524,11 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
             const auto inode = getInodeToRead(name, file_ctx);
             const bool rekey = inode && *inode != file_ctx.inode;
             if (!inode || (rekey && !rekeyed_inodes.insert(*inode).second))
-                return;
+                return false;
             FileMeta new_meta = rekey ? FileMeta{.file_name = name} : findInMap(file_infos.meta_by_inode, *inode);
             new_meta.last_writen_position = new_offset;
             targets.push_back({name, &file_ctx, *inode, std::move(new_meta)});
+            return true;
         };
 
         if (!file_name)
@@ -1546,7 +1547,12 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
                 throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
             if (offset && *offset > *size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
-            add_target(*file_name, it->second, offset.value_or(*size));
+            if (!add_target(*file_name, it->second, offset.value_or(*size)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "File '{}' of table {} leads to a file that is read under another name, reset that name instead",
+                    *file_name, getStorageID().getNameForLogs());
+            if (getInode(getFullDataPath(*file_name)) != targets.back().inode)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "File '{}' of table {} was replaced and the table has not processed the replacement yet, retry later",
+                    *file_name, getStorageID().getNameForLogs());
         }
 
         /// Write every new meta file before publishing any of them, so that a failed write

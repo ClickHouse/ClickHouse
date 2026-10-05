@@ -2,7 +2,8 @@
 # A FileLog table reads a file that replaced another one under the same name (moved over it, created again after the
 # old file was renamed by a rotation, a symlink moved over it, or the target of a symlink replaced) once and from its
 # start, and the rotated file from its own offset, also when the replacement happens before the table learns about it.
-# A single-file table reads a replaced file from its start, or from an offset set after the replacement.
+# A single-file table reads a replaced file from its start, or from an offset set after the replacement, also after the
+# table is attached again. A reset of a name that leads to a file read under another name fails.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -101,6 +102,10 @@ ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_target TO dst_target AS SEL
 wait_count dst_target 10
 echo 999 > "${base}/target/z.csv"
 rows_after dst_target 999
+# Now the symlink leads to a file that is read as z.csv, so a reset of a.csv cannot take effect.
+ln "${base}/target/z.csv" "${base}/outside/u.new"
+mv "${base}/outside/u.new" "${base}/outside/u.csv"
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv'" 2>&1 | grep -o -m1 BAD_ARGUMENTS
 
 echo '-- single file'
 printf '1\n2\n3\n' > "${base}/single/s.csv"
@@ -112,6 +117,13 @@ ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT group
 printf '50\n60\n70\n80\n' > "${base}/outside/s.csv"
 mv "${base}/outside/s.csv" "${base}/single/s.csv"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 6"
+${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+# The offset set after a replacement is also kept when the table is attached again before reading.
+printf '90\n100\n' > "${base}/outside/s.csv"
+mv "${base}/outside/s.csv" "${base}/single/s.csv"
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 3"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_single"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_single"
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_replace"
