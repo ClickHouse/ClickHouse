@@ -1075,6 +1075,8 @@ Two related types are **not** aliases. They are valid `Native` column types — 
 
 `ExponentialTimeDecaying64(decay_length)` and `ExponentialTimeDecaying128(decay_length)` are custom logical types for exponentially time-decaying curves. The positive `decay_length` parameter is part of the type string and is **not** repeated in each row. There is no unsuffixed `ExponentialTimeDecaying` type.
 
+The two width-specific types are the current experimental contract. The earlier single-type design and its collision tie-breaker are superseded: neither a separate sign/timestamp key nor the residual direct payload participates in equality after the integer key has been derived.
+
 Both types use the same authoritative direct payload, encoded as two ordinary `Float64` streams:
 
 ```text
@@ -1105,6 +1107,12 @@ The types have no state/version prefix of their own. Their two `Float64` streams
 When binary type encoding is enabled, each type is encoded through the existing `Custom type` tag (`0x2C`) followed by its complete type name, for example `ExponentialTimeDecaying64(60)` or `ExponentialTimeDecaying128(60)`.
 
 The regular exponential-time-decayed aggregates preserve the representation of finalized decaying input: an `ExponentialTimeDecaying64` input finalizes to `ExponentialTimeDecaying64`, and an `ExponentialTimeDecaying128` input finalizes to `ExponentialTimeDecaying128`. Raw `(value, timestamp)` aggregate input finalizes to the raw numeric result rather than to either decaying type. Mixing the 64-bit and 128-bit types requires an explicit conversion.
+
+The constructor `exponentialTimeDecaying(decay_length)(value, timestamp)` defaults to `ExponentialTimeDecaying64`. Explicit `CAST` selects either width. Raw aggregate input returns `Float64`; finalized input and its `-State`/`-Merge` forms preserve the selected width. Different decay lengths cannot be combined or converted into one another.
+
+`exponentialTimeDecayingUnitTime` exposes the `Float64` unit time associated with the integer identity. `exponentialTimeDecayingValueAtUnitTime` evaluates the stored curve at that time and returns its `Float64` residual value; non-zero results are approximately, rather than necessarily exactly, `-1` or `1`. Both functions return `0` for the zero curve.
+
+These types and regular aggregate forms require `allow_experimental_time_decay_aggregate_functions`. A `decay_length` interval reduces a curve's weight by `1/e`. The query-local `exponential_time_decay_significance_cutoff` compares the integer-derived input index only while adding finalized input rows; it never truncates aggregate-state or storage-engine merges. The existing window-function path keeps its previous behavior with the experimental setting disabled.
 
 ### Versioned types {#versioned-types}
 
