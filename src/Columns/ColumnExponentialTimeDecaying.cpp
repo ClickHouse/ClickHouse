@@ -284,10 +284,9 @@ void ColumnExponentialTimeDecaying::insert(const Field & x)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ExponentialTimeDecaying value");
 
     const auto normalized = normalizeExponentialTimeDecaying(value, timestamp, decay_length, key_width);
-    const std::optional<ExponentialTimeDecayingCanonicalDirectValue> direct
-        = mode == ExponentialTimeDecayingMode::Direct
-        ? std::optional<ExponentialTimeDecayingCanonicalDirectValue>{{value, timestamp}}
-        : std::nullopt;
+    std::optional<ExponentialTimeDecayingCanonicalDirectValue> direct;
+    if (mode == ExponentialTimeDecayingMode::Direct)
+        direct = ExponentialTimeDecayingCanonicalDirectValue{value, timestamp};
     insertEncoded(normalized.ordering_key, direct);
 }
 
