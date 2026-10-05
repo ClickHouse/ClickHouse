@@ -82,8 +82,8 @@ FROM values(
     ('999999999999999999', '1'))
 WHERE a > b AND b > toDecimal64('0.5', 1);
 
--- An `Enum` to `String` edge must not chain with a `String` edge: here the chain holds by name
--- order ('x' <= 'z'), while a derived endpoint `e <= 'z'` compared by id (5 <= 1) is false.
+-- An `Enum` to `String` edge must not chain with a `String` edge. Here the chain holds by name
+-- order ('x' <= 'z'). A derived endpoint `e <= 'z'` compared by id (5 <= 1) is false.
 SELECT 'enum name id order mix', count()
 FROM values('e Enum(\'x\' = 5, \'z\' = 1), s String', ('x', 'z'))
 WHERE e <= s AND s <= 'z';

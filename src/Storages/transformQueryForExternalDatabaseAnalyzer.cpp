@@ -266,7 +266,7 @@ private:
         else if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
             || name == "lessOrEquals" || name == "greaterOrEquals")
         {
-            /// Compared by value, an ordering of an `Enum` constant and a string is not a string comparison.
+            /// In the by-value mode, an ordering of an `Enum` constant and a string is not a string comparison.
             const bool string_operand_allowed = compare_enum_with_string_lexicographically || name == "equals" || name == "notEquals";
             for (size_t i = 0; i < 2; ++i)
                 if (auto constant = renderComparisonConstant(arguments[i], arguments[1 - i], string_operand_allowed))

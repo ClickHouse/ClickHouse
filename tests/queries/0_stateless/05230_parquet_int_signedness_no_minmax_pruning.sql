@@ -71,7 +71,7 @@ select count() from file(currentDatabase() || '_05230_i32n.parquet', Parquet, 'x
     settings input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 
--- Compared by value, an Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
+-- With `compare_enum_with_string_lexicographically = 0`, an Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
 -- integer of that width: a UINT_8 column {5, 200} read 8-bit signed gives {5, -56}, and the stored max 200
 -- is not an upper bound. A range predicate is served by neither hash filter, so these four need no pinning
 -- and all four returned 0 at completely default settings.

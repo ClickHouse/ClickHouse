@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# compared by value, an ordering of a string column and an Enum constant is not pushed down as a string comparison
+# in the by-value mode, an ordering of a string column and an Enum constant must stay local, not go to SQLite as a string comparison
 
 BASE="${USER_FILES_PATH}/05326_sqlite_enum_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"

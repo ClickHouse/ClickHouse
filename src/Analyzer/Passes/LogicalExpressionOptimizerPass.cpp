@@ -878,7 +878,7 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
-    /// The converted constant does not follow the order of an `Enum` and string comparison in the other mode.
+    /// An `Enum` and string ordering does not follow the order of the constant after its conversion to the expression type.
     if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS)
     {
         const auto constant_type = removeLowCardinality(new_filter.constant_node->getResultType());

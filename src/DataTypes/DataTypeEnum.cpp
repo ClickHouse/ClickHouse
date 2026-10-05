@@ -650,10 +650,10 @@ The implicit default value is the value with the lowest number.
 
 During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same way as the corresponding numbers. For example, ORDER BY sorts them numerically. Equality and comparison operators between two values of the same `Enum` type work the same way as on the underlying numeric values.
 
-Enum values cannot be compared with numbers. Enums can be compared with a `String` or a `FixedString`:
+You cannot compare an `Enum` value with a number. You can compare an `Enum` value with a `String` or a `FixedString`:
 
-- The operators `=` and `!=` compare the `Enum` name with the string. If a constant string is not a valid `Enum` value, the result is `0` for `=` and `1` for `!=`. If the setting `validate_enum_literals_in_operators` is enabled, an exception is thrown.
-- The operators `<`, `>`, `<=` and `>=` convert the `Enum` value to its name and compare the strings. DuckDB and MySQL use the same rule. Thus, this order can be different from the `ORDER BY` order. If the setting `compare_enum_with_string_lexicographically` is disabled, the string is converted to the `Enum` type and the numeric values are compared. If the string is not a valid `Enum` value, an exception is thrown.
+- The operators `=` and `!=` compare the `Enum` name with the string. If a constant string is not a valid `Enum` value, the result is `0` for `=` and `1` for `!=`. If you enable the setting `validate_enum_literals_in_operators`, ClickHouse throws an exception instead.
+- The operators `<`, `>`, `<=` and `>=` convert the `Enum` value to its name and compare the two strings. DuckDB and MySQL use the same rule. This order can be different from the `ORDER BY` order. If you disable the setting `compare_enum_with_string_lexicographically`, these operators convert the string to the `Enum` type and compare the numeric values. If the string is not a valid `Enum` value, ClickHouse throws an exception.
 
 The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
 
