@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 
@@ -246,12 +247,18 @@ UInt128 packExponentialTimeDecaying128Key(
     return midpoint + timestamp_key;
 }
 
-Float64 getDecayLength(const ASTPtr & parameters, const char * type_name)
+struct ExponentialTimeDecayingTypeParameters
 {
-    if (!parameters || parameters->children.size() != 1)
+    Float64 decay_length;
+    ExponentialTimeDecayingMode mode;
+};
+
+ExponentialTimeDecayingTypeParameters getTypeParameters(const ASTPtr & parameters, const char * type_name)
+{
+    if (!parameters || parameters->children.empty() || parameters->children.size() > 2)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Data type {} takes exactly one parameter, the decay length",
+            "Data type {} takes decay_length and optional mode",
             type_name);
 
     const auto * literal = parameters->children[0]->as<ASTLiteral>();
@@ -268,7 +275,30 @@ Float64 getDecayLength(const ASTPtr & parameters, const char * type_name)
             "Decay length of data type {} must be finite and positive",
             type_name);
 
-    return decay_length;
+    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact;
+    if (parameters->children.size() == 2)
+    {
+        const auto * identifier = parameters->children[1]->as<ASTIdentifier>();
+        if (!identifier)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Mode of data type {} must be compact or direct",
+                type_name);
+
+        const auto & name = identifier->name();
+        if (name == "compact")
+            mode = ExponentialTimeDecayingMode::Compact;
+        else if (name == "direct")
+            mode = ExponentialTimeDecayingMode::Direct;
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown mode {} for data type {}; expected compact or direct",
+                name,
+                type_name);
+    }
+
+    return {decay_length, mode};
 }
 
 class SerializationExponentialTimeDecaying final : public SerializationWrapper
@@ -280,13 +310,15 @@ public:
         DataTypePtr storage_type_,
         DataTypePtr logical_type_,
         Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_)
+        ExponentialTimeDecayingKeyWidth key_width_,
+        ExponentialTimeDecayingMode mode_)
         : SerializationWrapper(storage_serialization_)
         , logical_serialization(std::move(logical_serialization_))
         , storage_type(std::move(storage_type_))
         , logical_type(std::move(logical_type_))
         , decay_length(decay_length_)
         , key_width(key_width_)
+        , mode(mode_)
     {
     }
 
@@ -384,7 +416,6 @@ public:
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinaryBulk(
             decaying.getStorageColumn(), istr, limit, avg_value_size_hint);
-        decaying.syncOrderingKeyFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -399,7 +430,6 @@ public:
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(
             decaying.getStorageColumn(), limit, settings, state, cache);
-        decaying.syncOrderingKeyFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -408,7 +438,6 @@ public:
         const size_t previous_size = column.size();
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinary(decaying.getStorageColumn(), istr, settings);
-        decaying.syncOrderingKeyFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -532,20 +561,25 @@ private:
     const DataTypePtr logical_type;
     const Float64 decay_length;
     const ExponentialTimeDecayingKeyWidth key_width;
+    const ExponentialTimeDecayingMode mode;
 };
 
 DataTypePtr createFromParameters64(const ASTPtr & parameters)
 {
+    const auto parsed = getTypeParameters(parameters, "ExponentialTimeDecaying64");
     return std::make_shared<DataTypeExponentialTimeDecaying>(
-        getDecayLength(parameters, "ExponentialTimeDecaying64"),
-        ExponentialTimeDecayingKeyWidth::Bits64);
+        parsed.decay_length,
+        ExponentialTimeDecayingKeyWidth::Bits64,
+        parsed.mode);
 }
 
 DataTypePtr createFromParameters128(const ASTPtr & parameters)
 {
+    const auto parsed = getTypeParameters(parameters, "ExponentialTimeDecaying128");
     return std::make_shared<DataTypeExponentialTimeDecaying>(
-        getDecayLength(parameters, "ExponentialTimeDecaying128"),
-        ExponentialTimeDecayingKeyWidth::Bits128);
+        parsed.decay_length,
+        ExponentialTimeDecayingKeyWidth::Bits128,
+        parsed.mode);
 }
 
 }
@@ -631,36 +665,63 @@ ExponentialTimeDecayingValue normalizeExponentialTimeDecaying(
 
 DataTypeExponentialTimeDecaying::DataTypeExponentialTimeDecaying(
     Float64 decay_length_,
-    ExponentialTimeDecayingKeyWidth key_width_)
+    ExponentialTimeDecayingKeyWidth key_width_,
+    ExponentialTimeDecayingMode mode_)
     : decay_length(decay_length_)
     , key_width(key_width_)
-    , storage_type(std::make_shared<DataTypeTuple>(
+    , mode(mode_)
+    , storage_type(
+          mode == ExponentialTimeDecayingMode::Compact
+              ? (key_width == ExponentialTimeDecayingKeyWidth::Bits64
+                    ? DataTypePtr(std::make_shared<DataTypeUInt64>())
+                    : DataTypePtr(std::make_shared<DataTypeUInt128>()))
+              : DataTypePtr(std::make_shared<DataTypeTuple>(
+                    DataTypes{
+                        key_width == ExponentialTimeDecayingKeyWidth::Bits64
+                            ? DataTypePtr(std::make_shared<DataTypeUInt64>())
+                            : DataTypePtr(std::make_shared<DataTypeUInt128>()),
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()},
+                    Names{"ordering_key", "value", "timestamp"})))
+    , direct_type(std::make_shared<DataTypeTuple>(
           DataTypes{
               std::make_shared<DataTypeFloat64>(),
               std::make_shared<DataTypeFloat64>()},
-          Names{"value_at_anchor", "anchor_time"}))
-    , logical_type(std::make_shared<DataTypeTuple>(
-          DataTypes{
-              std::make_shared<DataTypeFloat64>(),
-              std::make_shared<DataTypeFloat64>(),
-              std::make_shared<DataTypeFloat64>()},
-          Names{"value", "timestamp", "decay_length"}))
+          Names{"value", "timestamp"}))
+    , logical_type(
+          mode == ExponentialTimeDecayingMode::Compact
+              ? DataTypePtr(std::make_shared<DataTypeTuple>(
+                    DataTypes{
+                        std::make_shared<DataTypeInt8>(),
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()},
+                    Names{"sign", "unit_timestamp", "decay_length"}))
+              : DataTypePtr(std::make_shared<DataTypeTuple>(
+                    DataTypes{
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()},
+                    Names{"value", "timestamp", "decay_length"})))
 {
 }
 
 String DataTypeExponentialTimeDecaying::doGetName() const
 {
-    return fmt::format("{}({})", getExponentialTimeDecayingTypeName(key_width), decay_length);
+    if (mode == ExponentialTimeDecayingMode::Compact)
+        return fmt::format("{}({})", getExponentialTimeDecayingTypeName(key_width), decay_length);
+    return fmt::format("{}({}, direct)", getExponentialTimeDecayingTypeName(key_width), decay_length);
 }
 
 MutableColumnPtr DataTypeExponentialTimeDecaying::createColumn() const
 {
-    return ColumnExponentialTimeDecaying::create(storage_type->createColumn(), decay_length, key_width);
+    return ColumnExponentialTimeDecaying::create(storage_type->createColumn(), decay_length, key_width, mode);
 }
 
 Field DataTypeExponentialTimeDecaying::getDefault() const
 {
-    return Tuple{Float64(0), Float64(0)};
+    if (mode == ExponentialTimeDecayingMode::Compact)
+        return Tuple{Int64(0), Float64(0), decay_length};
+    return Tuple{Float64(0), Float64(0), decay_length};
 }
 
 void DataTypeExponentialTimeDecaying::insertDefaultInto(IColumn & column) const
@@ -673,7 +734,8 @@ bool DataTypeExponentialTimeDecaying::equals(const IDataType & rhs) const
     const auto * other = typeid_cast<const DataTypeExponentialTimeDecaying *>(&rhs);
     return other
         && decay_length == other->decay_length
-        && key_width == other->key_width;
+        && key_width == other->key_width
+        && mode == other->mode;
 }
 
 bool DataTypeExponentialTimeDecaying::haveMaximumSizeOfValue() const
@@ -683,20 +745,19 @@ bool DataTypeExponentialTimeDecaying::haveMaximumSizeOfValue() const
 
 size_t DataTypeExponentialTimeDecaying::getMaximumSizeOfValueInMemory() const
 {
-    return storage_type->getMaximumSizeOfValueInMemory()
-        + (key_width == ExponentialTimeDecayingKeyWidth::Bits64 ? sizeof(UInt64) : sizeof(UInt128));
+    return storage_type->getMaximumSizeOfValueInMemory();
 }
 
 size_t DataTypeExponentialTimeDecaying::getSizeOfValueInMemory() const
 {
-    return storage_type->getSizeOfValueInMemory()
-        + (key_width == ExponentialTimeDecayingKeyWidth::Bits64 ? sizeof(UInt64) : sizeof(UInt128));
+    return storage_type->getSizeOfValueInMemory();
 }
 
 void DataTypeExponentialTimeDecaying::updateHashImpl(SipHash & hash) const
 {
     hash.update(decay_length);
     hash.update(static_cast<UInt8>(key_width));
+    hash.update(static_cast<UInt8>(mode));
 }
 
 SerializationPtr DataTypeExponentialTimeDecaying::doGetSerialization(const SerializationInfoSettings &) const
@@ -707,7 +768,8 @@ SerializationPtr DataTypeExponentialTimeDecaying::doGetSerialization(const Seria
         storage_type,
         logical_type,
         decay_length,
-        key_width);
+        key_width,
+        mode);
 }
 
 SerializationPtr DataTypeExponentialTimeDecaying::getSerialization(const SerializationInfo & info) const
@@ -718,7 +780,8 @@ SerializationPtr DataTypeExponentialTimeDecaying::getSerialization(const Seriali
         storage_type,
         logical_type,
         decay_length,
-        key_width);
+        key_width,
+        mode);
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecaying::createSerializationInfo(
@@ -739,9 +802,10 @@ SerializationInfoPtr DataTypeExponentialTimeDecaying::getSerializationInfo(
 
 DataTypePtr createDataTypeExponentialTimeDecaying(
     Float64 decay_length,
-    ExponentialTimeDecayingKeyWidth key_width)
+    ExponentialTimeDecayingKeyWidth key_width,
+    ExponentialTimeDecayingMode mode)
 {
-    return std::make_shared<DataTypeExponentialTimeDecaying>(decay_length, key_width);
+    return std::make_shared<DataTypeExponentialTimeDecaying>(decay_length, key_width, mode);
 }
 
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType & type)
@@ -768,6 +832,19 @@ std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyW
 std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const DataTypePtr & type)
 {
     return type ? tryGetExponentialTimeDecayingKeyWidth(*type) : std::nullopt;
+}
+
+std::optional<ExponentialTimeDecayingMode> tryGetExponentialTimeDecayingMode(const IDataType & type)
+{
+    if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecaying *>(&type))
+        return decaying_type->getMode();
+
+    return std::nullopt;
+}
+
+std::optional<ExponentialTimeDecayingMode> tryGetExponentialTimeDecayingMode(const DataTypePtr & type)
+{
+    return type ? tryGetExponentialTimeDecayingMode(*type) : std::nullopt;
 }
 
 bool isExponentialTimeDecaying(const IDataType & type)
@@ -863,7 +940,9 @@ void assertExponentialTimeDecayingTypesCompatibleImpl(
                 *right_decay_length);
 
         if (tryGetExponentialTimeDecayingKeyWidth(left_type)
-            != tryGetExponentialTimeDecayingKeyWidth(right_type))
+                != tryGetExponentialTimeDecayingKeyWidth(right_type)
+            || tryGetExponentialTimeDecayingMode(left_type)
+                != tryGetExponentialTimeDecayingMode(right_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "{} cannot implicitly combine {} and {}",
