@@ -119,6 +119,15 @@ std::string ColumnExponentialTimeDecaying::getName() const
     return getExponentialTimeDecayingTypeName(key_width);
 }
 
+MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) const
+{
+    return ColumnExponentialTimeDecaying::create(
+        storage->cloneResized(new_size),
+        decay_length,
+        key_width,
+        mode);
+}
+
 const IColumn & ColumnExponentialTimeDecaying::getOrderingKeyColumn() const
 {
     if (mode == ExponentialTimeDecayingMode::Compact)
