@@ -1,7 +1,7 @@
 -- Regression tests for the review findings about statement wrappers around a set
 -- operation and about the `SET` forms handled before the Trino translation.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 
 DROP TABLE IF EXISTS trino_wrappers_src;
 DROP TABLE IF EXISTS trino_wrappers_dst;

@@ -49,7 +49,7 @@ std::unique_ptr<LimitByStep> deserializeStep(const String & bytes, const SharedH
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, SharedHeaders{header}, header, settings, 0, version, false};
+        in, registry, {}, context, SharedHeaders{header}, header, settings, 0, version, 0, false};
 
     auto step = LimitByStep::deserialize(ctx);
     EXPECT_TRUE(in.eof());

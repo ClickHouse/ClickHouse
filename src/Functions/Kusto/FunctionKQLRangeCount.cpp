@@ -193,6 +193,11 @@ private:
         if (step == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The step of a 'range' must not be zero");
 
+        /// The quotient of the minimum and -1 is not representable. A wide integer wraps back to
+        /// the minimum there, which would look like an empty range instead of an enormous one.
+        if (span == std::numeric_limits<T>::min() && step == T(-1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
+
         T steps = span / step;
         if (span % step != 0 && (span < 0) != (step < 0))
             --steps;

@@ -27,6 +27,8 @@ public:
     }
 
     std::string getName() const override { return "PasteJoin"; }
+
+    std::string getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /// The left and right blocks are concatenated side by side by row position.

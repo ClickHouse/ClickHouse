@@ -34,7 +34,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 
-#include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -167,13 +166,14 @@ public:
         size_t max_block_size_,
         String remote_table_schema_,
         TableNameOrQuery remote_table_or_query_,
-        postgres::PoolWithFailoverPtr pool_
-    )
+        NameSet local_only_columns_,
+        postgres::PoolWithFailoverPtr pool_)
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_or_query(remote_table_or_query_)
+        , local_only_columns(std::move(local_only_columns_))
         , pool(std::move(pool_))
     {
     }
@@ -191,6 +191,7 @@ public:
             max_block_size,
             remote_table_schema,
             remote_table_or_query,
+            local_only_columns,
             pool);
     }
 
@@ -202,9 +203,14 @@ public:
             /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
-            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+                query_info,
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
+                context,
+                storage_snapshot->storage.getStorageID(),
+                local_only_columns);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
         }
         else
         {
@@ -214,16 +220,23 @@ public:
 
             /// Connection is already made to the needed database, so it should not be present in the query;
             /// remote_table_schema is empty if it is not specified, will access only table_name.
+            ///
+            /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote
+            /// table (its value is written there on `INSERT` and read back from there), so a predicate over it
+            /// is pushed down like one over an ordinary column.
             query = transformQueryForExternalDatabase(
                 query_info,
                 required_source_columns,
-                storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotes,
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
+                IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
+                storage_snapshot->storage.getStorageID(),
                 context,
-                transform_query_limit);
+                transform_query_limit,
+                {},
+                local_only_columns);
         }
         LOG_TRACE(logger, "Query: {}", query);
 
@@ -234,6 +247,7 @@ public:
     size_t max_block_size;
     String remote_table_schema;
     TableNameOrQuery remote_table_or_query;
+    NameSet local_only_columns;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -270,6 +284,7 @@ void StoragePostgreSQL::readImpl(
         max_block_size,
         remote_table_schema,
         remote_table_or_query,
+        getLocalOnlyColumnNames(storage_snapshot->metadata),
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -311,8 +326,10 @@ public:
             }
             else
             {
-                inserter = std::make_unique<PreparedInsert>(connection_holder->get(), remote_table_name,
-                                                            remote_table_schema, block.getColumnsWithTypeAndName(), on_conflict);
+                inserter = std::make_unique<PreparedInsert>(connection_holder->get(),
+                        remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
+                                                    : pqxx::table_path({remote_table_schema, remote_table_name}),
+                        block.getNames(), on_conflict);
             }
         }
 
@@ -531,14 +548,12 @@ private:
 
     struct PreparedInsert : Inserter
     {
-        PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
-                       const ColumnsWithTypeAndName & columns, const String & on_conflict_)
+        PreparedInsert(pqxx::connection & connection_, const pqxx::table_path & table, const Names & columns, const String & on_conflict_)
             : Inserter(connection_)
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
-            buf << " (";
+            buf << "INSERT INTO " << connection.quote_table(table) << " (" << connection.quote_columns(columns) << ") VALUES (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
                 if (i > 1)
@@ -832,8 +847,15 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        /// Identifiers are quoted only when they need to be: PostgreSQL folds an unquoted identifier to
+        /// lower case, while a quoted one is matched case-sensitively, so force-quoting every identifier
+        /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
+        /// that rely on the ordinary unquoted name resolution. A name without upper-case characters is
+        /// quoted nonetheless: PostgreSQL resolves `"where"` and `where` to the same column, but rejects the
+        /// latter as a syntax error, so a source such as `(SELECT "where" FROM "group")` keeps its quotes.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -1077,12 +1099,20 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` parameter does not apply to a passed query: qualify the table names in the query instead.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM schema1.t1 JOIN schema1.t2 USING (id) WHERE a > 0');
+```
+
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.
 
 <Note>
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when this table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand table is not checked.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. The check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected.
 </Note>
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.

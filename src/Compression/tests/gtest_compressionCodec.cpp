@@ -17,6 +17,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Compression/CompressionCodecT64Transpose.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <bit>
@@ -1735,20 +1736,71 @@ TEST(T64Test, DecompressMalformedInputShortHeader)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+#if T64_CODEC_SIMD_TRANSPOSE
+TEST(T64Test, SimdTransposeMatchesScalar)
+{
+    namespace tt = DB::T64Transpose;
+
+    std::mt19937_64 rng(0xC0FFEEULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    constexpr size_t iterations = 2048;
+
+    for (size_t it = 0; it < iterations; ++it)
+    {
+        UInt64 line[8];
+        for (auto & v : line)
+            v = rng();
+
+        auto run64x8 = [&](auto kernel, UInt64 (&buf)[8]) { memcpy(buf, line, sizeof(buf)); kernel(buf); };
+
+        UInt64 fwd_scalar[8];
+        UInt64 fwd_simd[8];
+        run64x8(tt::scalar::transpose64x8, fwd_scalar);
+        run64x8(tt::simd::transpose64x8, fwd_simd);
+        ASSERT_EQ(memcmp(fwd_scalar, fwd_simd, sizeof(fwd_scalar)), 0) << "transpose64x8 mismatch at iteration " << it;
+
+        UInt64 rev_scalar[8];
+        UInt64 rev_simd[8];
+        run64x8(tt::scalar::reverseTranspose64x8, rev_scalar);
+        run64x8(tt::simd::reverseTranspose64x8, rev_simd);
+        ASSERT_EQ(memcmp(rev_scalar, rev_simd, sizeof(rev_scalar)), 0) << "reverseTranspose64x8 mismatch at iteration " << it;
+
+        /// Only the 8-byte, full-64 case takes the SIMD group shuffle, other widths and tails delegate to the scalar loop in both.
+        UInt64 src[64];
+        for (auto & v : src)
+            v = rng();
+
+        UInt64 mat_scalar[64] = {};
+        UInt64 mat_simd[64] = {};
+        tt::scalar::transposeMatrixBytes<UInt64>(src, mat_scalar, 64);
+        tt::simd::transposeMatrixBytes<UInt64>(src, mat_simd, 64);
+        ASSERT_EQ(memcmp(mat_scalar, mat_simd, sizeof(mat_scalar)), 0) << "transposeMatrixBytes mismatch at iteration " << it;
+
+        const UInt64 common_negative = rng();
+        const UInt64 common_positive = rng();
+        const UInt64 sign_bit = UInt64(1) << (rng() % 64);
+        char dst_scalar[64 * sizeof(UInt64)];
+        char dst_simd[64 * sizeof(UInt64)];
+        tt::scalar::reverseTransposeMatrixBytes<UInt64>(mat_scalar, dst_scalar, 64, common_negative, common_positive, sign_bit);
+        tt::simd::reverseTransposeMatrixBytes<UInt64>(mat_simd, dst_simd, 64, common_negative, common_positive, sign_bit);
+        ASSERT_EQ(memcmp(dst_scalar, dst_simd, sizeof(dst_scalar)), 0) << "reverseTransposeMatrixBytes mismatch at iteration " << it;
+    }
+}
+#endif
+
 TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
 {
     /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
 #ifndef DEBUG_OR_SANITIZER_BUILD
     auto decoder = std::make_shared<CompressionCodecMultiple>();
-    EXPECT_THROW(decoder->getCodecDesc(), Exception);
-    EXPECT_THROW(decoder->getFullCodecDesc(), Exception);
+    EXPECT_THROW(decoder->getCodecDescription(), Exception);
+    EXPECT_THROW(decoder->getFullCodecDescription(), Exception);
     /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
     EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
 #endif
 
     /// An explicitly configured empty chain has a description and can be nested.
     auto empty = std::make_shared<CompressionCodecMultiple>(Codecs{});
-    EXPECT_EQ(empty->getFullCodecDesc()->formatForErrorMessage(), "CODEC()");
+    EXPECT_EQ(empty->getFullCodecDescription()->formatForErrorMessage(), "CODEC()");
     EXPECT_NO_THROW(CompressionCodecMultiple{Codecs{empty}});
 }
 
@@ -1758,7 +1810,7 @@ TEST(CompressionCodecMultipleTest, NestedCodecDescription)
     CompressionCodecPtr outer = std::make_shared<CompressionCodecMultiple>(Codecs{inner});
 
     /// The inner chain is one argument of `CODEC`, even though its description is a list.
-    const auto full_description = outer->getFullCodecDesc();
+    const auto full_description = outer->getFullCodecDescription();
     const auto * function = full_description->as<ASTFunction>();
     ASSERT_NE(function, nullptr);
     EXPECT_EQ(function->name, "CODEC");

@@ -2,9 +2,9 @@
 # Tags: no-fasttest, no-parallel
 # no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
-# no-parallel: the proof event `ASTFuzzerOracleChecks` is server-global, and the assertions
-#              below require it to stay put, so no other test may run oracle checks against
-#              the same server meanwhile.
+# no-parallel: the proof events below are server-global, and the assertions require them to
+#              stay put, so no other test may run oracle checks against the same server
+#              meanwhile.
 #
 # `approx_top_k` / `approx_top_sum` keep a bounded counter table (the space-saving algorithm),
 # so which elements survive - and the counts reported for them - depend on the order the values
@@ -33,10 +33,15 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO oracle_approx_top SELECT number FROM numbers(200);
 "
 
-# The oracle rejects any query reading `system.*`, so reading the counter can never move it.
+# `ASTFuzzerOracleChecks` counts every oracle path, `ASTFuzzerOracleTLPAggregateChecks` only the
+# TLP Aggregate one. The probes read the former because the denylist they pin is the screen
+# shared by all nine oracles; the TLP Aggregate control at the end reads the latter.
+# The oracle rejects any query reading `system.*`, so reading a counter can never move it.
 get_counter()
 {
-    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = 'ASTFuzzerOracleChecks'"
+    local event="${1:-ASTFuzzerOracleChecks}"
+
+    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = '$event'"
 }
 
 # `send_logs_level = 'fatal'` suppresses the expected error-level log lines from random
@@ -73,6 +78,7 @@ get_counter()
 run_fuzzed_rounds()
 {
     local query="$1"
+    local event="${2:-ASTFuzzerOracleChecks}"
 
     $CLICKHOUSE_CLIENT --ignore-error --query "
         SET send_logs_level = 'fatal';
@@ -82,7 +88,7 @@ run_fuzzed_rounds()
         $query
         $query
         SELECT toInt64(sum(value)) FROM system.events
-        WHERE event = 'ASTFuzzerOracleChecks' SETTINGS ast_fuzzer_runs = 0;
+        WHERE event = '$event' SETTINGS ast_fuzzer_runs = 0;
     " 2>/dev/null | tail -n 1
 }
 
@@ -124,10 +130,15 @@ probe()
     # reading over as the next one's baseline costs nothing - either way it is two
     # invocations per probe - and keeps every probe self-contained, which is worth more now
     # that the probes are spread over two files with positive controls in between.
+    #
+    # The gate's stderr is discarded rather than left to reach the test's stderr: its exit
+    # status is the whole signal this branch reads, and `clickhouse-test` fails a test whose
+    # stderr is non-empty regardless of stdout, so letting a server error through would turn
+    # the diagnosis this branch exists to print into an unconditional test failure.
     if ! before=$($CLICKHOUSE_CLIENT --query "
         SELECT $aggregates FROM oracle_approx_top WHERE v > 5 FORMAT Null;
         SELECT toInt64(sum(value)) FROM system.events WHERE event = 'ASTFuzzerOracleChecks';
-    ")
+    " 2>/dev/null)
     then
         echo "$label is not a valid query"
         return
@@ -163,14 +174,15 @@ positive_control()
 {
     local label="$1"
     local aggregates="$2"
+    local event="${3:-ASTFuzzerOracleChecks}"
     local before
     local after
 
-    before=$(get_counter)
+    before=$(get_counter "$event")
     after=$before
     for _ in $(seq 1 10)
     do
-        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_approx_top WHERE v > 5;")
+        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_approx_top WHERE v > 5;" "$event")
         if [[ "$after" -gt "$before" ]]
         then
             break
@@ -186,5 +198,10 @@ positive_control()
 }
 
 positive_control "exact aggregates" "count(), min(v), max(v)"
+
+# The probes assert that no oracle accepted the query; this control adds that the TLP Aggregate
+# oracle is itself live here, so a probe's zero delta means that oracle rejected the spelling
+# rather than being out of reach. It admits a query only while no aggregate carries a combinator.
+positive_control "TLP Aggregate path" "count(), min(v), max(v)" ASTFuzzerOracleTLPAggregateChecks
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE oracle_approx_top"

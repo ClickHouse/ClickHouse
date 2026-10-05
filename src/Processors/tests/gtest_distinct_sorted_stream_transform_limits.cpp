@@ -24,21 +24,14 @@ namespace DB::ErrorCodes
 extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-/// Pins the cumulative limit accounting of DistinctSortedStreamTransform. The transform serves
-/// both the per-stream pre-distinct and the final distinct over a stream sorted by a prefix of
-/// the distinct columns. Its per-range hash set is cleared between ranges of equal sort-prefix
-/// values, so the set size reflects only the current range: max_rows_in_distinct and limit_hint
-/// must instead be checked against the cumulative count of emitted distinct rows
-/// (`total_output_rows`) — a stream of many ranges that are each below the limit has to trip on
-/// their sum. The byte limit stays on `data.getTotalByteCount()`, whose allocation does not
-/// shrink on clear.
+/// `DistinctSortedStreamTransform` clears its hash set between ranges of equal sort-prefix values.
+/// Row limits therefore use the cumulative emitted count, while byte limits measure the retained
+/// hash-table allocation, which does not shrink when the set is cleared.
 
 namespace
 {
 
-/// `transform(Chunk &)` is `protected` in the concrete transform but `public` in the
-/// abstract `ISimpleTransform` base, so the test drives it through the base reference,
-/// which virtual-dispatches to the override (exactly what the pipeline executor does).
+/// Invokes the protected override through the public `ISimpleTransform::transform` interface.
 void runTransform(ISimpleTransform & transform, Chunk & chunk)
 {
     transform.transform(chunk);
@@ -60,9 +53,8 @@ SortDescription makeSortDescription()
     return description;
 }
 
-/// One chunk = one sort-prefix range: "a" (the sort prefix) is `run_key` in every row, "b" is
-/// 0..rows-1, so the range holds `rows` distinct rows. Ascending `run_key` across chunks keeps
-/// the stream sorted, and each new range clears the transform's set.
+/// Builds one sort-prefix range with `a` equal to `run_key` and `rows` distinct values of `b`.
+/// Increasing `run_key` across chunks keeps the stream sorted and clears the set between chunks.
 Chunk makeRunChunk(UInt64 run_key, UInt64 rows)
 {
     auto a_column = ColumnUInt64::create();
@@ -75,11 +67,8 @@ Chunk makeRunChunk(UInt64 run_key, UInt64 rows)
     return Chunk(Columns{std::move(a_column), std::move(b_column)}, rows);
 }
 
-/// source (num_runs ranges of run_rows distinct rows each) -> DistinctSortedStreamTransform ->
-/// pull. Returns the total number of rows the transform emitted. Stopping early is the
-/// transform's `stopReading()`: the executor then closes its input and finishes the source,
-/// which is the only externally observable effect of the 'break' overflow mode and of
-/// limit_hint.
+/// Counts the rows emitted by a pipeline of sorted ranges. The `BREAK` overflow mode and `limit_hint`
+/// stop the source through `DistinctSortedStreamTransform::stopReading`.
 size_t countDistinctOutputRows(UInt64 num_runs, UInt64 run_rows, const SizeLimits & set_size_limits, UInt64 limit_hint)
 {
     auto header = makeHeader();

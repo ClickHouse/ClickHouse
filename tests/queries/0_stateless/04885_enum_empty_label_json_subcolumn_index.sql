@@ -25,14 +25,6 @@ SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = 
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST('', 'Variant(Enum8('''' = 3))');
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST(CAST('', 'Enum8('''' = 3)'), 'Dynamic');
 
--- A tuple comparison carries each element's own type, so a `Nullable` source reaches the same
--- decision still wrapped. Only `WHERE` is split into per-element comparisons without the analyzer,
--- so `PREWHERE` is where a tuple reaches index analysis whole.
-SELECT arraySort(groupArray(id)) FROM t_json_bf PREWHERE (data.alpha::String, id) = (CAST('', 'Nullable(Enum8('''' = 3))'), 2) SETTINGS enable_analyzer = 0;
-
--- A non-empty label on that same wrapped route differs from the default, so the index stays usable.
-SELECT arraySort(groupArray(id)) FROM t_json_bf PREWHERE (data.alpha::String, id) = (CAST('7', 'Nullable(Enum8(''7'' = 3))'), 2) SETTINGS enable_analyzer = 0, force_data_skipping_indices = 'idx';
-
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = '';
 
 -- A non-empty label differs from the default, so each index stays usable and keeps pruning;

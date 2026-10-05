@@ -1997,6 +1997,53 @@ def test_query_passing_type_mismatch(started_cluster):
     conn.close()
 
 
+def test_strict_query_local_only_column(started_cluster):
+    # A `MATERIALIZED` column of the table-backed engine is a physical column of the remote table: its
+    # value is read from MySQL, and a filter over it is pushed down like one over an ordinary column,
+    # so `external_table_strict_query` accepts it. An `ALIAS` column belongs to this source too, but exists
+    # only locally: its filter is applied locally and must be rejected under `external_table_strict_query`
+    # instead of being silently dropped as if it belonged to another table.
+    table_name = "strict_local_only_column"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, m INT NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1, 2), (2, 3)")
+        conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS mysql_strict_local_only")
+    node1.query(
+        f"CREATE TABLE mysql_strict_local_only (a Int32, m Int32 MATERIALIZED a + 1, l Int32 ALIAS a * 10) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE m = 2").rstrip() == "1"
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE l = 10").rstrip() == "1"
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE a = 1 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    # The `MATERIALIZED` column is read from the remote table, not computed from its expression.
+    assert node1.query("SELECT a, m FROM mysql_strict_local_only ORDER BY a").splitlines() == ["1\t2", "2\t3"]
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "SELECT count() FROM mysql_strict_local_only WHERE l = 10 SETTINGS external_table_strict_query = 1"
+    )
+
+    node1.query("DROP TABLE mysql_strict_local_only")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

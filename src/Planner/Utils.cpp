@@ -26,13 +26,12 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -594,11 +593,20 @@ NameSet checkAccessRights(
           */
         auto access = query_context->getAccess();
         const auto * alias = storage->as<StorageAlias>();
+        NameSet chain_granted;
+        if (alias)
+        {
+            Names all_columns;
+            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
+            for (const auto & column : storage_snapshot->metadata->getColumns())
+                all_columns.push_back(column.name);
+            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
+        }
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             /// An `Alias` also requires access to the selected column of its target table.
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
+                && (!alias || chain_granted.contains(column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -621,6 +629,29 @@ NameSet checkAccessRights(
     return {};
 }
 
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+{
+    NameSet column_names;
+    traverseQueryTree(
+        node,
+        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+        {
+            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+            const auto * column_node = parent->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                return true;
+            const auto & column_source = column_node->getColumnSourceOrNull();
+            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
+        },
+        [&](const QueryTreeNodePtr & current)
+        {
+            const auto * column_node = current->as<ColumnNode>();
+            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
+                column_names.insert(column_node->getColumnName());
+        });
+    return column_names;
+}
+
 static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & query_context)
@@ -639,12 +670,10 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
     {
         /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
         /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
-        const auto & table_function_storage = table_function_node->getStorage();
-        const auto * storage_view = table_function_storage ? table_function_storage->as<StorageView>() : nullptr;
-        if (!storage_view || !storage_view->isParameterizedView())
+        if (!table_function_node->isParameterizedView())
             return;
 
-        storage = table_function_storage;
+        storage = table_function_node->getStorage();
         storage_id = table_function_node->getStorageID();
         storage_snapshot = table_function_node->getStorageSnapshot();
     }
@@ -653,24 +682,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
         return;
     }
 
-    NameSet column_names;
-    traverseQueryTree(
-        filter_query_tree,
-        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
-        {
-            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
-            const auto * column_node = parent->as<ColumnNode>();
-            if (!column_node || !column_node->hasExpression())
-                return true;
-            const auto & column_source = column_node->getColumnSourceOrNull();
-            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
-        },
-        [&](const QueryTreeNodePtr & node)
-        {
-            const auto * column_node = node->as<ColumnNode>();
-            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
-                column_names.insert(column_node->getColumnName());
-        });
+    NameSet column_names = collectReferencedColumnNames(filter_query_tree, table_expression);
     if (column_names.empty())
         return;
 

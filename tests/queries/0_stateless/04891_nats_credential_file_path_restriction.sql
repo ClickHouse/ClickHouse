@@ -75,12 +75,10 @@ CREATE NAMED COLLECTION 04891_nats_existing_sql_collection AS
     nats_startup_connect_tries = 0, nats_reconnect_wait = 1;
 -- A full-definition `ATTACH` is validated exactly like `CREATE`, and unlike `CREATE` it tolerates
 -- a failing connection attempt, so the table exists afterwards and its metadata can be replayed.
--- The `SETTINGS` clause carries an unrelated key on purpose: an engine definition whose settings
--- are all inherited from the named collection is stored with an empty `SETTINGS` clause, which the
--- metadata reload then fails to parse.
+-- All of its settings come from the named collection, so the stored definition must carry no
+-- `SETTINGS` clause at all.
 ATTACH TABLE nats_file_from_existing_sql_collection UUID 'c6d2423a-9ab2-4a37-8e56-10e479541002' (key UInt64)
-ENGINE = NATS(04891_nats_existing_sql_collection)
-SETTINGS nats_num_consumers = 1;
+ENGINE = NATS(04891_nats_existing_sql_collection);
 DETACH TABLE nats_file_from_existing_sql_collection;
 ALTER NAMED COLLECTION 04891_nats_existing_sql_collection SET nats_credential_file = '/etc/passwd';
 ATTACH TABLE nats_file_from_existing_sql_collection; -- { serverError BAD_ARGUMENTS }
