@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -241,7 +242,7 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
 
     /// Wrapper engines may reference storage and access-control dependencies that are not
     /// represented by the current single-table cache contract.
-    if (!dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (!castStorage<MergeTreeData>(storage, DeferredTable::Load))
         return {};
 
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
