@@ -136,8 +136,8 @@ def compare(rows, record, suite, SortType, ResultFormat):
 
 
 def run_file(path, args, client, classes):
-    SLTParser, DTParser, Statement, Query, Control, SortType, ResultFormat = classes
-    parser = SLTParser() if args.suite == "sqlite" else DTParser()
+    SLTParser, DTParser, PGTParser, Statement, Query, Control, SortType, ResultFormat = classes
+    parser = {"sqlite": SLTParser, "duckdb": DTParser, "postgresql": PGTParser}[args.suite]()
     parser.get_file_name(str(path))
     parser.get_file_content()
     # These DuckDB runner guards describe the host or the DuckDB harness, not
@@ -153,13 +153,14 @@ def run_file(path, args, client, classes):
             parser.test_content,
         )
     # Reject connection/restart/loop directives instead of silently losing records.
-    directives = re.findall(r"(?m)^(?:require|loop|foreach|endloop|endfor|restart|reconnect|load|mode|set|sleep|query[^\n]*|statement[^\n]*)[^\n]*", parser.test_content)
-    unsupported = [line for line in directives if line.split()[0] in {"require", "loop", "foreach", "endloop", "endfor", "restart", "reconnect", "load", "mode", "set", "sleep"}
-                   or line.startswith("statement") and len(line.split()) > 2
-                   or line.startswith("query") and len(line.split()) > 2 and line.split()[2] not in {"nosort", "rowsort", "valuesort"}]
-    if unsupported:
-        yield {"file": str(path), "status": "unsupported_harness", "directives": unsupported[:10]}
-        return
+    if args.suite != "postgresql":
+        directives = re.findall(r"(?m)^(?:require|loop|foreach|endloop|endfor|restart|reconnect|load|mode|set|sleep|query[^\n]*|statement[^\n]*)[^\n]*", parser.test_content)
+        unsupported = [line for line in directives if line.split()[0] in {"require", "loop", "foreach", "endloop", "endfor", "restart", "reconnect", "load", "mode", "set", "sleep"}
+                       or line.startswith("statement") and len(line.split()) > 2
+                       or line.startswith("query") and len(line.split()) > 2 and line.split()[2] not in {"nosort", "rowsort", "valuesort"}]
+        if unsupported:
+            yield {"file": str(path), "status": "unsupported_harness", "directives": unsupported[:10]}
+            return
     parser.parse_file()
     reference = sqlite3.connect(":memory:") if args.suite == "sqlite" else None
     setup = []
@@ -169,6 +170,9 @@ def run_file(path, args, client, classes):
         with client.isolated_database():
             for record in parser.get_records():
                 item = {"file": str(path), "record": record.id, "sql": record.sql}
+                if args.suite == "postgresql" and (record.sql.lstrip().startswith("\\") or record.input_data):
+                    yield {**item, "status": "unsupported_psql_input"}
+                    break
                 if isinstance(record, Control):
                     yield {**item, "status": "unsupported_control"}
                     break
@@ -278,7 +282,7 @@ def run_file(path, args, client, classes):
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--squality", required=True, type=Path)
-    cli.add_argument("--suite", choices=["sqlite", "duckdb"], required=True)
+    cli.add_argument("--suite", choices=["sqlite", "duckdb", "postgresql"], required=True)
     cli.add_argument("--tests", required=True, type=Path)
     cli.add_argument("--endpoint", default="http://127.0.0.1:18173")
     cli.add_argument("--profile", choices=["default", "sql_standard"], default="sql_standard")
@@ -296,7 +300,7 @@ def main():
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
         cli.error("Require 0 <= --shard-index < --shard-count")
     sys.path.insert(0, str(args.squality.resolve()))
-    from src.testparser import SLTParser, DTParser
+    from src.testparser import SLTParser, DTParser, PGTParser
     from src.utils import Statement, Query, Control, SortType, ResultFormat, DBMS_Set
     DBMS_Set.add("clickhouse")
     settings = {"default_table_engine": "Memory", "max_execution_time": 5,
@@ -339,7 +343,7 @@ def main():
         for index in range(first_file, len(files)):
             path = files[index]
             try:
-                for item in run_file(path, args, client, (SLTParser, DTParser, Statement, Query, Control, SortType, ResultFormat)):
+                for item in run_file(path, args, client, (SLTParser, DTParser, PGTParser, Statement, Query, Control, SortType, ResultFormat)):
                     counts[item["status"]] += 1
                     out.write((json.dumps(item, ensure_ascii=False) + "\n").encode())
                     records_seen += 1
