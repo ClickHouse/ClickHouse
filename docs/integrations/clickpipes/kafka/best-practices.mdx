@@ -36,6 +36,14 @@ Each insert block covers a contiguous range of offsets and carries a determinist
 Token deduplication is bounded by the target table's [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) (the most recent 10,000 insert blocks by default) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (one hour by default). High-throughput pipes can churn through the block-count window quickly, so we recommend confirming and possibly increasing both of these settings on the target table to cover your worst-case replay delay. Data replayed after its token has left the window can be inserted again, so exactly-once isn't guaranteed in that case.
 </Note>
 
+<Note>
+**`from_beginning` is a no-op if the consumer group already has a committed offset**
+
+The offset strategy (`from_beginning`, `from_latest`, `from_timestamp`) only applies the first time a consumer group reads a given partition. It has no effect if the broker already holds a committed offset for that consumer group, which is exactly what happens when you delete and recreate a ClickPipe while keeping the same consumer group name across the recreate (whether that name was auto-generated or explicitly pinned, e.g. in Terraform). The broker resumes from its last committed offset instead of re-reading from the beginning, and messages produced or retained before that offset are skipped rather than re-ingested.
+
+If you need a clean re-read of the full topic on recreation, use a new consumer group name (or explicitly reset/delete the old consumer group's offsets on the broker side) rather than relying on the offset strategy alone.
+</Note>
+
 The main tradeoff is part size. Larger insert blocks produce fewer, larger [parts](/concepts/core-concepts/parts) in ClickHouse, which keeps merge overhead low. ClickPipes holds a partition's rows in memory while it builds a block, so the part size it can reach depends on the memory available to the pipe — when memory is tight, it builds smaller blocks and the table accumulates more parts. Giving the pipe more memory lets it build larger blocks, producing fewer parts.
 
 A pipe works best when the number of partitions is close to the number of internal insert "workers", since each worker then handles roughly one partition and has the memory headroom to build large blocks. Both the worker count and the available memory scale with replica size and count, which you configure under **Settings** -> **Advanced Settings** -> **Scaling**.

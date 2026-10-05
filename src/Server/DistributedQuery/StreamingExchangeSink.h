@@ -23,19 +23,15 @@ namespace DB
 class StreamingExchangeSink final : public ISink
 {
 public:
-    /// With `input_is_serialized_` the input chunks are packets made by
-    /// `StreamingExchangeSerializingTransform` and are sent as they are; otherwise the sink
-    /// serializes the chunks itself.
-    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool input_is_serialized_)
+    /// The input chunks are packets made by `StreamingExchangeSerializingTransform`, one per chunk,
+    /// and are sent as they are. The sink adds the end-of-stream packet when the input ends.
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
-        , input_is_serialized(input_is_serialized_)
     {
         wait_events_epoll.add(port_update_wakeup.fd());
     }
-
-    ~StreamingExchangeSink() override;
 
     String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
@@ -61,22 +57,20 @@ private:
     /// Send the buffers of `send_queue` to the socket in non-blocking mode, in order.
     void sendToSocket();
 
-    /// Checks if out buffer has not too much data already if so, it is possible to add new chunk.
+    /// True while the unsent bytes are below the cap, so the sink may take another packet.
     bool canAddChunk() const;
     /// The status of a sink that must wait for room in its send queue; counts the wait.
     Status waitForSendQueueRoom();
 
-    /// Move the data serialized into `out` to `send_queue` and reset `out`.
-    void flushSerializedData();
     /// Writes the end-of-stream packet and sends it; nothing follows it on the stream.
     void sendEndOfStream();
 
     /// A buffer waiting to be sent: a packet column, shared with the sinks of the other destinations
-    /// of a broadcast, or data the sink serialized itself.
+    /// of a broadcast, or the end-of-stream packet.
     struct SendBuffer
     {
         std::variant<ColumnPtr, String> data;
-        /// Packets in `data`; counted as sent once the whole buffer is written to the socket.
+        /// Packets in `data`, one; counted as sent once the whole buffer is written to the socket.
         size_t packets = 0;
 
         std::string_view bytes() const;
@@ -93,21 +87,14 @@ private:
     /// writable idle socket would wake the executor in a busy loop.
     void updateSocketWaitEvents();
 
-    bool hasUnsentBytes() const { return !send_queue.empty() || out->count() > 0; }
+    bool hasUnsentBytes() const { return !send_queue.empty(); }
 
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
-    const bool input_is_serialized;
 
-    /// In-memory buffer to which the sink serializes chunks itself.
-    /// Once it becomes big enough its contents move to `send_queue`.
-    std::shared_ptr<WriteBufferFromOwnString> out;
-    /// Packets serialized into `out` and not yet moved to `send_queue`.
-    size_t packets_in_out = 0;
-
-    /// Ready buffers in send order: packets that arrived serialized and the flushed contents of
-    /// `out`. The front buffer is being written to the socket, `send_position` bytes of it are sent.
+    /// Buffers in send order. The front buffer is being written to the socket, `send_position`
+    /// bytes of it are sent.
     DequeWithMemoryTracking<SendBuffer> send_queue;
     size_t send_position = 0;
     /// Bytes in `send_queue` that are not sent yet.
@@ -126,11 +113,10 @@ private:
     };
     std::optional<SendQueueFull> send_queue_full;
 
-    const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
-    /// Cap on total unsent bytes (`send_queue` + `out`); back-pressure trips here.
+    /// Cap on the unsent bytes in `send_queue`; back-pressure trips here.
     static constexpr size_t MAX_PENDING_BYTES = 16 * 1024 * 1024;
     bool input_is_finished = false;     /// We have read all the data from input port.
-    bool final_chunk_added = false;     /// Final empty chunk was added to signal the exchange stream receiver that we are done.
+    bool end_of_stream_added = false;   /// The end-of-stream packet is queued; nothing follows it.
     bool no_more_data_needed = false;   /// Set to true when exchange stream receiver has sent us NoMoreDataNeeded.
 
     /// Accumulator for the inbound NoMoreDataNeeded packet (single UInt64, no body).
@@ -139,7 +125,7 @@ private:
 
     /// Combines the socket and the port-update wakeup into one fd that the executor polls
     /// while the sink waits in `Async`.
-    Epoll wait_events_epoll;
+    Epoll wait_events_epoll{EpollNesting::Leaf};
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting sink
     /// when its input port is updated; drained in `work`.
     WakeupFd port_update_wakeup;

@@ -33,8 +33,8 @@ def start_cluster():
             " SETTINGS allow_dimensions_outside_sorting_key = 1"
         )
         node.query(
-            "CREATE TABLE prometheus_metrics (metric_family_name String, type String, unit String, help String)"
-            " ENGINE = ReplacingMergeTree ORDER BY metric_family_name"
+            "CREATE TABLE prometheus_metrics (metric_family String, type String, unit String, help String)"
+            " ENGINE = ReplacingMergeTree ORDER BY metric_family"
         )
         node.query(
             "CREATE TABLE prometheus ENGINE = TimeSeries"

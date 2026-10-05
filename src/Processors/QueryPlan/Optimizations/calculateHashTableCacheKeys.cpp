@@ -11,7 +11,9 @@
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -22,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -40,14 +43,23 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
-    hash.update(read.getSerializationName());
+    /// `SipHash::update` of a string mixes in its bytes and nothing else, so a sequence of strings
+    /// hashed one after another is not self-delimiting: a header of `a UInt8` and one of `aU Int8`
+    /// both produce the bytes `aUInt8`. Mix in each length so that only the same split matches.
+    const auto update_with_size = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+
+    update_with_size(read.getSerializationName());
     if (const auto & snapshot = read.getStorageSnapshot())
     {
         StorageID storage_id = snapshot->storage.getStorageID();
         if (storage_id.hasUUID())
             hash.update(storage_id.uuid.toUnderType());
         else
-            hash.update(storage_id.getFullTableName());
+            update_with_size(storage_id.getFullTableName());
     }
     /// A storage created by a table function has no UUID, and its StorageID does not depend on
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
@@ -58,6 +70,38 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
         if (table_expression->as<TableFunctionNode>())
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
+    /// The columns the read produces. Two reads of the same table that produce different columns move
+    /// different volumes of data, so they must not share a statistics entry: the cache stores
+    /// `input_bytes` and `output_bytes`, and nothing downstream catches the difference - the drift
+    /// check compares `total_rows_to_read`, which is the same for both. A projection above the read is
+    /// no help either, since one that hands its inputs onward unchanged is transparent for the key.
+    ///
+    /// Types are hashed alongside the names because a subcolumn is a column of its own here: `n.a` and
+    /// `n.a.size0` are both read from the same `Nested` column under names that differ only in a
+    /// suffix, and they differ by the whole array payload.
+    ///
+    /// This is the read's own header, before any renaming step, so the names are the table's columns
+    /// rather than the branch-local `__tableN.x` form, and the single-replica and parallel-replicas
+    /// plan builds agree on them.
+    for (const auto & column : *read.getOutputHeader())
+    {
+        update_with_size(column.name);
+        update_with_size(column.type->getName());
+    }
+    /// `SAMPLE`, `FINAL` and `OFFSET` change how much of the table the read touches while leaving the
+    /// storage, the header and the PREWHERE identical, so without this `SAMPLE 1` and `SAMPLE 0.1`
+    /// share an entry and the sampled query is priced at ten times what it reads. `SAMPLE` is the one
+    /// case the drift check would eventually catch, since it changes the row count too, but only
+    /// after a decision has already been made on the wrong estimate.
+    if (const auto & modifiers = read.getQueryInfo().table_expression_modifiers)
+        modifiers->updateTreeHash(hash);
+    /// A row policy is pushed into the read itself rather than becoming a step above it, so there is
+    /// nothing else in the plan to tell two policies apart: the header is the same, and a policy over
+    /// a column outside the primary key leaves index analysis - and so the drift check - unmoved. Two
+    /// policies that pass very different numbers of rows to the boundary would otherwise share an
+    /// entry.
+    if (const auto & row_level_filter = read.getRowLevelFilter())
+        row_level_filter->actions.updateHash(hash);
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();
@@ -78,23 +122,27 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
+/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
+/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
+/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
+/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
+/// `isPassthroughExpressionWithRenames` below.
+bool isByteTransparentTransform(const ITransformingStep & transform)
+{
+    return transform.getTransformTraits().preserves_number_of_rows
+        && !transform.getInputHeaders().empty()
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
-    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
-    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
-    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
-    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
-    /// rename-only step keeps the same byte layout and stays transparent.
-    ///
-    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
-    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
-    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
-    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
-    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
-    /// consequence is a slightly-off estimate, never a wrong result.
-    if (transform.getTransformTraits().preserves_number_of_rows
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+    /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
+    /// `output_bytes`, not just cardinality, so a row-preserving `ExpressionStep` that adds, removes,
+    /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
+    /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
+    /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
+    if (isByteTransparentTransform(transform))
         return 0;
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
@@ -131,6 +179,66 @@ namespace DB
 
 namespace QueryPlanOptimizations
 {
+
+/// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
+/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, no two outputs may
+/// land on the same one, and there must be as many outputs as inputs. That makes the mapping a
+/// bijection: nothing is dropped, added, duplicated or computed, so the columns that leave are the
+/// columns that came in and the bytes are the same however they are ordered.
+///
+/// The mapping is what decides this, not a comparison of the two headers position by position. An
+/// `ALIAS` carries its child's type, so following each output to its input compares like with like, and
+/// a reorder of unlike types - `SELECT b, a` over `(a UInt64, b String)`, which the planner really does
+/// emit as a `Project names` or `Projection` of its own - is recognised for what it is. Reading the
+/// headers off by position would call that a change of layout and refuse to look through the step.
+///
+/// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
+/// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
+/// preserves the row count, yet doubles the bytes, and so does any first-stage `Projection` - the
+/// arbitrary DAG built from the query's projection list (`Planner.cpp`,
+/// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
+/// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
+/// step is `a + a`, not `a + b`.
+///
+/// A forwarded column is an `INPUT` whether or not it happens to be constant - `ActionsDAG::addInput`
+/// never sets `node.column` - so a `COLUMN` output is always a constant this step materialized itself,
+/// which is the case to reject.
+static bool outputsAreRenamedInputs(const ActionsDAG & actions)
+{
+    const auto & inputs = actions.getInputs();
+    const auto & outputs = actions.getOutputs();
+    if (outputs.size() != inputs.size())
+        return false;
+
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
+    for (const auto * output : outputs)
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        if (!forwarded.insert(node).second)
+            return false;
+    }
+    return true;
+}
+
+/// Is this a wrapper that can be skipped over - looked through when locating the boundary the replicas
+/// ship from, and collapsed onto its child when keying it? Only an expression that permutes its inputs
+/// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
+/// (it preserves rows and layout) and must still be a boundary of its own, which is what
+/// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    return expression && expression->getTransformTraits().preserves_number_of_rows
+        && !expression->getInputHeaders().empty()
+        && outputsAreRenamedInputs(expression->getExpression());
+}
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
@@ -341,13 +449,38 @@ void calculateHashTableCacheKeys(
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
+        }
 
-        const auto raw = frame.hash.get64();
-        raw_hashes[&node] = raw;
-        cache_keys[&node] = raw;
+        /// A step that contributes nothing must not contribute a hashing round either. Hashing its
+        /// child through it gives `SipHash(key(child))`, which is not `key(child)`, so the mere
+        /// presence of such a step shifts every key above it - the step is free of content but not
+        /// free of position. Adopt the child's key instead, which makes it genuinely invisible: a
+        /// plan that carries one and a plan that does not then agree on every key above it.
+        ///
+        /// This is what keeps `optimizePrewhere` from moving the keys. A filter fully moved into
+        /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
+        /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
+        /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
+        /// hence transparent here - and with the adoption below the automatic parallel replicas
+        /// decision can still find its counterpart in the other plan.
+        ///
+        /// A transforming step always has exactly one child, so the join branches above never reach
+        /// this; the guard is for safety, not for a shape that occurs.
+        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1)
+        {
+            raw_hashes[&node] = raw_hashes[node.children.front()];
+            cache_keys[&node] = cache_keys[node.children.front()];
+        }
+        else
+        {
+            const auto raw = frame.hash.get64();
+            raw_hashes[&node] = raw;
+            cache_keys[&node] = raw;
+        }
 
         stack.pop_back();
     }

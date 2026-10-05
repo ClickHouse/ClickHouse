@@ -13,7 +13,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/transformTypesRecursively.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/FieldVisitorToCastedLiteral.h>
 #include <Parsers/parseFieldFromCastedLiteral.h>
 #include <IO/ReadBufferFromString.h>
@@ -88,6 +88,28 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
+String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
+{
+    if (parameters.empty())
+        return {};
+
+    const bool with_types = function.shouldPrintParametersWithTypes();
+
+    WriteBufferFromOwnString stream;
+    stream << '(';
+    for (size_t i = 0, size = parameters.size(); i < size; ++i)
+    {
+        if (i)
+            stream << ", ";
+        if (with_types)
+            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
+        else
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+    }
+    stream << ')';
+    return stream.str();
+}
+
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
@@ -98,32 +120,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-
-    if (!parameters.empty())
-    {
-        stream << '(';
-        if (function->shouldPrintParametersWithTypes())
-        {
-            FieldVisitorToCastedLiteral visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        else
-        {
-            FieldVisitorToString visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        stream << ')';
-    }
+    stream << formatParameters(*function, parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
@@ -208,6 +205,14 @@ bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name,
         return false;
 
     return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
+}
+
+void DataTypeAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+{
+    if (function->isOnlyWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The function '{}' can only be used as a window function, not as an aggregate function, "
+                        "so its state cannot be used as a data type", function->getName());
 }
 
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
@@ -342,6 +347,8 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    DataTypeAggregateFunction::checkSupportedFunctions(function);
+
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
@@ -350,23 +357,23 @@ static DataTypePtr create(const ASTPtr & arguments)
 static void setVersionToAggregateFunctionsImpl(
     DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
 {
-    auto callback = [&choose_version, if_empty](DataTypePtr & column_type)
+    auto rewrite = [&choose_version, if_empty](const DataTypePtr & column_type) -> DataTypePtr
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
         if (!aggregate_function_type || !aggregate_function_type->isVersioned())
-            return;
+            return column_type;
 
         if (if_empty && aggregate_function_type->hasExplicitVersion())
-            return;
+            return column_type;
 
         const auto function = aggregate_function_type->getFunction();
         const std::optional<size_t> chosen_version = choose_version(function);
         if (!chosen_version)
-            return;
+            return column_type;
         const size_t new_version = *chosen_version;
 
         if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
-            return;
+            return column_type;
 
         auto new_type = std::make_shared<DataTypeAggregateFunction>(
             function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
@@ -378,7 +385,7 @@ static void setVersionToAggregateFunctionsImpl(
         {
             const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
             if (!simple)
-                return;
+                return column_type;
 
             /// The custom name keeps its own copy of the argument types, and for
             /// `SimpleAggregateFunction` over an `AggregateFunction` that argument is the state type
@@ -394,10 +401,13 @@ static void setVersionToAggregateFunctionsImpl(
                 simple->getFunction(), new_argument_types, simple->getParameters())));
         }
 
-        column_type = new_type;
+        return new_type;
     };
 
-    callOnNestedSimpleTypes(type, callback);
+    /// `Keep`: a wrapper whose custom name cannot follow the rewrite is left as it was, so an
+    /// unrelated state elsewhere in the type is still re-versioned.
+    if (auto rewritten = rewriteTypeTree(type, rewrite, CustomizationPolicy::Keep))
+        type = rewritten;
 }
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
@@ -497,11 +507,14 @@ formats.
 There is a special Session level setting `aggregate_function_input_format` that allows to build state from the input values.
 It supports the following formats:
 
-- `state` - binary string with the serialized state (the default).
+- `state` - the serialized state (the default).
 If you dump data into, for example, the `TabSeparated` format with a `SELECT`
 query, then this dump can be loaded back using the `INSERT` query.
-- `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
-- `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
+- `value` - the format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; the value is aggregated to form the state.
+- `array` - the format expects an Array of values, as described in the `value` option above; all the elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes, the column is read as if it had the type of the values (`T`, `Tuple(T1, T2)`, or an `Array` of them),
+in the representation the input format uses for that type. This works the same way in every input format, from `CSV` and `JSONEachRow` to `RowBinary` and `Parquet`.
 
 ### Data Selection {#data-selection}
 
@@ -539,15 +552,7 @@ combinator.
 
 bool hasAggregateFunctionType(const DataTypePtr & type)
 {
-    auto result = false;
-    auto check = [&](const IDataType & t)
-    {
-        result |= WhichDataType(t).isAggregateFunction();
-    };
-
-    check(*type);
-    type->forEachChild(check);
-    return result;
+    return anyInTypeTree(*type, [](const IDataType & t) { return WhichDataType(t).isAggregateFunction(); });
 }
 
 }

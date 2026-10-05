@@ -51,6 +51,8 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
+
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
     /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
     void createTable(
@@ -88,7 +90,8 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 };
 
 }

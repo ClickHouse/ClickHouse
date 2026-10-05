@@ -1,0 +1,14 @@
+DateTime argument
+DateTime(\'UTC\')	DateTime(\'UTC\')	DateTime(\'UTC\')	DateTime(\'UTC\')	Date	Date	Date	Date
+Date argument
+DateTime	Date	Date	Date	Date
+DateTime64 argument
+DateTime64(0, \'UTC\')	DateTime64(0, \'UTC\')	Date32
+Date32 argument
+DateTime64(0)	Date32	Date32
+Same type and value as toStartOfX for Date and DateTime arguments
+1	1	1	1
+Extended arguments still get extended results
+1969-12-31 00:00:00	1969-12-01
+Setting disabled
+DateTime(\'UTC\')	Date

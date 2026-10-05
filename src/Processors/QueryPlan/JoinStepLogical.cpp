@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -648,7 +649,7 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
-QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
+QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
     return {&child_plan};
 }
@@ -1044,12 +1045,7 @@ struct IEJoinPlanDescription
 /// top-level NULL/NaN divergence by excluding such rows from matching.
 static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
-    check(*type);
-    if (!result)
-        type->forEachChild(check);
-    return result;
+    return anyInTypeTree(*type, [](const IDataType & t) { return isTuple(t) || isDynamic(t) || isVariant(t); });
 }
 
 /// An inequality between the two tables that the IEJoin operator can use as one of its two key
@@ -2572,9 +2568,9 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, version, join_operator);
     sorting_settings.updatePlanSettings(settings);
 }
 
@@ -2670,7 +2666,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
     auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),

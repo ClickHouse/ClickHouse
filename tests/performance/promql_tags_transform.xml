@@ -90,7 +90,7 @@
         CREATE TABLE promql_tags_transform ENGINE = TimeSeries
     </create_query>
 
-    <fill_query do_not_check_in_pr="119225">
+    <fill_query>
         INSERT INTO promql_tags_transform (metric_name, tags, samples)
         SELECT
             if(number &lt; 100000, 'foo', 'bar'),

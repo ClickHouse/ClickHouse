@@ -6,8 +6,9 @@
 namespace DB
 {
 
-StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(SharedHeader input_header)
+StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(SharedHeader input_header, CompressionCodecPtr codec_)
     : ISimpleTransform(std::move(input_header), StreamingExchangeProtocol::packetStreamHeader(), /*skip_empty_chunks_=*/ false)
+    , codec(std::move(codec_))
 {
 }
 
@@ -19,7 +20,7 @@ void StreamingExchangeSerializingTransform::transform(Chunk & chunk)
     size_t packet_offset = 0;
     {
         WriteBufferFromVector<ColumnString::Chars> out(chars);
-        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out);
+        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out, codec);
         out.finalize();
     }
     StreamingExchangeProtocol::finishDataPacket(reinterpret_cast<char *>(chars.data()) + packet_offset, chars.size() - packet_offset);

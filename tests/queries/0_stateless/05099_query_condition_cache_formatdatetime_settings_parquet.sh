@@ -36,7 +36,7 @@ touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 # The reader only evaluates the condition itself, and therefore only records a verdict, when the optimizer
 # moves it to PREWHERE. The stateless tests randomize the settings that control that, so pin them; the query
 # condition cache also needs the analyzer.
-COMMON_SETTINGS="enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+COMMON_SETTINGS="enable_analyzer = 1, optimize_move_to_prewhere = 1"
 
 qid_default="${CLICKHOUSE_TEST_UNIQUE_NAME}_default"
 qid_default_again="${CLICKHOUSE_TEST_UNIQUE_NAME}_default_again"

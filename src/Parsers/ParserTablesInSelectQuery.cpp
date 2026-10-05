@@ -13,8 +13,6 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Core/Joins.h>
 
 
@@ -299,8 +297,31 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
-        if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
-            return false;
+        /// `LATERAL` is only a keyword when it is followed by a subquery, the only supported lateral shape.
+        /// Otherwise it is left to `ParserTableExpression`, so a table, view or table function named `lateral`
+        /// (`JOIN lateral ON ...`, `JOIN lateral(...) ON ...`) still parses.
+        Pos before_lateral = pos;
+        bool is_lateral = false;
+        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket)
+        {
+            is_lateral = ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected)
+                && res->table_expression->as<ASTTableExpression &>().subquery;
+        }
+
+        if (is_lateral)
+        {
+            table_join->lateral = true;
+
+            if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
+        }
+        else
+        {
+            pos = before_lateral;
+            res->table_expression = nullptr;
+            if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
+                return false;
+        }
 
         if (table_join->kind != JoinKind::Comma
             && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
@@ -392,14 +413,11 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserTablesInSelectQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementTablesInSelect(StatementFactory & factory)
-{
-    factory.registerStatement("FROM",
+    documentation["FROM"] =
     {
         .description = R"DOCS_MD(
 The `FROM` clause specifies the source to read data from:
@@ -517,9 +535,9 @@ FROM [db.]table SELECT ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "ARRAY JOIN", "SAMPLE", "WHERE"},
-    });
+    };
 
-    factory.registerStatement("JOIN",
+    documentation["JOIN"] =
     {
         .description = R"DOCS_MD(
 The `JOIN` clause produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as a "self-join".
@@ -566,6 +584,65 @@ Additional join types available in ClickHouse are:
 <Note>
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 </Note>
+
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
+expressions on its left side; the subquery is evaluated for each distinct combination of the left-side
+column values it references, and its result is joined to every left row with that combination:
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
+
+It is experimental and disabled by default; enable it with the
+[`allow_experimental_lateral_join`](/reference/settings/session-settings/allow#allow_experimental_lateral_join) setting.
+
+Only the following subset is supported so far; anything else is rejected with an error:
+
+- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
+- The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
+- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
+  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
+- The `GLOBAL` and `LOCAL` join modifiers are not supported.
+- The lateral subquery must reference at least one column of the left side. Use a regular join for a
+  non-correlated subquery.
+- The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
+  once per left row, so it must not contain functions that are non-deterministic within a query, such as
+  `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
+  Functions that are constant within a query, such as `now`, are allowed.
+- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
+  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
+  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
+  not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The rows of all evaluations are matched to the left rows by a single join. As for any hash join,
+  `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
+  planner chooses that side: with the default settings (`correlated_subqueries_use_in_memory_buffer = 1`)
+  it is the left side of `JOIN LATERAL`, because the left rows must be fully read before the lateral
+  subquery is evaluated; otherwise it can be the results of all evaluations together. The limits are always
+  enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
+
+**Example**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS allow_experimental_lateral_join = 1;
+```
 
 ## Settings {#settings}
 
@@ -999,7 +1076,23 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limits size of the hash table.
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
-setting instructs.
+setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
+below the spill threshold normally stops the query before it can spill. Two settings change that:
+`enable_adaptive_memory_spill_scheduler` can still spill a join that the threshold below made
+spill-capable, and
+`legacy_join_size_limits_trigger_spilling` turns the two caps back into spill triggers on disk.
+
+To let a join keep running by spilling the right side to disk instead of failing, use:
+
+- [max_bytes_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) — Absolute spill threshold.
+- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
+
+These are the threshold-based spill trigger for every hash-based algorithm, including `grace_hash`; under memory
+pressure `enable_adaptive_memory_spill_scheduler` can spill earlier than they ask for — but only once one of
+them is non-zero, since a join with no threshold at all never spills. The `join_algorithm` you pick
+decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect
+it in memory and switch over when the threshold is crossed — not whether these settings apply. The one exception is
+`legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both thresholds and spills on the two hard caps instead.
 
 ## Examples {#examples}
 
@@ -1059,9 +1152,9 @@ FROM <left_table>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "ARRAY JOIN", "IN", "UNION"},
-    });
+    };
 
-    factory.registerStatement("ARRAY JOIN",
+    documentation["ARRAY JOIN"] =
     {
         .description = R"DOCS_MD(
 It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
@@ -1069,7 +1162,7 @@ It is a common operation for tables that contain an array column to produce a ne
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
 
 <Note>
-PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL` are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function.
+PostgreSQL's `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)` table-source forms are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function. `JOIN LATERAL <subquery>` over a correlated subquery is supported separately as an experimental feature, see [`JOIN`](/reference/statements/select/join#lateral-join).
 </Note>
 
 Syntax:
@@ -1457,9 +1550,9 @@ FROM <left_subquery>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "FROM"},
-    });
+    };
 
-    factory.registerStatement("SAMPLE",
+    documentation["SAMPLE"] =
     {
         .description = R"DOCS_MD(
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
@@ -1577,7 +1670,9 @@ SELECT ... FROM table SAMPLE k OFFSET m
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
-    });
+    };
+
+    return documentation;
 }
 
 }

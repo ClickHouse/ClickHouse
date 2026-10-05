@@ -10,33 +10,21 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
-<BetaBadge />
-
-<Info>
-  Приём данных из MySQL в ClickHouse Cloud через ClickPipes доступен в рамках публичной бета-версии.
-</Info>
-
-MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных) (фиксацию изменений данных)** для непрерывной ингестии.
+MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных)** для непрерывной ингестии.
 
 MySQL ClickPipes можно развёртывать и управлять ими вручную через интерфейс ClickPipes, а также программно с использованием [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## Предварительные требования
-</div>
+## Предварительные требования {#prerequisites}
 
 [//]: # "TODO Конфигурация репликации binlog не нужна для одноразовых пайпов ингестии. В прошлом это уже вызывало путаницу, поэтому нам также следует указать минимальные требования для пакетной загрузки, чтобы не отпугнуть пользователей."
 
 Чтобы начать, сначала убедитесь, что ваша база данных MySQL правильно настроена для репликации binlog. Шаги настройки зависят от того, как именно развёрнут MySQL, поэтому следуйте соответствующему руководству ниже:
 
-<div id="supported-data-sources">
-  ### Поддерживаемые источники данных
-</div>
+### Поддерживаемые источники данных {#supported-data-sources}
 
 | Name                                                              | Logo | Details                                                                                                                            |
 | ----------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,9 +38,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 После настройки исходной базы данных MySQL можно перейти к созданию ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## Создайте ClickPipe
-</div>
+## Создайте ClickPipe {#create-your-clickpipe}
 
 Убедитесь, что вы вошли в свою учётную запись ClickHouse Cloud. Если у вас ещё нет учётной записи, вы можете зарегистрироваться [здесь](https://cloud.clickhouse.com/).
 
@@ -70,9 +56,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="Выберите MySQL" size="lg" border />
 
-<div id="add-your-source-mysql-database-connection">
-  ### Добавьте подключение к исходной базе данных MySQL
-</div>
+### Добавьте подключение к исходной базе данных MySQL {#add-your-source-mysql-database-connection}
 
 4. Заполните сведения о подключении к вашей исходной базе данных MySQL, которую вы настроили на этапе предварительной подготовки.
 
@@ -83,15 +67,11 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Заполните сведения о подключении" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (Необязательно) Изменение настроек TLS
-</div>
+#### (Необязательно) Изменение настроек TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (Необязательно) Настройте SSH-туннелирование
-</div>
+#### (Необязательно) Настройте SSH-туннелирование {#optional-set-up-ssh-tunneling}
 
 Вы можете указать параметры SSH-туннелирования, если ваша исходная база данных MySQL недоступна из интернета.
 
@@ -111,9 +91,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 После заполнения сведений о подключении нажмите `Next`.
 
-<div id="advanced-settings">
-  #### Настройка расширенных параметров
-</div>
+#### Настройка расширенных параметров {#advanced-settings}
 
 При необходимости можно настроить расширенные параметры. Краткое описание каждого параметра приведено ниже:
 
@@ -124,9 +102,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 * **Количество таблиц в снимке, обрабатываемых параллельно**: количество таблиц, которые будут извлекаться параллельно во время начального снимка. Это полезно, если у вас много таблиц и вы хотите управлять количеством таблиц, извлекаемых параллельно.
 * **Server ID**: необязательный параметр для задания идентификатора сервера для репликации binlog на сервере MySQL. Если он не задан, ClickPipes сгенерирует случайный идентификатор сервера, который может меняться в течение жизненного цикла ClickPipe. Используйте его, чтобы однозначно идентифицировать ваш ClickPipe на стороне исходного сервера MySQL.
 
-<div id="configure-the-tables">
-  ### Настройте таблицы
-</div>
+### Настройте таблицы {#configure-the-tables}
 
 5. Здесь вы можете выбрать целевую базу данных для вашего ClickPipe. Можно выбрать существующую базу данных или создать новую.
 
@@ -136,9 +112,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 7. <SettingPartitionBy />
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### Проверьте разрешения и запустите ClickPipe
-</div>
+### Проверьте разрешения и запустите ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 8. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
 
@@ -146,9 +120,7 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 Наконец, см. страницу [&quot;FAQ по ClickPipes для MySQL&quot;](/ru/integrations/clickpipes/mysql/faq), где описаны распространённые проблемы и способы их решения.
 
-<div id="whats-next">
-  ## Что дальше?
-</div>
+## Что дальше? {#whats-next}
 
 [//]: # "TODO Написать отдельное руководство по миграции для MySQL и рекомендации по лучшим практикам, аналогичные существующим материалам для PostgreSQL. Текущее руководство по миграции ссылается на движок таблицы MySQL, что не лучший вариант."
 

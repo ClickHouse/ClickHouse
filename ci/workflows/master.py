@@ -2,12 +2,12 @@ from praktika import Workflow
 
 from ci.defs.defs import (
     BASE_BRANCH,
-    BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     GH_AUTH_TRUSTED_LAMBDA_NAME,
     LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
+    with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
@@ -22,12 +22,9 @@ MASTER_FUNCTIONAL_TESTS_JOBS = [
     job for job in JobConfigs.functional_tests_jobs if "arm_binary" not in job.name
 ] + JobConfigs.functional_tests_master_release_jobs
 
-# Add long retention tags to subset of artifacts
-clickhouse_binaries_with_tags = []
-for artifact in ArtifactConfigs.clickhouse_binaries:
-    if artifact.name in BINARIES_WITH_LONG_RETENTION:
-        artifact = artifact.add_tags({"retention": "long"})
-    clickhouse_binaries_with_tags.append(artifact)
+clickhouse_binaries_with_tags = with_long_retention_tags(
+    ArtifactConfigs.clickhouse_binaries
+)
 
 workflow = Workflow.Config(
     name="MasterCI",

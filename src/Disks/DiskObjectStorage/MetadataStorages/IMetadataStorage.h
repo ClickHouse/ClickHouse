@@ -300,6 +300,7 @@ public:
     }
 
     virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     virtual bool appliesOperationsEagerly() const

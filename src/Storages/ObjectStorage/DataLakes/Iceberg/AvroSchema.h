@@ -658,6 +658,12 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                         "field-id": 135
                     },
                     {
+                        "name": "referenced_data_file",
+                        "type": ["null", "string"],
+                        "doc": "Fully qualified location of a data file that all deletes reference",
+                        "field-id": 143
+                    },
+                    {
                         "name": "sort_order_id",
                         "type": ["null", "int"],
                         "doc": "Sort order ID",
