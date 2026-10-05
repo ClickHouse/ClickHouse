@@ -15,8 +15,8 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The implicit default must preserve the decay-length marker encoded in the type.
 SELECT
-    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'value_at_anchor') = 0
-    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'anchor_time') = 0
+    tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'value') = 0
+    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecaying64(10)'), 'timestamp') = 0
     AND exponentialTimeDecayingDecayLength(defaultValueOfTypeName('ExponentialTimeDecaying64(10)')) = 10;
 
 -- Direct typed input uses the validating serialization, including when nested.
@@ -36,14 +36,14 @@ CREATE TABLE time_decay_default_insert
 )
 ENGINE = Memory;
 INSERT INTO time_decay_default_insert (id) VALUES (1);
-SELECT tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0
+SELECT tupleElement(value, 'value') = 0 AND tupleElement(value, 'timestamp') = 0
 FROM time_decay_default_insert;
 
 CREATE TABLE time_decay_default_alter (id UInt8) ENGINE = Memory;
 INSERT INTO time_decay_default_alter VALUES (1);
 ALTER TABLE time_decay_default_alter
     ADD COLUMN value ExponentialTimeDecaying64(10);
-SELECT tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0
+SELECT tupleElement(value, 'value') = 0 AND tupleElement(value, 'timestamp') = 0
 FROM time_decay_default_alter;
 
 CREATE TABLE time_decay_default_simple_aggregate
@@ -57,7 +57,7 @@ ENGINE = AggregatingMergeTree
 ORDER BY id;
 INSERT INTO time_decay_default_simple_aggregate (id) VALUES (1);
 SELECT
-    tupleElement(value, 'value_at_anchor') = 0 AND tupleElement(value, 'anchor_time') = 0,
+    tupleElement(value, 'value') = 0 AND tupleElement(value, 'timestamp') = 0,
     exponentialTimeDecayingDecayLength(value) = 10
 FROM time_decay_default_simple_aggregate;
 
@@ -507,8 +507,8 @@ SELECT
     exponentialTimeDecayingValueAt(function_result, latest_time) AS function_value,
     operator_value - expected_value AS value_error,
     latest_time AS expected_time,
-    tupleElement(operator_result, 'anchor_time') AS operator_anchor_time,
-    tupleElement(function_result, 'anchor_time') AS function_anchor_time,
+    tupleElement(operator_result, 'timestamp') AS operator_anchor_time,
+    tupleElement(function_result, 'timestamp') AS function_anchor_time,
     toTypeName(operator_result) AS result_type
 FROM
 (
@@ -543,10 +543,10 @@ WHERE NOT
 (
     abs(exponentialTimeDecayingValueAt(operator_result, latest_time) - expected_value)
         <= 1e-12 * greatest(1., abs(expected_value))
-    AND isFinite(tupleElement(operator_result, 'anchor_time'))
+    AND isFinite(tupleElement(operator_result, 'timestamp'))
     AND abs(exponentialTimeDecayingValueAt(operator_result, latest_time) - exponentialTimeDecayingValueAt(function_result, latest_time))
         <= 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(function_result, latest_time)))
-    AND tupleElement(operator_result, 'anchor_time') = tupleElement(function_result, 'anchor_time')
+    AND tupleElement(operator_result, 'timestamp') = tupleElement(function_result, 'timestamp')
     AND toTypeName(operator_result) = 'ExponentialTimeDecaying64(10)'
 )
 ORDER BY id;
@@ -589,10 +589,10 @@ WITH
     )
 SELECT
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(explicit_result, toFloat64(10))) < 1e-12,
-    tupleElement(implicit_result, 'anchor_time') = tupleElement(explicit_result, 'anchor_time'),
+    tupleElement(implicit_result, 'timestamp') = tupleElement(explicit_result, 'timestamp'),
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(result, toFloat64(10))) < 1e-12,
-    abs(tupleElement(implicit_result, 'anchor_time') - tupleElement(result, 'anchor_time'))
-        <= 1e-12 * greatest(1., abs(tupleElement(implicit_result, 'anchor_time'))),
+    abs(tupleElement(implicit_result, 'timestamp') - tupleElement(result, 'timestamp'))
+        <= 1e-12 * greatest(1., abs(tupleElement(implicit_result, 'timestamp'))),
     exponentialTimeDecayingDecayLength(implicit_result) = 10,
     exponentialTimeDecayingDecayLength(result) = 10
 FROM direct
@@ -620,7 +620,7 @@ OPTIMIZE TABLE exponential_time_decay_non_integral FINAL;
 SELECT
     toTypeName(value),
     abs(exponentialTimeDecayingValueAt(value, toFloat64(0.1)) - 2 / exp(1)) < 1e-12,
-    isFinite(tupleElement(value, 'anchor_time')),
+    isFinite(tupleElement(value, 'timestamp')),
     exponentialTimeDecayingDecayLength(value) = 0.1
 FROM exponential_time_decay_non_integral;
 
@@ -834,13 +834,13 @@ WITH
 SELECT
     abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
         <= 1e-12,
-    isFinite(tupleElement(combined, 'anchor_time'));
+    isFinite(tupleElement(combined, 'timestamp'));
 
 WITH exponentialTimeDecayedSum(value) AS combined
 SELECT
     abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
         <= 1e-12,
-    isFinite(tupleElement(combined, 'anchor_time'))
+    isFinite(tupleElement(combined, 'timestamp'))
 FROM time_decay_default_identity;
 
 DROP TABLE time_decay_default_identity;
