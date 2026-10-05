@@ -1137,6 +1137,10 @@ public:
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
+    /// Throws if forgetting this mutation would leave a reused skip index name reading the previous
+    /// definition's granules. Called by `killMutation` of both engines; see the definition.
+    void checkMutationIsSafeToKill(const String & mutation_id) const;
+
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;

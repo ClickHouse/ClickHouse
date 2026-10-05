@@ -1715,6 +1715,9 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (!mutation_version)
         return CancellationCode::NotFound;
 
+    /// Checked before the lock below: it reads the unfinished mutations under the same mutex.
+    checkMutationIsSafeToKill(mutation_id);
+
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);

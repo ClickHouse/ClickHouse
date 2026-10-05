@@ -8891,6 +8891,9 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 
     LOG_INFO(log, "Killing mutation {}", mutation_id);
 
+    /// Checked before the entry leaves the queue, which is what the check reads.
+    checkMutationIsSafeToKill(mutation_id);
+
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)
         return CancellationCode::NotFound;

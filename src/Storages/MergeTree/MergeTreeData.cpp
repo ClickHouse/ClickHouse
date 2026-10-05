@@ -13784,6 +13784,51 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
+void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
+{
+    /// A part is refused the granules of a dropped skip index only while the `DROP INDEX` mutation
+    /// is still pending for it (`AlterConversions::getStaleIndices`). Killing the mutation takes that
+    /// away without rewriting the parts, so the files of the dropped index stay on disk with nothing
+    /// left to mark them stale. That is harmless while the name is gone from the metadata - no index
+    /// resolves to those files - but once another index has taken the name, every read of it would
+    /// answer from the previous definition's granules, which is the wrong-results bug of #121171 with
+    /// no pending mutation to detect it any more. Refuse, and let the re-added index be dropped first.
+    ///
+    /// Only mutations some part has still to apply are listed, so a drop that has already reached
+    /// every part leaves nothing behind and is killed as before.
+    auto unfinished_mutations = getUnfinishedMutationCommands();
+    auto it = unfinished_mutations.find(mutation_id);
+    if (it == unfinished_mutations.end())
+        return;
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
+    for (const auto & command : it->second)
+    {
+        /// `CLEAR INDEX` is a `DROP_INDEX` with `clear`: it keeps the index in the metadata, so the
+        /// name cannot have been given to another definition and the files the parts still hold
+        /// belong to this very index.
+        if (command.type != MutationCommand::Type::DROP_INDEX || command.clear)
+            continue;
+
+        /// The name of the index of a `DROP_INDEX` command is in `column_name`, not `index_name`.
+        if (!metadata_snapshot->getSecondaryIndices().has(command.column_name))
+            continue;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot kill mutation {} of table {}: it drops the skip index {}, and the metadata has "
+            "since given that name to another index. The parts the mutation has not rewritten still "
+            "hold the granules of the dropped index, and they are refused only while its drop is "
+            "pending, so forgetting the mutation would make queries answer from them as if they "
+            "belonged to the new index. Drop the index with that name first, or wait for the mutation "
+            "to finish",
+            mutation_id,
+            getStorageID().getNameForLogs(),
+            backQuoteIfNeed(command.column_name));
+    }
+}
+
 void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
