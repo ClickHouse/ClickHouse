@@ -258,6 +258,23 @@ def test_fixed_user_handler_with_stray_auth_header():
     assert "empty user name" not in body
 
 
+def test_fixed_user_handler_with_scripted_web_ui_auth_headers():
+    # /play used query parameters before switching scripted requests to headers. Fixed-user
+    # handlers ignored those parameters, so the header transport must preserve that behavior.
+    url = f"http://{node1.ip_address}:8129/fixed"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": "never",
+            "X-ClickHouse-User": "irrelevant",
+            "X-ClickHouse-Key": "irrelevant",
+        },
+    )
+    with assert_login_success("fixed_handler_user", "HTTP"):
+        response = urllib.request.urlopen(request, timeout=10).read()
+    assert response == b"fixed_handler_user\n"
+
+
 def grpc_execute(query, node=node1, user_name=None):
     """Run a query over gRPC and return the raw result, which may carry an exception."""
     channel = grpc.insecure_channel(f"{node.ip_address}:9100")
