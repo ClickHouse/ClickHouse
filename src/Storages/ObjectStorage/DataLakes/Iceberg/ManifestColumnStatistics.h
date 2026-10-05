@@ -64,9 +64,9 @@ public:
     /// Adds a data file with a non-negative `record_count`.
     void addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file);
 
-    /// Sets the merged statistics and the numbers of distinct values of `estimate`; `rows` is the sum of `record_count`
-    /// over the added files, and nothing is set when it is 0.
-    void finalize(UInt64 rows, DataLakeReadEstimate & estimate) const;
+    /// Sets the merged statistics and the numbers of distinct values of `estimate`, whose `rows` is the sum of
+    /// `record_count` over the added files; nothing is set when `rows` is unknown or 0.
+    void finalize(DataLakeReadEstimate & estimate) const;
 
 private:
     /// A requested column that gets statistics.
@@ -134,6 +134,10 @@ private:
 
     /// Adds the size and the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
+
+    /// The number of distinct values of a target by the first rule that applies (plan O3), clamped to [1, non-NULL rows];
+    /// `column` holds its merged statistics over `rows` rows.
+    static UInt64 estimateDistinctValues(const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 
     /// Resolves field ids and the column types of each file's schema.
     const IcebergSchemaProcessor & schema_processor;

@@ -1467,7 +1467,7 @@ IcebergMetadata::estimateRead(
         estimate.rows.reset();
         return estimate;
     }
-    column_statistics.finalize(*estimate.rows, estimate);
+    column_statistics.finalize(estimate);
     return estimate;
 }
 
