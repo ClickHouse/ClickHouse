@@ -227,18 +227,10 @@ Field ColumnExponentialTimeDecaying::operator[](size_t n) const
 
 void ColumnExponentialTimeDecaying::get(size_t n, Field & res) const
 {
-    if (mode == ExponentialTimeDecayingMode::Direct)
-    {
-        const auto direct = getDirectValueAt(n);
-        res = Tuple{direct.value_at_anchor, direct.anchor_time, decay_length};
-        return;
-    }
-
-    const auto printable = getPrintableValueAt(n);
-    res = Tuple{
-        printable.value_at_anchor,
-        printable.anchor_time,
-        decay_length};
+    const auto value = mode == ExponentialTimeDecayingMode::Direct
+        ? getDirectValueAt(n)
+        : getCanonicalValueAt(n);
+    res = Tuple{value.value_at_anchor, value.anchor_time, decay_length};
 }
 
 void ColumnExponentialTimeDecaying::getValueNameImpl(
