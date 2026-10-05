@@ -268,7 +268,9 @@ private:
                     has_other_references |= subqueryReadsTable(subquery, target);
                 });
 
-            if (!has_other_references && mayRestrictKeys(target, enforced, target_candidates))
+            /// A candidate that is not rewritten would refer to the table moved into the derived table.
+            if (!has_other_references
+                && std::ranges::all_of(target_candidates, [&](const Candidate * candidate) { return mayRestrictKeys(target, enforced, *candidate); }))
                 rewriteTarget(query_node_ptr, *tables.at(target).slot, target_candidates);
         }
     }
@@ -449,14 +451,21 @@ private:
         return candidate;
     }
 
-    /// The window reads the whole table unless a condition restricts its keys: one not on the target (via
-    /// runtime join filters) or only on its keys (pushed below the window). Otherwise the decorrelated
-    /// plan, which needs memory per key only, is better.
-    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const std::vector<Candidate *> & candidates)
+    /// The window reads the whole table unless a condition restricts its keys: one only on its keys (pushed
+    /// below the window), or one not on the target while the target is joined on one of its keys (the runtime
+    /// join filter is on the join key, and only a filter on the `PARTITION BY` keys is pushed below the window).
+    /// Otherwise the decorrelated plan, which needs memory per key only, is better.
+    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Candidate & candidate)
     {
-        NameSet keys;
-        for (const auto * candidate : candidates)
-            keys.insert(candidate->keys.begin(), candidate->keys.end());
+        NameSet keys(candidate.keys.begin(), candidate.keys.end());
+        auto is_key = [&](const ColumnNode & column)
+        { return column.getColumnSourceOrNull().get() == target && keys.contains(column.getColumnName()); };
+        auto is_other = [&](const ColumnNode & column) { return column.getColumnSourceOrNull().get() != target; };
+
+        bool joined_on_keys = false;
+        for (const auto & conjunct : enforced)
+            if (auto [lhs, rhs] = asColumnEquality(conjunct); lhs && rhs)
+                joined_on_keys |= (is_key(*lhs) && is_other(*rhs)) || (is_key(*rhs) && is_other(*lhs));
 
         for (const auto & conjunct : enforced)
         {
@@ -484,7 +493,7 @@ private:
                         only_keys = false;
                     }
                 });
-            if (!reads_target || only_keys)
+            if (reads_target ? only_keys : joined_on_keys)
                 return true;
         }
         return false;

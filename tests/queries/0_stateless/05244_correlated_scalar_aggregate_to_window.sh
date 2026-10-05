@@ -122,6 +122,8 @@ check "column named like a window column" "SELECT o.k AS k, o.__correlated_aggre
 check "NULL in a Variant key" "SELECT o.v AS v, (SELECT count() FROM vt AS s WHERE s.k = o.k) AS c FROM vt AS o WHERE toString(variantType(o.k)) != 'x' ORDER BY v"
 check "PASTE JOIN" "SELECT n.number AS n, o.id AS id, (SELECT sum(v) FROM tp AS s WHERE s.k = o.k) AS c FROM (SELECT number FROM numbers(4)) AS n PASTE JOIN tp AS o WHERE n.number >= 0 AND o.k < 5 ORDER BY n"
 check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
+check "joined on a column other than the key" "SELECT o.id AS id, o.v AS v, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS c FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 ORDER BY id"
+check "joined on the key of only one of the windows" "SELECT o.id AS id, o.k AS k FROM tp AS o INNER JOIN u ON o.k = u.k WHERE u.w > 100 AND o.v >= (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AND o.v <= (SELECT max(v) FROM tp AS s WHERE s.id = o.id) ORDER BY id"
 
 echo "--- materialized view reading its source table in the subquery ---"
 for setting in 0 1; do

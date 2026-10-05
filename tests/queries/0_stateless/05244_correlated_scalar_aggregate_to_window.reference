@@ -319,6 +319,14 @@
 1	30	\N
 2	5	10
 2	1e308	10
+=== joined on a column other than the key: rewritten 0 ===
+1	10	10
+2	20	20
+3	30	30
+4	40	40
+=== joined on the key of only one of the windows: rewritten 0 ===
+3	2
+4	1
 --- materialized view reading its source table in the subquery ---
 1	1	1
 2	2	2
