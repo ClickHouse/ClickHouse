@@ -119,6 +119,10 @@
 #include <IO/S3/Client.h>
 #endif
 
+#if USE_FILELOG
+#include <Storages/FileLog/StorageFileLog.h>
+#endif
+
 #if USE_JEMALLOC
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
@@ -247,6 +251,35 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 
     if (result.code != 0)
         throw Exception::createDeprecated(result.message, result.code);
+}
+
+
+/// The form of `SYSTEM DROP REPLICA` / `SYSTEM DROP DATABASE REPLICA` without a database or a table
+/// affects every database on the server that the command can target, so it requires `SYSTEM DROP REPLICA` for all of them.
+/// Instead of silently skipping the databases the user has no access to (and possibly doing nothing at all),
+/// check the permissions in advance and tell the user which databases they are missing the privilege for.
+/// When there is nothing to target at all, the server-wide command is still a privileged operation
+/// and must not succeed for a user without any privileges, so the global privilege is required in that case.
+void checkAccessForDropWholeReplica(const ContextPtr & context, const Strings & target_databases, std::string_view query_name)
+{
+    auto access = context->getAccess();
+    if (access->isGranted(AccessType::SYSTEM_DROP_REPLICA))
+        return;
+
+    if (target_databases.empty())
+        context->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
+
+    std::vector<String> databases_without_access;
+    for (const auto & database_name : target_databases)
+        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, database_name))
+            databases_without_access.emplace_back(database_name);
+
+    if (!databases_without_access.empty())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Access denied for {}. Not enough permissions to drop these databases: {}",
+            query_name,
+            fmt::join(databases_without_access, ", "));
 }
 
 
@@ -540,6 +573,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
+            break;
+        case Type::CLEAR_COLUMNS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_COLUMNS_CACHE);
+            system_context->clearColumnsCache();
             break;
         case Type::CLEAR_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
@@ -912,7 +949,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RECONNECT_ZOOKEEPER:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
-            system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
+            getContext()->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
             break;
         }
         case Type::STOP_MERGES:
@@ -1079,6 +1116,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
             flushObjectStorageQueue(query);
+            break;
+        case Type::RESET_FILELOG:
+            resetFileLog(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -1707,28 +1747,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
-
-        /// Instead of silently failing, check the permissions to delete all databases in advance.
-        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
-        /// Include the databases that the user needs privileges for in the exception
-        std::vector<String> required_access;
-        for (auto & elem : databases)
-        {
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                required_access.emplace_back(elem.first);
-                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-            }
-        }
-
-        if (!required_access.empty())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Access denied for {}. Not enough permissions to drop these databases: {}",
-                "SYSTEM DROP REPLICA",
-                fmt::join(required_access, ", "));
+        Strings target_databases;
+        for (const auto & elem : databases)
+            target_databases.emplace_back(elem.first);
+        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP REPLICA");
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
@@ -2133,20 +2155,22 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
+        /// Only `Replicated` databases are affected by this command, so only they require the privilege:
+        /// a user must not be denied because of unrelated databases the command would never touch.
+        Strings target_databases;
+        for (const auto & elem : databases)
+            if (dynamic_cast<DatabaseReplicated *>(elem.second.get()))
+                target_databases.emplace_back(elem.first);
+        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP DATABASE REPLICA");
+
+        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
             if (!replicated)
                 continue;
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                LOG_INFO(log, "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-                continue;
-            }
 
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
@@ -2621,6 +2645,27 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
     queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
+void InterpreterSystemQuery::resetFileLog([[maybe_unused]] ASTSystemQuery & query)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESET_FILELOG, table_id);
+#if USE_FILELOG
+    auto file_log = castStorage<StorageFileLog>(DatabaseCatalog::instance().getTable(table_id, getContext()), DeferredTable::Load);
+    if (!file_log)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not a FileLog table", table_id.getNameForLogs());
+    std::optional<UInt64> offset = 0;
+    if (query.filelog_file)
+    {
+        if (query.filelog_offset)
+            offset = query.filelog_offset;
+        else if (query.filelog_to_end)
+            offset = std::nullopt;
+    }
+    file_log->resetReadPosition(query.filelog_file, offset);
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FileLog support");
+#endif
+}
+
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -2872,6 +2917,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             break;
+        case Type::CLEAR_COLUMNS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_COLUMNS_CACHE);
+            break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
@@ -3106,6 +3154,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
+            /// For the whole-server form (no database and no table) this requires the global privilege.
+            /// This is intentional: the initiator does not know which databases exist on the other hosts of the cluster,
+            /// so it cannot narrow the check to the affected databases as `checkAccessForDropWholeReplica` does locally.
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
@@ -3185,6 +3236,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::RESET_FILELOG:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_FILELOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::FLUSH_LOGS:

@@ -1,5 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: the replica creates the `CREATE TABLE ... AS SELECT` table from the printed `groupArrayInsertAt` state type name, which does not round-trip, https://github.com/ClickHouse/ClickHouse/issues/123031
 -- A Decimal or wide-integer parameter has no bare SQL literal form, so the printed state type name
 -- needs a ::Type suffix. That name is what lands in the table metadata, and it is reparsed on every
 -- start, so a name that does not parse back into the same parameters leaves the table unreadable.

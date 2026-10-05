@@ -485,9 +485,13 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumnWholePart::estimateMa
     return {file_size, file_size};
 }
 
-void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t)
+void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t row_index)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to marks");
+    /// The only mark of the whole part is the start of the file.
+    if (row_index != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to mark {}", row_index);
+
+    seekToStart();
 }
 
 size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position)

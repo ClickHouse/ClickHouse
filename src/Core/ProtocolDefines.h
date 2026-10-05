@@ -127,6 +127,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
+/// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
+/// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -154,6 +156,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARS
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
 /// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
+/// First query-plan serialization version that knows `allow_block_nested_loop_join`. Below it, the name is not
+/// written: the older peer has no block nested loop join, so it runs a join exactly as with the setting disabled,
+/// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
+/// than executed differently.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;

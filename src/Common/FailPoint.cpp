@@ -50,6 +50,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
     ONCE(connection_stale_on_establish) \
@@ -89,6 +90,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
     REGULAR(azure_inject_auth_failure_on_request) \
@@ -153,12 +155,14 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(runtime_filter_skip_finish_insert) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
@@ -318,6 +322,7 @@ static struct InitFiu
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
+    PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
@@ -410,6 +415,8 @@ static struct InitFiu
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
+    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
