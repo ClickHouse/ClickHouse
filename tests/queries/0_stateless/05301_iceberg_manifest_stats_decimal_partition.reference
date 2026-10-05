@@ -1,0 +1,15 @@
+--- fixture: data files and their partition values
+{\'1.5\'}	10000
+{\'2.25\'}	10000
+{\'3\'}	10000
+--- pruning by the decoded partition value: 1 of 3 files remains
+Join: fd[no_stats~10000] ⋈ d[1]
+ResultRows: ~~10000
+--- the read returns the rows of that file
+10000
+--- rule 1 counts the 3 decoded partition values: 30000 * 1 / 3
+Join: fd[30000] ⋈ d[1]
+ResultRows: 10000
+--- without column statistics the row count stands in for the NDV: 30000 * 1 / 30000
+Join: fd[30000] ⋈ d[1]
+ResultRows: 1
