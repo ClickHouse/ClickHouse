@@ -3,7 +3,9 @@
 #include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
+#include <exception>
 #include <string_view>
+#include <utility>
 
 namespace DB
 {
@@ -93,25 +95,50 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
         && CurrentThread::getQueryId().starts_with(completed_pipeline_pause_before_teardown_query_id_prefix))
         FailPointInjection::pauseFailPoint(FailPoints::completed_pipeline_pause_before_teardown);
 
-    if (finalize_query_pipeline)
+    try
     {
-        const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
-        for (const auto & callback : finish_callbacks)
-            callback(query_pipeline_finalized_info, finish_time);
-    }
-    else
-        resetPipeline(/*cancel=*/false);
+        if (finalize_query_pipeline)
+        {
+            const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
+            for (const auto & callback : finish_callbacks)
+                callback(query_pipeline_finalized_info, finish_time);
+        }
+        else
+            resetPipeline(/*cancel=*/false);
 
-    /// Safe now: the pipeline (and its threads) have been finalized and joined.
-    releaseMemoryReservation();
+        /// Safe now: the pipeline (and its threads) have been finalized and joined.
+        releaseMemoryReservation();
+    }
+    catch (...)
+    {
+        auto finish_exception = std::current_exception();
+        try
+        {
+            onException();
+        }
+        catch (...)
+        {
+        }
+        std::rethrow_exception(finish_exception);
+    }
 }
 
 void BlockIO::onException(bool log_as_error)
 {
     setAllDataSent();
 
-    for (const auto & callback : exception_callbacks)
-        callback(log_as_error);
+    auto callbacks = std::exchange(exception_callbacks, {});
+    try
+    {
+        for (const auto & callback : callbacks)
+            callback(log_as_error);
+    }
+    catch (...)
+    {
+        resetPipeline(/*cancel=*/true);
+        releaseWorkloadResources();
+        throw;
+    }
 
     /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
