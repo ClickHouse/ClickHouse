@@ -221,6 +221,28 @@ ExponentialTimeDecayingCanonicalDirectValue normalizeExponentialTimeDecaying128D
     };
 
     Float64 magnitude = magnitude_at(anchor);
+    if ((!std::isfinite(magnitude) || magnitude == 0)
+        && unit_timestamp >= -max_anchor
+        && unit_timestamp <= max_anchor)
+    {
+        /// For a very short decay length, the value at the lower Float64
+        /// anchor can overflow even though the original Float64 curve is
+        /// finite. Move to the adjacent upper anchor; its residual is below
+        /// one and the anchor transition preserves lexicographic unit-time
+        /// ordering.
+        const Float64 upper_anchor
+            = std::nextafter(anchor, std::numeric_limits<Float64>::infinity());
+        if (std::isfinite(upper_anchor))
+        {
+            const Float64 upper_magnitude = magnitude_at(upper_anchor);
+            if (std::isfinite(upper_magnitude) && upper_magnitude != 0)
+            {
+                anchor = upper_anchor;
+                magnitude = upper_magnitude;
+            }
+        }
+    }
+
     if (!std::isfinite(magnitude) || magnitude == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
