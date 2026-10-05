@@ -28,7 +28,7 @@ WHERE database = currentDatabase()
 
 SELECT
     count(),
-    countIf(tupleElement(value, 'value_at_anchor') = 0),
+    countIf(tupleElement(value, 'value') = 0),
     sum(exponentialTimeDecayingValueAt(value, 0))
 FROM time_decay_sparse_serialization;
 
