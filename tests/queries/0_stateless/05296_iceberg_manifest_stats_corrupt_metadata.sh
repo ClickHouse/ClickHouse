@@ -3,8 +3,8 @@
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
 # Issue 120440: the manifest row count behind `use_iceberg_manifest_statistics` on broken metadata.
-# T9: a negative `record_count` (the fixture of `04615`) gives unknown rows, not a huge number.
-# T9b: a missing manifest file makes `EXPLAIN` of a join fail, as the read does (errors propagate);
+# T1: a negative `record_count` (the fixture of `04615`) gives unknown rows, not a huge number.
+# T2: a missing manifest file makes `EXPLAIN` of a join fail, as the read does (errors propagate);
 # with the setting off `EXPLAIN` does not open the manifests.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -58,10 +58,10 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 "
 
 cp -r "${CUR_DIR}/data_minio/iceberg_negative_record_count_test" "${LAKE}/negative"
-echo '--- T9: negative record_count'
+echo '--- T1: negative record_count'
 labels "SELECT count() FROM mt AS m JOIN icebergLocal('${LAKE}/negative') AS t ON m.k = t.order_number" ${ON}
 
-# T9b: a table written here (a copied ClickHouse-written table keeps absolute manifest paths of the
+# A table written here (a copied ClickHouse-written table keeps absolute manifest paths of the
 # original), then its only manifest file is deleted. The metadata cache would hide the deletion.
 ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE brk (k Int32, w Int64) ENGINE = IcebergLocal('${LAKE}/brk');
@@ -73,9 +73,9 @@ echo "${MANIFESTS}" | grep -c '\.avro$'
 rm -f ${MANIFESTS}
 
 QUERY="SELECT count() FROM mt AS m JOIN brk AS s ON m.k = s.k"
-echo '--- T9b: EXPLAIN of the join'
+echo '--- T2: missing manifest file, EXPLAIN of the join'
 outcome labels "${QUERY}" --use_iceberg_metadata_files_cache=0 ${ON}
-echo '--- T9b setting off: EXPLAIN of the join'
+echo '--- T2: setting off'
 labels "${QUERY}" --use_iceberg_metadata_files_cache=0 ${OFF}
 
 rm -rf "${LAKE}"
