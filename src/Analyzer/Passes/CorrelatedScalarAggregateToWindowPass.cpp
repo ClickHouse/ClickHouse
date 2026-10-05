@@ -22,6 +22,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -226,6 +228,8 @@ private:
             || hasAggregateFunctionNodes(query_node.getProjectionNode()) || hasAggregateFunctionNodes(query_node.getOrderByNode());
 
         std::vector<Candidate> candidates;
+        /// Expressions may be shared (e.g. by the projection and `ORDER BY ALL`), each slot must be rewritten once.
+        std::unordered_set<const QueryTreeNodePtr *> visited_slots;
         auto collect = [&](QueryTreeNodePtr & expression)
         {
             visitExpression(
@@ -233,6 +237,8 @@ private:
                 [](QueryTreeNodePtr &) {},
                 [&](QueryTreeNodePtr & subquery)
                 {
+                    if (!visited_slots.insert(&subquery).second)
+                        return;
                     if (auto candidate = matchSubquery(subquery, tables, enforced))
                         candidates.push_back(std::move(*candidate));
                 });

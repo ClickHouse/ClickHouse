@@ -74,6 +74,7 @@ check "condition of a non-boolean type" "SELECT u.w AS w, x.z AS z, (SELECT max(
 check "two subqueries" "SELECT u.k AS k, t.v AS v, (SELECT min(v) FROM t AS s WHERE s.k = u.k) AS a, (SELECT count() FROM t AS s WHERE s.k = u.k) AS b FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 
 echo "--- shapes of the enclosing query ---"
+check "ORDER BY ALL shares the expression with the projection" "SELECT u.k AS k, t.v AS v, $SQ + 1 FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY ALL"
 check "TPC-H Q17 shape" "SELECT sum(t.v) FROM u, t WHERE u.k = t.k AND u.w >= 100 AND t.v < (SELECT 0.5 * avg(v) FROM t AS s WHERE s.k = u.k)"
 check "in WHERE with rows kept" "SELECT u.w AS w, t.v AS v FROM u, t WHERE u.k = t.k AND u.w > 100 AND t.v >= (SELECT 0.5 * max(v) FROM t AS s WHERE s.k = u.k) ORDER BY w, v"
 check "two subqueries in one WHERE" "SELECT u.w AS w, t.v AS v FROM u, t WHERE u.k = t.k AND u.w > 100 AND t.v > (SELECT min(v) FROM t AS s WHERE s.k = u.k) AND t.v <= (SELECT max(v) FROM t AS s WHERE s.k = u.k) ORDER BY w, v"

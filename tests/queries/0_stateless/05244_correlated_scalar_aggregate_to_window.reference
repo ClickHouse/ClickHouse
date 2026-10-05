@@ -102,6 +102,13 @@
 2	5	5	2
 2	1e308	5	2
 --- shapes of the enclosing query ---
+=== ORDER BY ALL shares the expression with the projection: rewritten 1 ===
+1	10	31
+1	10	31
+1	30	31
+1	30	31
+2	5	1e308
+2	1e308	1e308
 === TPC-H Q17 shape: rewritten 1 ===
 5
 === in WHERE with rows kept: rewritten 1 ===
