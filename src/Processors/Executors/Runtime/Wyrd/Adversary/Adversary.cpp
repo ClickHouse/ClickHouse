@@ -94,9 +94,14 @@ bool Adversary::threadSpuriousFailure()
     return true;
 }
 
-void Adversary::threadSetLockFree(bool on)
+void Adversary::threadEnterLockFreeScope()
 {
-    lock_free_depth += on ? 1 : -1;
+    ++lock_free_depth;
+}
+
+void Adversary::threadLeaveLockFreeScope()
+{
+    --lock_free_depth;
 }
 
 void Adversary::threadProgress()

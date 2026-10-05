@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/Wyrd/Adversary/AdversaryParams.h>
 #include <base/defines.h>
 
 #include <atomic>
@@ -9,16 +10,6 @@
 
 namespace DB::Runtime::Wyrd
 {
-
-struct AdversaryParams
-{
-    size_t yield_freq = 10;
-    size_t spurious_failure_every = 11;
-    size_t suspend_freq = 10;
-    size_t suspended_threads_limit = 2;
-    size_t resume_freq = 5;
-    bool pin_to_single_core = true;
-};
 
 struct AdversaryResult
 {
@@ -45,7 +36,8 @@ public:
     void threadEnter();
     void threadFault();
     bool threadSpuriousFailure();
-    void threadSetLockFree(bool on);
+    void threadEnterLockFreeScope();
+    void threadLeaveLockFreeScope();
     void threadProgress();
     void threadExit();
 
