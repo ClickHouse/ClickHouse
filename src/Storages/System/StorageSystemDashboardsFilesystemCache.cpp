@@ -49,7 +49,6 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_CachedReadBufferReadFromCacheBytes) AS ReadFromCache,
     avg(ProfileEvent_CachedReadBufferReadFromSourceBytes) AS ReadFromSource,
-    avg(ProfileEvent_CachedReadBufferPredownloadedBytes) AS Predownloaded,
     avg(ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes) AS PredownloadedFromSource
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to

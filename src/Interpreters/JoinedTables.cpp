@@ -23,6 +23,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
@@ -286,7 +287,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
             if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
-                if (typeid_cast<StorageJoin *>(storage.get()))
+                if (typeid_cast<StorageJoin *>(resolveStorageProxyLoading(storage).get()))
                     throw Exception(ErrorCodes::ACCESS_DENIED,
                         "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
                 storage = nullptr;
@@ -295,7 +296,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
 
         if (storage)
         {
-            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+            if (auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load); storage_join)
             {
                 table_join->setStorageJoin(storage_join);
             }
@@ -318,11 +319,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                     return nullptr;
                 }
 
+                /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
                 auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
+            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }

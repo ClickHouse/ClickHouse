@@ -90,6 +90,10 @@ public:
     /// credentials, so the branch that must depend on the reader's grants cannot be decided.
     virtual bool dependsOnCurrentUserGrants() const { return false; }
 
+    /// Whether two reads of the returned storage within one query may produce different rows
+    /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is

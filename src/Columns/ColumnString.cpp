@@ -348,7 +348,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
