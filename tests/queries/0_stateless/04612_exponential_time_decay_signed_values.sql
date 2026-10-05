@@ -311,6 +311,49 @@ WHERE abs(
             ((-2., 100., 10.)))
     ) + 2) > 1e-12;
 
+-- The 128-bit cutoff must use the residual part of the ordering key, not
+-- only its Float64 anchor. These values share one anchor but are more than
+-- five decay lengths apart.
+WITH
+    toFloat64(1000000000) AS target_time,
+    CAST((toFloat64(1000000), target_time), 'ExponentialTimeDecaying128(1e-12)') AS expected
+SELECT '128-bit residual significance-cutoff mismatch'
+WHERE abs(
+    (
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSum(value),
+            target_time)
+        FROM
+        (
+            SELECT CAST((toFloat64(1), target_time), 'ExponentialTimeDecaying128(1e-12)') AS value
+            UNION ALL
+            SELECT expected AS value
+        )
+    )
+    - exponentialTimeDecayingValueAt(expected, target_time))
+    > 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(expected, target_time)));
+
+-- The cutoff remains expressed in decay lengths even when multiplying the
+-- setting by the decay length would overflow Float64.
+WITH
+    toFloat64(0) AS target_time,
+    CAST((toFloat64(1000000), target_time), 'ExponentialTimeDecaying128(1e308)') AS expected
+SELECT '128-bit tail significance-cutoff mismatch'
+WHERE abs(
+    (
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSum(value),
+            target_time)
+        FROM
+        (
+            SELECT CAST((toFloat64(1), target_time), 'ExponentialTimeDecaying128(1e308)') AS value
+            UNION ALL
+            SELECT expected AS value
+        )
+    )
+    - exponentialTimeDecayingValueAt(expected, target_time))
+    > 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(expected, target_time)));
+
 SET exponential_time_decay_significance_cutoff = 0;
 
 -- Signed primary-key and minmax pruning must preserve the same total ordering
