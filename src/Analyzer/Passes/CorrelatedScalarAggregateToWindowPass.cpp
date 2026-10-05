@@ -412,6 +412,7 @@ private:
 
         /// Equal keys must be grouped as `=` compares them (not the case for floats).
         const auto & target_table = target->as<const TableNode &>();
+        bool nullable_key = false;
         for (const auto & key : candidate.keys)
         {
             auto column = target_table.getStorageSnapshot()->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), key);
@@ -421,18 +422,21 @@ private:
             auto key_type = removeNullable(removeLowCardinality(column->type));
             if (anyInTypeTree(*key_type, [](const IDataType & type) { return type.isNullable() || isVariant(type); }))
                 return {};
-            candidate.may_match_nothing |= isNullableOrLowCardinalityNullable(column->type);
+            nullable_key |= isNullableOrLowCardinalityNullable(column->type);
         }
-        candidate.may_match_nothing |= !candidate.conditions.empty();
+        candidate.may_match_nothing = nullable_key || !candidate.conditions.empty();
 
         if (candidate.may_match_nothing)
         {
             if (!isNullableOrLowCardinalityNullable(subquery->getResultType()))
                 return {};
             /// The expression is also evaluated for rows without a match, where it could throw, unless it is short-circuited.
-            if (!projection->as<FunctionNode>() || !projection->as<FunctionNode &>().isAggregateFunction())
-                if (getSettings()[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE)
-                    return {};
+            bool short_circuit = getSettings()[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE;
+            if (!short_circuit && (!projection->as<FunctionNode>() || !projection->as<FunctionNode &>().isAggregateFunction()))
+                return {};
+            /// The conditions are also evaluated for rows with a NULL key, which the subquery skips, unless they are short-circuited.
+            if (!short_circuit && nullable_key && !candidate.conditions.empty())
+                return {};
             for (const auto & aggregate_node : aggregates)
             {
                 const auto & aggregate = aggregate_node->as<FunctionNode &>();

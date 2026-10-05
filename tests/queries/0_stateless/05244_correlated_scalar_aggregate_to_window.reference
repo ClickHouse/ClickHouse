@@ -190,6 +190,7 @@
 2	\N	\N
 \N	5	\N
 \N	7	\N
+NULL key and a condition that may throw without short-circuit: rewritten	0
 === Float key: rewritten 0 ===
 5
 === key types differ: rewritten 0 ===
