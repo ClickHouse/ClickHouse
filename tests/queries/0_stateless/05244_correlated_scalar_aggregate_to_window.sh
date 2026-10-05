@@ -96,6 +96,8 @@ check "additional_table_filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INN
 echo "--- keys ---"
 check "Nullable key and argument" "SELECT nk.k AS k, nn.v AS v, (SELECT max(v) FROM nn AS s WHERE s.k = nk.k) AS c FROM nk INNER JOIN nn ON nk.k = nn.k WHERE nk.w > 0 ORDER BY k, v"
 check "NULL key, correlated to the same table" "SELECT o.k AS k, o.v AS v, (SELECT count() FROM nn AS s WHERE s.k = o.k) AS c FROM nn AS o WHERE o.k IS NULL OR o.k > 0 ORDER BY k, v"
+# `intDiv` throws only for the row with a NULL key and `v = 5`, which the subquery skips.
+check "NULL key and an argument that may throw" "SELECT o.k AS k, o.v AS v, (SELECT sum(intDiv(10, toInt32(s.v) - 5)) FROM nn AS s WHERE s.k = o.k) AS c FROM nn AS o WHERE o.k IS NULL OR o.k > 0 ORDER BY k, v"
 check "Float key" "SELECT count() FROM (SELECT o.k AS k, o.v AS v, (SELECT count() FROM fk AS s WHERE s.k = o.k) AS c FROM fk AS o WHERE o.k > -1 OR isNaN(o.k))"
 check "key types differ" "SELECT u64.k AS k, t.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = u64.k) AS c FROM u64 INNER JOIN t ON u64.k = t.k WHERE u64.k > 0 ORDER BY k, v"
 

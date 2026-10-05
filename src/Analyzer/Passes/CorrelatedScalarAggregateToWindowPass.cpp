@@ -439,11 +439,10 @@ private:
                 /// The conditions are added with the `-If` combinator, which cannot be nested.
                 if (aggregate.getFunctionName().ends_with("If"))
                     return {};
-                /// The window evaluates the arguments also for rows the conditions skip, which could throw.
-                if (!candidate.conditions.empty())
-                    for (const auto & argument : aggregate.getArguments().getNodes())
-                        if (!argument->as<ColumnNode>() && !argument->as<ConstantNode>())
-                            return {};
+                /// The window evaluates the arguments also for rows the conditions or a NULL key skip, which could throw.
+                for (const auto & argument : aggregate.getArguments().getNodes())
+                    if (!argument->as<ColumnNode>() && !argument->as<ConstantNode>())
+                        return {};
             }
         }
 
@@ -619,11 +618,12 @@ private:
             if (candidate->may_match_nothing)
             {
                 QueryTreeNodes conditions;
-                for (const auto & subquery_condition : candidate->conditions)
-                    conditions.push_back(to_target(subquery_condition));
+                /// First, so that the conditions of the subquery are short-circuited for rows with a NULL key, as it skips them.
                 for (const auto & key : candidate->keys)
                     if (isNullableOrLowCardinalityNullable(column_by_name.at(key).type))
                         conditions.push_back(resolve_function("isNotNull", {std::make_shared<ColumnNode>(column_by_name.at(key), target)}));
+                for (const auto & subquery_condition : candidate->conditions)
+                    conditions.push_back(to_target(subquery_condition));
                 conditions.push_back(std::make_shared<ConstantNode>(Field(UInt8(1))));
                 condition = resolve_function("and", std::move(conditions));
                 if (condition->getResultType()->isNullable())

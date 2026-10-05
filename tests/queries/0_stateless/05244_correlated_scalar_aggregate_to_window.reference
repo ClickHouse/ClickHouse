@@ -184,6 +184,12 @@
 2	\N	1
 \N	5	\N
 \N	7	\N
+=== NULL key and an argument that may throw: rewritten 0 ===
+1	10	2
+1	\N	2
+2	\N	\N
+\N	5	\N
+\N	7	\N
 === Float key: rewritten 0 ===
 5
 === key types differ: rewritten 0 ===
