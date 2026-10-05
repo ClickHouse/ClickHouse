@@ -1,0 +1,52 @@
+-- comparing Enum with String gives the same result for constant and non-constant strings
+
+DROP TABLE IF EXISTS t_enum_cmp;
+CREATE TABLE t_enum_cmp (e Enum8('z' = 1, 'a' = 2, 'm' = 3), s String, fs FixedString(1))
+ENGINE = MergeTree ORDER BY e PARTITION BY e SETTINGS index_granularity = 1;
+INSERT INTO t_enum_cmp VALUES ('z', 'a', 'a'), ('a', 'm', 'm'), ('m', 'z', 'z');
+
+DROP TABLE IF EXISTS t_enum_chain;
+CREATE TABLE t_enum_chain (x Enum8('z' = 1, 'a' = 2, 'm' = 3, 'b' = 4), e Enum8('z' = 1, 'a' = 2, 'm' = 3, 'b' = 4)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_enum_chain VALUES ('m', 'b');
+
+SET optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
+
+SELECT 'by name';
+SET compare_enum_with_string_lexicographically = 1;
+
+SELECT 'a' < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
+SELECT x < e FROM (SELECT 'a' AS x, CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS e);
+SELECT e, s, e < s, e > s, e <= s, e >= s, e = s, e != s FROM t_enum_cmp ORDER BY e;
+SELECT e, fs < e, toNullable(s) < e, toLowCardinality(s) < e, tuple(s) < tuple(e) FROM t_enum_cmp ORDER BY e;
+SELECT e, e < 'm', e < materialize('m'), e < toFixedString('m', 1), tuple(e) < tuple('m'), e < 'q' FROM t_enum_cmp ORDER BY e;
+
+-- the primary key and the partition key must not prune by the numeric order
+SELECT count() FROM t_enum_cmp WHERE e > 'm';
+SELECT count() FROM t_enum_cmp WHERE e < 'm';
+SELECT count() FROM t_enum_cmp WHERE e = 'm';
+-- the analyzer must not fold or derive conditions by the numeric order
+SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
+SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';
+SELECT count() FROM t_enum_chain WHERE x < e AND e < 'm';
+
+SELECT 'by value';
+SET compare_enum_with_string_lexicographically = 0;
+
+SELECT 'a' < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
+SELECT x < e FROM (SELECT 'a' AS x, CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS e);
+SELECT e, s, e < s, e > s, e <= s, e >= s, e = s, e != s FROM t_enum_cmp ORDER BY e;
+SELECT e, fs < e, toNullable(s) < e, toLowCardinality(s) < e, tuple(s) < tuple(e) FROM t_enum_cmp ORDER BY e;
+SELECT e, e < 'm', e < materialize('m'), e < toFixedString('m', 1), tuple(e) < tuple('m') FROM t_enum_cmp ORDER BY e;
+
+SELECT count() FROM t_enum_cmp WHERE e > 'm';
+SELECT count() FROM t_enum_cmp WHERE e < 'm';
+SELECT count() FROM t_enum_cmp WHERE e = 'm';
+SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
+SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';
+SELECT count() FROM t_enum_chain WHERE x < e AND e < 'm';
+
+SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+
+DROP TABLE t_enum_cmp;
+DROP TABLE t_enum_chain;
