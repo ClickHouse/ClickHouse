@@ -57,6 +57,18 @@ public:
     }
 
     String getName() const override { return name; }
+
+    /// The captured parser settings decide whether a query is formatted or rejected, and how the
+    /// data types in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(print_pretty_type_names);
+        hash.update(implicit_select);
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }

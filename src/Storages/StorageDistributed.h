@@ -221,7 +221,22 @@ private:
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
+    /// The stage `getQueryProcessingStage` returns, chosen after the shards to query are known.
+    QueryProcessingStage::Enum chooseQueryProcessingStage(
+        QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const;
+
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
+
+    /// Throws when the remote table has a column among `key_columns` whose conversion to the type
+    /// declared here does not preserve the order and distinctness (see `conversionPreservesOrder`),
+    /// because the shards then sort or reduce by one type and the initiator relies on another.
+    /// `std::nullopt` means the key columns are unknown, and then every column is checked. The remote table is only
+    /// visible when a shard of `cluster` is this server; nothing is checked otherwise.
+    void checkRemoteTableConversionPreservesOrder(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ClusterPtr & cluster,
+        const std::optional<NameSet> & key_columns) const;
 
     /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
     /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
