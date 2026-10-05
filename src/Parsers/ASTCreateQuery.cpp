@@ -149,7 +149,12 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
     auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
+    {
+        /// The masking rule depends on the kind. `ParserStorage` marks every engine `TABLE_ENGINE`; a database's is re-marked
+        /// by `ASTCreateQuery::readJSON`.
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
         set(engine, child);
+    }
 
     child = r.readExpressionChild("partition_by");
     if (child)
@@ -724,7 +729,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     child = r.readChildOfType<ASTStorage>("storage");
     if (child)
+    {
         set(storage, child);
+        if (storage->engine && database && !table)
+            storage->engine->setKind(ASTFunction::Kind::DATABASE_ENGINE);
+    }
 
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.

@@ -228,22 +228,21 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     else if (!nulls_action_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'nulls_action' value '{}' during AST JSON deserialization", nulls_action_str);
 
+    /// Secret masking dispatches on the kind, so the kinds the parser derives from the position or the name are not taken from
+    /// the client: `ASTStorage::readJSON` assigns the engine kinds, and `CODEC` / `STATISTICS` belong to the function of that name.
     String kind_str = r.getString("kind");
     if (kind_str == "WINDOW_FUNCTION")
         setKind(Kind::WINDOW_FUNCTION);
     else if (kind_str == "LAMBDA_FUNCTION")
         setKind(Kind::LAMBDA_FUNCTION);
-    else if (kind_str == "TABLE_ENGINE")
-        setKind(Kind::TABLE_ENGINE);
-    else if (kind_str == "DATABASE_ENGINE")
-        setKind(Kind::DATABASE_ENGINE);
     else if (kind_str == "BACKUP_NAME")
         setKind(Kind::BACKUP_NAME);
-    else if (kind_str == "CODEC")
-        setKind(Kind::CODEC);
-    else if (kind_str == "STATISTICS")
-        setKind(Kind::STATISTICS);
-    else if (!kind_str.empty())
+    else if (kind_str == "CODEC" || kind_str == "STATISTICS")
+    {
+        if (name == kind_str)
+            setKind(kind_str == "CODEC" ? Kind::CODEC : Kind::STATISTICS);
+    }
+    else if (!kind_str.empty() && kind_str != "TABLE_ENGINE" && kind_str != "DATABASE_ENGINE")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'kind' value '{}' during AST JSON deserialization", kind_str);
 
     /// `arguments` and `parameters` are parser-produced `ASTExpressionList` children. The formatter
