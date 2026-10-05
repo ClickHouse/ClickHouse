@@ -533,7 +533,7 @@ private:
     {
         auto logical = logical_type->createColumn();
         deserialize(*logical);
-        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization", key_width);
+        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization", key_width, mode);
         column.insertRangeFrom(*storage, 0, storage->size());
     }
 
