@@ -173,15 +173,18 @@ Float64 ColumnExponentialTimeDecaying::getUnitTimestampAt(size_t n) const
         canonical.value_at_anchor, canonical.anchor_time, decay_length);
 }
 
-Float64 ColumnExponentialTimeDecaying::getPrintableUnitTimestampAt(size_t n) const
+ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getPrintableValueAt(size_t n) const
 {
     const auto canonical = getCanonicalValueAt(n);
     if (canonical.value_at_anchor == 0)
-        return 0;
+        return {0, 0};
 
     const Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(
         canonical.value_at_anchor, canonical.anchor_time, decay_length);
-    return std::isfinite(unit_timestamp) ? unit_timestamp : canonical.anchor_time;
+    if (!std::isfinite(unit_timestamp))
+        return canonical;
+
+    return {std::signbit(canonical.value_at_anchor) ? -1.0 : 1.0, unit_timestamp};
 }
 
 Int8 ColumnExponentialTimeDecaying::getSignAt(size_t n) const
@@ -214,9 +217,10 @@ void ColumnExponentialTimeDecaying::get(size_t n, Field & res) const
         return;
     }
 
+    const auto printable = getPrintableValueAt(n);
     res = Tuple{
-        Float64(getSignAt(n)),
-        getPrintableUnitTimestampAt(n),
+        printable.value_at_anchor,
+        printable.anchor_time,
         decay_length};
 }
 
@@ -233,7 +237,8 @@ void ColumnExponentialTimeDecaying::getValueNameImpl(
     }
     else
     {
-        name_buf << Float64(getSignAt(n)) << ", " << getPrintableUnitTimestampAt(n);
+        const auto printable = getPrintableValueAt(n);
+        name_buf << printable.value_at_anchor << ", " << printable.anchor_time;
     }
 
     name_buf << ", " << decay_length;
