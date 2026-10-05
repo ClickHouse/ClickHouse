@@ -2133,10 +2133,12 @@ anyway, and therefore also removes the rows that have expired in it.
     DECLARE(Bool, apply_ttl_delete_on_insert, false, R"(
 Removes the rows which are already expired by the table `TTL ... DELETE` rule
 on `INSERT`, instead of writing them to a part which only waits for a TTL merge
-to drop them. The TTL is evaluated against the current time of the insert, as
-a TTL merge evaluates it against the time of the merge. No part is created for
-a partition whose rows are all expired, and such a partition does not count
-towards `max_partitions_per_insert_block`.
+to drop them. Only the unconditional table `TTL ... DELETE` rule is applied; a
+`TTL ... DELETE WHERE` rule is not applied on insert. The TTL is evaluated
+against the current time of the insert, as a TTL merge evaluates it against the
+time of the merge. No part is created for a partition whose rows are all
+expired, and such a partition does not count towards
+`max_partitions_per_insert_block`.
 
 For the engines which merge rows (`ReplacingMergeTree`, `SummingMergeTree`,
 `CollapsingMergeTree`, etc.) the rule is applied to the rows produced by
