@@ -10009,11 +10009,10 @@ Allowed values are `compact` and `direct`. Explicit datatype mode parameters ove
 )", EXPERIMENTAL, \
         {"26.10", "compact", "compact", "New setting selecting the default storage mode for experimental exponential time-decay values."}) \
     DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
-Maximum distance, measured in decay lengths, between ordering-index timestamps when adding
-finalized `ExponentialTimeDecaying` values. The input value's cached `UInt64` ordering
-key is used to obtain its indexed unit-magnitude timestamp. When the indexed timestamps are
-farther apart than this distance, the weaker input row is discarded before evaluating the
-decay factor.
+Maximum distance, measured in decay lengths, between ordering keys when adding finalized
+`ExponentialTimeDecaying` values. The full cached `UInt64` or `UInt128` identity is used,
+including the 128-bit residual/boundary component. When the key-defined curves are farther apart
+than this distance, the weaker input row is discarded before evaluating the decay factor.
 
 The default value `0` disables the cutoff. A positive value enables approximate
 query-local aggregation of finalized decaying values. Raw `(value, time)` aggregation
