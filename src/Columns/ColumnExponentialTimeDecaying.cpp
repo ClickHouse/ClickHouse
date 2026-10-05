@@ -173,6 +173,17 @@ Float64 ColumnExponentialTimeDecaying::getUnitTimestampAt(size_t n) const
         canonical.value_at_anchor, canonical.anchor_time, decay_length);
 }
 
+Float64 ColumnExponentialTimeDecaying::getPrintableUnitTimestampAt(size_t n) const
+{
+    const auto canonical = getCanonicalValueAt(n);
+    if (canonical.value_at_anchor == 0)
+        return 0;
+
+    const Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(
+        canonical.value_at_anchor, canonical.anchor_time, decay_length);
+    return std::isfinite(unit_timestamp) ? unit_timestamp : canonical.anchor_time;
+}
+
 Int8 ColumnExponentialTimeDecaying::getSignAt(size_t n) const
 {
     if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
@@ -196,17 +207,36 @@ Field ColumnExponentialTimeDecaying::operator[](size_t n) const
 
 void ColumnExponentialTimeDecaying::get(size_t n, Field & res) const
 {
-    const auto direct = getDirectValueAt(n);
-    res = Tuple{direct.value_at_anchor, direct.anchor_time, decay_length};
+    if (mode == ExponentialTimeDecayingMode::Direct)
+    {
+        const auto direct = getDirectValueAt(n);
+        res = Tuple{direct.value_at_anchor, direct.anchor_time, decay_length};
+        return;
+    }
+
+    res = Tuple{
+        Float64(getSignAt(n)),
+        getPrintableUnitTimestampAt(n),
+        decay_length};
 }
 
 void ColumnExponentialTimeDecaying::getValueNameImpl(
     WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    const auto direct = getDirectValueAt(n);
     if (options.notFull(name_buf))
         name_buf << "(";
-    name_buf << direct.value_at_anchor << ", " << direct.anchor_time << ", " << decay_length;
+
+    if (mode == ExponentialTimeDecayingMode::Direct)
+    {
+        const auto direct = getDirectValueAt(n);
+        name_buf << direct.value_at_anchor << ", " << direct.anchor_time;
+    }
+    else
+    {
+        name_buf << Float64(getSignAt(n)) << ", " << getPrintableUnitTimestampAt(n);
+    }
+
+    name_buf << ", " << decay_length;
     if (options.notFull(name_buf))
         name_buf << ")";
 }
