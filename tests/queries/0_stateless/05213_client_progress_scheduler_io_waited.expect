@@ -1,0 +1,103 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest, no-parallel
+# no-fasttest: reads a MergeTree table stored on an S3 disk.
+# no-parallel: `CREATE WORKLOAD <name>` without a parent claims the single root workload
+# slot, and the resource attaches the IO scheduler to the shared `s3_no_cache` disk.
+
+# Regression test for the "waited" figure fed by the workload IO scheduler: a query whose
+# reads are limited by `max_bytes_per_second` of its workload spends its time waiting for
+# the scheduler (`SchedulerIOReadWaitMicroseconds`, not the throttler), and this time must
+# be shown as `waited` next to `CPU` and color the progress bar yellow, exactly as the
+# throttler sleeps do.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+# The resource usage annotation is shown only when the progress bar is wider than twice the
+# annotation, so the terminal has to be wide enough for "(0.0 CPU, 1.0 waited)" to fit.
+set stty_init "rows 25 cols 240"
+
+# The root workload is a server-wide singleton: a test that dies on a timeout must not leave
+# it behind, or every later workload test fails with "The second root is not allowed".
+proc cleanup_and_fail {} {
+    global spawn_id
+    send "\3"
+    # The prompt may already be waiting in the buffer (the query may have ended long before
+    # the timeout), so the end of the DROP is awaited through a marker of its own, not through
+    # the prompt: otherwise the test exits, and the shell is killed, while the DROP still runs.
+    # The DROP is retried until it succeeds: it fails while the interrupted query has not
+    # unwound yet and still holds the workload.
+    set timeout 30
+    for {set attempt 0} {$attempt < 30} {incr attempt} {
+        send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE IF EXISTS t_05213; DROP WORKLOAD IF EXISTS w_05213_slow; DROP WORKLOAD IF EXISTS w_05213_all; DROP RESOURCE IF EXISTS r_05213_io\"; echo cleaned-\$?\r"
+        expect {
+            -re {cleaned-0\r} { break }
+            -re {cleaned-[0-9]+\r} { after 1000 }
+            timeout { break }
+        }
+    }
+    exit 1
+}
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { cleanup_and_fail }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+# About 2 MB of incompressible data on an S3 disk as ten parts of 2000 rows (200 KB) each,
+# read through a workload that is allowed 50 KB/s on that disk: the query needs several
+# seconds, almost all of them spent waiting for the scheduler, and it is cancelled as soon as
+# the annotation is seen. The limit is far below the speed at which the query runs on its own,
+# even under the `ThreadFuzzer` environment of the flaky check (which slows a read to a few
+# hundred KB/s): otherwise the scheduler hardly ever waits and `waited` stays at zero.
+# The data is split into small parts (and merges are stopped, so that it stays split) because
+# the server reports the progress of a `MergeTree` read only when a granule of a part has been
+# decoded, and the test harness randomizes settings that batch the reads of a big part so that
+# its first granule is decoded as late as its last one (for one,
+# `use_page_cache_for_disks_without_file_cache` makes the userspace page cache read the whole
+# file at once): the client would see no rows until the query is over and never show the bar.
+# With small parts, a part is done every few seconds whatever the batching of the reads is.
+# Writing the parts to S3 is slow under the `ThreadFuzzer` environment of the flaky check
+# (about a second per part), so this step is given more time than the progress checks.
+set timeout 300
+send "\$CLICKHOUSE_CLIENT --query \"CREATE OR REPLACE RESOURCE r_05213_io (READ DISK s3_no_cache); CREATE OR REPLACE WORKLOAD w_05213_all; CREATE OR REPLACE WORKLOAD w_05213_slow IN w_05213_all SETTINGS max_bytes_per_second = 50000 FOR r_05213_io; CREATE TABLE t_05213 (s String CODEC(NONE)) ENGINE = MergeTree ORDER BY () SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0; SYSTEM STOP MERGES t_05213; INSERT INTO t_05213 SELECT randomPrintableASCII(100) FROM numbers(20000) SETTINGS max_insert_threads = 1, max_block_size = 2000, min_insert_block_size_rows = 2000, min_insert_block_size_bytes = 0\" && echo created\r"
+expect "created"
+expect "bash) "
+set timeout 60
+
+# The read buffer is small, so that the reads (each one a scheduler request that waits for
+# its share of the bandwidth) are frequent enough for the rate to be steady, and the parts are
+# read one after another: the prefetched read pool and the userspace page cache are pinned off,
+# as either may put the reads of all the parts into the scheduler at once, and then the parts
+# are done together at the end instead of one by one. Parallel replicas are pinned off: the
+# test harness may enable them at random, and then the client is not shown the rows read by
+# the replicas, so the bar would have no cell to color.
+send "\$CLICKHOUSE_CLIENT --progress --workload w_05213_slow --max_threads 1 --max_read_buffer_size 65536 --allow_prefetched_read_pool_for_remote_filesystem 0 --use_page_cache_for_disks_without_file_cache 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query 'SELECT count() FROM t_05213 WHERE NOT ignore(s)' >/dev/null 2>&1\r"
+
+# The query is waiting for the IO scheduler most of the time: a non-zero `waited` figure is
+# shown next to `CPU` and the bar turns yellow.
+expect -re {\([0-9.]+ CPU, (0\.[1-9]|[1-9][0-9]*\.[0-9]) waited}
+expect -re {\x1b\[0;33m█}
+
+send "\3"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE t_05213; DROP WORKLOAD w_05213_slow; DROP WORKLOAD w_05213_all; DROP RESOURCE r_05213_io\" && echo dropped\r"
+expect "dropped"
+expect "bash) "
+
+send "exit\r"
+expect eof

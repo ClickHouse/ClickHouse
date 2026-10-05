@@ -49,18 +49,18 @@ public:
 .description
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
-This is the `bucketed` schema of `system.metric_log`. It stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)). Profile events are stored as increments during the collection interval, and current metrics are stored as values at collection time. Zero values are omitted; reading a missing key returns `0`.
+This is the `bucketed` schema of `system.metric_log`, which is the default. It stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)). Profile events are stored as increments during the collection interval, and current metrics are stored as values at collection time. Zero values are omitted; reading a missing key returns `0`.
 
-Every metric is also available through an `ALIAS` column named after the metric, so queries written for the default `wide` schema continue to work. The map uses bucketed serialization with 128 constant buckets, so reading one metric reads only one bucket.
+Every metric is also available through an `ALIAS` column named after the metric, so queries written for the `wide` schema continue to work. The map uses bucketed serialization with 128 constant buckets, so reading one metric reads only one bucket.
 
 Each row also contains a snapshot of registered histogram metrics in the `histograms` Nested column. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are omitted, as are zero-counter buckets within emitted histograms. Set `system_metric_log_show_zero_values_in_histograms = 1` in the default user profile to retain them.
 
-Configure this schema with:
+The previous `wide` schema, with a separate column for every metric, is used instead when `default_system_log_flush_policy.skip_alias_columns` is enabled or when `metric_log` has an explicit `engine`. It can also be selected explicitly with:
 
 ```xml
 <clickhouse>
     <metric_log>
-        <schema_type>bucketed</schema_type>
+        <schema_type>wide</schema_type>
     </metric_log>
 </clickhouse>
 ```

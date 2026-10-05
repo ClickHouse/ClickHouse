@@ -12,7 +12,6 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 -- The plan assertions below sort the matched lines: the order in which the plan prints the filter
 -- above the join, the pre-filters below it and the `PREWHERE` steps depends on which side the join
 -- is read from, which the settings randomizer is free to flip.

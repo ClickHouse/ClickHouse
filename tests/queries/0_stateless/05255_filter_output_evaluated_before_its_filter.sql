@@ -62,11 +62,13 @@ FROM (
              enable_parallel_replicas = 0, use_query_cache = 0
 );
 
--- Being built is not being applied, and only the probe side runs the guarded expression. This counter
--- is the direct evidence that the subquery above is the side the filter is applied to, so that a
+-- Being built is not being applied, and only the probe side runs the guarded expression. These counters
+-- are the direct evidence that the subquery above is the side the filter is applied to, so that a
 -- configuration which cannot witness the bug reddens here instead of passing. A bare `> 0` would not
--- do: with the join orientation reversed the filter is applied to t2 instead and the counter reads 5,
+-- do: with the join orientation reversed the filter is applied to t2 instead and the counters read 5,
 -- so the threshold has to separate t1's 2001 rows from t2's 5.
+-- Every t1 row passes the filter, so it can disable itself after one block and count the remaining
+-- rows as skipped rather than checked; both counters are rows the filter was applied to.
 SELECT count(), sum(length(a.s))
 FROM (SELECT c1, c2, CAST(c3, 'Array(String)') AS s FROM t1 FINAL WHERE c4) AS a
 INNER JOIN t2 AS b ON b.c1 = a.c2
@@ -78,7 +80,7 @@ SETTINGS join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash',
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['RuntimeFilterRowsChecked'] >= 2000
+SELECT ProfileEvents['RuntimeFilterRowsChecked'] + ProfileEvents['RuntimeFilterRowsSkipped'] >= 2000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05255_rf_probe' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;

@@ -99,6 +99,7 @@ struct Optimization
         bool lower_array_join_function = false;
         bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
+        bool filter_push_down_below_limit_by = true;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -234,6 +235,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
+size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
 /// the preserved-side input must produce before joining.
@@ -351,6 +355,12 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+
+/// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
+/// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
+/// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly
+/// above but handles all filter shapes where this one matches a subset.
+void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

@@ -340,6 +340,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
@@ -424,10 +426,15 @@ public:
 #endif
     }
 
-    bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    bool optimize(
+        ObjectStoragePtr object_storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        return getMetadata()->optimize(metadata_snapshot, context, format_settings);
+        return getMetadata()->optimize(metadata_snapshot, context, format_settings, catalog);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override

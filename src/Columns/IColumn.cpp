@@ -190,7 +190,7 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */, co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const IColumn::SerializationSettings * /* settings */) const
+void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
@@ -212,7 +212,7 @@ char * IColumn::serializeValueIntoMemoryWithNull(
 }
 
 void IColumn::batchSerializeValueIntoMemoryWithNull(
-    VectorWithMemoryTracking<char *> & /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
+    std::span<char *> /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
@@ -780,7 +780,7 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
-    VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+    std::span<char *> memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
@@ -814,7 +814,7 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
