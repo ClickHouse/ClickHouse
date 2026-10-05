@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+    extern const SettingsString exponential_time_decay_default_mode;
 }
 
 namespace ErrorCodes
@@ -135,6 +136,7 @@ struct FunctionConvertSettings
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
     const bool allow_experimental_time_decay_aggregate_functions;
+    const String exponential_time_decay_default_mode;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -152,6 +154,7 @@ struct FunctionConvertSettings
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , allow_experimental_time_decay_aggregate_functions(!context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        , exponential_time_decay_default_mode(context ? context->getSettingsRef()[Setting::exponential_time_decay_default_mode].value : "compact")
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
