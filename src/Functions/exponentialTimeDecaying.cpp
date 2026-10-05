@@ -74,11 +74,10 @@ void assertTimeType(const DataTypePtr & type, const String & function_name)
 
 struct DecayingColumnView
 {
-    const ColumnFloat64 & value_at_anchor;
-    const ColumnFloat64 & anchor_time;
-    const IColumn & ordering_key;
+    const ColumnExponentialTimeDecaying & column;
     Float64 decay_length;
     ExponentialTimeDecayingKeyWidth key_width;
+    ExponentialTimeDecayingMode mode;
 };
 
 DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTypePtr & type)
@@ -87,26 +86,23 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     chassert(decay_length);
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
-    const auto & tuple = decaying.getStorageTuple();
     return {
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
-        decaying.getOrderingKeyColumn(),
+        decaying,
         *decay_length,
         decaying.getKeyWidth(),
+        decaying.getMode(),
     };
 }
 
 bool isEmptyRow(const DecayingColumnView & input, size_t row)
 {
-    return input.value_at_anchor.getData()[row] == 0;
+    return input.column.getDirectValueAt(row).value_at_anchor == 0;
 }
 
 void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const Float64 value = input.value_at_anchor.getData()[row];
-    const Float64 time = input.anchor_time.getData()[row];
-    if (!std::isfinite(value) || !std::isfinite(time))
+    const auto direct = input.column.getDirectValueAt(row);
+    if (!std::isfinite(direct.value_at_anchor) || !std::isfinite(direct.anchor_time))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Argument of function {} is not a canonical exponential-time-decaying value",
@@ -119,15 +115,14 @@ Float64 valueAt(
     if (isEmptyRow(input, row))
         return 0;
 
-    const Float64 value = input.value_at_anchor.getData()[row];
-    const Float64 anchor_time = input.anchor_time.getData()[row];
+    const auto direct = input.column.getDirectValueAt(row);
+    const Float64 value = direct.value_at_anchor;
+    const Float64 anchor_time = direct.anchor_time;
     if (target_time == anchor_time)
         return value;
 
     if (at_unit_time)
     {
-        /// Evaluate the exponent and product in extended precision before the
-        /// final `Float64` rounding to retain the residual across re-anchoring.
         using ExtendedTimeDecayFloat = boost::multiprecision::cpp_bin_float_quad;
         const ExtendedTimeDecayFloat extended_value(value);
         const ExtendedTimeDecayFloat extended_anchor(anchor_time);
@@ -145,28 +140,18 @@ Float64 valueAt(
 
 Float64 unitTime(const DecayingColumnView & input, size_t row)
 {
-    if (isEmptyRow(input, row))
-        return 0;
-
-    if (input.key_width == ExponentialTimeDecayingKeyWidth::Bits64)
-    {
-        const auto & keys = assert_cast<const ColumnUInt64 &>(input.ordering_key).getData();
-        return getExponentialTimeDecayingCanonicalDirectValue(keys[row]).anchor_time;
-    }
-
-    const auto & keys = assert_cast<const ColumnUInt128 &>(input.ordering_key).getData();
-    const auto direct = getExponentialTimeDecayingCanonicalDirectValue(keys[row]);
-    return getExponentialTimeDecayingUnitTimestamp(
-        direct.value_at_anchor, direct.anchor_time, input.decay_length);
+    return input.column.getUnitTimestampAt(row);
 }
 
 struct DecayingColumnBuilder
 {
     explicit DecayingColumnBuilder(
         Float64 decay_length_,
-        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64)
+        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64,
+        ExponentialTimeDecayingMode mode_ = ExponentialTimeDecayingMode::Compact)
         : decay_length(decay_length_)
         , key_width(key_width_)
+        , mode(mode_)
     {
     }
 
@@ -177,22 +162,25 @@ struct DecayingColumnBuilder
                 ErrorCodes::BAD_ARGUMENTS,
                 "exponential-time-decaying value does not define a finite decay curve");
 
-        const auto normalized = normalizeExponentialTimeDecaying(
-            value, time, decay_length, key_width);
-        value_at_anchor->insertValue(normalized.value_at_anchor);
-        anchor_time->insertValue(normalized.anchor_time);
+        value_at_anchor->insertValue(value);
+        anchor_time->insertValue(time);
     }
 
     ColumnPtr build()
     {
         auto tuple = ColumnTuple::create(
             Columns{std::move(value_at_anchor), std::move(anchor_time)});
-        return ColumnExponentialTimeDecaying::create(
-            tuple->assumeMutable(), decay_length, key_width);
+        return materializeExponentialTimeDecayingStorageColumn(
+            *tuple,
+            decay_length,
+            "function result",
+            key_width,
+            mode);
     }
 
     const Float64 decay_length;
     const ExponentialTimeDecayingKeyWidth key_width;
+    const ExponentialTimeDecayingMode mode;
     ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
     ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
 };
@@ -302,7 +290,7 @@ public:
         auto right_column = arguments[1].column->convertToFullColumnIfConst();
         const auto left = getDecayingColumnView(left_column, arguments[0].type);
         const auto right = getDecayingColumnView(right_column, arguments[1].type);
-        DecayingColumnBuilder result(left.decay_length, left.key_width);
+        DecayingColumnBuilder result(left.decay_length, left.key_width, left.mode);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -311,22 +299,22 @@ public:
 
             if (isEmptyRow(left, row))
             {
-                result.append(
-                    right.value_at_anchor.getData()[row],
-                    right.anchor_time.getData()[row]);
+                const auto direct = right.column.getDirectValueAt(row);
+                result.append(direct.value_at_anchor, direct.anchor_time);
                 continue;
             }
             if (isEmptyRow(right, row))
             {
-                result.append(
-                    left.value_at_anchor.getData()[row],
-                    left.anchor_time.getData()[row]);
+                const auto direct = left.column.getDirectValueAt(row);
+                result.append(direct.value_at_anchor, direct.anchor_time);
                 continue;
             }
 
+            const auto left_direct = left.column.getDirectValueAt(row);
+            const auto right_direct = right.column.getDirectValueAt(row);
             const Float64 latest_time = std::max(
-                left.anchor_time.getData()[row],
-                right.anchor_time.getData()[row]);
+                left_direct.anchor_time,
+                right_direct.anchor_time);
             result.append(
                 valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
                 latest_time);
