@@ -69,11 +69,11 @@ inline UInt64 shiftOneBitAndSign(
     if (value_at_anchor == 0)
         return midpoint;
 
-    const UInt64 sortable = getExponentialTimeDecayingSortableFloatKey(unit_timestamp);
+    const UInt64 unit_key = getExponentialTimeDecayingSortableFloatKey(unit_timestamp) >> 1;
     if (std::signbit(value_at_anchor))
-        return midpoint - 1 - (sortable >> 1);
+        return midpoint - 1 - unit_key;
 
-    return midpoint + (sortable >> 1) + (sortable & 1);
+    return midpoint + unit_key;
 }
 
 inline UInt64 getExponentialTimeDecayingOrderingKey(
