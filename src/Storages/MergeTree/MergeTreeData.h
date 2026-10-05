@@ -1137,9 +1137,18 @@ public:
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
+    /// Whether a mutation really drops a skip index, which is what makes forgetting it dangerous.
+    /// `CLEAR INDEX` arrives as a `DROP_INDEX` with `clear` and keeps its index in the metadata.
+    static bool dropsSkipIndex(const MutationCommands & commands);
+
     /// Throws if forgetting this mutation would leave a reused skip index name reading the previous
-    /// definition's granules. Called by `killMutation` of both engines; see the definition.
+    /// definition's granules. Called by `StorageMergeTree::killMutation`, where the pending
+    /// mutations of the only replica are the pending mutations of the table; see the definition.
     void checkMutationIsSafeToKill(const String & mutation_id) const;
+
+    /// The same decision for commands the caller has already looked up. `StorageReplicatedMergeTree`
+    /// uses it, because what one replica has still to apply does not say what the others hold.
+    void checkDroppedSkipIndexNamesCanBeForgotten(const MutationCommands & commands) const;
 
     /// Throws if the drop of an index with this name must not be forgotten, because the name is in
     /// use. Asked only about a mutation that really drops an index, so an implementation may consult

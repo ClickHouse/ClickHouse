@@ -1,0 +1,5 @@
+-- the drop is done on the replica the kill is issued on
+0
+-- the kill is refused anyway, because the other replica has not applied it
+-- and the other replica still answers without the stale granules once it catches up
+1

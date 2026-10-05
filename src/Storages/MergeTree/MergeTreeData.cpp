@@ -13815,7 +13815,32 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
+bool MergeTreeData::dropsSkipIndex(const MutationCommands & commands)
+{
+    return std::ranges::any_of(commands, [](const auto & command)
+    {
+        /// `CLEAR INDEX` is a `DROP_INDEX` with `clear`: it keeps the index in the metadata, so the
+        /// name cannot have been given to another definition and the files the parts still hold
+        /// belong to this very index.
+        return command.type == MutationCommand::Type::DROP_INDEX && !command.clear;
+    });
+}
+
 void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
+{
+    /// Only mutations some part has still to apply are listed, so a drop that has already reached
+    /// every part leaves nothing behind and is killed as before. This table has one replica, so
+    /// what this replica has still to apply is all there is; `StorageReplicatedMergeTree` has to
+    /// ask every replica instead.
+    auto unfinished_mutations = getUnfinishedMutationCommands();
+    auto it = unfinished_mutations.find(mutation_id);
+    if (it == unfinished_mutations.end())
+        return;
+
+    checkDroppedSkipIndexNamesCanBeForgotten(it->second);
+}
+
+void MergeTreeData::checkDroppedSkipIndexNamesCanBeForgotten(const MutationCommands & commands) const
 {
     /// A part is refused the granules of a dropped skip index only while the `DROP INDEX` mutation
     /// is still pending for it (`AlterConversions::getStaleIndices`). Killing the mutation takes that
@@ -13825,9 +13850,6 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
     /// answer from the previous definition's granules, which is the wrong-results bug of #121171 with
     /// no pending mutation to detect it any more. Refuse, and let the re-added index be dropped first.
     ///
-    /// Only mutations some part has still to apply are listed, so a drop that has already reached
-    /// every part leaves nothing behind and is killed as before.
-    ///
     /// The decision reads the metadata, which another statement could change, but not under this
     /// one: the only `ALTER` that can give the name of a pending drop to a new index is the one
     /// that issues the drop itself, since `checkAddedIndexNameHasNoStaleFiles` refuses a name whose
@@ -13836,16 +13858,8 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
     /// and in one ZooKeeper transaction for a replicated table - so a kill that finds the mutation
     /// at all also sees the metadata it came with. A replica that is behind on that metadata is
     /// refused by the override in `StorageReplicatedMergeTree`.
-    auto unfinished_mutations = getUnfinishedMutationCommands();
-    auto it = unfinished_mutations.find(mutation_id);
-    if (it == unfinished_mutations.end())
-        return;
-
-    for (const auto & command : it->second)
+    for (const auto & command : commands)
     {
-        /// `CLEAR INDEX` is a `DROP_INDEX` with `clear`: it keeps the index in the metadata, so the
-        /// name cannot have been given to another definition and the files the parts still hold
-        /// belong to this very index.
         if (command.type != MutationCommand::Type::DROP_INDEX || command.clear)
             continue;
 
@@ -13866,7 +13880,7 @@ void MergeTreeData::checkSkipIndexNameCanBeForgotten(const String & index_name) 
         "to another index. The parts the drop has not rewritten still hold the granules of the dropped "
         "index, and they are refused only while the drop is pending, so queries would answer from them "
         "as if they belonged to the new index. Drop the index with that name first, or wait for the "
-        "mutation to finish",
+        "mutation to finish on every replica",
         backQuoteIfNeed(index_name),
         getStorageID().getNameForLogs());
 }
@@ -13884,6 +13898,14 @@ void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(const String & index_name
     /// The shape from the issue, `DROP INDEX ix, ADD INDEX ix ...` in one `ALTER`, never reaches
     /// this check: the name is in the metadata on both sides, and that `ALTER` publishes the new
     /// definition together with the `DROP INDEX` mutation that marks the old files stale.
+    ///
+    /// Only the parts of this replica are seen, and the metadata `ALTER` is replayed on the others
+    /// without running this check again, so a replica that was left behind by a killed drop can
+    /// still hold the files while the replica the `ALTER` was issued on is clean. Covering that
+    /// would need the name to be refused from durable state - a tombstone per name that lives until
+    /// every replica reports its files gone - which the table does not keep today. `killMutation`
+    /// narrows it instead: it refuses to forget a drop while any replica may still hold its files,
+    /// so this state needs a drop killed while the name was free, and a replica behind on it.
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     for (const auto & part : getDataPartsVectorForInternalUsage())
