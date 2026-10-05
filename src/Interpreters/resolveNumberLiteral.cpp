@@ -156,14 +156,19 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
         if (isDecimal(*ref))
         {
             /// Fold the exponent and drop insignificant trailing zeroes first, so different spellings
-            /// of one value (`1.5e-3`, `0.0015`) resolve identically. A value that does not fit
-            /// Decimal256 keeps the Float64 default.
+            /// of one value (`1.5e-3`, `0.0015`) resolve identically.
             UInt32 scale = 0;
             if (normalizeDecimalLiteral(text, decimal_text, scale))
             {
                 if (is_comparison)
                 {
-                    target_type = std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), scale);
+                    /// The literal keeps its own scale, so it is never rounded to the reference's. Its precision
+                    /// covers both sides' integer digits, as a comparison rescales them in the wider of the two
+                    /// types and throws on overflow (`Decimal32(0)` value 999999999 against `0.5`).
+                    const UInt32 ref_scale = getDecimalScale(*ref);
+                    const UInt64 integer_digits = std::max<UInt64>(getDecimalPrecision(*ref) - ref_scale, decimalDigits(decimal_text) - scale);
+                    const UInt64 precision = std::min<UInt64>(integer_digits + std::max(scale, ref_scale), DataTypeDecimal<Decimal256>::maxPrecision());
+                    target_type = createDecimal<DataTypeDecimal>(precision, scale);
                 }
                 else
                 {
@@ -175,6 +180,13 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
                     if (precision <= DataTypeDecimal<Decimal256>::maxPrecision())
                         target_type = createDecimal<DataTypeDecimal>(precision, target_scale);
                 }
+            }
+            else
+            {
+                /// Too wide for Decimal256 in any spelling. A wide integer default does not compare with a
+                /// Decimal at all, so every spelling goes through Float64.
+                literal_value = NumberLiteral(text).toFloat64();
+                target_type = std::make_shared<DataTypeFloat64>();
             }
         }
         else if ((which_default.isInt() || which_default.isUInt()) && which_ref.isFloat())
@@ -241,7 +253,10 @@ std::pair<Field, DataTypePtr> resolveNested(const Field & field, const DataTypeP
         if (reference && (isNumber(*reference) || isDecimal(*reference)))
         {
             auto [parsed_field, target_type] = resolveNumberLiteralForFunction(text, reference, /*is_comparison=*/ true);
-            if (target_type)
+            /// Keep the default type where the resolved one has no common type with its reference
+            /// (e.g. `1e60` against `Decimal64(1)`). Checked per element, so a mismatch elsewhere in
+            /// a tuple (a `String` key compared with a number) does not drop this element's type.
+            if (target_type && tryGetLeastSupertype(DataTypes{reference, target_type}))
             {
                 any_resolved = true;
                 return {std::move(parsed_field), std::move(target_type)};

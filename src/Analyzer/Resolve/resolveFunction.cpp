@@ -1304,21 +1304,6 @@ static bool tryGetUnresolvedConstantField(const QueryTreeNodePtr & node, Field &
     return any_unresolved && buildCompositeLiteralField(function_name, std::move(collected), out);
 }
 
-/// Parse one set element against the type it is compared with. Null type keeps the default.
-static std::pair<Field, DataTypePtr> resolveNumberLiteralAgainst(const Field & element, const DataTypePtr & reference_type)
-{
-    auto [parsed_field, target_type] = resolveNumberLiteralSetElement(element, reference_type);
-    if (!target_type)
-        return {};
-
-    /// Keep the default type when the resolved one has no common type with the left-hand side
-    /// (e.g. `1e60` against `Decimal64(1)`), so the rewrites can still build the comparison.
-    if (!tryGetLeastSupertype(DataTypes{reference_type, target_type}))
-        return {};
-
-    return {std::move(parsed_field), std::move(target_type)};
-}
-
 /// Re-type the NumberLiteral elements of an IN right-hand side against the type of the left-hand
 /// side. Without this the least supertype of a `Decimal` left-hand side and a `Float64` element is
 /// `Float64`, so both sides would be rounded through `Float64` before the comparison.
@@ -1335,7 +1320,7 @@ static void resolveNumberLiteralElementsForIn(QueryTreeNodes & array_elements, c
         if (!constant || !tryGetUnresolvedConstantField(element, original))
             continue;
 
-        auto [parsed_field, target_type] = resolveNumberLiteralAgainst(original, reference_type);
+        auto [parsed_field, target_type] = resolveNumberLiteralSetElement(original, reference_type);
         if (!target_type)
             continue;
 
@@ -1377,7 +1362,7 @@ static void resolveNumberLiteralsInConstantInSet(QueryTreeNodePtr & in_second_ar
     /// `(x, y) IN ((1.1, 2))` and `[x] IN ([1.1])` collapse to one composite that is a single set
     /// element, not a list. Trying it whole first is safe: it only resolves against the same shape,
     /// and a real list has a composite element where that shape wants a number.
-    if (auto [whole_field, whole_type] = resolveNumberLiteralAgainst(unresolved, reference_type); whole_type)
+    if (auto [whole_field, whole_type] = resolveNumberLiteralSetElement(unresolved, reference_type); whole_type)
     {
         rebuild(std::move(whole_field), whole_type);
         return;
@@ -1400,7 +1385,7 @@ static void resolveNumberLiteralsInConstantInSet(QueryTreeNodePtr & in_second_ar
     bool any_element_resolved = false;
     for (const auto & element : elements)
     {
-        auto [parsed_field, target_type] = resolveNumberLiteralAgainst(element, reference_type);
+        auto [parsed_field, target_type] = resolveNumberLiteralSetElement(element, reference_type);
         if (target_type)
         {
             resolved_elements.push_back(std::move(parsed_field));
