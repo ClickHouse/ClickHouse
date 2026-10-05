@@ -11,4 +11,5 @@ ExponentialTimeDecaying64(10)	ExponentialTimeDecaying128(10)
 ExponentialTimeDecaying64(3, direct)	8	5.25	3	ExponentialTimeDecaying64(3, direct)	8	5.25	ExponentialTimeDecaying64(3)	1	1
 1	1	1
 1	1
+1	1	1	1
 1	1	1	1	1	1
