@@ -507,11 +507,6 @@ add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
-add_object_library(clickhouse_processors_executors_runtime Processors/Executors/Runtime)
-add_object_library(clickhouse_processors_executors_runtime_v1 Processors/Executors/Runtime/V1)
-add_object_library(clickhouse_processors_executors_runtime_v2 Processors/Executors/Runtime/V2)
-add_object_library(clickhouse_processors_executors_runtime_v2_engine Processors/Executors/Runtime/V2/Engine)
-add_object_library(clickhouse_processors_executors_runtime_v2_pipeline Processors/Executors/Runtime/V2/Pipeline)
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
@@ -588,6 +583,28 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+
+# The pipeline runtime is not part of dbms: it is compiled three times, over std, with the Wyrd adversary and under the Wyrd simulation.
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V1)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V2)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V2/Engine)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V2/Pipeline)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/Wyrd)
+add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/Wyrd/Facade)
+add_headers_and_sources(clickhouse_runtime_adversary Processors/Executors/Runtime/Wyrd/Adversary)
+add_headers_and_sources(clickhouse_runtime_simulation Processors/Executors/Runtime/Wyrd/Simulation)
+
+add_library (clickhouse_runtime STATIC ${clickhouse_runtime_headers} ${clickhouse_runtime_sources})
+add_library (clickhouse_runtime_adversary STATIC ${clickhouse_runtime_headers} ${clickhouse_runtime_sources} ${clickhouse_runtime_adversary_sources})
+add_library (clickhouse_runtime_simulation STATIC ${clickhouse_runtime_headers} ${clickhouse_runtime_sources} ${clickhouse_runtime_simulation_sources})
+target_compile_definitions (clickhouse_runtime_adversary PRIVATE WYRD_ADVERSARY=1)
+target_compile_definitions (clickhouse_runtime_simulation PRIVATE WYRD_SIMULATION=1)
+foreach (runtime clickhouse_runtime clickhouse_runtime_adversary clickhouse_runtime_simulation)
+    target_link_libraries (${runtime} PUBLIC dbms)
+endforeach ()
+target_link_libraries (clickhouse_runtime_simulation PUBLIC boost::context)
+target_link_libraries (dbms PUBLIC "$<IF:$<STREQUAL:$<TARGET_PROPERTY:CLICKHOUSE_RUNTIME>,>,clickhouse_runtime,$<TARGET_PROPERTY:CLICKHOUSE_RUNTIME>>")
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
@@ -1018,9 +1035,15 @@ if (ENABLE_TESTS)
         file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()
 
+    # Wyrd tests and helpers compile three times: into unit_tests_dbms over the std aliases, and into the two binaries
+    # below, each on its own runtime flavour.
+    set(wyrd_dir Processors/Executors/Runtime/Wyrd)
+    add_headers_and_sources(wyrd_helpers ${wyrd_dir}/Testing)
+    file(GLOB wyrd_tests CONFIGURE_DEPENDS ${wyrd_dir}/tests/gtest*.cpp)
+
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
-    clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources} ${wyrd_helpers_sources})
     add_dependencies (unit_tests_dbms clickhouse-microbenchmarks-objects)
 
     # gtest framework has substandard code
@@ -1049,6 +1072,18 @@ if (ENABLE_TESTS)
         # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
         # propagates transitively in full-library builds, so declare the dependency explicitly.
         ch_contrib::lz4)
+
+    clickhouse_add_executable(executor_adversary_tests ${wyrd_helpers_sources} ${wyrd_tests})
+    set_target_properties(executor_adversary_tests PROPERTIES CLICKHOUSE_RUNTIME clickhouse_runtime_adversary)
+    target_compile_definitions(executor_adversary_tests PRIVATE WYRD_ADVERSARY=1)
+    target_compile_options(executor_adversary_tests PRIVATE -Wno-sign-compare)
+    target_link_libraries(executor_adversary_tests PRIVATE ch_contrib::gmock_all ch_contrib::gtest dbms)
+
+    clickhouse_add_executable(executor_simulation_tests ${wyrd_helpers_sources} ${wyrd_tests})
+    set_target_properties(executor_simulation_tests PROPERTIES CLICKHOUSE_RUNTIME clickhouse_runtime_simulation)
+    target_compile_definitions(executor_simulation_tests PRIVATE WYRD_SIMULATION=1)
+    target_compile_options(executor_simulation_tests PRIVATE -Wno-sign-compare)
+    target_link_libraries(executor_simulation_tests PRIVATE ch_contrib::gmock_all ch_contrib::gtest dbms)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
