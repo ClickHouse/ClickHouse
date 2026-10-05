@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Task.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
 #include <boost/container/devector.hpp>

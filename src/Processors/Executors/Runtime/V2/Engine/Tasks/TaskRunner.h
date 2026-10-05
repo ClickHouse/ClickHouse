@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Task.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
@@ -15,7 +15,7 @@ namespace DB
 namespace Runtime::V2
 {
 
-class ProcessorRunner
+class TaskRunner
 {
     /// Processor syscalls.
     void runPrepare(ProcessorState & state);
@@ -31,12 +31,12 @@ class ProcessorRunner
     void profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const;
 
 public:
-    ProcessorRunner(ExecutingPipeline & pipeline_, size_t worker_id_);
+    TaskRunner(ExecutingPipeline & pipeline_, size_t worker_id_);
 
     void run(Task task);
     const std::vector<Task> & getFoundTasks() const;
     const std::vector<AsyncTask> & getFoundAsyncTasks() const;
-    const WorkIntervals & getWorkIntervals() const;
+    WorkIntervals takeWorkIntervals();
 
 private:
     ExecutingPipeline & pipeline;

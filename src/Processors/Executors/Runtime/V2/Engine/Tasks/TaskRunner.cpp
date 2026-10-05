@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Engine/ProcessorRunner.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -11,6 +11,8 @@
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -22,7 +24,7 @@ namespace ErrorCodes
 namespace Runtime::V2
 {
 
-void ProcessorRunner::runPrepare(ProcessorState & state)
+void TaskRunner::runPrepare(ProcessorState & state)
 {
     pending_inputs.clear();
     pending_outputs.clear();
@@ -50,7 +52,7 @@ void ProcessorRunner::runPrepare(ProcessorState & state)
         pipeline.recordAsFinished(*processor);
 }
 
-void ProcessorRunner::runWork(ProcessorState & state) /// NOLINT
+void TaskRunner::runWork(ProcessorState & state) /// NOLINT
 {
     IProcessor & processor = *state.processor;
 
@@ -116,13 +118,13 @@ void ProcessorRunner::runWork(ProcessorState & state) /// NOLINT
     }
 }
 
-void ProcessorRunner::runAsyncReady(ProcessorState & state)
+void TaskRunner::runAsyncReady(ProcessorState & state)
 {
     state.processor->onAsyncJobReady();
     tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Work});
 }
 
-void ProcessorRunner::runUpdatePipeline(ProcessorState & state)
+void TaskRunner::runUpdatePipeline(ProcessorState & state)
 {
     IProcessor::PipelineUpdate update = state.processor->updatePipeline();
 
@@ -144,7 +146,7 @@ void ProcessorRunner::runUpdatePipeline(ProcessorState & state)
 }
 
 template <class PortT>
-void ProcessorRunner::visitNeighbour(PortT & neighbour)
+void TaskRunner::visitNeighbour(PortT & neighbour)
 {
     ProcessorState & owner = neighbour.getRoundUpdatesChannel().getOwner();
     if (owner.lock.isFinished())
@@ -166,7 +168,7 @@ void ProcessorRunner::visitNeighbour(PortT & neighbour)
     }
 }
 
-void ProcessorRunner::notifyOwner(ProcessorState & state)
+void TaskRunner::notifyOwner(ProcessorState & state)
 {
     auto round_lock = state.lock.lockRound();
     switch (state.lock.status())
@@ -183,7 +185,7 @@ void ProcessorRunner::notifyOwner(ProcessorState & state)
     }
 }
 
-void ProcessorRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mutex>)
+void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mutex>)
 {
     IProcessor & processor = *state.processor;
 
@@ -238,7 +240,7 @@ void ProcessorRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd
     }
 }
 
-void ProcessorRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const
+void TaskRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const
 {
     if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
         processor.input_wait_watch.restart();
@@ -251,14 +253,14 @@ void ProcessorRunner::profileWaits(IProcessor & processor, std::optional<IProces
         processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
 }
 
-ProcessorRunner::ProcessorRunner(ExecutingPipeline & pipeline_, size_t worker_id_)
+TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, size_t worker_id_)
     : pipeline(pipeline_)
     , worker_id(worker_id_)
     , collect_work_intervals(pipeline.step_profiler && pipeline.step_profiler->needCollectWorkIntervals())
 {
 }
 
-void ProcessorRunner::run(Task task)
+void TaskRunner::run(Task task)
 {
     tasks_found.clear();
     async_tasks_found.clear();
@@ -281,19 +283,19 @@ void ProcessorRunner::run(Task task)
     }
 }
 
-const std::vector<Task> & ProcessorRunner::getFoundTasks() const
+const std::vector<Task> & TaskRunner::getFoundTasks() const
 {
     return tasks_found;
 }
 
-const std::vector<AsyncTask> & ProcessorRunner::getFoundAsyncTasks() const
+const std::vector<AsyncTask> & TaskRunner::getFoundAsyncTasks() const
 {
     return async_tasks_found;
 }
 
-const WorkIntervals & ProcessorRunner::getWorkIntervals() const
+WorkIntervals TaskRunner::takeWorkIntervals()
 {
-    return work_intervals;
+    return std::exchange(work_intervals, {});
 }
 
 }
