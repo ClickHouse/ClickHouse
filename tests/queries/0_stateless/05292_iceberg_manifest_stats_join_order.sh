@@ -2,13 +2,12 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: with `use_iceberg_manifest_statistics = 1` an Iceberg read reports the row count
-# summed from its manifest files to join reordering, labelled like an exact MergeTree count.
-# T1: join order of a 3-way join, and the same query with the setting off; executed, the reordered join
-# puts 20 rows into its hash tables instead of 1010. T2: the smaller table becomes the build side; with
-# the setting off the Iceberg table is. T3: a table that was never written reports 0 rows. T4: the count
-# comes from the snapshot the read uses (time travel). T5: an aggregation over an Iceberg read keeps the
-# input rows, imprecise, and the debug log names it in the data lake hint line, not in the MergeTree one.
+# Issue 120440: with `use_iceberg_manifest_statistics`, join reordering gets Iceberg row counts from the manifests.
+# - T1: order of a 3-way join with the setting off and on, and the rows its hash tables get.
+# - T2: the smaller table becomes the build side.
+# - T3: a table that was never written has 0 rows.
+# - T4: the count comes from the snapshot the read uses.
+# - T5: an aggregation over an Iceberg read keeps an estimate and is named in the data lake hint line.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

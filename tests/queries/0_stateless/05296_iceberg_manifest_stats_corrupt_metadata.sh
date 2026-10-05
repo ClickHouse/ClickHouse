@@ -2,10 +2,9 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: the manifest row count behind `use_iceberg_manifest_statistics` on broken metadata.
-# T1: a negative `record_count` (the fixture of `04615`) gives unknown rows, not a huge number.
-# T2: a missing manifest file makes `EXPLAIN` of a join fail, as the read does (errors propagate);
-# with the setting off `EXPLAIN` does not open the manifests.
+# Issue 120440: the manifest row count on broken metadata.
+# - T1: a negative `record_count` (the fixture of `04615`) gives unknown rows, not a huge number.
+# - T2: a missing manifest file fails `EXPLAIN` as it fails the read; with the setting off it is not opened.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
