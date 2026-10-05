@@ -4,7 +4,7 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIIdenticalInputCache.h>
+#include <Functions/AI/AIDuplicateCache.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -195,7 +195,7 @@ public:
         }
 
         FunctionBaseAI::EmbeddingResult embedding_result;
-        const auto input_cache = getContext()->getAIIdenticalInputCache();
+        const auto input_cache = getContext()->getAIDuplicateCache();
         UInt128 cache_prefix{};
         size_t reserved_bytes = 0;
         if (input_cache)

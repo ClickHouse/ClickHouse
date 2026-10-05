@@ -109,7 +109,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIIdenticalInputCache.h>
+#include <Functions/AI/AIDuplicateCache.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -9513,7 +9513,7 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
     return query_context->ai_quota_tracker;
 }
 
-AIIdenticalInputCachePtr Context::getAIIdenticalInputCache() const
+AIDuplicateCachePtr Context::getAIDuplicateCache() const
 {
     auto query_context = getQueryContext();
     const auto & settings_ref = query_context->getSettingsRef();
@@ -9522,7 +9522,7 @@ AIIdenticalInputCachePtr Context::getAIIdenticalInputCache() const
         return nullptr;
 
     std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
-    if (!query_context->ai_identical_input_cache)
+    if (!query_context->ai_duplicate_cache)
     {
         const auto max_bytes = settings_ref[Setting::ai_function_reuse_identical_max_size_bytes];
         if (max_bytes == 0)
@@ -9530,9 +9530,9 @@ AIIdenticalInputCachePtr Context::getAIIdenticalInputCache() const
                 ErrorCodes::BAD_ARGUMENTS,
                 "'ai_function_reuse_identical_max_size_bytes' must be positive when 'ai_function_reuse_identical' is enabled");
 
-        query_context->ai_identical_input_cache = std::make_shared<AIIdenticalInputCache>(max_bytes);
+        query_context->ai_duplicate_cache = std::make_shared<AIDuplicateCache>(max_bytes);
     }
-    return query_context->ai_identical_input_cache;
+    return query_context->ai_duplicate_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

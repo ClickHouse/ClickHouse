@@ -1,5 +1,5 @@
 #include <Functions/FunctionBaseAI.h>
-#include <Functions/AI/AIIdenticalInputCache.h>
+#include <Functions/AI/AIDuplicateCache.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
@@ -390,7 +390,7 @@ struct EmbeddingReuseSlot
 };
 
 void publishOwnedEmbeddings(
-    AIIdenticalInputCache & cache,
+    AIDuplicateCache & cache,
     VectorWithMemoryTracking<EmbeddingReuseSlot> & slots,
     const VectorWithMemoryTracking<size_t> & owned_positions,
     FunctionBaseAI::EmbeddingResult & owned_result,
@@ -440,7 +440,7 @@ void FunctionBaseAI::embedTexts(
     AIQuotaTracker & quota,
     const ConnectionTimeouts & timeouts,
     EmbeddingResult & result,
-    AIIdenticalInputCache * input_cache,
+    AIDuplicateCache * input_cache,
     UInt128 cache_prefix,
     size_t reserved_bytes,
     QueryStatus * process_list)
@@ -723,7 +723,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     /// Null when `ai_function_reuse_identical` is off, so the default path does not hash or allocate.
     /// The cache is taken from the query context: a subquery `SETTINGS` clause does not apply.
-    const auto input_cache = getContext()->getAIIdenticalInputCache();
+    const auto input_cache = getContext()->getAIDuplicateCache();
     UInt128 cache_prefix{};
     if (input_cache)
     {
@@ -878,26 +878,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ++rows_skipped;
     };
 
-    auto outcome_from_call = [](ChatCallResult & call) -> AIReuseOutcome
-    {
-        AIReuseOutcome outcome;
-        if (call.quota_skipped)
-        {
-            outcome.kind = AIReuseKind::QuotaSkip;
-        }
-        else if (call.success)
-        {
-            outcome.kind = AIReuseKind::Success;
-            outcome.text = std::move(call.text);
-        }
-        else
-        {
-            outcome.kind = AIReuseKind::ProviderFailure;
-            outcome.exception = std::move(call.exception);
-        }
-        return outcome;
-    };
-
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         if (prompt_nullable && prompt_nullable->getNullMapData()[i])
@@ -911,7 +891,20 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         if (!input_cache)
         {
             ChatCallResult call = call_chat(user_message);
-            apply_outcome(outcome_from_call(call), false);
+            AIReuseOutcome outcome;
+            if (call.quota_skipped)
+                outcome.kind = AIReuseKind::QuotaSkip;
+            else if (call.success)
+            {
+                outcome.kind = AIReuseKind::Success;
+                outcome.text = std::move(call.text);
+            }
+            else
+            {
+                outcome.kind = AIReuseKind::ProviderFailure;
+                outcome.exception = std::move(call.exception);
+            }
+            apply_outcome(outcome, false);
             continue;
         }
 

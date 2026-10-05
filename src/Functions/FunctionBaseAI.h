@@ -18,7 +18,7 @@
 namespace DB
 {
 
-class AIIdenticalInputCache;
+class AIDuplicateCache;
 class QueryStatus;
 
 static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
@@ -187,7 +187,7 @@ public:
         AIQuotaTracker & quota,
         const ConnectionTimeouts & timeouts,
         EmbeddingResult & result,
-        AIIdenticalInputCache * input_cache = nullptr,
+        AIDuplicateCache * input_cache = nullptr,
         UInt128 cache_prefix = {},
         size_t reserved_bytes = 0,
         QueryStatus * process_list = nullptr);

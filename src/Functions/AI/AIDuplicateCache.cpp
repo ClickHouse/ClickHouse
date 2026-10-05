@@ -1,4 +1,4 @@
-#include <Functions/AI/AIIdenticalInputCache.h>
+#include <Functions/AI/AIDuplicateCache.h>
 
 #include <Common/Exception.h>
 #include <Interpreters/ProcessList.h>
@@ -36,16 +36,6 @@ void publishKind(
     entry.cv.notify_all();
 }
 
-AIReuseOutcome snapshotLocked(const AIReuseEntry & entry)
-{
-    AIReuseOutcome out;
-    out.kind = entry.kind;
-    out.text = entry.text;
-    out.embedding = entry.embedding;
-    out.exception = entry.exception;
-    return out;
-}
-
 /// Length-prefix each string so concatenated fields cannot collide at a boundary.
 void updateDelimited(SipHash & hash, std::string_view value)
 {
@@ -57,7 +47,7 @@ void updateDelimited(SipHash & hash, std::string_view value)
 }
 
 
-AIIdenticalInputCache::AIIdenticalInputCache(size_t max_size_in_bytes)
+AIDuplicateCache::AIDuplicateCache(size_t max_size_in_bytes)
     : Base(
         "LRU",
         CurrentMetrics::end(),
@@ -72,7 +62,7 @@ AIIdenticalInputCache::AIIdenticalInputCache(size_t max_size_in_bytes)
             "'ai_function_reuse_identical_max_size_bytes' must be positive when 'ai_function_reuse_identical' is enabled");
 }
 
-std::pair<AIReuseEntryPtr, bool> AIIdenticalInputCache::claim(const AIReuseKey & key, size_t reserved_bytes)
+std::pair<AIReuseEntryPtr, bool> AIDuplicateCache::claim(const AIReuseKey & key, size_t reserved_bytes)
 {
     /// `load_func` only allocates the placeholder. The owner performs the provider call after
     /// `claim` returns, and waiters block in `wait`, not on an AI request pool thread.
@@ -84,7 +74,7 @@ std::pair<AIReuseEntryPtr, bool> AIIdenticalInputCache::claim(const AIReuseKey &
     });
 }
 
-void AIIdenticalInputCache::publishSuccessText(const AIReuseKey & key, const AIReuseEntryPtr & entry, String text)
+void AIDuplicateCache::publishSuccessText(const AIReuseKey & key, const AIReuseEntryPtr & entry, String text)
 {
     publishKind(*entry, AIReuseKind::Success, std::move(text), {}, nullptr);
     /// Refresh the weight now that the text size is known. Eviction may drop the entry; waiters
@@ -92,27 +82,27 @@ void AIIdenticalInputCache::publishSuccessText(const AIReuseKey & key, const AIR
     set(key, entry);
 }
 
-void AIIdenticalInputCache::publishSuccessEmbedding(
+void AIDuplicateCache::publishSuccessEmbedding(
     const AIReuseKey & key, const AIReuseEntryPtr & entry, VectorWithMemoryTracking<Float32> embedding)
 {
     publishKind(*entry, AIReuseKind::Success, {}, std::move(embedding), nullptr);
     set(key, entry);
 }
 
-void AIIdenticalInputCache::publishProviderFailure(
+void AIDuplicateCache::publishProviderFailure(
     const AIReuseKey & key, const AIReuseEntryPtr & entry, std::exception_ptr exception)
 {
     publishKind(*entry, AIReuseKind::ProviderFailure, {}, {}, std::move(exception));
     set(key, entry);
 }
 
-void AIIdenticalInputCache::publishQuotaSkip(const AIReuseKey & key, const AIReuseEntryPtr & entry)
+void AIDuplicateCache::publishQuotaSkip(const AIReuseKey & key, const AIReuseEntryPtr & entry)
 {
     publishKind(*entry, AIReuseKind::QuotaSkip, {}, {}, nullptr);
     remove(key);
 }
 
-AIReuseOutcome AIIdenticalInputCache::wait(const AIReuseEntryPtr & entry, QueryStatus * process_list) const
+AIReuseOutcome AIDuplicateCache::wait(const AIReuseEntryPtr & entry, QueryStatus * process_list) const
 {
     while (true)
     {
@@ -121,7 +111,14 @@ AIReuseOutcome AIIdenticalInputCache::wait(const AIReuseEntryPtr & entry, QueryS
 
         std::unique_lock lock(entry->mutex);
         if (entry->kind != AIReuseKind::Pending)
-            return snapshotLocked(*entry);
+        {
+            AIReuseOutcome out;
+            out.kind = entry->kind;
+            out.text = entry->text;
+            out.embedding = entry->embedding;
+            out.exception = entry->exception;
+            return out;
+        }
 
         entry->cv.wait_for(lock, std::chrono::milliseconds(100), [&] { return entry->kind != AIReuseKind::Pending; });
     }

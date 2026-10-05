@@ -78,18 +78,18 @@ struct AIReuseWeight
 };
 
 
-/// Per-query LRU cache of identical AI-function inputs. One instance lives on the query context
+/// Per-query LRU cache of duplicate AI-function inputs. One instance lives on the query context
 /// and is destroyed with it. `getOrSet` only allocates the placeholder; the HTTP call happens
 /// after the claim returns, so a waiter blocks on `AIReuseEntry` and not inside `CacheBase`.
 ///
 /// A waiter must not block on an AI request pool thread. Only the owner may perform the HTTP call.
 /// A pool full of waiters deadlocks if the owner also needs a pool thread.
-class AIIdenticalInputCache : public CacheBase<AIReuseKey, AIReuseEntry, AIReuseKeyHash, AIReuseWeight>
+class AIDuplicateCache : public CacheBase<AIReuseKey, AIReuseEntry, AIReuseKeyHash, AIReuseWeight>
 {
 public:
     using Base = CacheBase<AIReuseKey, AIReuseEntry, AIReuseKeyHash, AIReuseWeight>;
 
-    explicit AIIdenticalInputCache(size_t max_size_in_bytes);
+    explicit AIDuplicateCache(size_t max_size_in_bytes);
 
     /// `owned` means this caller must compute the value and publish it. False means the entry is
     /// already stored or another caller is computing it; `wait` until `kind` leaves `Pending`.
