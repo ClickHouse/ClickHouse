@@ -4,10 +4,11 @@
 
 # Issue 120440: with `use_iceberg_manifest_statistics = 1` an Iceberg read reports the row count
 # summed from its manifest files to join reordering, labelled like an exact MergeTree count.
-# T1: join order of a 3-way join, and the same query with the setting off. T2: the smaller table becomes
-# the build side. T8: a table that was never written reports 0 rows. T7: the count comes from the
-# snapshot the read uses (time travel). T10b: an aggregation over an Iceberg read keeps the input rows,
-# imprecise, and the debug log names it in the data lake hint line, not in the MergeTree one.
+# T1: join order of a 3-way join, and the same query with the setting off; executed, the reordered join
+# puts 20 rows into its hash tables instead of 1010. T2: the smaller table becomes the build side; with
+# the setting off the Iceberg table is. T3: a table that was never written reports 0 rows. T4: the count
+# comes from the snapshot the read uses (time travel). T5: an aggregation over an Iceberg read keeps the
+# input rows, imprecise, and the debug log names it in the data lake hint line, not in the MergeTree one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,14 +41,23 @@ labels()
         WHERE explain LIKE '%Join: %' OR explain LIKE '%ResultRows: %'"
 }
 
-# Prints the reads of the physical plan in order; the second input of the join is its build side.
-reads()
+# Runs a query with the setting off and on, then prints for each run the rows put into hash tables, which are
+# the build sides (`JoinBuildTableRowCount`), and the rows probed (`JoinProbeTableRowCount`).
+# Usage: join_rows <tag> <query>.
+join_rows()
 {
-    local query="$1"
-    shift
-    ${CLICKHOUSE_CLIENT} ${PINS} "$@" --query "
-        SELECT replaceOne(trimLeft(explain), currentDatabase() || '.', '') FROM (EXPLAIN actions = 1 ${query})
-        WHERE explain LIKE '%ReadFrom%'"
+    local tag="$1"
+    local query="$2"
+    ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query_id="${CLICKHOUSE_DATABASE}_${tag}_setting_off" --query "${query} FORMAT Null"
+    ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query_id="${CLICKHOUSE_DATABASE}_${tag}_setting_on" --query "${query} FORMAT Null"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT replaceOne(query_id, currentDatabase() || '_${tag}_', ''),
+            ProfileEvents['JoinBuildTableRowCount'], ProfileEvents['JoinProbeTableRowCount']
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+            AND startsWith(query_id, currentDatabase() || '_${tag}_')
+        ORDER BY query_id"
 }
 
 # `uniq` gives `mt` an exact count and an NDV equal to its rows, so `ResultRows` is plain arithmetic.
@@ -73,31 +83,34 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT table, count() FROM system.iceberg_history
-    WHERE database = currentDatabase() AND table IN ('ice_empty', 'tt') GROUP BY table ORDER BY table"
+    SELECT countIf(table = 'ice_empty'), countIf(table = 'tt') FROM system.iceberg_history WHERE database = currentDatabase()"
 
 T1="SELECT count() FROM ice_big AS b JOIN mt AS m ON b.k = m.k JOIN ice_small AS s ON m.k = s.k"
-echo '--- T1'
+echo '--- T1: 3-way join'
 labels "${T1}" ${ON}
-echo '--- T1 setting off'
+echo '--- T1: 3-way join, setting off'
 labels "${T1}" ${OFF}
+echo '--- T1: rows into the hash tables and rows probed, setting off and on'
+join_rows t1 "${T1}"
 
-echo '--- T2: reads in order, the second one is the build side'
-reads "SELECT m.k FROM mt AS m JOIN ice_big AS b ON m.k = b.k" ${ON}
+echo '--- T2: rows of the build side and of the probe side, setting off and on'
+join_rows t2 "SELECT m.k FROM mt AS m JOIN ice_big AS b ON m.k = b.k"
 
-echo '--- T8: a table with no snapshot'
+echo '--- T3: a table with no snapshot'
 labels "SELECT count() FROM mt AS m JOIN ice_empty AS t ON m.k = t.k" ${ON}
 
-T7="SELECT count() FROM mt AS m JOIN tt AS b ON m.k = b.k"
-echo '--- T7: first snapshot by iceberg_snapshot_id'
-labels "${T7}" --iceberg_snapshot_id="${FIRST_ID}" ${ON}
-echo '--- T7: latest snapshot'
-labels "${T7}" ${ON}
+T4="SELECT count() FROM mt AS m JOIN tt AS b ON m.k = b.k"
+echo '--- T4: first snapshot by iceberg_snapshot_id'
+labels "${T4}" --iceberg_snapshot_id="${FIRST_ID}" ${ON}
+echo '--- T4: latest snapshot'
+labels "${T4}" ${ON}
 
-T10B="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP BY k) AS ice_agg ON m.k = ice_agg.k"
-echo '--- T10b'
-labels "${T10B}" ${ON}
-LOG=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 ${T10B}" 2>&1 >/dev/null)
+# Without the NDV of `k` the aggregation keeps the input rows, so it overreports (100000 groups for 1000 keys);
+# the point is that the relation still gets an estimate, and the data lake hint line names it.
+T5="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP BY k) AS ice_agg ON m.k = ice_agg.k"
+echo '--- T5: aggregation over an Iceberg read'
+labels "${T5}" ${ON}
+LOG=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 ${T5}" 2>&1 >/dev/null)
 echo "data lake hint lines naming ice_agg: $(echo "${LOG}" | grep 'derived from data lake metadata' | grep -c 'ice_agg')"
 echo "column statistics hint lines naming ice_agg: $(echo "${LOG}" | grep 'Consider creating column statistics' | grep -c 'ice_agg')"
 

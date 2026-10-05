@@ -302,8 +302,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter && !estimate->pruned_data_files)
             return unknown;
 
-        /// TODO: A filter only on identity-partition columns keeps every row of a remaining file, so it is exact too;
-        /// the walk would have to report that.
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
         return RelationStats{
             .estimated_rows = *estimate->rows,
