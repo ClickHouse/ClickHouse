@@ -655,6 +655,38 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key)
     return {negative ? -magnitude : magnitude, anchor_time};
 }
 
+int compareExponentialTimeDecayingOrderingKeyDistance(
+    UInt128 lhs_ordering_key,
+    UInt128 rhs_ordering_key,
+    ExponentialTimeDecayingKeyWidth key_width,
+    Float64 decay_length,
+    Float64 max_distance_in_decay_lengths)
+{
+    const auto lhs = key_width == ExponentialTimeDecayingKeyWidth::Bits64
+        ? getExponentialTimeDecayingCanonicalDirectValue(static_cast<UInt64>(lhs_ordering_key))
+        : getExponentialTimeDecayingCanonicalDirectValue(lhs_ordering_key);
+    const auto rhs = key_width == ExponentialTimeDecayingKeyWidth::Bits64
+        ? getExponentialTimeDecayingCanonicalDirectValue(static_cast<UInt64>(rhs_ordering_key))
+        : getExponentialTimeDecayingCanonicalDirectValue(rhs_ordering_key);
+
+    if (lhs.value_at_anchor == 0 || rhs.value_at_anchor == 0)
+        return 0;
+
+    const ExtendedTimeDecayFloat extended_decay_length(decay_length);
+    const ExtendedTimeDecayFloat distance_in_decay_lengths
+        = (ExtendedTimeDecayFloat(lhs.anchor_time) - ExtendedTimeDecayFloat(rhs.anchor_time))
+            / extended_decay_length
+        + logarithmExponentialTimeDecay(ExtendedTimeDecayFloat(std::abs(lhs.value_at_anchor)))
+        - logarithmExponentialTimeDecay(ExtendedTimeDecayFloat(std::abs(rhs.value_at_anchor)));
+    const ExtendedTimeDecayFloat cutoff(max_distance_in_decay_lengths);
+
+    if (distance_in_decay_lengths > cutoff)
+        return 1;
+    if (distance_in_decay_lengths < -cutoff)
+        return -1;
+    return 0;
+}
+
 bool isFiniteExponentialTimeDecayingCurve(
     Float64 value, Float64 time, Float64 decay_length)
 {
