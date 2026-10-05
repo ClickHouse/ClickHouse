@@ -2,8 +2,6 @@
 #include <thread>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
@@ -14,9 +12,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -839,25 +835,9 @@ DatabaseCatalog::RecomputedDependenciesByTable DatabaseAtomic::getRecomputedDepe
     DatabaseCatalog::RecomputedDependenciesByTable result;
     for (auto it = getTablesIterator(query_context, /*filter_by_table_name*/ {}, /*skip_not_loaded*/ false); it->isValid(); it->next())
     {
-        const auto & table = it->table();
-        bool is_ordinary_view = dynamic_cast<const StorageView *>(table.get()) != nullptr;
-        /// `Alias('t')` resolves its target against the database of the alias itself (not the current database),
-        /// so its dependency is computed as if the alias were already in the new database.
-        const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
-        bool is_alias_to_own_database = alias && alias->isTargetDatabaseOwnDatabase();
-        if (!is_ordinary_view && !is_alias_to_own_database)
-            continue;
-
-        auto ast = getCreateTableQuery(it->name(), query_context);
-        QualifiedTableName table_name{is_alias_to_own_database ? new_name : getDatabaseName(), it->name()};
-        auto dependencies = getDependenciesFromCreateQuery(
-            getContext(), table_name, ast, new_name, /*can_throw*/ false, /*validate_current_database*/ false);
-        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext(), table_name, ast, new_name);
-
-        result.emplace(
-            it->name(),
-            DatabaseCatalog::RecomputedDependencies{
-                std::move(dependencies.dependencies), std::move(loading_dependencies), std::move(dependencies.plain_view_dependencies)});
+        if (auto recomputed = DatabaseCatalog::getDependenciesRecomputedForNewName(
+                *this, it->name(), it->table(), QualifiedTableName{new_name, it->name()}, query_context))
+            result.emplace(it->name(), std::move(*recomputed));
     }
     return result;
 }

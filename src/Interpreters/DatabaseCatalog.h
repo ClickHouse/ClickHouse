@@ -170,6 +170,15 @@ public:
     /// Keyed by the table name.
     using RecomputedDependenciesByTable = std::unordered_map<String, RecomputedDependencies>;
 
+    /// Dependencies of `table` recomputed from its stored definition as if it were named `new_name`, for ordinary views
+    /// and `Alias` tables with a target written without a database. `std::nullopt` for the other tables.
+    static std::optional<RecomputedDependencies> getDependenciesRecomputedForNewName(
+        const IDatabase & database,
+        const String & table_name,
+        const StoragePtr & table,
+        const QualifiedTableName & new_name,
+        ContextPtr query_context);
+
     void updateDatabaseName(
         const String & old_name,
         const String & new_name,
@@ -287,8 +296,15 @@ public:
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
     void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
-    void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
-    void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
+    void checkTableCanBeRenamedWithNoCyclicDependencies(
+        const StorageID & from_table_id,
+        const StorageID & to_table_id,
+        const std::optional<RecomputedDependencies> & recomputed_dependencies);
+    void checkTablesCanBeExchangedWithNoCyclicDependencies(
+        const StorageID & table_id_1,
+        const StorageID & table_id_2,
+        const std::optional<RecomputedDependencies> & recomputed_dependencies_1,
+        const std::optional<RecomputedDependencies> & recomputed_dependencies_2);
 
     struct TableMarkedAsDropped
     {

@@ -7,6 +7,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
@@ -20,9 +22,11 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageView.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -926,6 +930,29 @@ void DatabaseCatalog::updateDatabaseName(
                 plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
         }
     }
+}
+
+std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDependenciesRecomputedForNewName(
+    const IDatabase & database,
+    const String & table_name,
+    const StoragePtr & table,
+    const QualifiedTableName & new_name,
+    ContextPtr query_context)
+{
+    bool is_ordinary_view = dynamic_cast<const StorageView *>(table.get()) != nullptr;
+    const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+    bool is_alias_to_own_database = alias && alias->isTargetDatabaseOwnDatabase();
+    if (!is_ordinary_view && !is_alias_to_own_database)
+        return std::nullopt;
+
+    auto ast = database.getCreateTableQuery(table_name, query_context);
+    auto global_context = query_context->getGlobalContext();
+    auto dependencies = getDependenciesFromCreateQuery(
+        global_context, new_name, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, new_name, ast, new_name.database);
+
+    return RecomputedDependencies{
+        std::move(dependencies.dependencies), std::move(loading_dependencies), std::move(dependencies.plain_view_dependencies)};
 }
 
 void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
@@ -2248,14 +2275,20 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
     check(loading_dependencies, new_loading_dependencies);
 }
 
-void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(
+    const StorageID & from_table_id,
+    const StorageID & to_table_id,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies)
 {
     std::lock_guard lock{databases_mutex};
 
-    auto check = [&](TablesDependencyGraph & dependencies)
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet * new_dependencies)
     {
         auto old_dependencies = dependencies.removeDependencies(from_table_id);
-        dependencies.addDependencies(to_table_id, old_dependencies);
+        if (new_dependencies)
+            dependencies.addDependencies(to_table_id, *new_dependencies);
+        else
+            dependencies.addDependencies(to_table_id, old_dependencies);
         auto restore_dependencies = [&]()
         {
             dependencies.removeDependencies(to_table_id);
@@ -2277,20 +2310,30 @@ void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const Stora
         restore_dependencies();
     };
 
-    check(referential_dependencies);
-    check(loading_dependencies);
+    check(referential_dependencies, recomputed_dependencies ? &recomputed_dependencies->referential_dependencies : nullptr);
+    check(loading_dependencies, recomputed_dependencies ? &recomputed_dependencies->loading_dependencies : nullptr);
 }
 
-void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
+void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(
+    const StorageID & table_id_1,
+    const StorageID & table_id_2,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies_1,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies_2)
 {
     std::lock_guard lock{databases_mutex};
 
-    auto check = [&](TablesDependencyGraph & dependencies)
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet * new_dependencies_1, const TableNamesSet * new_dependencies_2)
     {
         auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
         auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
-        dependencies.addDependencies(table_id_1, old_dependencies_2);
-        dependencies.addDependencies(table_id_2, old_dependencies_1);
+        if (new_dependencies_2)
+            dependencies.addDependencies(table_id_1, *new_dependencies_2);
+        else
+            dependencies.addDependencies(table_id_1, old_dependencies_2);
+        if (new_dependencies_1)
+            dependencies.addDependencies(table_id_2, *new_dependencies_1);
+        else
+            dependencies.addDependencies(table_id_2, old_dependencies_1);
         auto restore_dependencies = [&]()
         {
             dependencies.removeDependencies(table_id_1);
@@ -2314,8 +2357,14 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         restore_dependencies();
     };
 
-    check(referential_dependencies);
-    check(loading_dependencies);
+    check(
+        referential_dependencies,
+        recomputed_dependencies_1 ? &recomputed_dependencies_1->referential_dependencies : nullptr,
+        recomputed_dependencies_2 ? &recomputed_dependencies_2->referential_dependencies : nullptr);
+    check(
+        loading_dependencies,
+        recomputed_dependencies_1 ? &recomputed_dependencies_1->loading_dependencies : nullptr,
+        recomputed_dependencies_2 ? &recomputed_dependencies_2->loading_dependencies : nullptr);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()
