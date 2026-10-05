@@ -30,6 +30,6 @@ TEST(Port, Disconnect)
     disconnect(out, in);
     EXPECT_FALSE(out.isConnected());
     EXPECT_FALSE(in.isConnected());
-    EXPECT_FALSE(out.getUpdateChannel().isConnected());
-    EXPECT_FALSE(in.getUpdateChannel().isConnected());
+    EXPECT_FALSE(out.getRoundUpdatesChannel().isConnected());
+    EXPECT_FALSE(in.getRoundUpdatesChannel().isConnected());
 }
