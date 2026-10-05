@@ -1136,19 +1136,24 @@ ExponentialTimeDecaying128(decay_length, direct)
 
 `decay_length` is never present in those row streams; it comes from the datatype.
 
-Both modes expose the same printable/public tuple shape:
+Both modes expose the same three-field printable/public tuple shape:
 
 `(value, timestamp, decay_length)`.
 
 In `direct` mode, `value` and `timestamp` are the retained interface metadata. In `compact`
-mode, they are a canonical raw pair reconstructed from the key. For the 64-bit representation this
-is normally `+1` or `-1` at the indexed unit-time bucket. The 128-bit representation can use a
-residual magnitude close to `1` at its canonical anchor so that the full key, including extreme
-tail values, can be reconstructed from the printable pair. Zero prints as `(0, 0, decay_length)`.
+mode the tuple is only a readable projection of the authoritative integer key. Normally it prints
+`(-1, unit_timestamp, decay_length)`, `(0, 0, decay_length)`, or
+`(+1, unit_timestamp, decay_length)`. The first field is therefore only the curve sign in ordinary
+compact output.
 
-All public tuple input is interpreted as raw `(value, timestamp[, decay_length])`; compact mode
-does not introduce a separate sign/unit-time tuple syntax. A compact printable tuple is simply a
-canonical raw curve representation.
+For an extreme 128-bit boundary slice where the mathematical unit time is outside the finite
+`Float64` timestamp range, `+/-1 @ unit_timestamp` cannot be printed. In that case compact output
+prints `(value_at_edge, edge_timestamp, decay_length)`; the residual value at
+`-DBL_MAX` or `+DBL_MAX` is the part of the key that continues ordering within the tail.
+
+All public tuple input is still interpreted as raw `(value, timestamp[, decay_length])`. Compact
+printing is an interface projection and, away from the boundary exception above, does not expose
+the hidden residual precision of a 128-bit key or promise a text round-trip of every key bit.
 
 Mode is part of datatype identity. Casts, aggregate results, `-State`/`-Merge`, storage
 reconstruction, and implicit type compatibility preserve it unless the query explicitly casts to a
