@@ -41,6 +41,9 @@ EXPLAIN ESTIMATE: 0 0 0
 0 0 1
 -- nor does a user with ALLOW SQL SECURITY NONE
 0 0 1
--- with the privileges to read everything, the same user sees both plans
+-- with the privileges to read everything, but without CREATE VIEW, the same user still does not see the plans
+0 0 1
+0 0 1
+-- with CREATE VIEW as well, the same user sees both plans
 1 1 0
 1 1 0

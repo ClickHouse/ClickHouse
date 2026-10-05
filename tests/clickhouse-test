@@ -1970,7 +1970,6 @@ class SettingsRandomizer:
         "optimize_use_implicit_projections": lambda: random.random() > 0.05,
         "optimize_use_projection_filtering": lambda: random.random() > 0.05,
         "query_plan_optimize_lazy_materialization": lambda: random.random() > 0.05,
-        "query_plan_optimize_prewhere": lambda: random.random() > 0.05,
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
@@ -2015,6 +2014,10 @@ class SettingsRandomizer:
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # Columns cache settings - randomize with 0.5 probability each
+        "use_columns_cache": lambda: random.randint(0, 1),
+        "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
+        "enable_writes_to_columns_cache": lambda: random.randint(0, 1),
         # More query plan optimizations
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,

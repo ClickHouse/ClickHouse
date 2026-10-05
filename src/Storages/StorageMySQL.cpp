@@ -545,10 +545,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(
+    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context_, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -625,7 +628,8 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
+        auto configuration = StorageMySQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
@@ -742,6 +746,14 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
