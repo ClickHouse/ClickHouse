@@ -289,8 +289,8 @@ SELECT 'signed cancellation mismatch'
 WHERE NOT (
     cancelled = zero
     AND cityHash64(cancelled) = cityHash64(zero)
-    AND tupleElement(cancelled, 'value_at_anchor') = 0
-    AND tupleElement(cancelled, 'anchor_time') = 0
+    AND tupleElement(cancelled, 'value') = 0
+    AND tupleElement(cancelled, 'timestamp') = 0
     AND exponentialTimeDecaying(10)(-1., toFloat64(0)) < cancelled
     AND cancelled < exponentialTimeDecaying(10)(1., toFloat64(0)));
 
