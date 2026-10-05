@@ -2138,7 +2138,8 @@ to drop them. Only the unconditional table `TTL ... DELETE` rule is applied; a
 against the current time of the insert, as a TTL merge evaluates it against the
 time of the merge. No part is created for a partition whose rows are all
 expired, and such a partition does not count towards
-`max_partitions_per_insert_block`.
+`max_partitions_per_insert_block`. Such an insert is not registered for
+deduplication, the same as a block which `optimize_on_insert` merges to nothing.
 
 For the engines which merge rows (`ReplacingMergeTree`, `SummingMergeTree`,
 `CollapsingMergeTree`, etc.) the rule is applied to the rows produced by

@@ -7,7 +7,6 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -43,7 +42,6 @@
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
-#include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
@@ -498,54 +496,37 @@ void MergeTreeTemporaryPart::prewarmCaches()
     }
 }
 
-IMergeTreeDataPart::TTLInfos MergeTreeDataWriter::removeRowsExpiredByTTL(
-    const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block, IColumn::Filter * out_kept_rows)
+IColumn::Filter MergeTreeDataWriter::removeRowsExpiredByTTL(
+    const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
 {
-    IMergeTreeDataPart::TTLInfos ttl_infos;
-    const size_t num_rows = block.rows();
-
-    if (out_kept_rows)
-        out_kept_rows->assign(num_rows, static_cast<UInt8>(1));
-
-    if (!metadata_snapshot.hasRowsTTL() || num_rows == 0)
-        return ttl_infos;
-
-    /// The row numbers go through the same filter as the data, so after it they tell which source rows remain.
-    static constexpr auto row_number_column_name = "__row_number_before_ttl_delete";
-    if (out_kept_rows)
-    {
-        auto row_numbers = ColumnUInt64::create(num_rows);
-        auto & row_numbers_data = row_numbers->getData();
-        for (size_t i = 0; i < num_rows; ++i)
-            row_numbers_data[i] = i;
-        block.insert({std::move(row_numbers), std::make_shared<DataTypeUInt64>(), row_number_column_name});
-    }
-
     const auto & ttl_entry = metadata_snapshot.getRowsTTL();
     auto expr_and_set = ttl_entry.buildExpression(context);
     for (auto & subquery : expr_and_set.sets->getSubqueries())
         subquery->buildSetInplace(context);
 
-    TTLDeleteAlgorithm algorithm(
-        TTLExpressions{expr_and_set.expression, nullptr}, ttl_entry, IMergeTreeDataPart::TTLInfo{}, time(nullptr), /*force_=*/ true);
-    algorithm.execute(block);
+    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
+        expr_and_set.expression, block, ttl_entry.result_column)->convertToFullColumnIfConst();
 
-    ttl_infos.table_ttl = algorithm.getNewTTLInfo();
-    ttl_infos.updatePartMinMaxTTL(ttl_infos.table_ttl);
+    const size_t num_rows = block.rows();
+    PaddedPODArray<Int64> timestamps;
+    ITTLAlgorithm::extractTimestamps(ttl_column.get(), DateLUT::serverTimezoneInstance(), timestamps);
 
-    if (out_kept_rows)
+    const time_t current_time = time(nullptr);
+    IColumn::Filter kept_rows(num_rows);
+    size_t num_kept = 0;
+    for (size_t i = 0; i < num_rows; ++i)
     {
-        const auto & kept_row_numbers = assert_cast<const ColumnUInt64 &>(*block.getByName(row_number_column_name).column).getData();
-        if (kept_row_numbers.size() != num_rows)
-        {
-            out_kept_rows->assign(num_rows, static_cast<UInt8>(0));
-            for (UInt64 row_number : kept_row_numbers)
-                (*out_kept_rows)[row_number] = 1;
-        }
-        block.erase(row_number_column_name);
+        kept_rows[i] = !(timestamps[i] && timestamps[i] <= current_time);
+        num_kept += kept_rows[i];
     }
 
-    return ttl_infos;
+    if (num_kept != num_rows)
+    {
+        for (auto & column : block)
+            column.column = column.column->filter(kept_rows, num_kept);
+    }
+
+    return kept_rows;
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -567,14 +548,13 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     /// Expired rows are removed before the split, so a partition whose rows are all expired is not
     /// counted against `max_parts`. The selector must still describe every source row.
     IColumn::Filter kept_rows;
-    size_t num_source_rows = block.rows();
-    if (apply_ttl_delete)
+    if (apply_ttl_delete && metadata_snapshot->hasRowsTTL())
     {
-        removeRowsExpiredByTTL(context, *metadata_snapshot, block, out_selector ? &kept_rows : nullptr);
+        kept_rows = removeRowsExpiredByTTL(context, *metadata_snapshot, block);
         if (block.rows() == 0)
             return result;
     }
-    const bool rows_removed = block.rows() != num_source_rows;
+    const bool rows_removed = !kept_rows.empty() && block.rows() != kept_rows.size();
 
     auto expand_selector = [&](IColumn::Selector && selector, size_t partitions_count)
     {
@@ -588,9 +568,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         }
 
         /// A removed row maps past the last partition, so it is attributed to none of them.
-        out_selector->resize(num_source_rows);
+        out_selector->resize(kept_rows.size());
         size_t kept_row = 0;
-        for (size_t row = 0; row < num_source_rows; ++row)
+        for (size_t row = 0; row < kept_rows.size(); ++row)
         {
             if (kept_rows[row])
             {
@@ -964,7 +944,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// For the merging engines the expired rows are removed only after the rows are merged, so a row which
     /// is already expired still takes part in the merge, as it would in a TTL merge.
-    std::optional<IMergeTreeDataPart::TTLInfos> delete_ttl_infos;
     if (optimize_on_insert)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
@@ -973,7 +952,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if ((*data_settings)[MergeTreeSetting::apply_ttl_delete_on_insert] && metadata_snapshot->hasRowsTTL())
         {
             size_t rows_before = block.rows();
-            delete_ttl_infos = removeRowsExpiredByTTL(context, *metadata_snapshot, block);
+            removeRowsExpiredByTTL(context, *metadata_snapshot, block);
             if (block.rows() != rows_before)
             {
                 minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -1155,9 +1134,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         sync_guard = disk->getDirectorySyncGuard(data_part_storage->getFullPath());
     }
 
-    if (delete_ttl_infos)
-        new_data_part->ttl_infos.update(*delete_ttl_infos);
-    else if (metadata_snapshot->hasRowsTTL())
+    if (metadata_snapshot->hasRowsTTL())
         updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())

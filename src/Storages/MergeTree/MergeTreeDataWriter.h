@@ -85,13 +85,11 @@ public:
         bool apply_ttl_delete = false);
 
     /// Removes from `block` the rows already expired by the table `TTL ... DELETE` rule of `metadata_snapshot`.
-    /// Returns the TTL infos (`table_ttl` and the part min/max) of the rows which remain.
-    /// When `out_kept_rows` is set, it receives one flag per source row: 1 if the row remains in `block`.
-    static IMergeTreeDataPart::TTLInfos removeRowsExpiredByTTL(
+    /// Returns one flag per source row: 1 if the row remains in `block`.
+    static IColumn::Filter removeRowsExpiredByTTL(
         const ContextPtr & context,
         const StorageInMemoryMetadata & metadata_snapshot,
-        Block & block,
-        IColumn::Filter * out_kept_rows = nullptr);
+        Block & block);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
