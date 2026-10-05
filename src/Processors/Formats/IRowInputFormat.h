@@ -63,6 +63,11 @@ public:
     /// the format needs no per-chunk post-processing (e.g. `finalize`) of the columns.
     virtual bool supportsReadInto() const { return false; }
 
+    /// `supportsReadInto`, and the format reads with the default serializations, which are what
+    /// the caller's columns (`header.cloneEmptyColumns`) use. Custom ones (`setSerializationHints`)
+    /// would make `read` create e.g. sparse columns instead.
+    bool canReadInto() const;
+
     void resetParser() override;
 
 protected:

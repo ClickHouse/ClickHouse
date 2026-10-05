@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WithFileName.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h> // toString
@@ -6,6 +7,8 @@
 #include <Formats/ParseError.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -127,6 +130,14 @@ size_t IRowInputFormat::readInto(MutableColumns & columns)
     if (only_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method readInto cannot be used to only count rows in input format {}", getName());
     return num_rows;
+}
+
+bool IRowInputFormat::canReadInto() const
+{
+    if (!supportsReadInto())
+        return false;
+    const ISerialization::KindStack default_kind{ISerialization::Kind::DEFAULT};
+    return std::ranges::all_of(serializations, [&](const auto & serialization) { return serialization->getKindStack() == default_kind; });
 }
 
 size_t IRowInputFormat::readRows(MutableColumns & columns, bool & only_count)

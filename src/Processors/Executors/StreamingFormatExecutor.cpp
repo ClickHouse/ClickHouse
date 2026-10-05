@@ -45,7 +45,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     /// Without a defaults transform the rows need no per-chunk processing, so a row format can
     /// append straight into `result_columns`, which `insertChunk` fills by position.
     if (!adding_defaults_transform && blocksHaveEqualStructure(header, format->getPort().getHeader()))
-        if (auto * row_format = dynamic_cast<IRowInputFormat *>(format.get()); row_format && row_format->supportsReadInto())
+        if (auto * row_format = dynamic_cast<IRowInputFormat *>(format.get()); row_format && row_format->canReadInto())
             row_input_format = row_format;
 
     for (size_t i = 0; i < result_columns.size(); ++i)
