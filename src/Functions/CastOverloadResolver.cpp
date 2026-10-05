@@ -312,7 +312,7 @@ protected:
             type = createDataTypeExponentialTimeDecaying(
                 inferExponentialTimeDecayingDecayLength(arguments.front()),
                 key_width,
-                ExponentialTimeDecayingMode::Direct);
+                parseExponentialTimeDecayingMode(convert_settings->exponential_time_decay_default_mode));
         }
         else
         {
