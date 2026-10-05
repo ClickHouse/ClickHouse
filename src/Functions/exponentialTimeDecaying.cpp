@@ -16,6 +16,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 
+#include <boost/multiprecision/cpp_bin_float.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -111,7 +113,8 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
             function_name);
 }
 
-Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
+Float64 valueAt(
+    const DecayingColumnView & input, size_t row, Float64 target_time, bool at_unit_time = false)
 {
     if (isEmptyRow(input, row))
         return 0;
@@ -120,6 +123,22 @@ Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_tim
     const Float64 anchor_time = input.anchor_time.getData()[row];
     if (target_time == anchor_time)
         return value;
+
+    if (at_unit_time)
+    {
+        /// Evaluate the exponent and product in extended precision before the
+        /// final `Float64` rounding to retain the residual across re-anchoring.
+        using ExtendedTimeDecayFloat = boost::multiprecision::cpp_bin_float_quad;
+        const ExtendedTimeDecayFloat extended_value(value);
+        const ExtendedTimeDecayFloat extended_anchor(anchor_time);
+        const ExtendedTimeDecayFloat extended_target(target_time);
+        const ExtendedTimeDecayFloat extended_decay_length(input.decay_length);
+        const ExtendedTimeDecayFloat time_delta = extended_anchor - extended_target;
+        const ExtendedTimeDecayFloat exponent = time_delta / extended_decay_length;
+        const ExtendedTimeDecayFloat factor = boost::multiprecision::exp(exponent);
+        const ExtendedTimeDecayFloat result = extended_value * factor;
+        return static_cast<Float64>(result);
+    }
 
     return value * std::exp((anchor_time - target_time) / input.decay_length);
 }
@@ -350,9 +369,10 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             assertValidRow(input, row, getName());
-            if (!std::isfinite(target_time_column->getFloat64(row)))
+            const Float64 target_time = target_time_column->getFloat64(row);
+            if (!std::isfinite(target_time))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must be finite", getName());
-            result_data[row] = valueAt(input, row, target_time_column->getFloat64(row));
+            result_data[row] = valueAt(input, row, target_time, target_time == unitTime(input, row));
         }
         return result;
     }
@@ -428,7 +448,7 @@ public:
         {
             assertValidRow(input, row, getName());
             const Float64 target_time = unitTime(input, row);
-            result_data[row] = valueAt(input, row, target_time);
+            result_data[row] = valueAt(input, row, target_time, true);
         }
 
         return result;
@@ -511,14 +531,14 @@ It can be combined by `exponentialTimeDecayedSum`, including as a
             "Construct a decaying value",
             "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
-            "(1,20.79441541679836,10)"}},
+            "(8,0,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
 Adds two exponentially time-decaying values using their direct value/anchor payloads.
-Both inputs must have identical decay lengths encoded in their types. The function rebases the older direct payload to
+Both inputs must have the same key width and identical decay lengths encoded in their types. The function rebases the older direct payload to
 `ct = greatest(A.anchor_time, B.anchor_time)` and stores `A.value_at(ct) + B.value_at(ct)` at that anchor.
 Because values are stored as `Float64`, large signed values that nearly cancel can be sensitive to
 addition order and grouping. Normalize magnitudes or use a numerically stable method to pre-aggregate
@@ -560,8 +580,8 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
 
     factory.registerFunction<FunctionExponentialTimeDecayingUnitTime>(FunctionDocumentation{
         .description = R"(
-Returns the canonical unit time represented by the compact ordering prefix of an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value.
-For non-zero curves, the exact unit time is quantized to the prefix bucket used by ordering and sparse indexes.
+Returns the `Float64` unit time represented by the integer identity of an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value.
+The compact type exposes its ordering bucket; the wider type retains additional timestamp precision in its key.
 Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingUnitTime(value)",
@@ -577,8 +597,8 @@ Zero returns `0`.
 
     factory.registerFunction<FunctionExponentialTimeDecayingValueAtUnitTime>(FunctionDocumentation{
         .description = R"(
-Evaluates an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value at the canonical unit time represented by its compact ordering prefix.
-The result preserves the residual `Float64` precision discarded by the compact prefix and is therefore only approximately
+Evaluates an `ExponentialTimeDecaying64` or `ExponentialTimeDecaying128` value at the unit time returned by `exponentialTimeDecayingUnitTime`.
+The result preserves the stored curve's `Float64` residual and is therefore only approximately
 `-1` or `1` for non-zero curves. Zero returns `0`.
 )",
         .syntax = "exponentialTimeDecayingValueAtUnitTime(value)",

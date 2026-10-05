@@ -6255,7 +6255,7 @@ bool projectExponentialTimeDecayingRange(
         if (endpoint.isNegativeInfinity() || endpoint.isPositiveInfinity() || endpoint.isNull())
             return true;
 
-        const auto key = getProjectedExponentialTimeDecayingKey(endpoint, type);
+        auto key = getProjectedExponentialTimeDecayingKey(endpoint, type);
         if (!key)
             return false;
 
