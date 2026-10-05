@@ -1,0 +1,53 @@
+<test>
+    <!--
+        Read in order over many parts whose keys interleave: `MergingSortedAlgorithm` inserts short runs
+        from sources with different dictionaries via `ColumnLowCardinality::insertRangeFrom`,
+        the same path vertical merges take when gathering `LowCardinality` columns.
+    -->
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lc_short_runs
+        (
+            k UInt32,
+            v UInt64,
+            lc1 LowCardinality(String),
+            lc2 LowCardinality(String),
+            lc3 LowCardinality(String),
+            lc4 LowCardinality(String),
+            lc5 LowCardinality(Nullable(String)),
+            m Map(LowCardinality(String), Int64)
+        )
+        ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES lc_short_runs</fill_query>
+    <fill_query>
+        INSERT INTO lc_short_runs
+        SELECT
+            k,
+            p * 1000000000 + number,
+            concat('const-', toString(p % 2)),
+            concat('key-', toString(k % 1000), repeat('x', k % 30)),
+            concat('part-', toString(p)),
+            concat('mod-', toString((k + number) % 50)),
+            if(number % 4 = 0, NULL, concat('n-', toString(k % 11))),
+            if(k % 3 = 0, map(), map(concat('mk-', toString(k % 17)), toInt64(number)))
+        FROM
+        (
+            SELECT p, k, number
+            FROM (SELECT number AS p FROM numbers(20)) AS parts
+            CROSS JOIN (SELECT toUInt32(number) AS k FROM numbers(50000)) AS keys
+            ARRAY JOIN range(1 + (k * 7 + p) % 16) AS number
+        )
+        SETTINGS max_insert_threads = 1, max_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT k, lc1, lc2, lc3, lc4, lc5 FROM lc_short_runs ORDER BY k FORMAT Null</query>
+    <query>SELECT k, m FROM lc_short_runs ORDER BY k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_short_runs</drop_query>
+</test>

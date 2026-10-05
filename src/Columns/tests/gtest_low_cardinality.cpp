@@ -3,8 +3,12 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+
+#include <random>
 
 using namespace DB;
 
@@ -147,4 +151,103 @@ TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
     ASSERT_NO_THROW(lc_column.insertRangeFromDictionaryEncodedColumn(*empty_keys, *empty_indexes));
 
     ASSERT_EQ(column->size(), 0);
+}
+
+namespace
+{
+
+/// Many short `insertRangeFrom` calls from sources with different dictionaries (as in vertical merges)
+/// must produce the same column as inserting row by row with `insertFrom`: same values, same indexes
+/// and the same dictionary order.
+void testInsertRangeFromMatchesInsertFrom(bool nullable, bool shared_sources, size_t pool_size)
+{
+    DataTypePtr nested_type = std::make_shared<DataTypeString>();
+    if (nullable)
+        nested_type = std::make_shared<DataTypeNullable>(nested_type);
+    auto type = std::make_shared<DataTypeLowCardinality>(nested_type);
+
+    std::mt19937 rng(static_cast<unsigned>(pool_size * 4 + nullable * 2 + shared_sources));
+
+    std::vector<Field> pool;
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        if (nullable && i % 10 == 0)
+            pool.emplace_back(Null());
+        else
+            pool.emplace_back(fmt::format("{}-{}", i, std::string(rng() % 36, 'x')));
+    }
+
+    std::vector<ColumnPtr> sources;
+    for (size_t s = 0; s < 4; ++s)
+    {
+        auto source = type->createColumn();
+        size_t num_distinct = 1 + rng() % pool_size;
+        for (size_t row = 0; row < 1000; ++row)
+        {
+            /// Runs of equal values, like sorted key columns.
+            size_t run = 1 + rng() % 8;
+            const Field & value = pool[rng() % num_distinct];
+            for (size_t i = 0; i < run; ++i)
+                source->insert(value);
+        }
+
+        if (shared_sources)
+        {
+            const auto & lc = assert_cast<const ColumnLowCardinality &>(*source);
+            sources.push_back(ColumnLowCardinality::create(lc.getDictionaryPtr(), lc.getIndexesPtr(), /* is_shared = */ true));
+        }
+        else
+            sources.push_back(std::move(source));
+    }
+
+    auto result = type->createColumn();
+    auto reference = type->createColumn();
+    auto & reference_lc = assert_cast<ColumnLowCardinality &>(*reference);
+
+    /// Lengths around the row-by-row threshold, zero, and long ranges that take the batch path.
+    const std::vector<size_t> lengths = {0, 1, 2, 3, 7, 31, 32, 33, 63, 64, 65, 127, 128, 129, 500};
+    for (size_t step = 0; step < 2000; ++step)
+    {
+        const auto & source = sources[rng() % sources.size()];
+        const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*source);
+        size_t length = std::min(lengths[rng() % lengths.size()], source->size());
+        size_t start = rng() % (source->size() - length + 1);
+
+        result->insertRangeFrom(*source, start, length);
+
+        /// Paths that do not insert keys into the dictionary are applied to the reference as is.
+        bool dictionary_is_reused = length == 0 || &reference_lc.getDictionary() == &source_lc.getDictionary()
+            || (reference->empty() && source_lc.isSharedDictionary());
+        if (dictionary_is_reused)
+            reference->insertRangeFrom(*source, start, length);
+        else
+            for (size_t row = start; row < start + length; ++row)
+                reference->insertFrom(*source, row);
+    }
+
+    const auto & result_lc = assert_cast<const ColumnLowCardinality &>(*result);
+    ASSERT_EQ(result->size(), reference->size());
+    ASSERT_EQ(result_lc.getSizeOfIndexType(), reference_lc.getSizeOfIndexType());
+    for (size_t row = 0; row < result->size(); ++row)
+    {
+        ASSERT_EQ((*result)[row], (*reference)[row]) << "row " << row;
+        ASSERT_EQ(result_lc.getIndexes().getUInt(row), reference_lc.getIndexes().getUInt(row)) << "row " << row;
+    }
+
+    const auto & result_keys = *result_lc.getDictionary().getNestedColumn();
+    const auto & reference_keys = *reference_lc.getDictionary().getNestedColumn();
+    ASSERT_EQ(result_keys.size(), reference_keys.size());
+    for (size_t i = 0; i < result_keys.size(); ++i)
+        ASSERT_EQ(result_keys[i], reference_keys[i]) << "key " << i;
+}
+
+}
+
+TEST(ColumnLowCardinality, InsertRangeFromMatchesInsertFrom)
+{
+    for (bool nullable : {false, true})
+        for (bool shared_sources : {false, true})
+            /// 1000 distinct keys widen the indexes from `UInt8` to `UInt16`.
+            for (size_t pool_size : {1, 10, 1000})
+                testInsertRangeFromMatchesInsertFrom(nullable, shared_sources, pool_size);
 }

@@ -30,6 +30,9 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    /// See `ColumnLowCardinality::insertRangeFrom`.
+    constexpr size_t max_length_to_insert_row_by_row = 64;
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -257,6 +260,32 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     else
     {
         compactIfSharedDictionary();
+
+        /// For short ranges the batch path below is dominated by allocating and freeing temporary columns
+        /// (e.g. vertical merges gather many short runs from parts with different dictionaries).
+        /// Insert row by row instead, reusing the previous result for consecutive equal indexes.
+        /// Keys are inserted in first-appearance order, as in the batch path, so the result is identical.
+        if (length <= max_length_to_insert_row_by_row)
+        {
+            const auto & src_indexes = low_cardinality_src->getIndexes();
+            const auto & src_nested = *low_cardinality_src->getDictionary().getNestedColumn();
+            auto & dst_dictionary = getDictionary();
+
+            UInt64 prev_src = src_indexes.getUInt(start);
+            UInt64 prev_dst = dst_dictionary.uniqueInsertFrom(src_nested, prev_src);
+            idx.insertIndex(prev_dst);
+            for (size_t i = start + 1; i < start + length; ++i)
+            {
+                UInt64 cur_src = src_indexes.getUInt(i);
+                if (cur_src != prev_src)
+                {
+                    prev_src = cur_src;
+                    prev_dst = dst_dictionary.uniqueInsertFrom(src_nested, cur_src);
+                }
+                idx.insertIndex(prev_dst);
+            }
+            return;
+        }
 
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
