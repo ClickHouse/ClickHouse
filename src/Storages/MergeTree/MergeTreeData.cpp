@@ -6065,6 +6065,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+
+        if (command.type == AlterCommand::ADD_INDEX)
+            checkAddedIndexNameHasNoStaleFiles(command.index_name, commands, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -13826,6 +13829,58 @@ void MergeTreeData::checkMutationIsSafeToKill(const String & mutation_id) const
             mutation_id,
             getStorageID().getNameForLogs(),
             backQuoteIfNeed(command.column_name));
+    }
+}
+
+void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(
+    const String & index_name,
+    const AlterCommands & commands,
+    const std::map<std::string, MutationCommands> & unfinished_mutations,
+    ContextPtr local_context) const
+{
+    /// The granules of a dropped skip index are refused only while its `DROP INDEX` mutation is
+    /// pending for the part (`AlterConversions::getStaleIndices`). A name whose drop is no longer
+    /// pending while parts still hold its files - killed before it reached them, or carried in by an
+    /// `ATTACH` - therefore has nothing left to mark them stale, and giving that name to a new index
+    /// would make every read of it answer from the previous definition's granules (#121171).
+    ///
+    /// Refuse, unless the drop is still coming and the guard still covers the window: in this very
+    /// `ALTER`, which is the ordinary `DROP INDEX ix, ADD INDEX ix ...`, or in a mutation that has yet
+    /// to reach every part.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::DROP_INDEX && command.index_name == index_name)
+            return;
+    }
+
+    for (const auto & [_, mutation_commands] : unfinished_mutations)
+    {
+        for (const auto & command : mutation_commands)
+        {
+            /// A `CLEAR INDEX` is a `DROP_INDEX` with `clear` and keeps its index in the metadata, so
+            /// it cannot be the drop that freed this name. The name of the index of a `DROP_INDEX`
+            /// command is in `column_name`, not `index_name`.
+            if (command.type == MutationCommand::Type::DROP_INDEX && !command.clear && command.column_name == index_name)
+                return;
+        }
+    }
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+    {
+        if (!part->hasSecondaryIndex(index_name, metadata_snapshot))
+            continue;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot add skip index {} to table {}: part {} still holds the files of an earlier index "
+            "of that name, whose removal is no longer pending, so granules of the earlier definition "
+            "would be read as if they belonged to the new index. Use a different name, or rewrite the "
+            "parts first, for example with OPTIMIZE TABLE ... FINAL",
+            backQuoteIfNeed(index_name),
+            getStorageID().getNameForLogs(),
+            part->name);
     }
 }
 

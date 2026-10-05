@@ -1141,6 +1141,14 @@ public:
     /// definition's granules. Called by `killMutation` of both engines; see the definition.
     void checkMutationIsSafeToKill(const String & mutation_id) const;
 
+    /// Throws if an `ADD INDEX` would give its name to granules a previous index of the same name
+    /// left behind in the parts. See the definition.
+    void checkAddedIndexNameHasNoStaleFiles(
+        const String & index_name,
+        const AlterCommands & commands,
+        const std::map<std::string, MutationCommands> & unfinished_mutations,
+        ContextPtr local_context) const;
+
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;

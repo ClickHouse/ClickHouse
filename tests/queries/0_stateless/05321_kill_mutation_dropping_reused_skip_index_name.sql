@@ -40,3 +40,24 @@ KILL MUTATION WHERE database = currentDatabase() AND table = 't_ixk2' FORMAT Nul
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_ixk2' AND NOT is_done;
 
 DROP TABLE t_ixk2;
+
+SELECT '-- re-adding a name whose killed drop left files behind is refused';
+DROP TABLE IF EXISTS t_ixk3;
+CREATE TABLE t_ixk3 (a UInt32, b UInt32, INDEX ix a TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 128;
+
+INSERT INTO t_ixk3 SELECT number + 1000000, 999999 - number FROM numbers(10000);
+
+-- Keeps the `DROP INDEX` mutation pending, so killing it leaves the index files on the part.
+SYSTEM STOP MERGES t_ixk3;
+
+ALTER TABLE t_ixk3 DROP INDEX ix;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_ixk3' FORMAT Null;
+
+ALTER TABLE t_ixk3 ADD INDEX ix b TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- a name nothing left files under is unaffected';
+ALTER TABLE t_ixk3 ADD INDEX ix2 b TYPE minmax GRANULARITY 1;
+SELECT count() FROM t_ixk3 WHERE b = 995000;
+
+DROP TABLE t_ixk3;
