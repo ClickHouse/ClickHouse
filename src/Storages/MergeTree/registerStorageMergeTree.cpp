@@ -1183,6 +1183,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
+    /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+        MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
+
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
@@ -2009,7 +2013,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns.
+The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key.
 
 **Examples**
 

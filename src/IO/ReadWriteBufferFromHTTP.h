@@ -184,6 +184,9 @@ private:
 
     Poco::URI current_uri;
     size_t redirects = 0;
+    /// Set when a `303 See Other` redirect has rewritten the request to `GET`: `current_uri` then points to a
+    /// resource that has to be requested with `GET` and without the original request body, also on retries.
+    bool rewritten_to_get_by_redirect = false;
 
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
@@ -207,7 +210,7 @@ private:
 
     bool withPartialContent() const;
 
-    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
+    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
     void doWithRetries(
         std::function<void()> && callable,
@@ -231,7 +234,8 @@ private:
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
-        bool allow_redirects) const;
+        bool allow_redirects,
+        bool with_request_body = true) const;
 
     CallResult  callWithRedirects(
         Poco::Net::HTTPResponse & response,

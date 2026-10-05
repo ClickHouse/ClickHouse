@@ -314,7 +314,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
                 --db_count;
         }
 
@@ -2621,6 +2621,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
 
+        /// A table engine picks the comment up from the arguments the storage factory passes to it,
+        /// while a table function does not receive it at all, so apply it here: otherwise the comment
+        /// would be stored in the metadata but missing from `system.tables`.
+        if (create.comment)
+            res->setInMemoryMetadataComment(create.comment->as<ASTLiteral &>().value.safeGet<String>());
+
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
@@ -3256,7 +3262,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular, getContext()));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3440,8 +3446,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
         /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
-        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
-        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        /// that here would buy nothing.
         ///
         /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
         /// is already committed and a unilateral drop would diverge this replica - which is why

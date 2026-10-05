@@ -620,6 +620,9 @@ public:
     /// Get function name.
     String getName() const override { return name; }
 
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -872,12 +875,16 @@ private:
 
     ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        ColumnPtr res;
-        if (!((res = executeNothing(arguments))
-              || (res = executeIntegral<INTEGRAL_PACK>(arguments))
-              || (res = executeConst(arguments, result_type))
-              || (res = executeString(arguments))
-              || (res = executeGeneric(arguments))))
+        ColumnPtr res = executeNothing(arguments);
+        if (!res)
+            res = executeIntegral<INTEGRAL_PACK>(arguments);
+        if (!res)
+            res = executeConst(arguments, result_type);
+        if (!res)
+            res = executeString(arguments);
+        if (!res)
+            res = executeGeneric(arguments);
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
