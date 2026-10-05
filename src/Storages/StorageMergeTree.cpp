@@ -1817,7 +1817,7 @@ StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_na
     {
         return std::make_optional<MergeTreeMutationEntry>(disk, relative_data_path, file_name);
     }
-    catch (const Exception & e)
+    catch (const std::exception & e)
     {
         /// A readonly table over the directory of a live table (`table_disk` on a shared `plain_rewritable` endpoint)
         /// does not own the entries: the owner removes one at any moment (`KILL MUTATION`, `clearOldMutations`), also
@@ -1826,6 +1826,7 @@ StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_na
         /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
         /// Convert the error only when the probe proves that the metadata still lists the entry, but its object is
         /// gone. If the probe itself fails, the original read failure is the more useful one.
+        /// Not only `Exception`: the Azure read path rethrows the SDK's own exception.
         if (!disk->isReadOnly())
             throw;
 
@@ -1846,7 +1847,7 @@ StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_na
 
         if (skip_if_removed)
         {
-            /// Not `e.message()`: log checks treat the object storage "key does not exist" text as a server error.
+            /// Not `e.what()`: log checks treat the object storage "key does not exist" text as a server error.
             LOG_INFO(log, "Mutation entry {} was removed by the table that owns the directory, skipping it", file_name);
             return std::nullopt;
         }
@@ -1859,7 +1860,7 @@ StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_na
             file_name,
             getStorageID().getNameForLogs(),
             backQuoteIfNeed(disk->getName()),
-            e.message());
+            e.what());
     }
 }
 
