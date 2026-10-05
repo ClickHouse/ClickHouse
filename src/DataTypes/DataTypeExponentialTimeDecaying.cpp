@@ -1045,74 +1045,158 @@ ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
 {
     ColumnPtr full = storage_column.convertToFullColumnIfConst();
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
-    const auto & tuple = decaying.getStorageTuple();
 
-    auto decay_lengths = ColumnFloat64::create(tuple.size(), decay_length);
+    auto decay_lengths = ColumnFloat64::create(decaying.size(), decay_length);
+    if (decaying.getMode() == ExponentialTimeDecayingMode::Direct)
+    {
+        auto values = ColumnFloat64::create();
+        auto timestamps = ColumnFloat64::create();
+        values->reserve(decaying.size());
+        timestamps->reserve(decaying.size());
+        for (size_t row = 0; row < decaying.size(); ++row)
+        {
+            const auto direct = decaying.getDirectValueAt(row);
+            values->insertValue(direct.value_at_anchor);
+            timestamps->insertValue(direct.anchor_time);
+        }
+
+        return ColumnTuple::create(
+            Columns{std::move(values), std::move(timestamps), std::move(decay_lengths)});
+    }
+
+    auto signs = ColumnInt8::create();
+    auto unit_timestamps = ColumnFloat64::create();
+    signs->reserve(decaying.size());
+    unit_timestamps->reserve(decaying.size());
+    for (size_t row = 0; row < decaying.size(); ++row)
+    {
+        signs->insertValue(decaying.getSignAt(row));
+        unit_timestamps->insertValue(decaying.getUnitTimestampAt(row));
+    }
+
     return ColumnTuple::create(
-        Columns{
-            tuple.getColumnPtr(0),
-            tuple.getColumnPtr(1),
-            std::move(decay_lengths)});
+        Columns{std::move(signs), std::move(unit_timestamps), std::move(decay_lengths)});
 }
 
 ColumnPtr materializeExponentialTimeDecayingStorageColumn(
     const IColumn & logical_column,
     Float64 decay_length,
     const String & operation,
-    ExponentialTimeDecayingKeyWidth key_width)
+    ExponentialTimeDecayingKeyWidth key_width,
+    ExponentialTimeDecayingMode mode)
 {
     ColumnPtr full = logical_column.convertToFullColumnIfConst();
     const auto & tuple = assert_cast<const ColumnTuple &>(*full);
-    if (tuple.tupleSize() != 2 && tuple.tupleSize() != 3)
+
+    if (mode == ExponentialTimeDecayingMode::Direct)
+    {
+        if (tuple.tupleSize() != 2 && tuple.tupleSize() != 3)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecaying direct value in {}: expected (value, timestamp[, decay_length])",
+                operation);
+
+        const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+        const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+        const ColumnFloat64 * decay_lengths = tuple.tupleSize() == 3
+            ? &assert_cast<const ColumnFloat64 &>(tuple.getColumn(2))
+            : nullptr;
+
+        auto keys64 = key_width == ExponentialTimeDecayingKeyWidth::Bits64 ? ColumnUInt64::create() : nullptr;
+        auto keys128 = key_width == ExponentialTimeDecayingKeyWidth::Bits128 ? ColumnUInt128::create() : nullptr;
+        auto storage_values = ColumnFloat64::create();
+        auto storage_times = ColumnFloat64::create();
+        storage_values->reserve(tuple.size());
+        storage_times->reserve(tuple.size());
+
+        for (size_t row = 0; row < tuple.size(); ++row)
+        {
+            if (decay_lengths)
+            {
+                const Float64 supplied = decay_lengths->getData()[row];
+                if (!std::isfinite(supplied) || supplied != decay_length)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Malformed ExponentialTimeDecaying direct value in {}: supplied decay length {} does not match type decay length {}",
+                        operation,
+                        supplied,
+                        decay_length);
+            }
+
+            const Float64 value = values[row];
+            const Float64 time = times[row];
+            if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed ExponentialTimeDecaying direct value in {}: value and timestamp must define a finite curve",
+                    operation);
+
+            const auto normalized = normalizeExponentialTimeDecaying(value, time, decay_length, key_width);
+            if (keys64)
+                keys64->insertValue(static_cast<UInt64>(normalized.ordering_key));
+            else
+                keys128->insertValue(normalized.ordering_key);
+            storage_values->insertValue(value);
+            storage_times->insertValue(time);
+        }
+
+        Columns columns;
+        if (keys64)
+            columns.push_back(std::move(keys64));
+        else
+            columns.push_back(std::move(keys128));
+        columns.push_back(std::move(storage_values));
+        columns.push_back(std::move(storage_times));
+
+        return ColumnExponentialTimeDecaying::create(
+            ColumnTuple::create(std::move(columns))->assumeMutable(),
+            decay_length,
+            key_width,
+            mode);
+    }
+
+    if (tuple.tupleSize() != 3)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Malformed ExponentialTimeDecaying value in {}: expected raw (value, timestamp[, decay_length]) tuple",
+            "Malformed ExponentialTimeDecaying compact value in {}: expected (sign, unit_timestamp, decay_length)",
             operation);
 
-    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
-    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & signs = assert_cast<const ColumnInt8 &>(tuple.getColumn(0)).getData();
+    const auto & unit_timestamps = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
 
-    const ColumnFloat64 * decay_lengths = nullptr;
-    if (tuple.tupleSize() == 3)
-        decay_lengths = &assert_cast<const ColumnFloat64 &>(tuple.getColumn(2));
-
-    auto storage_values = ColumnFloat64::create();
-    auto storage_times = ColumnFloat64::create();
-    storage_values->reserve(tuple.size());
-    storage_times->reserve(tuple.size());
+    MutableColumnPtr keys = key_width == ExponentialTimeDecayingKeyWidth::Bits64
+        ? MutableColumnPtr(ColumnUInt64::create())
+        : MutableColumnPtr(ColumnUInt128::create());
 
     for (size_t row = 0; row < tuple.size(); ++row)
     {
-        if (decay_lengths)
-        {
-            const Float64 supplied_decay_length = decay_lengths->getData()[row];
-            if (!std::isfinite(supplied_decay_length) || supplied_decay_length != decay_length)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Malformed ExponentialTimeDecaying value in {}: supplied decay length {} does not match type decay length {}",
-                    operation,
-                    supplied_decay_length,
-                    decay_length);
-        }
-
-        const Float64 value = values[row];
-        const Float64 time = times[row];
-        if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
+        const Int8 sign = signs[row];
+        const Float64 unit_timestamp = unit_timestamps[row];
+        const Float64 supplied = decay_lengths[row];
+        if (sign < -1 || sign > 1 || !std::isfinite(unit_timestamp))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: value and timestamp must define a finite decay curve",
+                "Malformed ExponentialTimeDecaying compact value in {}",
                 operation);
+        if (!std::isfinite(supplied) || supplied != decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecaying compact value in {}: supplied decay length {} does not match type decay length {}",
+                operation,
+                supplied,
+                decay_length);
 
         const auto normalized = normalizeExponentialTimeDecaying(
-            value, time, decay_length, key_width);
-        storage_values->insertValue(normalized.value_at_anchor);
-        storage_times->insertValue(normalized.anchor_time);
+            static_cast<Float64>(sign), unit_timestamp, decay_length, key_width);
+        if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
+            assert_cast<ColumnUInt64 &>(*keys).insertValue(static_cast<UInt64>(normalized.ordering_key));
+        else
+            assert_cast<ColumnUInt128 &>(*keys).insertValue(normalized.ordering_key);
     }
 
-    auto physical = ColumnTuple::create(
-        Columns{std::move(storage_values), std::move(storage_times)});
     return ColumnExponentialTimeDecaying::create(
-        physical->assumeMutable(), decay_length, key_width);
+        std::move(keys), decay_length, key_width, mode);
 }
 
 void validateExponentialTimeDecayingColumn(
@@ -1130,52 +1214,47 @@ void validateExponentialTimeDecayingColumn(
     }
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*nested_column);
-    const auto & tuple = decaying.getStorageTuple();
-    if (tuple.tupleSize() != 2)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Malformed ExponentialTimeDecaying value in {}: expected direct value and anchor payload",
-            operation);
-
-    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
-    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    for (size_t row = 0; row < tuple.size(); ++row)
+    for (size_t row = 0; row < decaying.size(); ++row)
     {
         if (nullable && nullable->isNullAt(row))
             continue;
 
+        const auto direct = decaying.getDirectValueAt(row);
         if (!isFiniteExponentialTimeDecayingCurve(
-                values[row], times[row], decaying.getDecayLength()))
+                direct.value_at_anchor, direct.anchor_time, decaying.getDecayLength()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: direct payload is invalid",
+                "Malformed ExponentialTimeDecaying value in {}",
                 operation);
 
-        const auto normalized = normalizeExponentialTimeDecaying(
-            values[row],
-            times[row],
-            decaying.getDecayLength(),
-            decaying.getKeyWidth());
+        if (decaying.getMode() == ExponentialTimeDecayingMode::Direct)
+        {
+            const auto normalized = normalizeExponentialTimeDecaying(
+                direct.value_at_anchor,
+                direct.anchor_time,
+                decaying.getDecayLength(),
+                decaying.getKeyWidth());
 
-        if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
-        {
-            const auto & keys
-                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
-            if (static_cast<UInt64>(normalized.ordering_key) != keys[row])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Malformed ExponentialTimeDecaying64 value in {}: derived ordering key is invalid",
-                    operation);
-        }
-        else
-        {
-            const auto & keys
-                = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
-            if (normalized.ordering_key != keys[row])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Malformed ExponentialTimeDecaying128 value in {}: derived ordering key is invalid",
-                    operation);
+            if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+            {
+                const auto & keys
+                    = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+                if (static_cast<UInt64>(normalized.ordering_key) != keys[row])
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Malformed ExponentialTimeDecaying64 direct value in {}: ordering key does not match interface payload",
+                        operation);
+            }
+            else
+            {
+                const auto & keys
+                    = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
+                if (normalized.ordering_key != keys[row])
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Malformed ExponentialTimeDecaying128 direct value in {}: ordering key does not match interface payload",
+                        operation);
+            }
         }
     }
 }
