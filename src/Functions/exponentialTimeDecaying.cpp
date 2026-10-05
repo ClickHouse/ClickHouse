@@ -36,6 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+    extern const SettingsString exponential_time_decay_default_mode;
 }
 
 namespace
@@ -49,6 +50,14 @@ void assertExperimentalFeatureEnabled(const ContextPtr & context, const String &
             "Function {} is experimental and disabled by default. Enable it with setting "
             "allow_experimental_time_decay_aggregate_functions",
             function_name);
+}
+
+ExponentialTimeDecayingMode getDefaultExponentialTimeDecayingMode(const ContextPtr & context)
+{
+    return parseExponentialTimeDecayingMode(
+        context
+            ? context->getSettingsRef()[Setting::exponential_time_decay_default_mode].value
+            : "compact");
 }
 
 void assertDecayingType(const DataTypePtr & type, const String & function_name, size_t argument)
@@ -193,13 +202,15 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         assertExperimentalFeatureEnabled(context, name);
-        return std::make_shared<FunctionExponentialTimeDecaying>();
+        return std::make_shared<FunctionExponentialTimeDecaying>(
+            std::nullopt, getDefaultExponentialTimeDecayingMode(context));
     }
 
-    FunctionExponentialTimeDecaying() = default;
-
-    explicit FunctionExponentialTimeDecaying(Float64 decay_length_)
+    FunctionExponentialTimeDecaying(
+        std::optional<Float64> decay_length_,
+        ExponentialTimeDecayingMode mode_)
         : decay_length(decay_length_)
+        , mode(mode_)
     {
     }
 
@@ -225,7 +236,7 @@ public:
 
         assertTimeType(arguments[1].type, getName());
         return std::make_shared<DataTypeExponentialTimeDecaying>(
-            *decay_length, ExponentialTimeDecayingKeyWidth::Bits64);
+            *decay_length, ExponentialTimeDecayingKeyWidth::Bits64, mode);
     }
 
     ColumnPtr executeImpl(
@@ -237,7 +248,8 @@ public:
 
         auto value_column = arguments[0].column->convertToFullColumnIfConst();
         auto time_column = arguments[1].column->convertToFullColumnIfConst();
-        DecayingColumnBuilder result(*decay_length);
+        DecayingColumnBuilder result(
+            *decay_length, ExponentialTimeDecayingKeyWidth::Bits64, mode);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -257,6 +269,7 @@ public:
 
 private:
     std::optional<Float64> decay_length;
+    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact;
 };
 
 class FunctionExponentialTimeDecayingAdd final : public IFunction
@@ -494,7 +507,8 @@ FunctionOverloadResolverPtr createExponentialTimeDecayingFunction(
             FunctionExponentialTimeDecaying::name);
 
     return std::make_shared<FunctionToOverloadResolverAdaptor>(
-        std::make_shared<FunctionExponentialTimeDecaying>(decay_length));
+        std::make_shared<FunctionExponentialTimeDecaying>(
+            decay_length, getDefaultExponentialTimeDecayingMode(context)));
 }
 
 REGISTER_FUNCTION(ExponentialTimeDecaying)
