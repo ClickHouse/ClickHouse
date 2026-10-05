@@ -283,6 +283,10 @@ WITH
 SELECT
     abs(tupleElement(p_small, 'value')) < 1,
     tupleElement(p_small, 'timestamp') = -toFloat64('1.7976931348623157e308'),
+    exponentialTimeDecayingUnitTime(p_small) = tupleElement(p_small, 'timestamp'),
+    exponentialTimeDecayingValueAtUnitTime(p_small) = tupleElement(p_small, 'value'),
+    exponentialTimeDecayingUnitTime(n_large) = tupleElement(n_large, 'timestamp'),
+    exponentialTimeDecayingValueAtUnitTime(n_large) = tupleElement(n_large, 'value'),
     p_small < p_large,
     p_large > zero,
     zero > n_small,
