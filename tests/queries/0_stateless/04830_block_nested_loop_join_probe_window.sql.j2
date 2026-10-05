@@ -1,0 +1,50 @@
+-- Tags: no-old-analyzer, no-random-settings
+
+-- The block nested loop join evaluates its condition on tiles of a bounded number of candidate pairs.
+-- A probe chunk larger than that bound is swept in several windows over the same build rows, so every
+-- window of one sweep has to cover the same build rows: a build row skipped by all but the last window
+-- is silently missing from the result.
+
+SET enable_analyzer = 1;
+-- No algorithm is enabled, so every kind below is answered by the operator, `INNER` included.
+SET join_algorithm = '';
+-- One probe chunk of the whole table, so that `max_block_size` below decides the number of windows.
+SET max_threads = 1;
+
+DROP TABLE IF EXISTS bnl_window_probe;
+DROP TABLE IF EXISTS bnl_window_build;
+DROP TABLE IF EXISTS bnl_window_threshold;
+CREATE TABLE bnl_window_probe (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE bnl_window_build (y UInt64) ENGINE = MergeTree ORDER BY y;
+CREATE TABLE bnl_window_threshold (y UInt64) ENGINE = MergeTree ORDER BY y;
+INSERT INTO bnl_window_probe SELECT number FROM numbers(200000);
+-- Spread over the modulus of the condition below, so that every side has both rows that match and
+-- rows that match nothing: 1000 is out of reach of `x % 1000`, and a fifth of the probe rows are
+-- under the smallest build value. Few build rows keep the number of answered pairs small; the
+-- number of probe windows, which is what this test is about, follows the probe side alone.
+INSERT INTO bnl_window_build SELECT 200 + number * 200 FROM numbers(5);
+INSERT INTO bnl_window_threshold SELECT 1000000;
+
+{% for kind in ['LEFT', 'FULL', 'RIGHT', 'INNER', 'LEFT SEMI', 'LEFT ANTI', 'RIGHT SEMI', 'RIGHT ANTI', 'LEFT ANY', 'ANY INNER'] -%}
+
+SELECT '{{ kind }}',
+    (SELECT (count(), sum(cityHash64(x, y))) FROM bnl_window_probe l {{ kind }} JOIN bnl_window_build r
+     ON l.x % 1000 > r.y SETTINGS max_block_size = 300000)
+  = (SELECT (count(), sum(cityHash64(x, y))) FROM bnl_window_probe l {{ kind }} JOIN bnl_window_build r
+     ON l.x % 1000 > r.y SETTINGS max_block_size = 1000) AS ok;
+
+{% endfor -%}
+
+-- The number of pairs in a tile is the operator's own bound and does not follow `max_block_size`, so
+-- an intermediate value of the condition costs that many rows of it however large a chunk the query
+-- asks for. Without the bound this query evaluates `repeat` over a million pairs at once.
+-- The threshold has to come from a table: a constant is propagated into the condition, which then
+-- holds the probe side alone and is answered by a filter over a whole chunk rather than by the
+-- operator, so the bound this asserts would not be the one under test.
+SELECT count() FROM (SELECT number AS x FROM numbers(1000000)) l
+LEFT SEMI JOIN bnl_window_threshold r ON length(repeat(toString(l.x), 20)) > r.y
+SETTINGS max_block_size = 1000000, max_memory_usage = '100Mi';
+
+DROP TABLE bnl_window_probe;
+DROP TABLE bnl_window_build;
+DROP TABLE bnl_window_threshold;

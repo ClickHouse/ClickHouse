@@ -88,10 +88,11 @@ private:
             const size_t rows_remaining = size % Impl::rows_per_iteration;
             const size_t rows_size = size - rows_remaining;
 
-            /// When rows_per_iteration == 1, the loop body is a scalar function
-            /// call (e.g. exp2, sin). The compiler may aggressively unroll this
-            /// on higher march targets, bloating i-cache for zero throughput
-            /// gain since the bottleneck is the call itself.
+            /// When rows_per_iteration == 1, the loop body is a scalar libm call (or an inlined
+            /// implementation like `preciseExp10` that itself calls libm), so unrolling cannot
+            /// overlap iterations and only bloats the code. Removing this pragma made `exp10`
+            /// 19-23% slower in the CI performance tests on m7i (Sapphire Rapids) with clang 22,
+            /// while a Zen 5 machine showed no difference with the same binaries.
 #pragma clang loop unroll(disable)
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&src_data[i], &dst_data[i]);

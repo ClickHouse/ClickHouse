@@ -65,6 +65,8 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void describeActions(FormatSettings &) const override;
@@ -81,10 +83,19 @@ public:
         params.bucket_top_k_count_index = count_index;
     }
 
+    /// See `Aggregator::Params::having_prefilter_op`; called by the plan optimization.
+    void enableHavingPrefilter(Aggregator::Params::HavingPrefilterOp op, UInt64 threshold, size_t count_index)
+    {
+        params.having_prefilter_op = op;
+        params.having_prefilter_threshold = threshold;
+        params.having_prefilter_count_index = count_index;
+    }
+
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
     bool inOrder() const { return !sort_description_for_merging.empty(); }
+    bool isMergingSkipped() const { return skip_merging; }
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
@@ -215,8 +226,9 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

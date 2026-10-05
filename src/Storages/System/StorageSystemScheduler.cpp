@@ -208,7 +208,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             canceled_cost = ptr->canceled_cost.load();
             rejected_cost = ptr->rejected_cost.load();
             busy_periods = ptr->busy_periods.load();
-            throughput = ptr->throughput.rate(static_cast<double>(clock_gettime_ns())/1e9);
+            throughput = ptr->getThroughput();
         }
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {

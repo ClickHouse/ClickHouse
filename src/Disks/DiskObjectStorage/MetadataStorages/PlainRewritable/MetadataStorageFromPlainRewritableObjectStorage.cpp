@@ -340,6 +340,22 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
             auto & directory = directories[i];
 
+            /// Reuse the version observed by LIST. A rename/delete after this listing is
+            /// observed by the next refresh; loading is not an atomic snapshot of remote metadata.
+            if (do_not_load_unchanged_directories && directory.metadata->isEtagUsableAsCacheKey())
+            {
+                if (const auto known_path = local_paths_by_remote_directory.find(directory.remote_path);
+                    known_path != local_paths_by_remote_directory.end())
+                {
+                    if (auto known_info = read_snapshot->getDirectoryRemoteInfo(known_path->second);
+                        known_info && known_info->remote_path == directory.remote_path && known_info->etag == directory.metadata->etag)
+                    {
+                        results[i] = DirectoryLoadResult{true, known_path->second, std::move(*known_info)};
+                        continue;
+                    }
+                }
+            }
+
             /// Passing by reference:
             /// log: Created before runner, so it will be destroyed after
             /// settings: Same as log
@@ -471,7 +487,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         remote_layout.size(),
         list_in_parallel ? "by prefix shards" : "sequentially",
         files_are_prelisted ? "for the whole disk at once" : "per directory");
+
+    std::unordered_map<std::string, std::string> new_local_paths;
+    new_local_paths.reserve(remote_layout.size());
+    for (const auto & [local_path, info] : remote_layout)
+        new_local_paths.emplace(info.remote_path, local_path);
+
     fs.applyLayout(std::move(remote_layout));
+    local_paths_by_remote_directory = std::move(new_local_paths);
     previous_refresh.restart();
 }
 
