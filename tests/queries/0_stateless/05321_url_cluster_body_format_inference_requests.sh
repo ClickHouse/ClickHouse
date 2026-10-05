@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/"
+URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
 
 function body()
 {
@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 function requests()
 {
-    echo "(SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND type = 'QueryFinish' AND interface = 2 AND query LIKE '%/* ${CLICKHOUSE_DATABASE}_$1 */%')"
+    echo "(SELECT count() FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND interface = 2 AND query LIKE '%/* ${CLICKHOUSE_DATABASE}_$1 */%')"
 }
 
 $CLICKHOUSE_CLIENT --query "
