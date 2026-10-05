@@ -31,7 +31,6 @@
 namespace DB
 {
 
-/// TODO: Move this to an `EXPLAIN` option (e.g. `statistics = 1`): no `EXPLAIN` shows column statistics, so tests grep this log line.
 String dumpRelationStatsForLogs(const RelationStats & stats)
 {
     auto dump_column = [](const auto & column)
