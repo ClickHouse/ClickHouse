@@ -1,0 +1,46 @@
+-- INNER JOIN LATERAL keeps the outer row of an empty input
+1	2	300
+2	2	120
+3	0	0
+-- LEFT JOIN LATERAL joins the empty-set result, not NULLs
+1	2	300	150	2	[1,2]	1
+2	2	120	60	4	[3,4]	2
+3	0	0	nan	0	[]	0
+-- aggregate arguments using the correlated column
+1	300
+2	240
+3	0
+-- two correlated columns
+1	eu	2
+2	us	1
+3	eu	0
+-- HAVING over the empty-set result
+1	\N
+2	\N
+3	0
+-- a user GROUP BY has no row for an empty input
+1	2
+2	2
+3	\N
+1	2
+2	2
+-- empty_result_for_aggregation_by_empty_set keeps the empty input empty
+1	2
+2	2
+3	\N
+1	2
+2	2
+-- join_use_nulls = 0
+1	2	300
+2	2	120
+3	0	0
+-- other decorrelation layouts
+1	2
+2	2
+3	0
+1	2
+2	2
+3	0
+1	2
+2	2
+3	0

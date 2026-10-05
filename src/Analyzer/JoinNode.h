@@ -188,6 +188,18 @@ public:
         kind = kind_value;
     }
 
+    /// Returns true if join is LATERAL, false otherwise
+    bool isLateral() const
+    {
+        return lateral;
+    }
+
+    /// Set join lateral flag
+    void setLateral(bool lateral_value)
+    {
+        lateral = lateral_value;
+    }
+
     /// Convert join node to ASTTableJoin
     ASTPtr toASTTableJoin() const;
 
@@ -221,6 +233,7 @@ private:
     bool is_using_join_expression;
     bool is_natural = false;
     bool is_set_operation = false;
+    bool lateral = false;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;

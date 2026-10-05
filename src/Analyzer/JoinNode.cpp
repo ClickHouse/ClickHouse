@@ -121,6 +121,7 @@ ASTPtr JoinNode::toASTTableJoin() const
     join_ast->strictness = strictness;
     join_ast->kind = kind;
     join_ast->is_natural = is_natural && !hasJoinExpression();
+    join_ast->lateral = lateral;
 
     if (children[join_expression_child_index])
     {
@@ -153,6 +154,8 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     if (is_set_operation)
         buffer << ", is_set_operation: 1";
+    if (lateral)
+        buffer << ", lateral: true";
 
     /// Use the raw node accessors: in an unresolved tree (e.g. EXPLAIN QUERY TREE
     /// with run_passes = 0) the children are still identifiers, not table expressions.
@@ -175,7 +178,8 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
         is_using_join_expression == rhs_typed.is_using_join_expression &&
         is_natural == rhs_typed.is_natural &&
-        is_set_operation == rhs_typed.is_set_operation;
+        is_set_operation == rhs_typed.is_set_operation &&
+        lateral == rhs_typed.lateral;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -186,6 +190,7 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(is_using_join_expression);
     state.update(is_natural);
     state.update(is_set_operation);
+    state.update(lateral);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
@@ -197,6 +202,7 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
     clone->is_set_operation = is_set_operation;
+    clone->lateral = lateral;
     return clone;
 }
 
