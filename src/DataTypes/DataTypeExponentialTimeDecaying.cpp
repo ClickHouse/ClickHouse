@@ -45,6 +45,25 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename DataType, typename Callback>
+void forEachNestedDataType(const DataType & type, const Callback & callback)
+{
+    if constexpr (requires { type.forEachChild(callback); })
+    {
+        type.forEachChild(callback);
+    }
+    else
+    {
+        const size_t num_children = type.getNumberOfChildren();
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            const auto & child = *type.getChild(i);
+            callback(child);
+            forEachNestedDataType(child, callback);
+        }
+    }
+}
+
 using ExtendedTimeDecayFloat = boost::multiprecision::cpp_bin_float_quad;
 
 ExponentialTimeDecayingCanonicalDirectValue normalizeExponentialTimeDecaying128Direct(
@@ -645,7 +664,7 @@ bool containsExponentialTimeDecaying(const IDataType & type)
         return true;
 
     bool contains = false;
-    type.forEachChild([&](const IDataType & child)
+    forEachNestedDataType(type, [&](const IDataType & child)
     {
         if (!contains)
             contains = isExponentialTimeDecaying(child);
