@@ -3508,11 +3508,11 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                 const auto & names = from_tuple->getElementNames();
                 if (names.size() == 3
                     && names[0] == "sign"
-                    && names[1] == "signed_unit_time"
+                    && (names[1] == "unit_timestamp" || names[1] == "signed_unit_time")
                     && names[2] == "decay_length")
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Tuple(sign, signed_unit_time, decay_length) is not a representation of ExponentialTimeDecaying");
+                        "Tuple(sign, unit_timestamp, decay_length) is not a representation of ExponentialTimeDecaying");
             }
 
             DataTypePtr raw_type;
