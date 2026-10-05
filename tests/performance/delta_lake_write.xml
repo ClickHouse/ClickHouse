@@ -52,8 +52,8 @@
     </create_query>
     <create_query>INSERT INTO {database}.wr_small SELECT * FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0</create_query>
 
-    <!-- insert_small: 1000 rows per commit; the kernel commit and the log read dominate. -->
-    <query>INSERT INTO {database}.wr_small SELECT * FROM tpch10.lineitem LIMIT 1000 SETTINGS max_threads = 1, max_insert_threads = 1</query>
+    <!-- insert_small_commits: 5 tiny commits per run; the kernel commit and the log read dominate. -->
+    <query file="write_small_commits.sql"/>
 
     <drop_query>DROP TABLE IF EXISTS {database}.wr_large</drop_query>
     <drop_query>DROP TABLE IF EXISTS {database}.wr_small</drop_query>
