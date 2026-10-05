@@ -74,6 +74,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool compare_enum_with_string_lexicographically;
 }
 
 namespace ErrorCodes
@@ -1583,6 +1584,7 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+    , compare_enum_with_string_lexicographically(context->getSettingsRef()[Setting::compare_enum_with_string_lexicographically])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -5097,6 +5099,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             if (!fixed_key || fixed_key->getN() < const_bytes)
                                 return false;
                         }
+
+                        /// Ordering by `Enum` name does not follow the numeric order of the key.
+                        if (compare_enum_with_string_lexicographically && isEnum(key_expr_type_not_null)
+                            && func_name != "equals" && func_name != "notEquals")
+                            return false;
 
                         /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
                         /// constant instead of throwing, so the index must do the same instead of converting.
