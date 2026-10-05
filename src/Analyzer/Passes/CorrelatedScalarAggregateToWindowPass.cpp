@@ -263,8 +263,12 @@ private:
         for (auto & candidate : candidates)
             by_target[candidate.target].push_back(&candidate);
 
+        const QueryPlanOptimizationSettings optimization_settings(getContext());
+        /// Without the filter push-down, no condition restricts the windows.
+        if (!optimization_settings.filter_push_down)
+            return;
         const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
-        const bool runtime_join_filters = QueryPlanOptimizationSettings(getContext()).enable_join_runtime_filters
+        const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
             && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter);
 
         for (auto & [target, target_candidates] : by_target)
