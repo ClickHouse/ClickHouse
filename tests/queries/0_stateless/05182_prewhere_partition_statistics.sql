@@ -48,16 +48,16 @@ SETTINGS use_statistics = 0, use_partition_pruning = 0, log_comment = '05182_bot
 
 SYSTEM FLUSH LOGS query_log;
 
--- Each uncached part-statistics load takes one shared parts lock. Subtract the
--- identical query with statistics disabled to exclude locks for the actual read.
+-- `LoadedStatisticsParts` counts the parts whose statistics an uncached estimator build loads.
+-- The identical query with statistics disabled loads none.
 SELECT
-    maxIf(locks, log_comment = '05182_selected_on') - maxIf(locks, log_comment = '05182_selected_off') = 1,
-    maxIf(locks, log_comment = '05182_all_on') - maxIf(locks, log_comment = '05182_all_off') = 32,
-    maxIf(locks, log_comment = '05182_pruning_off') - maxIf(locks, log_comment = '05182_both_off') = 32,
+    maxIf(loaded_parts, log_comment = '05182_selected_on') - maxIf(loaded_parts, log_comment = '05182_selected_off') = 1,
+    maxIf(loaded_parts, log_comment = '05182_all_on') - maxIf(loaded_parts, log_comment = '05182_all_off') = 32,
+    maxIf(loaded_parts, log_comment = '05182_pruning_off') - maxIf(loaded_parts, log_comment = '05182_both_off') = 32,
     countIf(log_comment = '05182_absent' AND ProfileEvents['LoadedStatisticsMicroseconds'] = 0) = 1
 FROM
 (
-    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['SharedPartsLocks']) AS locks
+    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['LoadedStatisticsParts']) AS loaded_parts
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '05182_')
