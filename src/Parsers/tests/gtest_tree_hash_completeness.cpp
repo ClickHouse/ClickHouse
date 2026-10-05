@@ -747,6 +747,20 @@ TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreSignificant)
     EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), first_parameter->getTreeHash(/*ignore_aliases=*/ false));
 }
 
+TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreIgnoredWithAliases)
+{
+    /// The alias-insensitive hash is used to deduplicate identical expressions and subqueries,
+    /// so the alias state must not make otherwise identical nodes differ.
+    auto plain = make_intrusive<ASTIdentifier>("x");
+    auto prefer_alias = make_intrusive<ASTIdentifier>("x");
+    prefer_alias->setPreferAliasToColumnName(true);
+    auto parametrised = make_intrusive<ASTIdentifier>("x");
+    parametrised->parametrised_alias = make_intrusive<ASTQueryParameter>("first", "Identifier");
+
+    EXPECT_EQ(plain->getTreeHash(/*ignore_aliases=*/ true), prefer_alias->getTreeHash(/*ignore_aliases=*/ true));
+    EXPECT_EQ(plain->getTreeHash(/*ignore_aliases=*/ true), parametrised->getTreeHash(/*ignore_aliases=*/ true));
+}
+
 TEST(TreeHashCompleteness, JSONRejectsConflictingAliases)
 {
     String json = serializeASTToJSON(*parse("SELECT x AS y"));
