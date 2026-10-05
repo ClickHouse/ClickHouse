@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
+    extern const SettingsBool compare_enum_with_string_lexicographically;
 }
 
 namespace ErrorCodes
@@ -877,6 +878,11 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+    /// Ordering by `Enum` name does not follow the converted `Enum` values.
+    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
+        && isEnum(expr_type) && isStringOrFixedString(removeLowCardinality(new_filter.constant_node->getResultType()))
+        && context->getSettingsRef()[Setting::compare_enum_with_string_lexicographically])
+        new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
@@ -2137,6 +2143,10 @@ private:
         const auto constant_type = removeLowCardinality(constant_side->getResultType());
         const auto other_type = removeLowCardinality(other_side->getResultType());
         if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+            return {};
+        /// Ordering by `Enum` name does not follow the order of the converted constant.
+        if (isEnum(other_type) && function_name != "equals"
+            && getContext()->getSettingsRef()[Setting::compare_enum_with_string_lexicographically])
             return {};
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
