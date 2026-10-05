@@ -56,15 +56,14 @@ Float64 getExponentialTimeDecayingIndexTime(
         value, time, decay_length, key_width);
 
     if (key_width == ExponentialTimeDecayingKeyWidth::Bits64)
-    {
         return getExponentialTimeDecayingCanonicalDirectValue(
             static_cast<UInt64>(normalized.ordering_key)).anchor_time;
-    }
 
-    const auto direct
-        = getExponentialTimeDecayingCanonicalDirectValue(normalized.ordering_key);
-    return getExponentialTimeDecayingUnitTimestamp(
-        direct.value_at_anchor, direct.anchor_time, decay_length);
+    /// The high 64 bits of the 128-bit identity are the canonical Float64
+    /// anchor. Using that finite indexed coordinate keeps the significance
+    /// cutoff conservative even when the true unit time lies beyond Float64.
+    return getExponentialTimeDecayingCanonicalDirectValue(
+        normalized.ordering_key).anchor_time;
 }
 
 struct ExponentialTimeDecayedState
@@ -230,10 +229,9 @@ public:
             {
                 const auto & keys
                     = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
-                const auto direct
+                const auto indexed_direct
                     = getExponentialTimeDecayingCanonicalDirectValue(keys[row_num]);
-                input_index_time = getExponentialTimeDecayingUnitTimestamp(
-                    direct.value_at_anchor, direct.anchor_time, decay_length);
+                input_index_time = indexed_direct.anchor_time;
             }
         }
         else
@@ -317,14 +315,10 @@ public:
             const auto canonical = *key_width == ExponentialTimeDecayingKeyWidth::Bits64
                 ? getExponentialTimeDecayingCanonicalDirectValue(static_cast<UInt64>(normalized.ordering_key))
                 : getExponentialTimeDecayingCanonicalDirectValue(normalized.ordering_key);
-            const Int64 sign = canonical.value_at_anchor == 0
-                ? 0
-                : (std::signbit(canonical.value_at_anchor) ? -1 : 1);
-            const Float64 unit_timestamp = canonical.value_at_anchor == 0
-                ? 0
-                : getExponentialTimeDecayingUnitTimestamp(
-                    canonical.value_at_anchor, canonical.anchor_time, decay_length);
-            to.insert(Field(Tuple{Field(sign), Field(unit_timestamp), Field(decay_length)}));
+            to.insert(Field(Tuple{
+                Field(canonical.value_at_anchor),
+                Field(canonical.anchor_time),
+                Field(decay_length)}));
         }
     }
 
