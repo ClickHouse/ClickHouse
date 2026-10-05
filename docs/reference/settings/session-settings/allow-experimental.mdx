@@ -112,7 +112,7 @@ Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 
-## allow_experimental_logsql_dialect {#allow_experimental_logsql_dialect}
+## enable_logsql_dialect {#enable_logsql_dialect}
 
 <ExperimentalBadge/>
 
@@ -124,7 +124,7 @@ Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect 
 
 Usage:
 ```sql
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs';
 SET dialect = 'logsql';
 
