@@ -1,23 +1,23 @@
 exponentialTimeDecaying	0
-1	ExponentialTimeDecaying(3)	3	1
-2	ExponentialTimeDecaying(3)	3	1
-3	ExponentialTimeDecaying(3)	3	1
+1	ExponentialTimeDecaying64(3)	3	1
+2	ExponentialTimeDecaying64(3)	3	1
+3	ExponentialTimeDecaying64(3)	3	1
 3	1
 1	1
-AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))
+AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying64(3))	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(3))
 1	1
-1	ExponentialTimeDecaying(3)	3	1
-2	ExponentialTimeDecaying(3)	3	1
+1	ExponentialTimeDecaying64(3)	3	1
+2	ExponentialTimeDecaying64(3)	3	1
 1	1
 2	1
-1	0	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))
-1	1	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))
-2	0	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))
-2	1	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying(3))
+1	0	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying64(3))
+1	1	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying64(3))
+2	0	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying64(3))
+2	1	AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(3))	AggregateFunction(exponentialTimeDecayedSum(3), ExponentialTimeDecaying64(3))
 1	1	1
 2	1	1
-1	ExponentialTimeDecaying(3)	3	1
-2	ExponentialTimeDecaying(3)	3	1
+1	ExponentialTimeDecaying64(3)	3	1
+2	ExponentialTimeDecaying64(3)	3	1
 1	1
 2	1
 1	1

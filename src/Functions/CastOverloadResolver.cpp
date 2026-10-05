@@ -158,12 +158,12 @@ static Float64 inferExponentialTimeDecayingDecayLength(const ColumnWithTypeAndNa
     if (!tuple_type || tuple_type->getElements().size() != 3)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "CAST AS ExponentialTimeDecaying without a type parameter requires raw Tuple(value, timestamp, decay_length)");
+            "CAST AS a parameterless exponential-time-decaying type requires raw Tuple(value, timestamp, decay_length)");
 
     if (!source.column)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+            "CAST AS a parameterless exponential-time-decaying type requires a constant decay length");
 
     Field decay_length_field;
     if (const auto * const_column = typeid_cast<const ColumnConst *>(source.column.get()))
@@ -178,14 +178,14 @@ static Float64 inferExponentialTimeDecayingDecayLength(const ColumnWithTypeAndNa
         if (!const_decay_column)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+                "CAST AS a parameterless exponential-time-decaying type requires a constant decay length");
         decay_length_field = const_decay_column->getField();
     }
     else
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "CAST AS ExponentialTimeDecaying without a type parameter requires a constant decay length");
+            "CAST AS a parameterless exponential-time-decaying type requires a constant decay length");
     }
 
     const Float64 decay_length
@@ -193,7 +193,7 @@ static Float64 inferExponentialTimeDecayingDecayLength(const ColumnWithTypeAndNa
     if (!std::isfinite(decay_length) || decay_length <= 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Decay length of ExponentialTimeDecaying must be finite and positive");
+            "Decay length of exponential-time-decaying type must be finite and positive");
 
     return decay_length;
 }
@@ -297,14 +297,21 @@ protected:
 
         const String type_name = type_col->getValue<String>();
         DataTypePtr type;
-        if (type_name == "ExponentialTimeDecaying")
+        if (type_name == "ExponentialTimeDecaying64"
+            || type_name == "ExponentialTimeDecaying128")
         {
             if (arguments.empty())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "CAST AS ExponentialTimeDecaying without a type parameter requires a source tuple");
+                    "CAST AS {} without a type parameter requires a source tuple",
+                    type_name);
+
+            const auto key_width = type_name == "ExponentialTimeDecaying64"
+                ? ExponentialTimeDecayingKeyWidth::Bits64
+                : ExponentialTimeDecayingKeyWidth::Bits128;
             type = createDataTypeExponentialTimeDecaying(
-                inferExponentialTimeDecayingDecayLength(arguments.front()));
+                inferExponentialTimeDecayingDecayLength(arguments.front()),
+                key_width);
         }
         else
         {

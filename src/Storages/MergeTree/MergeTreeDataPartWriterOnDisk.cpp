@@ -261,13 +261,23 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
             const auto full_column = column->convertToFullColumnIfConst();
             const auto & decaying
                 = assert_cast<const ColumnExponentialTimeDecaying &>(*full_column);
-            const auto & prefix
-                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn());
-            const UInt64 key = prefix.getData()[row];
-            writeBinaryLittleEndian(key, index_stream);
 
-            if (settings.save_primary_index_in_memory)
-                assert_cast<ColumnUInt64 &>(*index_columns[i]).insertValue(key);
+            if (decaying.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+            {
+                const auto & keys
+                    = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+                writeBinaryLittleEndian(keys[row], index_stream);
+                if (settings.save_primary_index_in_memory)
+                    assert_cast<ColumnUInt64 &>(*index_columns[i]).insertValue(keys[row]);
+            }
+            else
+            {
+                const auto & keys
+                    = assert_cast<const ColumnUInt128 &>(decaying.getOrderingKeyColumn()).getData();
+                writeBinaryLittleEndian(keys[row], index_stream);
+                if (settings.save_primary_index_in_memory)
+                    assert_cast<ColumnUInt128 &>(*index_columns[i]).insertValue(keys[row]);
+            }
         }
         else
         {
@@ -303,8 +313,14 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             for (size_t i = 0; i < primary_index_block.columns(); ++i)
             {
                 const auto & value = primary_index_block.getByPosition(i);
-                if (isExponentialTimeDecaying(value.type))
-                    index_columns.push_back(ColumnUInt64::create());
+                if (const auto * decaying_type
+                    = typeid_cast<const DataTypeExponentialTimeDecaying *>(value.type.get()))
+                {
+                    if (decaying_type->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+                        index_columns.push_back(ColumnUInt64::create());
+                    else
+                        index_columns.push_back(ColumnUInt128::create());
+                }
                 else
                     index_columns.push_back(value.column->cloneEmpty());
             }

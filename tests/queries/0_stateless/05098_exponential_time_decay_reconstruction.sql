@@ -7,15 +7,15 @@ DROP TABLE IF EXISTS time_decay_reconstruction;
 CREATE TABLE time_decay_reconstruction
 (
     key UInt8,
-    state AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(10))
+    state AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;
 
 INSERT INTO time_decay_reconstruction
-SELECT 1, exponentialTimeDecayedSumState(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'));
+SELECT 1, exponentialTimeDecayedSumState(CAST((1., 0., 10.), 'ExponentialTimeDecaying64(10)'));
 INSERT INTO time_decay_reconstruction
-SELECT 1, exponentialTimeDecayedSumState(CAST((1., 100., 10.), 'ExponentialTimeDecaying(10)'));
+SELECT 1, exponentialTimeDecayedSumState(CAST((1., 100., 10.), 'ExponentialTimeDecaying64(10)'));
 
 OPTIMIZE TABLE time_decay_reconstruction FINAL;
 SELECT round(exponentialTimeDecayingValueAt(finalizeAggregation(state), 100.), 6)
@@ -27,14 +27,14 @@ DROP TABLE time_decay_reconstruction;
 -- finalized-value add path. Aggregate-state merges remain exact by design.
 SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(value), 100.), 6)
 FROM VALUES(
-    'value ExponentialTimeDecaying(10)',
+    'value ExponentialTimeDecaying64(10)',
     ((1., 0., 10.)),
     ((1., 100., 10.)));
 
 -- Reconstructing stored type names must not consult an unrelated query cutoff,
 -- even when that cutoff value would be rejected for a new aggregate invocation.
 SET exponential_time_decay_significance_cutoff = -1;
-SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(10))'));
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying64(10))'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedCount(10), Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedAvg(10), Float64, Float64)'));
 -- The scalar constructor does not consult an aggregate-only significance cutoff.

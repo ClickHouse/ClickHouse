@@ -1071,11 +1071,11 @@ Two related types are **not** aliases. They are valid `Native` column types — 
 - `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/reference/data-types/qbit) and in the [binary type encoding](/reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 </Note>
 
-### ExponentialTimeDecaying(decay_length) {#exponential-time-decaying}
+### ExponentialTimeDecaying64 and ExponentialTimeDecaying128 {#exponential-time-decaying}
 
-`ExponentialTimeDecaying(decay_length)` is a custom logical type for one exponentially time-decaying curve. The positive `decay_length` parameter is part of the type string and is **not** repeated in each row.
+`ExponentialTimeDecaying64(decay_length)` and `ExponentialTimeDecaying128(decay_length)` are custom logical types for exponentially time-decaying curves. The positive `decay_length` parameter is part of the type string and is **not** repeated in each row. There is no unsuffixed `ExponentialTimeDecaying` type.
 
-The Native payload is the authoritative direct representation, encoded as two ordinary `Float64` streams:
+Both types use the same authoritative direct payload, encoded as two ordinary `Float64` streams:
 
 ```text
 [value_at_anchor × num_rows]   Float64 LE
@@ -1088,13 +1088,23 @@ For row `i`, the value at a target time `t` is:
 
 A zero curve is canonically stored as `(0, 0)`. Non-zero values and anchor times must be finite.
 
-The server derives one 8-byte `UInt64` ordering prefix with `shiftOneBitAndSign(unit_timestamp)`, where `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))`. The sign divides the key space around zero and one low-order bit of the sortable `Float64` timestamp is discarded. Neighboring curves can therefore map to the same prefix; comparison and equality fall back to the full logical key on such collisions, and hashing uses the full logical key. The prefix is reconstructed from the two direct streams and is **not present in the Native payload or MergeTree column data**.
+Each type derives one ordered integer key from the direct payload. The key is the complete logical identity of the curve for that type: comparison, equality, hashing, `GROUP BY`, and `DISTINCT` use only the key. Two direct payloads that derive the same key are therefore the same logical value, even when their `(value_at_anchor, anchor_time)` pairs differ.
 
-For a direct `ExponentialTimeDecaying` primary-key column, the sparse MergeTree `primary.idx` stores this same `UInt64` ordering prefix for each mark. Explicit `minmax` indexes use the same prefix for their extrema. The authoritative table column remains the two-`Float64` direct payload above.
+For `ExponentialTimeDecaying64`, the identity is one `UInt64` ordering key. It is derived from
 
-The type has no state/version prefix of its own. Its two Float64 streams participate in the normal composite prefix/data traversal, so when the type is nested in `Array`, `Tuple`, `Nullable`, or another container there are still only the container's ordinary structural streams plus these two Float64 streams.
+`unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))`
 
-When binary type encoding is enabled, the type is encoded through the existing `Custom type` tag (`0x2C`) followed by its complete type name, for example `ExponentialTimeDecaying(60)`.
+using the compact signed ordering transform. The compact representation intentionally sacrifices timestamp precision so the sign domain and ordered unit timestamp fit in 64 bits. This is the smaller and faster representation.
+
+For `ExponentialTimeDecaying128`, the identity is one `UInt128` ordering key derived from the same mathematical unit timestamp, but the unit timestamp is calculated with deterministic extended precision and the full 128-bit key is used for ordering and identity. The wider key is intended for callers that prefer substantially lower collision probability over the smaller key and cheaper key construction of the 64-bit type.
+
+The derived ordering key is not part of the Native payload. It is reconstructed from the two direct streams. A direct primary-key column stores the corresponding key in sparse `MergeTree` primary-key marks: 8 bytes per mark for `ExponentialTimeDecaying64` and 16 bytes per mark for `ExponentialTimeDecaying128`. Explicit `minmax` indexes use the same per-type key width for their extrema.
+
+The types have no state/version prefix of their own. Their two `Float64` streams participate in the normal composite prefix/data traversal, so when either type is nested in `Array`, `Tuple`, `Nullable`, or another container there are still only the container's ordinary structural streams plus these two `Float64` streams.
+
+When binary type encoding is enabled, each type is encoded through the existing `Custom type` tag (`0x2C`) followed by its complete type name, for example `ExponentialTimeDecaying64(60)` or `ExponentialTimeDecaying128(60)`.
+
+The regular exponential-time-decayed aggregates preserve the representation of finalized decaying input: an `ExponentialTimeDecaying64` input finalizes to `ExponentialTimeDecaying64`, and an `ExponentialTimeDecaying128` input finalizes to `ExponentialTimeDecaying128`. Raw `(value, timestamp)` aggregate input finalizes to the raw numeric result rather than to either decaying type. Mixing the 64-bit and 128-bit types requires an explicit conversion.
 
 ### Versioned types {#versioned-types}
 

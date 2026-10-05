@@ -266,8 +266,8 @@ public:
 
     bool matchesExactContinuousRange() const;
 
-    /// Project direct `ExponentialTimeDecaying` key atoms to the UInt64 ordering
-    /// domain used by the column comparator and sparse/minmax indexes. Unsupported
+    /// Project direct exponential-time-decaying key atoms to the width-specific
+    /// integer ordering domain used by the column comparator and sparse/minmax indexes. Unsupported
     /// set/special predicates become unknown so pruning remains conservative.
     void projectExponentialTimeDecayingIndexKeys(const DataTypes & key_types);
 

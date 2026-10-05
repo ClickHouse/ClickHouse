@@ -11,6 +11,19 @@ namespace DB
 
 class DataTypeFactory;
 
+enum class ExponentialTimeDecayingKeyWidth : UInt8
+{
+    Bits64 = 64,
+    Bits128 = 128,
+};
+
+inline const char * getExponentialTimeDecayingTypeName(ExponentialTimeDecayingKeyWidth width)
+{
+    return width == ExponentialTimeDecayingKeyWidth::Bits64
+        ? "ExponentialTimeDecaying64"
+        : "ExponentialTimeDecaying128";
+}
+
 inline Float64 getExponentialTimeDecayingUnitTimestamp(
     Float64 value, Float64 time, Float64 decay_length)
 {
@@ -35,12 +48,8 @@ inline Float64 getExponentialTimeDecayingFloatFromSortableKey(UInt64 key)
     return std::bit_cast<Float64>(bits);
 }
 
-/// Compact 64-bit ordered representation of a decaying curve.
-///
-/// Zero occupies the midpoint. Negative curves occupy the range below it in
-/// reverse unit-timestamp order and positive curves occupy the range above it
-/// in forward unit-timestamp order. One bit of the sortable Float64 unit
-/// timestamp is intentionally discarded to make room for the sign domain.
+/// Compact 64-bit ordered identity. One sortable timestamp bit is discarded to
+/// make room for the curve-sign domain.
 inline UInt64 shiftOneBitAndSign(
     Float64 unit_timestamp, Float64 value_at_anchor)
 {
@@ -87,8 +96,6 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt64 ordering_key)
     Float64 unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
     if (!std::isfinite(unit_timestamp))
     {
-        /// Each ordering key represents two neighboring sortable Float64 values.
-        /// Pick the finite member of the pair at the infinities.
         if (negative)
             ++sortable;
         else
@@ -99,60 +106,39 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt64 ordering_key)
     return {negative ? -1.0 : 1.0, unit_timestamp};
 }
 
+UInt128 getExponentialTimeDecayingOrderingKey128(
+    Float64 value, Float64 time, Float64 decay_length);
+
+ExponentialTimeDecayingCanonicalDirectValue
+getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key);
+
 struct ExponentialTimeDecayingValue
 {
-    UInt64 ordering_key;
+    UInt128 ordering_key;
     Float64 value_at_anchor;
     Float64 anchor_time;
 };
 
-inline bool isFiniteExponentialTimeDecayingCurve(
-    Float64 value, Float64 time, Float64 decay_length)
-{
-    if (!std::isfinite(value)
-        || !std::isfinite(time)
-        || !std::isfinite(decay_length)
-        || decay_length <= 0)
-        return false;
+bool isFiniteExponentialTimeDecayingCurve(
+    Float64 value, Float64 time, Float64 decay_length);
 
-    return value == 0
-        || std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length));
-}
-
-inline ExponentialTimeDecayingValue normalizeExponentialTimeDecaying(
-    Float64 value, Float64 time, Float64 decay_length)
-{
-    if (value == 0)
-        return {shiftOneBitAndSign(0, 0), 0, 0};
-
-    return {
-        getExponentialTimeDecayingOrderingKey(value, time, decay_length),
-        value,
-        time};
-}
-
-inline bool isCanonicalExponentialTimeDecayingValue(
-    UInt64 ordering_key, Float64 value, Float64 time, Float64 decay_length)
-{
-    if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
-        return false;
-
-    const auto normalized = normalizeExponentialTimeDecaying(
-        value, time, decay_length);
-    return normalized.ordering_key == ordering_key
-        && normalized.value_at_anchor == value
-        && normalized.anchor_time == time;
-}
+ExponentialTimeDecayingValue normalizeExponentialTimeDecaying(
+    Float64 value,
+    Float64 time,
+    Float64 decay_length,
+    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64);
 
 class DataTypeExponentialTimeDecaying final : public IDataType
 {
 public:
-    explicit DataTypeExponentialTimeDecaying(Float64 decay_length_);
+    explicit DataTypeExponentialTimeDecaying(
+        Float64 decay_length_,
+        ExponentialTimeDecayingKeyWidth key_width_ = ExponentialTimeDecayingKeyWidth::Bits64);
 
     TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecaying; }
     TypeIndex getColumnType() const override { return TypeIndex::ExponentialTimeDecaying; }
     String doGetName() const override;
-    const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
+    const char * getFamilyName() const override { return getExponentialTimeDecayingTypeName(key_width); }
 
     MutableColumnPtr createColumn() const override;
     Field getDefault() const override;
@@ -179,38 +165,38 @@ public:
     using IDataType::getSerializationInfo;
 
     Float64 getDecayLength() const { return decay_length; }
+    ExponentialTimeDecayingKeyWidth getKeyWidth() const { return key_width; }
     const DataTypePtr & getNestedType() const { return storage_type; }
     const DataTypePtr & getLogicalTupleType() const { return logical_type; }
 
 private:
     const Float64 decay_length;
+    const ExponentialTimeDecayingKeyWidth key_width;
     const DataTypePtr storage_type;
     const DataTypePtr logical_type;
 };
 
-DataTypePtr createDataTypeExponentialTimeDecaying(Float64 decay_length);
+DataTypePtr createDataTypeExponentialTimeDecaying(
+    Float64 decay_length,
+    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64);
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const IDataType & type);
 std::optional<Float64> tryGetExponentialTimeDecayingDecayLength(const DataTypePtr & type);
+std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const IDataType & type);
+std::optional<ExponentialTimeDecayingKeyWidth> tryGetExponentialTimeDecayingKeyWidth(const DataTypePtr & type);
 bool isExponentialTimeDecaying(const IDataType & type);
 bool isExponentialTimeDecaying(const DataTypePtr & type);
 bool containsExponentialTimeDecaying(const IDataType & type);
 bool containsExponentialTimeDecaying(const DataTypePtr & type);
 
-/// Rejects pairwise use when decaying values occupy different nested positions
-/// or have different decay lengths.
 void assertExponentialTimeDecayingTypesCompatible(
     const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation);
 
-/// Permits a source whose exact semantic type is an alternative of a target Variant,
-/// while otherwise requiring decaying values to keep their type identity.
 void assertExponentialTimeDecayingConversionTypesCompatible(
     const DataTypePtr & source_type, const DataTypePtr & target_type, const String & operation);
 
-/// Set-key compatibility uses the same conversion rule.
 void assertExponentialTimeDecayingSetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 
-/// Rejects rows whose stored canonical ordering fields are invalid.
 void validateExponentialTimeDecayingColumn(
     const IColumn & column, const String & operation);
 
@@ -218,10 +204,11 @@ ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
     const IColumn & storage_column, Float64 decay_length);
 
 ColumnPtr materializeExponentialTimeDecayingStorageColumn(
-    const IColumn & logical_column, Float64 decay_length, const String & operation);
+    const IColumn & logical_column,
+    Float64 decay_length,
+    const String & operation,
+    ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64);
 
-/// Applies the same validation recursively when the experimental value is nested in
-/// `Array`, `Tuple`, `Map`, `Variant`, `Nullable`, or `LowCardinality`.
 void validateExponentialTimeDecayingColumn(
     const IColumn & column, const DataTypePtr & type, const String & operation);
 

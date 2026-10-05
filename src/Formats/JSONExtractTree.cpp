@@ -1655,10 +1655,12 @@ public:
     ExponentialTimeDecayingNode(
         DataTypePtr logical_type_,
         std::unique_ptr<JSONExtractTreeNode<JSONParser>> logical_node_,
-        Float64 decay_length_)
+        Float64 decay_length_,
+        ExponentialTimeDecayingKeyWidth key_width_)
         : logical_type(std::move(logical_type_))
         , logical_node(std::move(logical_node_))
         , decay_length(decay_length_)
+        , key_width(key_width_)
     {
     }
 
@@ -1687,7 +1689,7 @@ public:
         }
 
         auto storage_column = materializeExponentialTimeDecayingStorageColumn(
-            *logical_column, decay_length, "JSON extraction");
+            *logical_column, decay_length, "JSON extraction", key_width);
         column.insertRangeFrom(*storage_column, 0, storage_column->size());
         return true;
     }
@@ -1696,6 +1698,7 @@ private:
     DataTypePtr logical_type;
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> logical_node;
     Float64 decay_length;
+    ExponentialTimeDecayingKeyWidth key_width;
 };
 
 template <typename JSONParser>
@@ -2850,7 +2853,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<ExponentialTimeDecayingNode<JSONParser>>(
                 logical_type,
                 buildJSONExtractTree<JSONParser>(logical_type, source_for_exception_message),
-                decaying_type.getDecayLength());
+                decaying_type.getDecayLength(),
+                decaying_type.getKeyWidth());
         }
         case TypeIndex::Variant:
         {

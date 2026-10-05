@@ -24,59 +24,71 @@ const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
     return &(*field.columns)[field.column_idx];
 }
 
-std::optional<UInt64> getExponentialTimeDecayingPrefixFromField(
+std::optional<Field> getExponentialTimeDecayingKeyFromField(
     const FieldRef & field,
     const DataTypeExponentialTimeDecaying & type)
 {
     if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
         return std::nullopt;
 
-    if (field.getType() == Field::Types::UInt64)
-        return field.safeGet<UInt64>();
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64
+        && field.getType() == Field::Types::UInt64)
+        return Field(field.safeGet<UInt64>());
+
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits128
+        && field.getType() == Field::Types::UInt128)
+        return Field(field.safeGet<UInt128>());
 
     if (field.getType() != Field::Types::Tuple)
         return std::nullopt;
 
     const auto & tuple = field.safeGet<Tuple>();
-    if (tuple.size() == 2)
-    {
-        const Float64 value = tuple[0].safeGet<Float64>();
-        const Float64 time = tuple[1].safeGet<Float64>();
-        return getExponentialTimeDecayingOrderingKey(
-            value,
-            time,
-            type.getDecayLength());
-    }
+    if (tuple.size() != 2 && tuple.size() != 3)
+        return std::nullopt;
+
+    const Float64 value = tuple[0].safeGet<Float64>();
+    const Float64 time = tuple[1].safeGet<Float64>();
+    Float64 decay_length = type.getDecayLength();
 
     if (tuple.size() == 3)
     {
-        const Float64 value = tuple[0].safeGet<Float64>();
-        const Float64 time = tuple[1].safeGet<Float64>();
-        const Float64 decay_length = tuple[2].safeGet<Float64>();
-        if (decay_length != type.getDecayLength()
-            || !std::isfinite(value)
-            || !std::isfinite(time)
-            || (value != 0 && !std::isfinite(getExponentialTimeDecayingUnitTimestamp(value, time, decay_length))))
+        decay_length = tuple[2].safeGet<Float64>();
+        if (decay_length != type.getDecayLength())
             return std::nullopt;
-
-        return getExponentialTimeDecayingOrderingKey(value, time, decay_length);
     }
 
-    return std::nullopt;
+    if (!isFiniteExponentialTimeDecayingCurve(value, time, decay_length))
+        return std::nullopt;
+
+    const auto normalized = normalizeExponentialTimeDecaying(
+        value, time, decay_length, type.getKeyWidth());
+    if (type.getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+        return Field(static_cast<UInt64>(normalized.ordering_key));
+    return Field(normalized.ordering_key);
 }
 
-std::optional<UInt64> getExponentialTimeDecayingPrefixFromColumn(
+std::optional<Field> getExponentialTimeDecayingKeyFromColumn(
     const ColumnWithTypeAndName & value,
     size_t row)
 {
     if (const auto * compact = typeid_cast<const ColumnUInt64 *>(value.column.get()))
-        return compact->getData()[row];
+        return Field(compact->getData()[row]);
+
+    if (const auto * precise = typeid_cast<const ColumnUInt128 *>(value.column.get()))
+        return Field(precise->getData()[row]);
 
     if (const auto * decaying = typeid_cast<const ColumnExponentialTimeDecaying *>(value.column.get()))
     {
-        const auto & prefix
-            = assert_cast<const ColumnUInt64 &>(decaying->getOrderingKeyColumn());
-        return prefix.getData()[row];
+        if (decaying->getKeyWidth() == ExponentialTimeDecayingKeyWidth::Bits64)
+        {
+            const auto & keys
+                = assert_cast<const ColumnUInt64 &>(decaying->getOrderingKeyColumn()).getData();
+            return Field(keys[row]);
+        }
+
+        const auto & keys
+            = assert_cast<const ColumnUInt128 &>(decaying->getOrderingKeyColumn()).getData();
+        return Field(keys[row]);
     }
 
     return std::nullopt;
@@ -96,29 +108,33 @@ std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef
 
     if (direct_type)
     {
-        std::optional<UInt64> lhs_prefix;
-        std::optional<UInt64> rhs_prefix;
+        std::optional<Field> lhs_key;
+        std::optional<Field> rhs_key;
 
         if (lhs_value)
-            lhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*lhs_value, lhs.row_idx);
+            lhs_key = getExponentialTimeDecayingKeyFromColumn(*lhs_value, lhs.row_idx);
         else
-            lhs_prefix = getExponentialTimeDecayingPrefixFromField(lhs, *direct_type);
+            lhs_key = getExponentialTimeDecayingKeyFromField(lhs, *direct_type);
 
         if (rhs_value)
-            rhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*rhs_value, rhs.row_idx);
+            rhs_key = getExponentialTimeDecayingKeyFromColumn(*rhs_value, rhs.row_idx);
         else
-            rhs_prefix = getExponentialTimeDecayingPrefixFromField(rhs, *direct_type);
+            rhs_key = getExponentialTimeDecayingKeyFromField(rhs, *direct_type);
 
-        /// A compact primary-index boundary intentionally has only the UInt64 bucket.
-        /// Equal prefixes therefore compare equal even if the underlying direct values
-        /// would differ. This can only make pruning more conservative.
-        if (lhs_prefix && rhs_prefix
-            && ((lhs_value && typeid_cast<const ColumnUInt64 *>(lhs_value->column.get()))
-                || (rhs_value && typeid_cast<const ColumnUInt64 *>(rhs_value->column.get()))))
+        /// Sparse primary-index boundaries store only the authoritative ordering
+        /// key for the declared width. Compare in that physical domain.
+        const auto is_index_key = [](const ColumnWithTypeAndName * value)
         {
-            if (*lhs_prefix < *rhs_prefix)
+            return value
+                && (typeid_cast<const ColumnUInt64 *>(value->column.get())
+                    || typeid_cast<const ColumnUInt128 *>(value->column.get()));
+        };
+
+        if (lhs_key && rhs_key && (is_index_key(lhs_value) || is_index_key(rhs_value)))
+        {
+            if (accurateLess(*lhs_key, *rhs_key))
                 return -1;
-            if (*lhs_prefix > *rhs_prefix)
+            if (accurateLess(*rhs_key, *lhs_key))
                 return 1;
             return 0;
         }
