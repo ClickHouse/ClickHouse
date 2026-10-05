@@ -3,6 +3,12 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/filesystemHelpers.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
@@ -17,6 +23,11 @@
 
 using namespace DB;
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event ReadBufferFromFileDescriptorRead;
+}
 
 namespace DB::FileCacheSetting
 {
@@ -135,6 +146,47 @@ StoredObject testObject(size_t size = 100)
     return StoredObject("test/object", "local/object", size);
 }
 
+/// The same EOF guard protects ordinary reads and Direct I/O, so no old kernel is needed.
+void checkLocalFileSourceReadAtEOF(bool known_size)
+{
+    /// Isolate the read counter from background threads.
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
+
+    const String data = "hello";
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(data, out);
+        out.finalize();
+    }
+
+    ReadSettings settings;
+    settings.reader_executor.enabled = false;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 0;
+
+    ReadPipeline pipeline;
+    pipeline.setLocalFileSource(
+        tmp_file->path(),
+        StoredObjects{testObject(tmp_file->path(), known_size ? data.size() : StoredObject::UnknownSize)},
+        settings);
+    auto buf = pipeline.build();
+    ASSERT_NE(buf, nullptr);
+
+    /// Consume exactly the file contents, without requesting EOF yet.
+    String result(data.size(), '\0');
+    buf->readStrict(result.data(), result.size());
+    ASSERT_EQ(result, data);
+
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto reads_before_eof = counters[ProfileEvents::ReadBufferFromFileDescriptorRead];
+    EXPECT_TRUE(buf->eof());
+    /// A known size avoids the EOF syscall; an unknown size needs one.
+    EXPECT_EQ(counters[ProfileEvents::ReadBufferFromFileDescriptorRead] - reads_before_eof, known_size ? 0u : 1u);
+}
+
 FileCachePtr createTestFileCache(const String & name)
 {
     const auto cache_path = fs::current_path() / (name + "_cache");
@@ -177,6 +229,19 @@ try
 catch (...)
 {
     FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+/// -- Local source: preserve the known size and its EOF guard --
+
+TEST(ReadPipeline, LocalFileSourceKnownSizeSkipsReadAtEOF)
+{
+    checkLocalFileSourceReadAtEOF(/* known_size */ true);
+}
+
+TEST(ReadPipeline, LocalFileSourceUnknownSizeReadsAtEOF)
+{
+    checkLocalFileSourceReadAtEOF(/* known_size */ false);
 }
 
 
