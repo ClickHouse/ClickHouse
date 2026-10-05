@@ -42,6 +42,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
 
@@ -73,6 +74,11 @@ namespace ErrorCodes
     extern const int S3_ERROR;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
 }
 
 namespace MockS3
@@ -1996,6 +2002,9 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
 /// An unconditional completion recovers too, and for the same reason as a conditional one: the token
 /// is minted for every write, so `copyS3File` and the disk write paths keep the recovery they had.
 TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject) {
+    const uint64_t adopted_before
+        = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject];
+
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
@@ -2015,6 +2024,9 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject)
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
     EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].at("clickhouse-idempotency-id").empty());
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject],
+        adopted_before + 1);
 }
 
 /// The reported data loss, at the layer where it happens. An unconditional write to a key that already
