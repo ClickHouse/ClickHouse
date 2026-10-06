@@ -122,6 +122,11 @@ private:
     /// Validate that the underlying Paimon table still has the same identity.
     void validateTableIdentity() const;
 
+    PaimonSnapshot loadSnapshot(Int64 snapshot_id) const;
+
+    /// Throws if the snapshot's index manifest lists deletion vectors.
+    void checkNoDeletionVectors(Int64 snapshot_id) const;
+
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
 

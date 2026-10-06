@@ -33,7 +33,6 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
@@ -586,14 +585,6 @@ ObjectIterator PaimonMetadata::iterate(
             "superseded by later writes.",
             fmt::join(primary_keys, ", "));
 
-    const auto options = persistent_components.schema_processor->getOptions(state->schema_id);
-    if (auto it = options.find(PAIMON_DELETION_VECTORS_ENABLED); it != options.end() && equalsCaseInsensitive(it->second, "true"))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon table with deletion vectors ('{}' = '{}') is not supported: "
-            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
-            PAIMON_DELETION_VECTORS_ENABLED, it->second);
-
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
     if (filter_dag && query_context->getSettingsRef()[Setting::use_paimon_partition_pruning])
@@ -740,14 +731,30 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
-PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
+PaimonSnapshot PaimonMetadata::loadSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
     /// Build snapshot file path: `table_location/snapshot/snapshot-<id>`
     const String snapshot_path = (std::filesystem::path(persistent_components.table_location)
         / PAIMON_SNAPSHOT_DIR
         / fmt::format("{}{}", PAIMON_SNAPSHOT_PREFIX, snapshot_id));
-    auto snapshot = table_client->getSnapshot({snapshot_id, snapshot_path});
+    return table_client->getSnapshot({snapshot_id, snapshot_path});
+}
+
+void PaimonMetadata::checkNoDeletionVectors(Int64 snapshot_id) const
+{
+    const auto snapshot = loadSnapshot(snapshot_id);
+    if (snapshot.index_manifest && table_client->hasDeletionVectors(*snapshot.index_manifest))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon snapshot {} with deletion vectors is not supported: "
+            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
+            snapshot_id);
+}
+
+PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
+{
+    auto snapshot = loadSnapshot(snapshot_id);
 
     /// Ensure schema is cached for this snapshot_id
     if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
@@ -902,6 +909,10 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     bool deduplicate,
     bool track_deletes) const
 {
+    for (const auto & snapshot_state : snapshots)
+        if (snapshot_state)
+            checkNoDeletionVectors(snapshot_state->snapshot_id);
+
     Strings data_files;
     std::unordered_set<String> seen_files;
     std::unordered_set<String> delete_files;

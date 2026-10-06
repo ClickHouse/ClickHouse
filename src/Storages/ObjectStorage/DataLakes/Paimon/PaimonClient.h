@@ -318,6 +318,7 @@ public:
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache = false);
     std::pair<std::vector<PaimonManifestFileMeta>, size_t> getManifestMeta(String manifest_list_path, bool disable_filesystem_cache = false);
+    bool hasDeletionVectors(const String & index_manifest_path);
 private:
     /// Build ReadSettings for metadata reads.  When the caller knows that the
     /// in-memory Paimon metadata cache is active it passes disable_filesystem_cache=true

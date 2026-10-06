@@ -13,7 +13,6 @@ constexpr const char * PAIMON_SNAPSHOT_LATEST_HINT = "LATEST";
 /// for options
 constexpr const char * PAIMON_SCAN_MODE = "scan.mode";
 constexpr const char * PAIMON_DEFAULT_PARTITION_NAME = "partition.default-name";
-constexpr const char * PAIMON_DELETION_VECTORS_ENABLED = "deletion-vectors.enabled";
 /// for manifest list
 constexpr const char * PAIMON_MANIFEST_DIR = "manifest";
 constexpr const char * COLUMN_PAIMON_MANIFEST_LIST_FILE_NAME = "_FILE_NAME";
@@ -54,5 +53,9 @@ constexpr const char * COLUMN_PAIMON_MANIFEST_EMBEDDED_FILE_INDEX = "_EMBEDDED_F
 constexpr const char * COLUMN_PAIMON_MANIFEST_FILE_SOURCE = "_FILE_SOURCE";
 constexpr const char * COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS = "_VALUE_STATS_COLS";
 constexpr const char * COLUMN_PAIMON_MANIFEST_EXTERNAL_PATH = "_EXTERNAL_PATH";
+
+/// for index manifest
+constexpr const char * COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE = "_INDEX_TYPE";
+constexpr const char * PAIMON_DELETION_VECTORS_INDEX = "DELETION_VECTORS";
 
 }

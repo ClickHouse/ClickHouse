@@ -342,6 +342,24 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
     return paimon_manifest;
 }
 
+bool PaimonTableClient::hasDeletionVectors(const String & index_manifest_path)
+{
+    auto context = getContext();
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / index_manifest_path);
+    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
+    auto index_manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+    Iceberg::AvroForIcebergDeserializer index_manifest_deserializer(
+        std::move(index_manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(index_manifest_path), getFormatSettings(context));
+
+    for (size_t i = 0; i < index_manifest_deserializer.rows(); ++i)
+    {
+        if (index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE, TypeIndex::String).safeGet<String>()
+            == PAIMON_DELETION_VECTORS_INDEX)
+            return true;
+    }
+    return false;
+}
+
 }
 
 #endif
