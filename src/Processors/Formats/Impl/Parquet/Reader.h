@@ -453,6 +453,12 @@ struct Reader
 
         std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
+        /// Query condition cache: for each row block overlapping this subgroup, starting with the
+        /// block of its first row, whether any row of the block passed the filter. Filled by
+        /// recordMatchedRowBlocks when the filter is final, before the filter is freed.
+        std::vector<UInt8> matched_row_blocks;
+        bool matched_row_blocks_recorded = false;
+
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
@@ -581,6 +587,19 @@ struct Reader
     bool top_k_column_is_read = false;
     /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
     bool row_groups_ordered_by_top_k = false;
+
+    /// Query condition cache at row-block granularity (see IInputFormat::getMatchedRowBlocks).
+    /// Blocks are ranges of `rows_per_row_block` rows numbered from the first row of the file.
+    /// If set, read only the row blocks marked true (a cached verdict for this file and condition).
+    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
+    /// Whether to record which row blocks had rows passing the filter (recordMatchedRowBlocks).
+    bool track_matched_row_blocks = false;
+    size_t rows_per_row_block = 8192;
+
+    /// Called when the subgroup's filter is final (all prewhere steps done), before it's freed.
+    void recordMatchedRowBlocks(RowSubgroup & row_subgroup, const RowGroup & row_group) const;
+    /// After the read: for each row block of the file, whether any of its rows passed the filter.
+    std::vector<bool> getMatchedRowBlocks() const;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 

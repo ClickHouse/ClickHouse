@@ -369,6 +369,58 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+namespace
+{
+
+String makeRowBlocksPartName(const String & file_part_name)
+{
+    /// A file part name has exactly one NUL (see makeFilePartName), so this can't collide with one.
+    String part_name = file_part_name;
+    part_name.push_back('\0');
+    part_name.append("row_blocks");
+    return part_name;
+}
+
+}
+
+QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(const UUID & table_id, const String & file_part_name, UInt64 condition_hash)
+{
+    FileMatchingMarks result;
+    if (table_id == UUIDHelpers::Nil)
+        return result;
+
+    result.buckets = read(table_id, file_part_name, condition_hash, /*increment_profile_events=*/ false);
+    result.row_blocks = read(table_id, makeRowBlocksPartName(file_part_name), condition_hash, /*increment_profile_events=*/ false);
+
+    if (result.buckets || result.row_blocks)
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+    return result;
+}
+
+void QueryConditionCache::writeRowBlocks(
+    const UUID & table_id, const String & file_part_name, UInt64 condition_hash, const String & condition,
+    const std::vector<bool> & matched_row_blocks)
+{
+    MarkRanges unmatched_ranges;
+    for (size_t i = 0; i < matched_row_blocks.size(); ++i)
+    {
+        if (matched_row_blocks[i])
+            continue;
+        if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+            ++unmatched_ranges.back().end;
+        else
+            unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+    }
+
+    if (unmatched_ranges.empty())
+        return;
+
+    write(table_id, makeRowBlocksPartName(file_part_name), condition_hash, condition, unmatched_ranges, matched_row_blocks.size(),
+          /*has_final_mark=*/ false);
+}
+
 std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() const
 {
     return cache.dump();

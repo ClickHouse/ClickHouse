@@ -2028,6 +2028,7 @@ Chunk StorageFileSource::generate()
             /// the setting is documented to make TopK reads neither consult nor populate the query
             /// condition cache, and the write side is already off for them unconditionally (see below).
             FileBucketInfoPtr buckets_to_read;
+            std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
             QueryConditionCachePtr query_condition_cache;
             if (object_with_metadata.has_value() && current_file_version_settled
                 && format_filter_info && format_filter_info->condition_hash
@@ -2038,8 +2039,9 @@ Chunk StorageFileSource::generate()
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                auto matching_marks = query_condition_cache->read(
+                auto file_marks = query_condition_cache->readFile(
                     storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                const auto & matching_marks = file_marks.buckets;
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
@@ -2072,6 +2074,27 @@ Chunk StorageFileSource::generate()
                             continue;
                         }
                     }
+                }
+
+                if (file_marks.row_blocks.has_value())
+                {
+                    size_t num_blocks = file_marks.row_blocks->size();
+                    size_t num_matching = static_cast<size_t>(std::count(file_marks.row_blocks->begin(), file_marks.row_blocks->end(), true));
+                    LOG_DEBUG(
+                        getLogger("StorageFile"),
+                        "Query condition cache has dropped {}/{} row blocks for condition {} in file {}.",
+                        num_blocks - num_matching,
+                        num_blocks,
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        current_path);
+
+                    if (num_matching == 0)
+                    {
+                        read_buf.reset();
+                        continue;
+                    }
+                    if (num_matching < num_blocks)
+                        row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*file_marks.row_blocks));
                 }
             }
 
@@ -2112,6 +2135,8 @@ Chunk StorageFileSource::generate()
             }
 
             input_format->setBucketsToRead(buckets_to_read);
+            if (row_blocks_to_read)
+                input_format->setRowBlocksToRead(row_blocks_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -2310,6 +2335,17 @@ Chunk StorageFileSource::generate()
                                 /*has_final_mark=*/false);
                         }
                     }
+                }
+
+                if (auto row_blocks = input_format->getMatchedRowBlocks())
+                {
+                    if (auto query_condition_cache = getContext()->getQueryConditionCache())
+                        query_condition_cache->writeRowBlocks(
+                            storage->getStorageID().uuid,
+                            QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
+                            *format_filter_info->condition_hash,
+                            format_filter_info->filter_actions_dag->dumpNames(),
+                            *row_blocks);
                 }
             }
             catch (...)

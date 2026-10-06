@@ -113,6 +113,20 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// The entries of a file: one mark per bucket (e.g. Parquet row group) and one per row block
+    /// (see IInputFormat::getMatchedRowBlocks). A single consultation: one hit if either exists, else one miss.
+    struct FileMatchingMarks
+    {
+        std::optional<MatchingMarks> buckets;
+        std::optional<MatchingMarks> row_blocks;
+    };
+    FileMatchingMarks readFile(const UUID & table_id, const String & file_part_name, UInt64 condition_hash);
+
+    /// Store the row blocks of a file without a matching row (`matched_row_blocks[i]` is false).
+    void writeRowBlocks(
+        const UUID & table_id, const String & file_part_name, UInt64 condition_hash, const String & condition,
+        const std::vector<bool> & matched_row_blocks);
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
