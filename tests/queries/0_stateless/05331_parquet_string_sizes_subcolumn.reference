@@ -78,6 +78,8 @@ abc	7
 30	10	10
 -- a table function whose schema changed
 5
+-- a table function whose schema changed, with a column named s.size
+3	21
 -- lazy materialization
 1
 19999	29

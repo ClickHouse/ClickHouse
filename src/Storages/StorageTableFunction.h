@@ -221,7 +221,8 @@ public:
         std::erase_if(*supported, [&](const String & name)
         {
             return drifted.contains(name)
-                || (name.ends_with(size_suffix) && drifted.contains(name.substr(0, name.size() - size_suffix.size())));
+                || (name.ends_with(size_suffix) && !actual_columns.hasPhysical(name)
+                    && drifted.contains(name.substr(0, name.size() - size_suffix.size())));
         });
         return supported;
     }

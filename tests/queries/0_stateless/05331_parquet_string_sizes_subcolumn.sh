@@ -151,6 +151,15 @@ SELECT count() FROM t_drift PREWHERE s.size > 3; -- { serverError ILLEGAL_PREWHE
 SELECT count() FROM t_drift WHERE length(s) > 3;
 DROP TABLE t_drift;
 
+SELECT '-- a table function whose schema changed, with a column named s.size';
+INSERT INTO FUNCTION file(currentDatabase() || '_05331_drift_named.parquet', Parquet) SELECT toNullable('abc') AS s, 7::UInt64 AS `s.size` FROM numbers(3);
+CREATE TABLE t_drift_named AS file(currentDatabase() || '_05331_drift_named.parquet');
+INSERT INTO FUNCTION file(currentDatabase() || '_05331_drift_named.parquet', Parquet) SELECT 'abcd' AS s, 7::UInt64 AS `s.size` FROM numbers(3);
+DETACH TABLE t_drift_named;
+ATTACH TABLE t_drift_named;
+SELECT count(), sum(`s.size`) FROM t_drift_named PREWHERE `s.size` = 7;
+DROP TABLE t_drift_named;
+
 SELECT '-- lazy materialization';
 SET query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_file = 1, query_plan_max_limit_for_lazy_materialization = 10000;
 SELECT count() FROM (EXPLAIN SELECT n, length(s) FROM file(currentDatabase() || '_05331_plain.parquet') ORDER BY n DESC LIMIT 5) WHERE explain ILIKE '%LazilyReadFromFile%';
