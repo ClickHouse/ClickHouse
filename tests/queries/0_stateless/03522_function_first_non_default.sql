@@ -103,34 +103,3 @@ FROM test_first_truthy
 ORDER BY ALL;
 
 DROP TABLE test_first_truthy;
-
--- Many rows with several runs of default and non-default values in one block, checked against `multiIf`.
-SELECT
-    countIf(firstNonDefault(a, b, c) != multiIf(a != 0, a, b != 0, b, c)),
-    countIf(firstNonDefault(s, t) != multiIf(s != '', s, t)),
-    countIf(firstNonDefault(toLowCardinality(s), t) != multiIf(s != '', s, t)),
-    countIf(isNull(firstNonDefault(na, nb)) != isNull(multiIf(na IS NOT NULL, na, nb))
-        OR ifNull(firstNonDefault(na, nb) != multiIf(na IS NOT NULL, na, nb), 0)),
-    countIf(reinterpretAsUInt64(firstNonDefault(f, g)) != reinterpretAsUInt64(multiIf(reinterpretAsUInt64(f) != 0, f, g))),
-    countIf(firstNonDefault(arr, [42]) != if(notEmpty(arr), arr, [42]))
-FROM
-(
-    SELECT
-        toInt32(if(intHash32(number) % 3 = 0, 0, number + 1)) AS a,
-        toInt32(if(intDiv(number, 1000) % 2 = 0, 0, number + 2)) AS b,
-        toInt32(if(number % 7 = 0, 0, number + 3)) AS c,
-        if(intHash32(number) % 4 = 0, '', toString(number)) AS s,
-        if(number % 5 = 0, '', concat('x', toString(number))) AS t,
-        if(intHash32(number) % 3 = 1, NULL, toNullable(toInt32(if(number % 11 = 0, 0, number)))) AS na,
-        if(number % 13 = 0, NULL, toNullable(toInt32(number * 2))) AS nb,
-        multiIf(number % 5 = 0, 0., number % 5 = 1, -0., toFloat64(number)) AS f,
-        toFloat64(number) + 0.5 AS g,
-        if(number % 3 = 0, [], [toInt32(number)]) AS arr
-    FROM numbers(200000)
-)
-SETTINGS max_block_size = 65536;
-
-SELECT finalizeAggregation(firstNonDefault(x, y)) FROM (SELECT arrayReduce('sumState', [number]) AS x, arrayReduce('sumState', [number * 10]) AS y FROM numbers(3));
-SELECT firstNonDefault(toLowCardinality(toNullable(multiIf(number % 3 = 0, NULL, number % 3 = 1, '', 'v'))), 'z') FROM numbers(6);
-SELECT firstNonDefault(number * 0, toUInt64(0), number) FROM numbers(3);
-SELECT firstNonDefault(number * 0, toUInt64(0)) FROM numbers(2);

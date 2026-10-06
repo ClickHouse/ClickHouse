@@ -2,7 +2,7 @@
 title: Exemplo de Configuração Otel
 ---
 
-Substitua os placeholders de endpoint e senha pelas credenciais geradas pelo ClickStack:
+Um exemplo dessa configuração é mostrado abaixo (as variáveis de ambiente serão preenchidas automaticamente se forem copiadas da UI):
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% of maximum memory up to 2G, adjust for low memory environments
+    # 80% da memória máxima até 2G, ajuste para ambientes com pouca memória
     limit_mib: 1500
-    # 25% of limit up to 2G, adjust for low memory environments
+    # 25% do limite até 2G, ajuste para ambientes com pouca memória
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,6 +34,10 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

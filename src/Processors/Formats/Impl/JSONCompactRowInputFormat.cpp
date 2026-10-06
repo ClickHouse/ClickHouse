@@ -78,8 +78,6 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSONCompact");
-    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
-    factory.registerFileExtension("json", "JSONCompact", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONCompact", Documentation{
         .description = R"DOCS_MD(
@@ -89,7 +87,7 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [JSON](/reference/formats/JSON/JSON) only in that data rows are output as arrays, not as objects.
+Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
 
 ## Example usage {#example-usage}
 

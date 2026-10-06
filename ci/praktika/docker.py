@@ -2,26 +2,7 @@ import dataclasses
 import os
 from typing import Dict, List
 
-from .settings import Settings
 from .utils import Shell, Utils
-
-# Matched against the pull's stderr. Transport-class phrases only: must never match a
-# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
-_IMAGE_PULL_RETRY_ERRORS = [
-    "connection reset by peer",
-    "connection refused",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "unexpected EOF",
-    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
-    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
-    "server misbehaving",
-    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
-    # writes nothing, so without this entry a stall is not retried.
-    "sending signal TERM to command",
-]
-_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
-_IMAGE_PULL_RETRIES = 3
 
 
 class Docker:
@@ -64,13 +45,7 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        # A successful inspect is the only evidence that the image is already there.
-        # A missing tag in an existing repository reports "no such manifest", but the
-        # first ever build of a new image reports "denied: requested access to the
-        # resource is denied" instead, because the repository itself does not exist
-        # yet - and treating that as "image exists" leaves the manifest merge with
-        # nothing to merge.
-        if code != 0:
+        if "no such manifest" in err:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
@@ -93,17 +68,7 @@ class Docker:
                 for name, value in config.build_args.items()
             )
 
-            if disable_push:
-                push_out = ""
-            else:
-                push_out = (
-                    " --output type=image,push=true"
-                    f",compression={Settings.DOCKER_LAYER_COMPRESSION}"
-                    f",compression-level={Settings.DOCKER_LAYER_COMPRESSION_LEVEL}"
-                    ",force-compression=true"
-                )
-
-            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11 {config.path}{push_out}"
+            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path} {'' if disable_push else ' --push'}"
 
             return Result.from_commands_run(
                 name=name,
@@ -173,40 +138,6 @@ class Docker:
             else:
                 dockers.append(dockers.pop(i))
         return dockers
-
-    @classmethod
-    def pull_image(
-        cls,
-        image,
-        *,
-        strict=False,
-        on_retry=None,
-        verbose=True,
-        timeout_s=_IMAGE_PULL_TIMEOUT_S,
-        retries=_IMAGE_PULL_RETRIES,
-    ):
-        """Pull `image`, retrying only transport-class failures.
-
-        `strict` raises on a failed pull; `on_retry(matched, attempt, attempts)`
-        is called once per actual retry, so a caller with a report surface can
-        make the retry visible. Returns the pull's exit code.
-
-        `timeout_s` bounds one attempt and `retries` caps their number; a caller
-        that pays the retries out of its own job timeout passes a budget that
-        fits inside it.
-        """
-        # Below these floors the budget silently widens: `timeout 0` runs unbounded,
-        # and Shell.run raises `retries` to 2 whenever `retry_errors` is set.
-        assert timeout_s >= 1, f"timeout_s must be >= 1, got [{timeout_s}]"
-        assert retries >= 2, f"retries must be >= 2, got [{retries}]"
-        return Shell.run(
-            f"timeout --verbose {timeout_s} docker pull {image}",
-            strict=strict,
-            retries=retries,
-            retry_errors=_IMAGE_PULL_RETRY_ERRORS,
-            verbose=verbose,
-            on_retry=on_retry,
-        )
 
     @classmethod
     def login(cls, user_name, user_password):

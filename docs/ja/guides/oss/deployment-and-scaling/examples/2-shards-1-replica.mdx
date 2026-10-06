@@ -38,7 +38,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 * 使用しているマシンに Docker がインストールされていること
 
 <Steps>
-  <Step title="ディレクトリ構造とテスト環境のセットアップ" id="set-up">
+  <Step>
+    ## ディレクトリ構造とテスト環境のセットアップ
+
     <ExampleFiles />
 
     このチュートリアルでは、[Docker compose](https://docs.docker.com/compose/) を使用して ClickHouse クラスターをセットアップします。このセットアップは、個別のローカルマシン、仮想マシン、またはクラウドインスタンス向けに変更することも可能です。
@@ -49,12 +51,12 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # Create clickhouse-keeper directories
+    # clickhouse-keeperディレクトリを作成する
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Create clickhouse-server directories
+    # clickhouse-serverディレクトリを作成する
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -160,8 +162,10 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step title="ClickHouseノードの設定" id="configure-clickhouse-servers">
-### サーバーのセットアップ
+  <Step>
+    ## ClickHouseノードの設定
+
+    ### サーバーのセットアップ
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` にある空の設定ファイル `config.xml` をそれぞれ編集します。以下でハイライトされている行は、各ノードに固有の値に変更する必要があります。
 
@@ -233,7 +237,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     上記の設定ファイルの各セクションについて、以下で詳しく説明します。
 
-#### ネットワークとログ
+    #### ネットワークとログ
 
     <ListenHost />
 
@@ -251,7 +255,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ロギング設定の詳細については、デフォルトの ClickHouse [設定ファイル](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)に含まれるコメントを参照してください。
 
-#### クラスターの設定
+    #### クラスターの設定
 
     クラスターの設定は `<remote_servers>` ブロックで行います。
     ここでクラスター名 `cluster_2S_1R` を定義します。
@@ -281,7 +285,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-#### Keeper の設定
+    #### Keeper の設定
 
     `<ZooKeeper>` セクションでは、ClickHouse Keeper (または ZooKeeper) の実行場所を ClickHouse に指定します。
     ClickHouse Keeper クラスターを使用する場合、クラスター内の各 `<node>` に対して、`<host>` タグおよび `<port>` タグでそれぞれホスト名とポート番号を指定する必要があります。
@@ -310,7 +314,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       本番環境では、ClickHouse Keeper は専用ホストで実行することを強く推奨します。
     </Note>
 
-#### マクロの設定
+    #### マクロの設定
 
     また、`<macros>` セクションはレプリケートテーブル向けのパラメータ置換を定義するために使用されます。これらは `system.macros` に一覧表示され、クエリ内で `{shard}` や `{replica}` などの置換を利用できます。
 
@@ -325,7 +329,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       これらは、クラスターの構成に応じてそれぞれ定義されます。
     </Note>
 
-### ユーザー設定
+    ### ユーザー設定
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` にある空の設定ファイル `users.xml` をそれぞれ以下の内容に変更します。
 
@@ -342,6 +346,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
+                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -349,6 +354,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -380,8 +386,10 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step title="ClickHouse Keeper を設定する" id="configure-clickhouse-keeper-nodes">
-### Keeperのセットアップ
+  <Step>
+    ## ClickHouse Keeper を設定する
+
+    ### Keeperのセットアップ
 
     <KeeperConfig />
 
@@ -396,7 +404,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step title="セットアップをテストする" id="test-the-setup">
+  <Step>
+    ## セットアップをテストする
+
     お使いのマシンで Docker が実行中であることを確認してください。
     `cluster_2S_1R` ディレクトリのルートで `docker-compose up` コマンドを実行して、クラスターを起動します。
 
@@ -421,7 +431,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     クエリを実行します。以下は、最初のノードに接続するコマンドです。
 
     ```bash
-    # Connect to any node
+    # 任意のノードに接続する
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -474,7 +484,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     次のステップでは、クラスター内にテーブルを作成します。
   </Step>
 
-  <Step title="データベースを作成する" id="creating-a-database">
+  <Step>
+    ## データベースを作成する
+
     クラスターが正しくセットアップされ、稼働していることを確認できたので、次は [UK property prices](/ja/get-started/sample-datasets/uk-price-paid)
     のサンプルデータセットのチュートリアルで使用したものと同じテーブルを再作成します。これには、1995 年以降のイングランドおよびウェールズの不動産売買価格に関する
     約 3,000 万行のデータが含まれています。
@@ -528,7 +540,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="クラスター上にテーブルを作成する" id="creating-a-table">
+  <Step>
+    ## クラスター上にテーブルを作成する
+
     データベースを作成したので、次にテーブルを作成します。
     次のクエリを任意のホストクライアントから実行します。
 
@@ -605,13 +619,13 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     次に、`clickhouse-01` または `clickhouse-02` で、次のクエリを実行します。
 
     ```sql
-    -- from clickhouse-01
+    -- clickhouse-01から
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    --from clickhouse-02
+    --clickhouse-02から
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
@@ -629,7 +643,9 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     [`Distributed`](/ja/reference/engines/table-engines/special/distributed) テーブルエンジンを使って作成します。どのように動作するのか見てみましょう。
   </Step>
 
-  <Step title="分散テーブルを作成する" id="create-distributed-table">
+  <Step>
+    ## 分散テーブルを作成する
+
     以下のクエリを使用して分散テーブルを作成します。
 
     ```sql
@@ -665,8 +681,10 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="分散テーブルへのデータの挿入" id="inserting-data-into-distributed-table">
-    いずれかのホストに接続し、データを挿入します:
+  <Step>
+    ## 分散テーブルへのデータの挿入
+
+    いずれかのホストに接続し、データを挿入します。
 
     ```sql
     INSERT INTO uk.uk_price_paid_distributed
@@ -715,26 +733,26 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 million
+    ┌──count()─┐
+    1. │ 30212555 │ -- 3021万
        └──────────┘
     ```
 
     いずれかのホストで次のクエリを実行すると、データが各分片にほぼ均等に分散されていることを確認できます (どの分片に挿入するかは `rand()` によってランダムに決定されるため、実行環境によって結果が異なる場合があります) ：
 
     ```sql
-    -- from clickhouse-01
+    -- clickhouse-01より
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 15.11 million
+    -- 1. │ 15107353 │ -- 1511万
     --    └──────────┘
 
-    --from clickhouse-02
+    -- clickhouse-02より
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 15.11 million
+    -- 1. │ 15105202 │ -- 1511万
     --    └──────────┘
     ```
 

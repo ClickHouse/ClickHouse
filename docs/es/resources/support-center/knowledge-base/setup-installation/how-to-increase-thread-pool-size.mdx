@@ -6,6 +6,10 @@ tags: ['Rendimiento y optimización']
 keywords: ['Hilos disponibles']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="increasing-the-number-of-threads-in-clickhouse">
   ## Aumentar el número de hilos en ClickHouse
 </div>
@@ -30,4 +34,4 @@ También puede liberar recursos si su servidor tiene muchos hilos inactivos medi
 <max_thread_pool_free_size>2000</max_thread_pool_free_size>
 ```
 
-Consulta la [documentación](/es/reference/settings/server-settings/settings/max-thread#max_thread_pool_size) para obtener más información sobre los ajustes anteriores y otros ajustes que afectan al Global Thread pool.
+Consulta la [documentación](/es/reference/settings/server-settings/settings#max_thread_pool_size) para obtener más información sobre los ajustes anteriores y otros ajustes que afectan al Global Thread pool.

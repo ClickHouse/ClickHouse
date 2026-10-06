@@ -1,0 +1,690 @@
+---
+noindex: true
+title: "ClickHouse Private와 Teleport 통합"
+sidebarTitle: "Teleport 통합"
+description: "정부/FIPS 환경에서 ClickHouse Private 클러스터에 대한 안전한 데이터베이스 액세스를 위해 Teleport Enterprise를 설정합니다."
+---
+
+정부/FIPS 환경에서 ClickHouse Private 클러스터에 대한 안전한 데이터베이스 액세스를 위해 Teleport Enterprise를 설정합니다. 이 가이드에서는 EKS에 Teleport를 배포하고, 데이터베이스 액세스, SAML 인증, 인증서 교체를 구성하는 방법을 설명합니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* [FIPS/Government 배포](/ko/products/clickhouse-private/tutorials/deploy-clickhouse-with-fips-compliance-government)가 `SERVER_VERIFICATION_MODE=relaxed` 및 `KEEPER_VERIFICATION_MODE=relaxed` 설정으로 완료되어 있어야 합니다(Teleport mTLS에 필요)
+* Teleport Enterprise 라이선스
+* 서버 인증서 SAN에 `DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}`가 포함되어야 합니다([FIPS 인증서 생성](/ko/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) 참조)
+
+***
+
+<div id="create-a-node-group-for-teleport">
+  ## Teleport용 노드 그룹 만들기
+</div>
+
+Teleport 전용 노드 그룹은 선택 사항입니다. 사용할 수 있는 Bottlerocket ARM FIPS 노드가 없다면 EKS 콘솔의 Compute에서 다음 구성으로 노드 그룹을 만드십시오:
+
+* **이름**: fips-arm64
+* **노드 IAM role**: 새 권장 role 생성
+* **Kubernetes taints**:
+  * **키**: `group`, **값**: `fips-arm64`, **효과**: `NoSchedule`
+* **AMI 유형**: Bottlerocket ARM FIPS
+* **인스턴스 유형**: m7g.large
+* **스케일링**: Desired 2, Min 2, Max 3
+
+***
+
+<div id="install-teleport-cluster-on-eks">
+  ## EKS에 Teleport 클러스터 설치
+</div>
+
+<div id="create-namespace-and-license-secret">
+  ### 네임스페이스 및 라이선스 시크릿 생성
+</div>
+
+```bash
+kubectl create namespace teleport
+kubectl label namespace teleport 'pod-security.kubernetes.io/enforce=baseline'
+
+# Download the Teleport Enterprise license, then:
+kubectl --namespace teleport create secret generic license --from-file=/Downloads/license.pem
+```
+
+<div id="generate-fips-certificates-for-teleport">
+  ### Teleport용 FIPS 인증서 생성
+</div>
+
+다음 스크립트(`generate_fips_certs_in_container_for_teleport.sh`)를 만드십시오:
+
+```bash expandable
+#!/bin/bash
+set -e
+
+CLUSTER_FQDN=${CLUSTER_FQDN:-"teleport.example.com"}
+NAMESPACE=${NAMESPACE:-"teleport"}
+KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN:-"cluster.local"}
+COUNTRY=${COUNTRY:-"US"}
+STATE=${STATE:-"YourState"}
+CITY=${CITY:-"YourCity"}
+ORG=${ORG:-"YourOrganization"}
+ORG_UNIT=${ORG_UNIT:-"YourOrganizationalUnit"}
+CN=${CN:-"YourRootCA"}
+
+# Only run inside a container, prevent accidental execution on host.
+if [ ! -f /.dockerenv ]; then
+    echo "Not running inside Docker"
+    exit 1
+fi
+
+dnf -y install openssl crypto-policies-scripts
+fips-mode-setup --enable
+
+mkdir -p /certs/{ca_teleport,server_teleport}
+
+# Generate CA certificate
+cd /certs/ca_teleport
+openssl genrsa -out ca.key 3072
+
+cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+# Generate server certificate
+cd /certs/server_teleport
+cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${CLUSTER_FQDN}
+DNS.2 = teleport.${NAMESPACE}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+openssl genrsa -out server.key 3072
+openssl req -new -key server.key -out server.csr -config server.cnf
+openssl x509 -req -days 365 -in server.csr -CA /certs/ca_teleport/ca.crt -CAkey /certs/ca_teleport/ca.key \
+    -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+echo 'Verifying FIPS compliance of generated certificates:'
+openssl version
+openssl rsa -in /certs/server_teleport/server.key -text -noout | grep 'Private-Key'
+openssl x509 -in /certs/server_teleport/server.crt -text -noout | grep 'Signature Algorithm'
+echo 'FIPS-compliant certificates have been generated successfully!'
+```
+
+다음을 실행하십시오(`Teleport` 서비스의 FQDN으로 `<CLUSTER_FQDN>`을 바꾸십시오):
+
+```bash
+export CLUSTER_FQDN=<CLUSTER_FQDN>
+export NAMESPACE=teleport
+export KUBERNETES_DOMAIN=cluster.local
+export COUNTRY=US
+export STATE=YourState
+export CITY=YourCity
+export ORG=YourOrganization
+export ORG_UNIT=YourOrganizationalUnit
+export CN=YourRootCA
+
+docker run -it --rm \
+    -e CLUSTER_FQDN=${CLUSTER_FQDN} \
+    -e NAMESPACE=${NAMESPACE} \
+    -e KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN} \
+    -e COUNTRY=${COUNTRY} \
+    -e STATE=${STATE} \
+    -e CITY=${CITY} \
+    -e ORG=${ORG} \
+    -e ORG_UNIT=${ORG_UNIT} \
+    -e CN=${CN} \
+    -v $(pwd):/certs \
+    registry.access.redhat.com/ubi8/ubi \
+    /certs/generate_fips_certs_in_container_for_teleport.sh
+```
+
+<div id="create-certificate-secrets">
+  ### 인증서 시크릿 생성
+</div>
+
+```bash
+kubectl create secret generic teleport-proxy-cert \
+  --from-file=tls.crt=server_teleport/server.crt \
+  --from-file=tls.key=server_teleport/server.key \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+<div id="create-helm-values">
+  ### Helm values 생성
+</div>
+
+`eks_teleport_values.yaml`를 생성하세요. 플레이스홀더를 대체하세요:
+
+* `<CLUSTER_NAME>`: 클러스터의 FQDN
+* `<VPN_SUBNETS>`: VPN 프라이빗 서브넷(쉼표로 구분, 예: `private-subnet-us-east-2a,private-subnet-us-east-2b,private-subnet-us-east-2c`)
+* `<BUCKET_NAME>`: Teleport session 레코드용 S3 버킷
+* `<NODE_SELECTOR>`: 노드 셀렉터 값(예: `fips-arm64`)
+
+```yaml expandable
+chartMode: aws
+clusterName: "<CLUSTER_NAME>"
+
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+authentication:
+  localAuth: false
+
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    service.beta.kubernetes.io/aws-load-balancer-subnets: "<VPN_SUBNETS>"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+proxyListenerMode: multiplex
+aws:
+  region: us-east-2
+  backendTable: teleport-helm-backend
+  auditLogTable: teleport-helm-events
+  auditLogMirrorOnStdout: false
+  sessionRecordingBucket: <BUCKET_NAME>
+  backups: true
+  dynamoAutoScaling: false
+
+highAvailability:
+  replicaCount: 2
+
+nodeSelector:
+  eks.amazonaws.com/nodegroup: <NODE_SELECTOR>
+
+publicAddr: [<CLUSTER_NAME>:443, teleport.teleport.svc.cluster.local:443]
+
+tls:
+  existingSecretName: teleport-proxy-cert
+  existingCASecretName: teleport-proxy-ca
+
+tolerations:
+- key: "group"
+  operator: "Equal"
+  value: "teleport"
+  effect: "NoSchedule"
+
+podSecurityPolicy:
+  enabled: false
+
+log:
+  level: INFO
+  output: stderr
+
+operator:
+  enabled: true
+  installCRDs: dynamic
+
+serviceAccount:
+  create: true
+  name: "teleport"
+
+rbac:
+  create: true
+```
+
+> 이 예시는 EKS에 FIPS를 적용한 Teleport를 배포합니다. 다른 클라우드 제공업체의 경우 [Teleport documentation](https://goteleport.com/docs/zero-trust-access/deploy-a-cluster/helm-deployments/)을 참조하십시오.
+
+<div id="deploy-teleport-cluster">
+  ### Teleport 클러스터 배포
+</div>
+
+```bash
+helm repo add teleport https://charts.releases.teleport.dev
+helm repo update
+
+helm upgrade --install teleport teleport/teleport-cluster \
+  --namespace teleport \
+  --values eks_teleport_values.yaml \
+  --version 18.2.2
+```
+
+<div id="get-the-teleport-service-external-ip">
+  ### Teleport 서비스의 외부 IP 확인하기
+</div>
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+외부 IP를 확인한 후 Route53 또는 사용하는 DNS 서비스 제공업체에서 CNAME 레코드를 생성합니다. 로드 밸런서에 호스트명이 없는 경우:
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+그런 다음 대신 A 레코드를 생성하세요.
+
+***
+
+<div id="create-a-teleport-provision-token">
+  ## Teleport 프로비전 토큰 생성
+</div>
+
+프로비전 토큰이 있으면 Teleport 에이전트가 클러스터에 참여할 수 있습니다. `teleport_provision_token_for_clickhouse.yaml`을 생성하세요:
+
+```yaml
+apiVersion: resources.teleport.dev/v2
+kind: TeleportProvisionToken
+metadata:
+  name: kube-agent-token
+  namespace: teleport
+spec:
+  roles:
+    - Db
+  join_method: kubernetes
+  kubernetes:
+    type: in_cluster
+    allow:
+      - service_account: teleport-agent:teleport-kube-agent
+```
+
+```bash
+kubectl apply -f teleport_provision_token_for_clickhouse.yaml
+```
+
+***
+
+<div id="set-up-the-teleport-agent">
+  ## Teleport 에이전트 설정하기
+</div>
+
+<div id="create-agent-namespace">
+  ### 에이전트용 네임스페이스 만들기
+</div>
+
+```bash
+kubectl create namespace teleport-agent
+kubectl label namespace teleport-agent 'pod-security.kubernetes.io/enforce=baseline'
+```
+
+<div id="create-agent-secrets">
+  ### 에이전트 시크릿 만들기
+</div>
+
+에이전트 네임스페이스에 Teleport 프록시 CA용 시크릿을 만드십시오:
+
+```bash
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+데이터베이스 CA용 시크릿을 생성하십시오(서로 다른 CA를 사용하는 여러 데이터베이스를 사용하는 경우 CA 인증서를 이어 붙이십시오). `db_cas.pem`이라는 파일을 만든 다음 다음을 수행하십시오:
+
+```bash
+kubectl create secret generic db-ca \
+  --from-file=ca.pem=db_cas.pem \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+<div id="configure-agent-values">
+  ### 에이전트 값 구성
+</div>
+
+`teleport_agent_values.yaml`을 생성합니다. 다음을 대체하십시오:
+
+* `<CLICKHOUSE_CLUSTER_NAME>`: 프로비저닝된 클러스터의 이름(예: `default-aa-01`)
+* `<ENV>`: 이 데이터베이스의 정적 레이블(예: `dev`)
+
+```yaml expandable
+roles: db
+proxyAddr: teleport.teleport.svc.cluster.local:443
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+joinParams:
+  method: kubernetes
+  tokenName: kube-agent-token
+tls:
+  existingCASecretName: teleport-proxy-ca
+databases:
+  - name: <CLICKHOUSE_CLUSTER_NAME>-https
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:8443
+    protocol: clickhouse-https
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+  - name: <CLICKHOUSE_CLUSTER_NAME>-native
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:9440
+    protocol: clickhouse
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/teleport-tls-db/db-ca
+    readOnly: true
+```
+
+> 이 YAML은 ClickHouse가 2개의 프로토콜(8443의 HTTPS와 9440의 네이티브 TLS)을 지원하므로, 1개의 데이터베이스에 대해 데이터베이스 리소스 2개를 생성합니다. 필요하지 않은 항목은 제거하십시오.
+
+<div id="deploy-the-agent">
+  ### 에이전트 배포
+</div>
+
+```ini
+VERSION="18.2.2"
+helm upgrade --install teleport-kube-agent teleport/teleport-kube-agent \
+  --namespace teleport-agent \
+  --version ${VERSION} \
+  -f teleport_agent_values.yaml
+```
+
+***
+
+<div id="add-teleport-ca-to-clickhouse-trusted-list">
+  ## ClickHouse 신뢰 목록에 Teleport CA 추가
+</div>
+
+Teleport 루트 CA를 가져와 ClickHouse 서버 인증서 시크릿에 추가합니다:
+
+```bash
+kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+cat teleport_ca.crt  # Ensure it is not empty
+
+CLUSTER_NAME="<CLUSTER_NAME>"
+NAMESPACE="ns-${CLUSTER_NAME}"
+
+kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+kubectl create secret generic -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+  --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+  --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+  --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+  --from-file=ca.crt=combined_ca.crt \
+  --namespace=${NAMESPACE} \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+rm teleport_ca.crt current_ca.crt combined_ca.crt
+```
+
+새 CA를 적용하려면 ClickHouse 서버 파드를 재시작하십시오.
+
+***
+
+<div id="configure-saml-authentication">
+  ## SAML 인증 구성
+</div>
+
+<div id="create-a-database-access-role">
+  ### 데이터베이스 액세스 역할 생성
+</div>
+
+`saml_clickhouse_user_role.yaml`을 생성합니다. 사용자 trait 키를 IdP(Identity Provider)의 속성으로 바꾸십시오(예: `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`):
+
+```yaml
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV8
+metadata:
+  name: saml-clickhouse-user-dev-role
+  namespace: teleport
+spec:
+  allow:
+    db_labels:
+      env: dev
+    db_users:
+      - '{{external["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]}}'
+    db_names:
+    - '*'
+```
+
+```bash
+kubectl apply -f saml_clickhouse_user_role.yaml
+```
+
+역할에 대한 자세한 내용은 [Teleport 문서](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-rolesv8/)를 참조하십시오.
+
+<div id="create-a-saml-connector">
+  ### SAML 커넥터 생성
+</div>
+
+`saml_connector.yaml`을 생성하세요. `<DOMAIN>`은 Route53 도메인으로, `<Entity Descriptor>`는 IdP(Identity Provider)에서 제공한 값으로 바꾸세요.
+
+```text
+# Example Auth0 integration -- rename and adjust role mappings as needed
+kind: TeleportSAMLConnector
+apiVersion: resources.teleport.dev/v2
+metadata:
+  name: samlconnector
+  namespace: teleport
+spec:
+  acs: https://teleport.<DOMAIN>/v1/webapi/saml/acs/samlconnector
+  service_provider_issuer: https://teleport.<DOMAIN>
+  display: Auth0
+  attributes_to_roles:
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: clickhouse-dev
+    roles:
+    - saml-clickhouse-user-dev-role
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: admin
+    roles:
+    - access
+    - editor
+  entity_descriptor: <Entity Descriptor>
+```
+
+SAML 커넥터에 대한 자세한 내용은 [Teleport 문서](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-samlconnectors/)를 참조하십시오.
+
+```bash
+kubectl apply -f saml_connector.yaml
+```
+
+***
+
+<div id="create-database-users">
+  ## 데이터베이스 사용자 생성
+</div>
+
+ClickHouse 서버 파드에 exec를 사용해 접속합니다:
+
+```bash
+kubectl exec -ti <CLICKHOUSE_SERVER_POD> -n ns-<CLUSTER_NAME> -- /bin/bash
+```
+
+데이터베이스에 연결하세요:
+
+```bash
+cat <<EOF > client-config.xml
+<config>
+    <openSSL>
+        <client>
+            <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        </client>
+    </openSSL>
+</config>
+EOF
+PASSWORD='My super secret p@$$w0rd'
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --config=client-config.xml
+```
+
+SSL 인증서 CN으로 인증하는 사용자를 생성합니다(`<DB_USER>`를 username으로 바꾸십시오 -- 일반적으로 IdP(Identity Provider)의 사용자 이메일 주소입니다):
+
+```sql
+CREATE USER '<DB_USER>' IDENTIFIED WITH ssl_certificate CN '<DB_USER>';
+GRANT SELECT ON default.* TO '<DB_USER>';
+```
+
+***
+
+<div id="connect-via-teleport">
+  ## Teleport를 통해 연결
+</div>
+
+Teleport CA를 시스템의 신뢰할 수 있는 CA에 추가하거나, 개발 환경에서는 `--insecure` flag를 사용하세요.
+
+```text
+# Log in to Teleport
+tsh login --proxy=teleport.<DOMAIN>:443 --auth=<AUTH_TYPE> --user=<TELEPORT_USER> teleport.<DOMAIN>
+
+# Create a proxy tunnel
+tsh proxy db --tunnel <CLICKHOUSE_CLUSTER_NAME>-native --db-user=<DB_USER> --port 59215 &
+
+# Connect
+clickhouse client --host localhost --port 59215 --user <DB_USER>
+```
+
+다음을 바꾸십시오: - `<DOMAIN>`: Route53 도메인 - `<AUTH_TYPE>`: 인증 방식(예: `samlconnector`) - `<TELEPORT_USER>`: Teleport 사용자 이름 - `<DB_USER>`: 데이터베이스 사용자 이름 - `<CLICKHOUSE_CLUSTER_NAME>`: ClickHouse 클러스터 이름(예: `default-aa-01`)
+
+***
+
+<div id="day-2-certificate-rotation">
+  ## Day 2: 인증서 교체
+</div>
+
+Teleport 인증서는 만료되므로 만료되기 전에 교체해야 합니다.
+
+<div id="rotate-teleport-proxy-certificates">
+  ### Teleport 프록시 인증서 교체
+</div>
+
+1. [Teleport용 FIPS 인증서 생성](#generate-fips-certificates-for-teleport)의 스크립트를 사용해 **새 인증서를 생성합니다**. `CLUSTER_FQDN` 및 기타 변수가 클러스터 설정과 일치하는지 확인하십시오.
+
+   > 이 스크립트는 FIPS가 활성화된 호스트에서 실행해야 합니다. Docker는 `/proc`를 자동으로 마운트하므로, 컨테이너가 FIPS가 활성화된 호스트에서 실행되기만 하면 생성된 인증서는 FIPS 준수 상태가 됩니다.
+
+2. 두 네임스페이스 모두에서 **기존 번들에 새 CA를 추가합니다**:
+
+   ```bash
+   kubectl get secret teleport-proxy-ca -n teleport -o jsonpath='{.data.ca\.pem}' | base64 -d > current_teleport_ca.pem
+   cat current_teleport_ca.pem ca_teleport/ca.crt > combined_ca.pem
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+3. **Teleport를 롤링 재시작합니다**:
+
+   ```bash
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+4. **ClickHouse의 신뢰할 수 있는 CA 목록에 새 Teleport CA를 추가합니다**:
+
+   ```bash
+   kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+   CLICKHOUSE_CLUSTER_NAME="<CLICKHOUSE_CLUSTER_NAME>"
+   NAMESPACE="ns-${CLICKHOUSE_CLUSTER_NAME}"
+
+   kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+   cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+   kubectl create secret generic -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret \
+     --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+     --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+     --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+     --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+     --from-file=ca.crt=combined_ca.crt \
+     --namespace=${NAMESPACE} \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   rm -f teleport_ca.crt current_ca.crt combined_ca.crt
+
+   kubectl rollout restart statefulset -n ${NAMESPACE}
+   ```
+
+5. **프록시 인증서를 교체합니다**:
+
+   ```bash
+   kubectl create secret generic teleport-proxy-cert \
+     --from-file=tls.crt=server_teleport/server.crt \
+     --from-file=tls.key=server_teleport/server.key \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   ```
+
+6. 번들에서 **이전 CA를 제거합니다**:
+
+   ```bash
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+7. **정리합니다**:
+
+   ```bash
+   rm -f current_teleport_ca.pem combined_ca.pem
+   ```
+
+***
+
+<div id="reference">
+  ## 참고
+</div>
+
+* [Teleport 문서](https://goteleport.com/docs/)

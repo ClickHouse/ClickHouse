@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: '삭제 뮤테이션'
+title: '삭제 뮤테이션'
+hide_title: false
+description: '삭제를 통해 테이블 데이터를 조작하는 ALTER 쿼리인 삭제 뮤테이션을 설명하는 페이지'
+keywords: ['삭제 뮤테이션', 'ALTER TABLE DELETE', '데이터 뮤테이션', '데이터 파트 재작성', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+삭제 뮤테이션은 삭제를 통해 테이블 데이터를 조작하는 `ALTER` 쿼리를 의미합니다. 대표적으로 `ALTER TABLE DELETE`와 같은 쿼리가 여기에 해당합니다. 이러한 쿼리를 수행하면 데이터 파트의 새로운 뮤테이션 버전이 생성됩니다. 즉, 이러한 SQL 문은 뮤테이션 이전에 삽입된 모든 데이터에 대해 전체 데이터 파트를 재작성하므로, 결과적으로 대량의 쓰기 요청이 발생합니다.
+
+<Info>
+  삭제 작업의 경우, 기본 MergeTree 테이블 엔진 대신 [ReplacingMergeTree](/ko/concepts/features/operations/update/replacing-merge-tree) 또는 [CollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree)와 같은 전용 테이블 엔진을 사용하면 이러한 대량의 쓰기 요청을 피할 수 있습니다.
+</Info>
+
+import DeleteMutations from '/snippets/ko/delete.mdx';
+
+<DeleteMutations />

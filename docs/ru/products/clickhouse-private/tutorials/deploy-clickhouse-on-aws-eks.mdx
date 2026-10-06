@@ -1,0 +1,669 @@
+---
+noindex: true
+title: "Развертывание ClickHouse в AWS EKS"
+sidebarTitle: "Развертывание в AWS"
+description: "В этом руководстве пошагово показано, как развернуть ClickHouse Private в AWS с помощью Amazon EKS."
+---
+
+В этом руководстве пошагово показано, как развернуть ClickHouse Private в AWS с помощью Amazon EKS. По завершении у вас будет работающий кластер ClickHouse с хранилищем на базе S3, кэшированием на NVMe SSD и управлением развертыванием через ClickHouse Operator.
+
+Подробные характеристики инфраструктуры см. в [reference/infrastructure-requirements.md](/ru/products/clickhouse-private/reference/infrastructure-requirements-reference). Описание принципов работы ClickHouse Operator см. в [explanation/architecture.md](/ru/products/clickhouse-private/explanation/clickhouse-operator-architecture).
+
+***
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Перед началом убедитесь, что у вас установлены следующие инструменты:
+
+* **AWS CLI** (`aws`) -- настроен с необходимыми учетными данными
+* **kubectl** -- совместим с целевой версией EKS
+* **Helm** v3.x
+* **skopeo** -- для копирования образов контейнеров между реестрами
+* Доступ к приватному репозиторию ECR ClickHouse (`349290138304.dkr.ecr.us-east-1.amazonaws.com`)
+
+Вам также понадобятся:
+
+* Аккаунт AWS с разрешениями на создание ролей IAM, кластеров EKS, S3 бакетов и ресурсов EC2
+* Теги версий для вашего развертывания (предоставляются ClickHouse):
+* `25.12.1.1497` -- тег образа ClickHouse server
+* `26.2.1.258` -- тег образа ClickHouse Keeper
+* `1.18587.1` -- тег образа Operator и Helm-чарта
+* `1.1.311` -- тег Helm-чарта Cluster
+
+***
+
+<Steps>
+  <Step>
+    ## Этап 1: Создайте роль IAM для доступа к ECR
+
+    Создайте роль IAM, которая позволяет загружать образы из приватного ECR ClickHouse. Разверните этот шаблон CloudFormation в своем аккаунте AWS:
+
+    ```yaml expandable
+    AWSTemplateFormatVersion: 2010-09-09
+    Description: This CloudFormation template creates the ClickHouseAirgapECRPullRole.
+
+    Resources:
+      ClickHouseAirgapECRPullRole:
+        Type: AWS::IAM::Role
+        Properties:
+          RoleName: ClickHouseAirgapECRPullRole
+          AssumeRolePolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Principal:
+                  AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+                Action:
+                  - sts:AssumeRole
+              - Effect: Allow
+                Principal:
+                  Service:
+                    - ec2.amazonaws.com
+                Action:
+                  - sts:AssumeRole
+          Policies:
+            - PolicyName: ClickHouseAirgapECRPullPolicy
+              PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - ecr:GetDownloadUrlForLayer
+                      - ecr:BatchGetImage
+                      - ecr:BatchCheckLayerAvailability
+                      - ecr:DescribeImages
+                      - ecr:ListImages
+                    Resource:
+                      - arn:aws:ecr:us-east-1:349290138304:repository/*
+                  - Effect: Allow
+                    Action:
+                      - ecr:GetAuthorizationToken
+                    Resource:
+                      - "*"
+
+    Outputs:
+      RoleArn:
+        Description: IAM Role ARN for pulling images from all ECR repositories
+        Value: !GetAtt ClickHouseAirgapECRPullRole.Arn
+    ```
+
+    После создания стека **передайте полученный ARN роли команде ClickHouse**.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 2: Скопируйте образы контейнеров
+
+    Создайте в своём аккаунте репозитории ECR для каждого артефакта, затем с помощью skopeo скопируйте образы из ECR ClickHouse в свои репозитории. Флаг `--all` сохраняет все архитектуры (amd64, arm64).
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # log into our (authentication process may differ for customer)
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # log into the target AWS repo (authentication process may differ for customer)
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # copy each image to target ECR, be sure to include the --all flag
+    skopeo copy --all docker://$SOURCE_ECR_REPO/clickhouse-server:25.12.1.1497 docker://$TARGET_ECR_REPO/clickhouse-server:25.12.1.1497
+    skopeo copy --all docker://$SOURCE_ECR_REPO/clickhouse-keeper:26.2.1.258 docker://$TARGET_ECR_REPO/clickhouse-keeper:26.2.1.258
+    skopeo copy --all docker://$SOURCE_ECR_REPO/clickhouse-operator:main-1.18587.1 docker://$TARGET_ECR_REPO/clickhouse-operator:1.18587.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/clickhouse-operator-helm:1.18587.1 docker://$TARGET_ECR_REPO/helm/clickhouse-operator-helm:1.18587.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/onprem-clickhouse-cluster:1.1.311 docker://$TARGET_ECR_REPO/helm/onprem-clickhouse-cluster:1.1.311
+    ```
+
+    Замените `TARGET_REGION` и `TARGET_ECR_REPO` на ваш регион ECR и хост. Замените плейсхолдеры `<<TAG>>` на версии, предоставленные ClickHouse.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 3: Создание VPC
+
+    Создайте VPC как минимум с 3 зонами доступности для обеспечения высокой доступности. Вот пример конфигурации:
+
+    | Параметр           | Значение                            |
+    | ------------------ | ----------------------------------- |
+    | Блок IPv4 CIDR     | `10.20.0.0/16`                      |
+    | Блок IPv6 CIDR     | Нет                                 |
+    | Размещение         | По умолчанию                        |
+    | Количество AZ      | 3 (минимум для высокой доступности) |
+    | NAT-шлюзы          | 1 на каждую AZ                      |
+    | Конечные точки VPC | шлюз S3                             |
+    | DNS-имена хостов   | Включено                            |
+    | Разрешение DNS     | Включено                            |
+
+    **Пример подсетей (us-west-2):**
+
+    | Тип     | AZ         | CIDR             |
+    | ------- | ---------- | ---------------- |
+    | Public  | us-west-2a | `10.20.192.0/20` |
+    | Public  | us-west-2b | `10.20.208.0/20` |
+    | Public  | us-west-2c | `10.20.224.0/20` |
+    | Private | us-west-2a | `10.20.0.0/18`   |
+    | Private | us-west-2b | `10.20.64.0/18`  |
+    | Private | us-west-2c | `10.20.128.0/18` |
+
+    Подробные требования к сети см. в [reference/infrastructure-requirements.md](/ru/products/clickhouse-private/reference/infrastructure-requirements-reference).
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 4: Создание кластера EKS
+
+    Создайте кластер EKS, связанный с VPC из этапа 3. Для кластера требуется:
+
+    * CNI-плагин с поддержкой IPv4 (например, [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s) с IRSA)
+    * Драйвер EBS CSI (устанавливается на [этапе 7](#phase-7-install-kubernetes-prerequisites))
+    * CoreDNS
+    * Рекомендуется: cluster autoscaler
+
+    Создайте кластер через консоль AWS или CLI, затем добавьте его в kubeconfig:
+
+    ```ini
+    REGION=us-west-2
+    EKS_CLUSTER_NAME=eks-clickhouse
+
+    aws eks update-kubeconfig --region $REGION --name=$EKS_CLUSTER_NAME
+    ```
+
+    Создайте OIDC-провайдер для кластера EKS (требуется для IRSA).
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 5: создание групп узлов
+
+    Создайте три группы узлов. **Для всех узлов требуется [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) для аутентификации.**
+
+    Для групп узлов Keeper и server создайте по одной группе узлов на каждую зону доступности (AZ), если необходима поддержка cluster autoscaler в нескольких зонах доступности.
+
+    ### Группа узлов Keeper
+
+    | Параметр                        | Значение                                                                |
+    | ------------------------------- | ----------------------------------------------------------------------- |
+    | AMI                             | x86: `AL2023_x86_64` / arm64: `AL2023_ARM_64`                           |
+    | Размер диска                    | 20 ГБ                                                                   |
+    | Минимальное/целевое число узлов | 3 на кластер ClickHouse (если не используется автомасштабирование)      |
+    | Рекомендуемый тип инстанса      | `m7g.2xlarge`                                                           |
+    | Метки Kubernetes                | x86: `clickhouseGroup: keeper` / arm64: `clickhouseGroup: keeper-arm64` |
+    | Тейнты Kubernetes               | `clickhouse.com/do-not-schedule: true, NoSchedule`                      |
+    | Тейнт arm64                     | `clickhouse.com/arch: arm64, NoSchedule`                                |
+
+    ### Группа узлов сервера
+
+    Группа узлов Server требует тип инстанса с поддержкой NVMe SSD для дискового кэша ClickHouse (используйте серию &quot;d&quot;, например `m7gd.16xlarge`). Вариант AMI определяет способ монтирования NVMe и конфигурацию Helm-чарта на этапе 9. Выберите один из вариантов:
+
+    <Tabs>
+      <Tab title="AL2023">
+        | Параметр                        | Значение                                                                                  |
+        | ------------------------------- | ----------------------------------------------------------------------------------------- |
+        | AMI                             | x86: `AL2023_x86_64` / arm64: `AL2023_ARM_64`                                             |
+        | Размер диска                    | 20 GB                                                                                     |
+        | Минимальное/целевое число узлов | Соответствует целевому числу реплик ClickHouse (если автомасштабирование не используется) |
+        | Рекомендуемый тип инстанса      | `m7gd.16xlarge` (используйте инстансы серии &quot;d&quot; для кэша на NVMe SSD)           |
+        | Метки Kubernetes                | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64`                   |
+        | Taints в Kubernetes             | `clickhouse.com/do-not-schedule: true, NoSchedule`                                        |
+
+        **Важно:** Для инстансов с NVMe SSD используйте приведённый ниже шаблон запуска, чтобы автоматически смонтировать NVMe SSD в качестве RAID-массива для кэширования ClickHouse.
+
+        Создайте шаблон запуска EC2 с этим скриптом пользовательских данных, затем привяжите его к группе узлов сервера:
+
+        ```yaml expandable
+        MIME-Version: 1.0
+        Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+        --==MYBOUNDARY==
+        Content-Type: text/x-shellscript; charset="us-ascii"
+
+        #!/bin/bash
+        sudo sysctl net.ipv4.tcp_fin_timeout=15
+        sudo sysctl net.ipv4.tcp_keepalive_time=15
+
+
+        function build_raid() {
+        set -x
+        mapfile -t SSD_NVME_DEVICE_LIST < <(nvme list | grep "Amazon EC2 NVMe Instance Storage" | cut -d " " -f 1 || true)
+        SSD_NVME_DEVICE_COUNT=${#SSD_NVME_DEVICE_LIST[@]}
+        RAID_DEVICE=${RAID_DEVICE:-/dev/md0}
+        RAID_CHUNK_SIZE=${RAID_CHUNK_SIZE:-512}              # Kilo Bytes
+        FILESYSTEM_BLOCK_SIZE=${FILESYSTEM_BLOCK_SIZE:-4096} # Bytes
+        STRIDE=$((RAID_CHUNK_SIZE * 1024 / FILESYSTEM_BLOCK_SIZE))
+        STRIPE_WIDTH=$((SSD_NVME_DEVICE_COUNT * STRIDE))
+        BLK_LABEL=ssdcache
+        MD_DEV_LABEL=dpssdcache
+
+
+        # If mount is present in fstab - exit
+        grep "${BLK_LABEL}" /etc/fstab && return 0
+
+
+        nvme list
+        echo "${SSD_NVME_DEVICE_COUNT}" "${SSD_NVME_DEVICE_LIST[*]}"
+
+        # Perform provisioning based on nvme device count
+        case  "${SSD_NVME_DEVICE_COUNT}" in
+        "0")
+          echo 'No devices found of type "Amazon EC2 NVMe Instance Storage"'
+          echo "Maybe your node selectors are not set correct"
+          return 0
+          ;;
+        "1")
+          mkfs.ext4 -L "${BLK_LABEL}" -m 0 -b "${FILESYSTEM_BLOCK_SIZE}" "${SSD_NVME_DEVICE_LIST[0]}"
+          ;;
+        *)
+          mdadm --create --verbose "${RAID_DEVICE}" --name="${MD_DEV_LABEL}" --level=0 -c "${RAID_CHUNK_SIZE}" \
+            --raid-devices="${#SSD_NVME_DEVICE_LIST[@]}" "${SSD_NVME_DEVICE_LIST[@]}"
+
+          while mdadm --detail "${RAID_DEVICE}" | grep -q -ioE 'State :.*resyncing'
+          do
+            echo "Raid is resyncing.."
+            sleep 1
+          done
+          echo "Raid0 device  ${RAID_DEVICE} has been created with disks  ${SSD_NVME_DEVICE_LIST[*]}"
+          mkfs.ext4 -L "${BLK_LABEL}" -m 0 -b "${FILESYSTEM_BLOCK_SIZE}" -E "stride=${STRIDE},stripe-width=${STRIPE_WIDTH}" "${RAID_DEVICE}"
+          ;;
+        esac
+
+        # Mount it & add to fstab
+        # UUID is used to be compatible with EKS NVME proviioner tool
+        DEV_NAME=$(blkid -s UUID -o value -L "${BLK_LABEL}")
+        UUID=$(blkid -s UUID -o value "${DEV_NAME}")
+        # Make sure UUID is defined
+        test -z ${UUID} && return 1
+        mkdir -p /pv-disks/"${UUID}" /nvme/
+        test -h /nvme/disk || ln -fs /pv-disks/"${UUID}" /nvme/disk
+
+        cat<<EOF | tee -a /etc/fstab
+
+        LABEL=${BLK_LABEL} /pv-disks/${UUID} ext4 defaults,noatime,discard,nobarrier  0 0
+        EOF
+        mount -a
+        set +x
+        }
+
+        yum install -y nvme-cli mdadm
+        build_raid
+        mountpoint /nvme/disk/ || systemctl stop kubelet
+
+        --==MYBOUNDARY==--
+        ```
+
+        **Примечание:** Если шаблон запуска уже содержит пользовательские данные, разделите этот скрипт с помощью разделителя MIME.
+
+        На этапе 9 оставьте `server.ssdCacheConfiguration.isOnEmptyDir` в значении по умолчанию (`false`).
+      </Tab>
+
+      <Tab title="Bottlerocket">
+        | Параметр                   | Значение                                                                           |
+        | -------------------------- | ---------------------------------------------------------------------------------- |
+        | AMI                        | x86: `BOTTLEROCKET_x86_64` / arm64: `BOTTLEROCKET_ARM_64`                          |
+        | Размер диска               | 20 GB                                                                              |
+        | Мин./желаемое число узлов  | Равно желаемому числу реплик ClickHouse (если не используется автомасштабирование) |
+        | Рекомендуемый тип инстанса | `m7gd.16xlarge` (используйте серию &quot;d&quot; для NVMe SSD-кэша)                |
+        | Метки Kubernetes           | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64`            |
+        | Taints в Kubernetes        | `clickhouse.com/do-not-schedule: true, NoSchedule`                                 |
+
+        Bottlerocket использует свою [подсистему эфемерного хранилища](https://github.com/bottlerocket-os/bottlerocket-core-kit/blob/develop/sources/api/apiclient/README.md#ephemeral-storage), чтобы подключить локальное NVMe-хранилище инстанса к `/var/lib/kubelet`. Тома Kubernetes `emptyDir` располагаются по этому пути, поэтому SSD-кэш ClickHouse при настройке `isOnEmptyDir=true` автоматически размещается на NVMe (см. этап 9).
+
+        Передайте следующий TOML как user-data в launch template:
+
+        ```text
+        [settings.bootstrap-commands.ephemeral-storage]
+        commands = [
+          ["apiclient", "ephemeral-storage", "init", "--filesystem", "ext4"],
+          ["apiclient", "ephemeral-storage", "bind", "--dirs", "/var/lib/kubelet"],
+        ]
+        mode = "always"
+        essential = true
+        ```
+
+        `--filesystem ext4` соответствует варианту для AL2023 (в Bottlerocket по умолчанию используется xfs).
+
+        `mode = "always"` повторно применяет bind-монтирования при каждой загрузке (NVMe instance-store очищается при остановке/запуске). `essential = true` прерывает инициализацию узла, если настройка NVMe завершается с ошибкой, — это эквивалент защитного механизма `systemctl stop kubelet` в скрипте AL2023 для Bottlerocket.
+
+        На этапе 9 установите `server.ssdCacheConfiguration.isOnEmptyDir` в `true`.
+      </Tab>
+    </Tabs>
+
+    ### Группа узлов оператора
+
+    | Параметр        | Значение                                       |
+    | --------------- | ---------------------------------------------- |
+    | AMI             | `AL2023_x86_64`                                |
+    | Объём диска     | 20 ГБ                                          |
+    | Размер инстанса | Не менее xlarge (любой тип, совместимый с x86) |
+
+    Это может быть существующая группа узлов, если кластер EKS уже существует.
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 6: Создайте S3 бакет и роли IAM
+
+    ### S3 бакет
+
+    Создайте S3 бакет (класс Standard) с включенным шифрованием в том же регионе, что и кластер EKS. Можно использовать отдельный бакет для каждого кластера ClickHouse или один общий бакет с уникальным префиксом для каждого кластера.
+
+    ### Роли IAM
+
+    Создайте роль IAM для каждого кластера ClickHouse с помощью IRSA (IAM Roles for Service Accounts).
+
+    **Соглашение об именовании:** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+
+    * `$NAME` -- имя кластера, например `default-xx-01`
+    * `$REGION` -- сокращенное имя региона, например `uw2` для `us-west-2`
+    * `$ORDINAL` -- зарезервировано; установите `00`
+    * Пример: `CH-S3-default-xx-01-uw2-00-Role`
+
+    **Требуемые разрешения:** `s3:*` и `s3:ListBucket` для ресурса бакета.
+
+    **Пример политики доверия** (обновите пространство имен, имя сервисного аккаунта и провайдер OIDC):
+
+    ```json
+    {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Federated": "arn:aws:iam::0000000000:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/XXXXXXXXXXXXXXXXXXXXX"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                    "StringEquals": {
+                        "oidc.eks.us-west-2.amazonaws.com/id/XXXXXXXXXXXXXXXXXXXXX:aud": "sts.amazonaws.com",
+    "oidc.eks.us-west-2.amazonaws.com/id/XXXXXXXXXXXXXXXXXXXXX:sub": "system:serviceaccount:$NAMESPACE:$K8S_SERVICE_ACCOUNT"
+                    }
+                }
+            }
+        ]
+    }
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 7: Установите необходимые компоненты Kubernetes
+
+    ### Установите VolumeSnapshot CRDs
+
+    Эти CRD необходимы для ClickHouse Operator.
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+    ```
+
+    ### Установите StorageClass через Helm
+
+    Выполняйте этот шаг только если у вас **нет** собственной или уже существующей StorageClass. Если установить её отдельно от кластера, она не будет удалена при удалении кластера.
+
+    ```text
+    # update ECR_HOST as needed
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+    CHART_VERSION=1.1.311
+
+    helm install clickhouse-prerequisites \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n default \
+        --set-json="storageClass.create=true" \
+        --set-json="createCluster=false" \
+        --set-json="serviceAccount.create=false"
+    ```
+
+    ### Установка драйвера EBS CSI
+
+    Создайте роль IAM с управляемой политикой `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy` и политикой доверия IRSA для OIDC-провайдера кластера EKS. Затем установите:
+
+    ```text
+    # update role name as needed
+    AWS_EBS_CSI_DRIVER_IAM_ROLE_ARN=arn:aws:iam::0000000000:role/ClickHouse_EksEbsCsiDriverRole
+
+    helm upgrade --install aws-ebs-csi-driver \
+    --namespace kube-system \
+    aws-ebs-csi-driver/aws-ebs-csi-driver \
+    --set-json="controller.serviceAccount.annotations={\"eks.amazonaws.com/role-arn\":\"$AWS_EBS_CSI_DRIVER_IAM_ROLE_ARN\"}"
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 8: Установите оператор
+
+    При необходимости выполните вход в ECR через helm:
+
+    ```ini
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+    REGION=us-west-2
+
+     aws ecr get-login-password \
+      --region $REGION | helm registry login \
+      --username AWS \
+      --password-stdin $ECR_HOST
+    ```
+
+    Затем установите оператор:
+
+    ```text
+    # update ECR_HOST as needed
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # should use the version of the operator's helm chart, not of the operator itself (eg 1.18587.1, not main-1.18587.1)
+    OPERATOR_VERSION=1.18587.1
+
+    # set AZs as determined by VPC subnets
+    AZ_LIST='["us-west-2a","us-west-2b","us-west-2c"]'
+
+    helm install clickhouse-operator \
+       oci://$ECR_HOST/helm/clickhouse-operator-helm \
+       --version=$OPERATOR_VERSION \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+       --set-json='cilium.enabled=false' \
+       --set-json='idleScalerEnabled=false' \
+       --set-json='webhooks.enabled=false' \
+       --set-json='operator.debug=true' \
+       --set-json='operator.metricsScraper.enabled=false' \
+       --set-json="operator.availabilityZones=$AZ_LIST" \
+       --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+       --set-json='operator.featureFlags.serverCMEKEnabled=true'
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 9: развёртывание кластера ClickHouse
+
+    ### Название кластера
+
+    Каждый кластер ClickHouse должен иметь **уникальное имя** в рамках кластера EKS. Используйте шаблон именования `$DESCRIPTOR-$LETTERS-$ORDINAL`:
+
+    * `$DESCRIPTOR` -- описательное имя, состоящее только из букв
+    * `$LETTERS` -- зарезервировано; для простоты используйте `xx`
+    * `$ORDINAL` -- порядковый номер по возрастанию, начиная с `01`
+    * Пример: `default-xx-01`
+
+    ### Генерация хеша пароля и развёртывание
+
+    ```text expandable
+    # this will be the `default` user's password
+    PASSWORD='My super secret p@$$w0rd'
+    HASHED_PASSWORD=`echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64`
+
+    # update values below as needed,
+    # the ecr host should be the one in your account
+    # the s3 bucket should be the one created earlier
+    CLUSTER_NAME=default-xx-01
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+    SA_IAM_ROLE_ARN=arn:aws:iam::0000000000:role/CH-S3-${CLUSTER_NAME}-uw2-00-Role
+    S3_BUCKET_NAME=my-clickhouse-data
+
+    # s3 key prefix can use any UUID value, but must be unique for all clusters storing data in the bucket specified above
+    S3_KEY_PREFIX=ch-s3-$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+    # these should match the clickhouseGroup label value added to the node group
+    SERVER_NG_GROUP=server-arm64
+    KEEPER_NG_GROUP=keeper-arm64
+
+    # these values should change depending on selected instance sizes
+    # be sure to take daemon set requirements into account when setting CPU and MEMORY values
+    SERVER_CPU=64
+    SERVER_MEMORY=256Gi
+    KEEPER_CPU=4
+    KEEPER_MEMORY=16Gi
+
+    CHART_VERSION=1.1.311
+
+    # bytesPerGiRAM is a scaling factor used to automatically calculate the disk cache size.
+    # As a general rule, set cache size to 80-90% of the available SSD cache disk size.
+    # When you set bytesPerGiRAM in the Helm chart, the following formula is used during pod startup:
+    #
+    # CONFIG_DISK_CACHE_SIZE = bytesPerGiRAM * pod_memory_limit
+    #
+    # For example:
+    # bytesPerGiRAM = 11.3Gi
+    # pod_memory_limit = 250Gi
+    # CONFIG_DISK_CACHE_SIZE = 11.3 * 250 = 2825Gi
+    CACHE_BYTES_PER_GI_RAM=11Gi
+
+
+    helm install $CLUSTER_NAME \
+        oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+        --version=$CHART_VERSION \
+        -n ns-$CLUSTER_NAME \
+        --create-namespace \
+        --set-json="account.hashedPassword=\"$HASHED_PASSWORD\"" \
+        --set-json="server.image.repository=\"$ECR_HOST/clickhouse-server\"" \
+        --set-json="server.storage.s3.bucketName=\"$S3_BUCKET_NAME\"" \
+        --set-json="server.storage.s3.keyPrefix=\"$S3_KEY_PREFIX\"" \
+        --set-json='server.arm64=true' \
+        --set-json="server.image.tag=\"25.12.1.1497\"" \
+        --set-json="server.podPolicy.nodeSelector.clickhouseGroup=\"$SERVER_NG_GROUP\"" \
+        --set-json="keeper.image.repository=\"$ECR_HOST/clickhouse-keeper\"" \
+        --set-json='keeper.arm64=true' \
+        --set-json="keeper.image.tag=\"26.2.1.258\"" \
+        --set-json="keeper.podPolicy.nodeSelector.clickhouseGroup=\"$KEEPER_NG_GROUP\"" \
+        --set-json="serviceAccount.annotations={\"eks.amazonaws.com/role-arn\":\"$SA_IAM_ROLE_ARN\"}" \
+        --set-json='server.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json='keeper.tolerations=[{"effect":"NoSchedule","key":"clickhouse.com/do-not-schedule","operator":"Exists"}]' \
+        --set-json="server.ssdCacheConfiguration.bytesPerGiRAM=\"$CACHE_BYTES_PER_GI_RAM\"" \
+        --set-json="server.podPolicy.resources.limits.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.limits.memory=\"$SERVER_MEMORY\"" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.limits.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.limits.memory=\"$KEEPER_MEMORY\"" \
+        --set-json="keeper.podPolicy.resources.requests.cpu=\"$KEEPER_CPU\"" \
+        --set-json="keeper.podPolicy.resources.requests.memory=\"$KEEPER_MEMORY\"" \
+        # --set-json='server.ssdCacheConfiguration.isOnEmptyDir=true'  # Uncomment if using Bottlerocket (see Phase 5)
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 10: Запустите предварительные проверки
+
+    Чтобы проверить готовность вашего кластера, рекомендуем запустить предварительные проверки. Для этого используется [Troubleshoot](https://troubleshoot.sh/) — плагин Kubernetes для диагностики кластера.
+
+    ### Установите плагин
+
+    ```bash
+    kubectl krew install preflight
+    ```
+
+    ### Скопируйте Helm-чарт Preflight
+
+    Добавьте Helm-чарт Preflight на шаг копирования в ECR:
+
+    ```text
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+    ```
+
+    ### Запустите проверки
+
+    Используйте `helm template`, чтобы сгенерировать спецификацию preflight, а затем передать её в `kubectl preflight`:
+
+    ```ini
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+    CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+    CLUSTER_NAME=default-xx-01
+
+    helm template clickhouse-preflight \
+        oci://$ECR_HOST/helm/preflight-check \
+        --version=$CHART_VERSION \
+        --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+    kubectl preflight -
+    ```
+
+    Проверяются метки узлов, конфигурация StorageClass и другие обязательные условия. В выводе отображаются каждая проверка и её status. Если какая-либо проверка не проходит, приводятся рекомендации по устранению проблемы.
+
+    Подробнее см. на странице [How To: Run Preflight Checks](/ru/products/clickhouse-private/guides/run-preflight-checks).
+
+    ***
+  </Step>
+
+  <Step>
+    ## Этап 11: Проверьте установку
+
+    ### Выполните проброс порта для сервиса ClickHouse
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-01-server-any 9000:9000 -n ns-default-xx-01
+    ```
+
+    Эта команда перенаправляет порт `9000` на ваш локальный компьютер.
+
+    ### Подключитесь и выполните запрос
+
+    ```bash
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    Выполните простой запрос:
+
+    ```bash
+    clickhouse-cloud :) select 1;
+    ```
+
+    Ожидаемый результат:
+
+    ```sql
+    SELECT 1
+    Query id: 825591bf-a8e5-4995-ac9f-afb864854ba2
+       ┌─1─┐
+    1. │ 1  │
+       └───┘
+    1 row in set. Elapsed: 0.001 sec.
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Дальнейшие шаги
+</div>
+
+* **Hydra (compute-compute separation):** См. [how-to/setup-hydra.md](/ru/products/clickhouse-private/guides/set-up-hydra-compute-compute-separation), чтобы настроить несколько групп вычислительных ресурсов с отдельными конечными точками, использующих общий набор данных.
+* **Management API:** См. [tutorials/install-api.md](/ru/products/clickhouse-private/tutorials/install-the-clickhouse-private-api), чтобы установить необязательный Private API для резервного копирования и операций масштабирования.
+* **Monitoring and alerting:** См. [how-to/configure-alerting.md](/ru/products/clickhouse-private/guides/configure-alerting-for-clickhouse), чтобы настроить оповещения для вашего развертывания.
+* **Troubleshooting:** См. [troubleshooting.md](/ru/products/clickhouse-private/explanation/troubleshooting-guide) с описанием распространённых проблем и способов их решения.

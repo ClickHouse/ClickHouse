@@ -247,7 +247,7 @@ return rows.Err()
   ## Асинхронная вставка
 </div>
 
-Асинхронные вставки поддерживаются через метод Async. Это позволяет указать, должен ли клиент ждать, пока сервер завершит вставку, или возвращать ответ сразу после получения данных. Фактически это управляет параметром [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert).
+Асинхронные вставки поддерживаются через метод Async. Это позволяет указать, должен ли клиент ждать, пока сервер завершит вставку, или возвращать ответ сразу после получения данных. Фактически это управляет параметром [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

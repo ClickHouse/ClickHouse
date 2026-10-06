@@ -1,0 +1,541 @@
+---
+noindex: true
+title: "在裸金属上部署 ClickHouse"
+sidebarTitle: "在裸金属上部署"
+description: "本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 实例的裸金属节点上，以 RKE2 作为 Kubernetes 发行版来部署 ClickHouse"
+---
+
+本教程将指导你使用 Terraform 和 Ansible，在 AWS EC2 实例的裸金属节点上，以 RKE2 作为 Kubernetes 发行版来部署 ClickHouse。完成后，你将拥有一个正在运行的 RKE2 集群，并通过 operator 部署好 ClickHouse。
+
+有关基础设施规格的详细信息，请参阅 [reference/infrastructure-requirements.md](/zh/products/clickhouse-private/reference/infrastructure-requirements-reference)。
+
+***
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* Linux 工作站 (RHEL/Rocky Linux 或类似发行版)
+* `terraform` v1.13+
+* 支持 Galaxy role 的 `ansible`
+* `kubectl`
+* `helm` v3.x
+* 具有 EC2、VPC 和 S3 权限的 AWS IAM 凭证
+* 可访问 ClickHouse 容器镜像仓库
+* [example-scripts.zip](https://d9v141ecaehea.cloudfront.net/example-scripts.zip?Expires=1796083200\&Signature=gY-eqdeGHilnNqad8y6KVoXjEYnJlpE2-QzSXOkV-qQmMbiDX0VSrrw6TLgS4Ls8pRQ9tjMuK2pM-cr2G92ZnP7H0EMoA-5P--YLbtU5RRD-HEDnTVc1cyLfLqb2uPmiWgEuWvkNA2lrQB7THp-MwDzdueV4x0hYGY3IoZTsPo9NvbuXasLgKTZ3Ioo0-GYeAdWpxi7sTOpESGXar9regLk~36uU7HFLE4gm~-KbTYbLcgfdf4S9VQIauIQPVaDUaFZ7X7ojpC1NvKWL2mJgRW84s53WtZCp947LslH-h-6QX1wzy6FEHKQr47j7jS4TkIA1aO7f9iDM~woCD7UH6Q__\&Key-Pair-Id=K3MEXWCGKHWKPM) -- 包含 Terraform 模块、Ansible playbook 和 Helm values 模板
+
+***
+
+<Steps>
+  <Step>
+    ## 阶段 1：安装 Terraform
+
+    ```text
+    dnf install -y unzip git
+    ```
+
+    ```bash
+    curl -O https://releases.hashicorp.com/terraform/1.13.2/terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```text
+    unzip terraform_1.13.2_linux_amd64.zip
+    ```
+
+    ```bash
+    sudo cp terraform /usr/local/bin
+    ```
+
+    验证安装：
+
+    ```text
+    terraform version
+    ```
+
+    预期输出：
+
+    ```text
+    Terraform v1.13.2
+    on linux_amd64
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 2：下载示例脚本
+
+    下载并解压 ClickHouse 提供的示例脚本：
+
+    ```text
+    unzip example-scripts.zip
+    cd ./bare-metal
+    ```
+
+    该压缩包包含 Terraform 模块、Ansible playbook、inventory 模板以及 Helm values 文件。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 3：配置 AWS 凭证
+
+    使用你的 AWS IAM 访问密钥和私有访问密钥创建凭证文件：
+
+    ```bash
+    cat > aws-creds.sh <<EOF
+    export AWS_ACCESS_KEY_ID=<Your AWS ACCESS KEY ID>
+    export AWS_SECRET_ACCESS_KEY=<Your AWS SECRET ACCESS KEY>
+    export AWS_REGION=us-east-2
+    EOF
+    ```
+
+    将 `<Your AWS ACCESS KEY ID>` 和 `<Your AWS SECRET ACCESS KEY>` 替换为 AWS IAM 控制台中的相应值。
+
+    加载凭据：
+
+    ```bash
+    source ./aws-creds.sh
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 4：初始化并应用 Terraform
+
+    初始化 RKE2 Terraform 模块。如果要将状态从本地迁移到 S3，请添加 `-migrate-state`。
+
+    ```text
+    terraform -chdir=modules/rke2 init \
+    -backend-config="encrypt=true" \
+    -backend-config="region=us-east-2" \
+    -backend-config="bucket=chb-tfstate-359774249275" \
+    -backend-config="use_lockfile=true" \
+    -backend-config="key=chb/rke2/terraform.tfstate"
+    ```
+
+    应用 Terraform 配置来预配基础设施：
+
+    ```text
+    terraform -chdir=modules/rke2 apply \
+    -var-file=../../vars/common.tfvars \
+    -var-file=../../vars/instances.tfvars \
+    -var-file=../../vars/rke2.tfvars
+    ```
+
+    这会创建 RKE2 集群所需的 EC2 实例、网络配置和安全组。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 5：安装 Ansible 依赖项
+
+    前往 Ansible 目录，安装所需的 Galaxy 角色和集合：
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ```
+
+    ```text
+    ansible-galaxy role install lablabs.rke2
+    ```
+
+    ```text
+    ansible-galaxy collection install kubernetes.core
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 第 6 阶段：部署 RKE2
+
+    ### 验证节点是否就绪
+
+    ```text
+    ansible all -i inventory.yml -a 'cloud-init status'
+    ```
+
+    ### 配置 NVMe 设备
+
+    ```text
+    ansible-playbook -i inventory.yml disks_nvme.yml
+    ```
+
+    ### 执行 RKE2 Playbook
+
+    ```text
+    ansible-playbook -i inventory.yml rke2_playbook.yml
+    ```
+
+    该 playbook 会在所有节点上安装并配置 RKE2。它会预配第一个 server 节点，等待其就绪，然后让其余的 server 和 agent 节点加入集群。
+
+    playbook 输出将显示所有节点上正在运行的任务 (例如，`chb-rke2s101` 到 `chb-rke2s302`) 。完成后，你应该会看到如下摘要：
+
+    ```text
+    PLAY RECAP *********************************************************************
+    chb-rke2s101               : ok=40   changed=12   unreachable=0    failed=0    skipped=45   rescued=0    ignored=0
+    chb-rke2s102               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s201               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s202               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s301               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    chb-rke2s302               : ok=23   changed=7    unreachable=0    failed=0    skipped=38   rescued=0    ignored=0
+    ```
+
+    `K8s nodes state` 任务还会输出一份摘要，显示所有处于 `Ready` 状态的节点及其角色和版本。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 7：配置 cert-manager 和证书
+
+    使用 Ansible Playbook 安装 cert-manager、trust-manager，并为 ClickHouse 生成证书：
+
+    ```bash
+    cd ~/bare-metal/ansible
+    ansible-playbook -i 127.0.0.1, --connection=local manage_helm_applications.yml
+    ```
+
+    本操作手册将执行以下操作：
+
+    1. 安装 cert-manager Helm 图表
+    2. 安装 trust-manager Helm 图表
+    3. 创建自签名签发方和 CA 证书
+    4. 创建 CA 证书签发方
+    5. 设置 Rancher (可选)
+    6. 创建 ClickHouse 集群命名空间
+    7. 生成 ClickHouse server 和 Keeper 证书
+    8. 将证书复制到相应的 Kubernetes Secret 中
+
+    预期结果：
+
+    ```text
+    PLAY RECAP *****************************************************************
+    127.0.0.1                  : ok=18   changed=13   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 8：安装本地存储
+
+    ### 安装 local-path-provisioner
+
+    ```bash
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.32/deploy/local-path-storage.yaml
+    ```
+
+    ### 创建 StorageClass
+
+    ```bash
+    cd ~/bare-metal/ch-cluster-deployment
+    kubectl apply -f local-nvme-sc.yaml
+    ```
+
+    StorageClass YAML 应类似如下 (请更新 topology 配置值，使其与你的节点名称一致) ：
+
+    ```yaml
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: local-nvme-sc
+    allowVolumeExpansion: true
+    parameters:
+      path: /nvme/disk
+    provisioner: rancher.io/local-path
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowedTopologies:
+    - matchLabelExpressions:
+        - key: topology.kubernetes.io/zone
+          values:
+            - <your_cluster_name>-keeper
+            - <your_host_1>
+            - <your_host_2>
+            - <your_host_3>
+            - <your_host_4>
+            - <your_host_5>
+            - <your_host_6>
+        - key: directpv.min.io/region
+          values:
+            - default
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 9：为节点设置标签
+
+    为节点设置 operator 所需的 ClickHouse 组标签和拓扑区域标签：
+
+    ```bash
+    kubectl get nodes |awk '{ print $1}'|grep '01'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=keeper-amd64  topology.kubernetes.io/zone=c-baremetal-ch-01-keeper --overwrite
+    kubectl get nodes |awk '{ print $1}'|grep '02'|xargs -I {} -n 1 kubectl label nodes '{}' clickhouseGroup=server-amd64  --overwrite
+    kubectl label nodes chb-rke2s102 topology.kubernetes.io/zone=chb-rke2s102 --overwrite
+    kubectl label nodes chb-rke2s202 topology.kubernetes.io/zone=chb-rke2s202 --overwrite
+    kubectl label nodes chb-rke2s302 topology.kubernetes.io/zone=chb-rke2s302 --overwrite
+    ```
+
+    调整节点名称和标签，以匹配您的环境。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 阶段 10：安装 ClickHouse Operator 和集群
+
+    ### 设置环境变量
+
+    创建并加载 Helm 变量脚本，并将所有占位符替换为实际值：
+
+    ```bash
+    #!/bin/bash
+    # AWS/S3 creds
+    export AWS_ACCESS_KEY_ID=<your_aws_key>
+    export AWS_SECRET_ACCESS_KEY=<your_aws_secret>
+    export AWS_REGION=<your_aws_region>
+    export S3_ACCESS_KEY_ID=<s3_or_minio_key>
+    export S3_SECRET_ACCESS_KEY=<s3_or_minio_secret>
+    export S3_REGION=us-east-1
+    export S3_BUCKET_NAME=<your_s3_bucket>
+    export S3_KEY_PREFIX=<ch-s3-unique-uuid>
+    export S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+    export ECR_HOST=<ecr_host>
+    # Set AZs as determined by VPC subnets. If not relevant then use your k8s host names.
+    export AZ_LIST='["<your_host_1>", "<your_host_2>", "<your_host_3>","<your_host_4>", "<your_host_5>", "<your_host_6>"]'
+
+    PASSWORD='My super secret p@$$w0rd'
+    export HASHED_PASSWORD=$(echo -n "$PASSWORD" | sha256sum | awk '{printf $1}' | base64 -w 0)
+    export CLUSTER_NAME="baremetal-ch-01"
+    export CHART_VERSION="1.1.311"
+
+    export SERVER_NG_GROUP="server-amd64"
+    export KEEPER_NG_GROUP="keeper-amd64"
+    export KEEPER_CPU="4"
+    export KEEPER_MEMORY="16Gi"
+    export SERVER_CPU="64"
+    export SERVER_MEMORY="128Gi"
+    export CACHE_DISK_SIZE_GI=379Gi
+    ```
+
+    执行该脚本：
+
+    ```bash
+    source ./set_helm_vars.sh
+    ```
+
+    ### 安装 Operator
+
+    登录 Helm registry 并安装 operator：
+
+    ```text
+    # Log into the Helm registry
+    aws ecr get-login-password | helm registry login --username AWS --password-stdin $ECR_HOST
+
+    # Create image pull secret
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n clickhouse-operator-system
+
+    OPERATOR_VERSION=1.18587.1
+
+    helm upgrade clickhouse-operator \
+      oci://$ECR_HOST/helm/clickhouse-operator-helm \
+      --install --reuse-values \
+      --version="$OPERATOR_VERSION" \
+      --create-namespace \
+      -n clickhouse-operator-system \
+      --set-json="image.repository=\"$ECR_HOST/clickhouse-operator\"" \
+      --set-json='cilium.enabled=false' \
+      --set-json='idleScalerEnabled=false' \
+      --set-json='webhooks.enabled=false' \
+      --set-json='operator.debug=true' \
+      --set-json='operator.metricsScraper.enabled=false' \
+      --set-json='operator.featureFlags.backupOnASeparatePod=true' \
+      --set-json='operator.featureFlags.serverCMEKEnabled=true' \
+      --set-json='imagePullSecrets=[{"name":"all-icr-io"}]' \
+      --set-json="operator.availabilityZones=$AZ_LIST"
+    ```
+
+    ### 部署 ClickHouse 集群
+
+    创建 Helm 配置值文件 (`clickhouse-values.yaml`) ，并填入集群配置：
+
+    ```yaml expandable
+    imagePullSecrets:
+    - name: all-icr-io
+
+    account:
+      hashedPassword: "$HASHED_PASSWORD"
+    server:
+      ssdCacheConfiguration:
+        cacheDiskSize: "$CACHE_DISK_SIZE_GI"
+      openSSL:
+        enabled: true
+        required: true
+      replicaCount: 3
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$SERVER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+          requests:
+            cpu: "$SERVER_CPU"
+            memory: "$SERVER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: "300Gi"
+        s3:
+          bucketName: "$S3_BUCKET_NAME"
+          keyPrefix: "$S3_KEY_PREFIX"
+          endpoint: "$S3_ENDPOINT"
+          region: "$S3_REGION"
+      image:
+        repository: "$ECR_HOST/clickhouse-server"
+        tag: "25.12.1.1497"
+      additionalEnvVars:
+        - name: AWS_ACCESS_KEY_ID
+          value: "${S3_ACCESS_KEY_ID}"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "${S3_SECRET_ACCESS_KEY}"
+
+    keeper:
+      openSSL:
+        enabled: true
+        required: true
+      image:
+        repository: "$ECR_HOST/clickhouse-keeper"
+        tag: "26.2.1.258"
+      arm64: false
+      podPolicy:
+        nodeSelector:
+          clickhouseGroup: "$KEEPER_NG_GROUP"
+        resources:
+          limits:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+          requests:
+            cpu: "$KEEPER_CPU"
+            memory: "$KEEPER_MEMORY"
+      tolerations:
+        - effect: NoSchedule
+          key: "clickhouse.com/do-not-schedule"
+          operator: Exists
+      storage:
+        storageClassName: local-nvme-sc
+        resources:
+          requests: 30Gi
+
+    serviceAccount:
+      create: false
+      name: default
+
+    storageClass:
+      create: false
+      name: local-nvme-sc
+      provisioner: rancher.io/local-path
+    ```
+
+    使用配置值文件安装集群：
+
+    ```text
+    # Create namespace
+    kubectl create namespace ns-$CLUSTER_NAME
+
+    # Create image pull secret in the cluster namespace
+    kubectl create secret docker-registry all-icr-io \
+      --docker-server=$ECR_HOST \
+      --docker-username=AWS \
+      --docker-password=$(aws ecr get-login-password) \
+      -n ns-$CLUSTER_NAME
+
+    # Expand variables and install
+    TEMP_VALUES_FILE=$(mktemp)
+    envsubst < clickhouse-values.yaml > "$TEMP_VALUES_FILE"
+
+    helm upgrade "$CLUSTER_NAME" \
+      oci://$ECR_HOST/helm/onprem-clickhouse-cluster \
+      --install --reuse-values \
+      --version="$CHART_VERSION" \
+      -n ns-$CLUSTER_NAME \
+      --create-namespace \
+      --values "$TEMP_VALUES_FILE" \
+      --timeout 10m0s
+
+    rm "$TEMP_VALUES_FILE"
+    ```
+
+    ### 安装后修复
+
+    集群部署完成后，您可能需要为 Keeper StatefulSet 打补丁，以添加镜像拉取密钥和 S3 凭据：
+
+    ```text
+    # Copy pull secret to cluster namespace
+    kubectl get secret all-icr-io -n default -o yaml | \
+      sed "s/namespace: default/namespace: ns-$CLUSTER_NAME/" | \
+      kubectl apply -n ns-$CLUSTER_NAME --force -f -
+
+    # Patch keeper StatefulSet (use sts_keeper_patch_template.yaml from example scripts)
+    kubectl patch sts c-$CLUSTER_NAME-keeper -n ns-$CLUSTER_NAME \
+      --patch "$(envsubst < sts_keeper_patch_template.yaml)"
+
+    # Restart keeper pods
+    kubectl delete pod c-$CLUSTER_NAME-keeper-{0,1,2} -n ns-$CLUSTER_NAME
+    ```
+
+    等待 Keeper Pod (容器组) 重新部署，然后根据需要修复 server PV：
+
+    ```text
+    ./sts_server_patch.sh "ns-$CLUSTER_NAME" all-icr-io
+    kubectl delete pod -l kind=clickhouse-server
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="verify-installation">
+  ## 验证安装
+</div>
+
+待所有 Pod (容器组) 均运行后，执行端口转发并进行验证。由于此部署使用了 TLS (已启用 openSSL) ，请使用 9440 端口：
+
+```bash
+kubectl port-forward svc/c-$CLUSTER_NAME-server-any 9440:9440 -n ns-$CLUSTER_NAME
+```
+
+通过 ClickHouse 客户端连接：
+
+```bash
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --accept-invalid-certificate
+```
+
+运行测试查询：
+
+```sql
+SELECT 1;
+```
+
+预期输出：
+
+```text
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+1 row in set. Elapsed: 0.001 sec.
+```

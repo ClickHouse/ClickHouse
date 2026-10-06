@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "Preflight チェックを実行する"
+sidebarTitle: "Preflight チェックを実行する"
+description: "環境の準備状況の確認やアップグレード前の検証を行うために、Preflight チェックを提供しています。"
+---
+
+環境の準備状況の確認やアップグレード前の検証を行うために、Preflight チェックを提供しています。Preflight チェックでは、クラスター診断用の Kubernetes プラグインである [Troubleshoot](https://troubleshoot.sh/) を使用します。このプロセス中にデータがエクスポートされることはありません。
+
+次のハウツー ガイドでは、Preflight チェックの実行方法を説明します。
+
+<div id="install-the-plugin">
+  ## プラグインをインストールする
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+また、ほかのインストール方法については、[Troubleshoot documentation](https://troubleshoot.sh/docs/)を参照してください。
+
+<div id="copy-the-preflight-helm-chart">
+  ## Preflight Helm チャートをコピーする
+</div>
+
+ECR へのコピー手順に Preflight チャートを追加します:
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## チェックの実行
+</div>
+
+`helm template` を使用して preflight spec をレンダリングし、その出力を `kubectl preflight` に渡します:
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+これにより、ノードラベル、StorageClass の設定、その他の要件を検証できます。また、既存の ClickHouse クラスターがアップグレード可能な状態かどうかも確認し、非推奨の機能フラグや新たな要件を報告します。
+
+出力には、各検証項目とそのステータスが表示されます。検証項目が失敗した場合は、問題の修正方法に関する推奨事項も含まれます。
+
+カスタム StorageClass を対象に検証するには:
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### 必要な権限
+</div>
+
+`kubectl preflight` を実行するユーザーまたはサービス アカウントには、以下に対する閲覧アクセスが必要です。
+
+| 対象範囲                                          | リソース                                                                                      |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| クラスター全体                                       | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| オペレーターのネームスペース (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| クラスターのネームスペース (`ns-<cluster-name>`)           | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+組み込みの `view` クラスター ロールに加えて、該当するネームスペースに対する `view` アクセスを持つプリンシパルであれば十分です。
