@@ -1,0 +1,31 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test>
+    <!-- Synthetic-IO twin of iceberg_suite_local_write.xml: simulate object-store latency during setup and measured queries. -->
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>iceberg_suite_local_synthio_write</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_large</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_local_synthio_write_wr_large_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_small</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_local_synthio_write_wr_small_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_planned</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_local_synthio_write_wr_planned_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+    </substitutions>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_response</fill_query>
+    <include file="iceberg_suite_shared_write.xml.inc"/>
+    <drop_query>SYSTEM DISABLE FAILPOINT local_object_storage_slow_response</drop_query>
+</test>

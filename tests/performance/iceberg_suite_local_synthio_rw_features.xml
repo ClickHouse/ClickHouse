@@ -1,0 +1,85 @@
+<test>
+    <!-- Synthetic-IO twin of iceberg_suite_local_rw_features.xml: shared feature workloads with simulated object-store latency. -->
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>iceberg_suite_local_synthio_rw_features</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_add_column</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_evo_add_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_drop_column</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_evo_drop_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_rename_column</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_evo_rename_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_partition_identity</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_part_identity_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_partition_bucket</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_part_bucket_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_update_partition_key_move</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_upd_part_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_sort_order_minmax_read</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_sorted_li_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_nested_types_write_read</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_nested_t_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_many_small_data_files</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_small_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_update_every_file</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_upd_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_modify_column</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_evo_promote_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_read_after_type_promotion</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_evo_promoted_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_delete_position_deletes</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_del_pos_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_mor_read_position_deletes</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_del_read_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_optimize_manifests</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_many_manifests_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_deep_history_scan</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_deep_history_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_manifest_grid</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/synthio_manifest_grid_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+    </substitutions>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_response</fill_query>
+    <include file="iceberg_suite_shared_rw_features.xml.inc"/>
+    <drop_query>SYSTEM DISABLE FAILPOINT local_object_storage_slow_response</drop_query>
+</test>
