@@ -1470,9 +1470,8 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
-/// Replace each column of `table_expression` named in `defaults` by a copy of its default. Inside the arguments of an
-/// aggregate function the copy is wrapped into `identity`, which is neither foldable nor injective, so the child's own
-/// analysis keeps the aggregate as `rewrite_for_child` names it.
+/// Inside aggregate arguments the default is wrapped into `identity`, which is neither foldable nor injective, so the
+/// child's own analysis keeps the aggregate unchanged.
 void replaceMissingColumnsWithDefaults(
     QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression,
@@ -1498,7 +1497,7 @@ void replaceMissingColumnsWithDefaults(
 
     if (auto * function = node->as<FunctionNode>(); function && function->isAggregateFunction())
     {
-        /// A subtree shared with a position outside the aggregate must not get its `identity`.
+        /// Argument subtrees may be shared with positions outside the aggregate, which must stay unwrapped.
         function->getArgumentsNode() = function->getArgumentsNode()->clone();
         inside_aggregate = true;
     }
@@ -2368,7 +2367,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
         /// The translation between an `ALIAS` column's own name and its inlined expression is read from
         /// the outer query tree and its planner context: those are what the expected `header` is named
         /// after, and the child's derived planner context holds no column identifiers of its own.
-        /// A child lacking a column computed the query with its default, so translate through the same replacement.
         std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> rewrite_for_child;
         if (!missing_column_defaults.empty())
             rewrite_for_child = [&](const QueryTreeNodePtr & node)

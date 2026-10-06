@@ -645,8 +645,7 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
-    /// True when queries analyzed with this context are built from a query tree the initiator of the read already
-    /// optimized, so only the passes that keep the output header run. A context field like the one above.
+    /// The initiator of the read already optimized the query tree, so only the passes that keep the header run.
     bool query_tree_already_optimized = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the

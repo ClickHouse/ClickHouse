@@ -1294,8 +1294,7 @@ String actionNameAfterAliasInlining(
 
 /// Build a map from every expression node's identifier-based action name (the name the initiator uses) to its action
 /// name after inlining ALIAS columns (the name the shard uses). Nested subqueries are skipped: their columns live in a
-/// different scope. With `rewrite_for_shard`, an expression it renames and that has no aggregate or window function is
-/// also recorded in `computed_expressions`, rewritten and inlined.
+/// different scope.
 class CollectAliasNameTranslationVisitor : public InDepthQueryTreeVisitor<CollectAliasNameTranslationVisitor>
 {
 public:
