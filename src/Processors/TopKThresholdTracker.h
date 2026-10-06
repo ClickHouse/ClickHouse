@@ -45,6 +45,17 @@ struct TopKThresholdTracker
         return true;
     }
 
+    /// Like `isValueInsideThreshold`, but a value equal to the threshold is outside.
+    bool isValueStrictlyInsideThreshold(const Field & value) const
+    {
+        if (!is_set)
+            return true;
+
+        std::shared_lock lock(mutex);
+        int cmp = compareFields(value, threshold);
+        return sort_desc.direction == 1 ? cmp < 0 : cmp > 0;
+    }
+
     Field getValue() const
     {
         std::shared_lock lock(mutex);

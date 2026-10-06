@@ -56,6 +56,7 @@ static size_t tryTopKForFormatSource(
     const ColumnWithTypeAndName & sort_column,
     const String & sort_column_name,
     const SortColumnDescription & sort_col_desc,
+    size_t num_sort_columns,
     const Optimization::ExtraSettings & settings)
 {
     auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(step);
@@ -105,6 +106,7 @@ static size_t tryTopKForFormatSource(
     auto info = std::make_shared<FormatTopKFilterInfo>();
     info->column_name = sort_column_name;
     info->threshold_tracker = std::move(threshold_tracker);
+    info->single_sort_column = num_sort_columns == 1;
     source_step->setTopKFilter(std::move(info));
 
     return 0;
@@ -244,7 +246,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         const auto row_level_filter = source_step ? source_step->getRowLevelFilter() : nullptr;
         if (actions_depend_on_block || (row_level_filter && dependsOnItsBlock(row_level_filter->actions)))
             return 0;
-        return tryTopKForFormatSource(node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, settings);
+        return tryTopKForFormatSource(node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, num_sort_columns, settings);
     }
 
     /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
