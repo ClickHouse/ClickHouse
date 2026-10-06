@@ -31,7 +31,6 @@ extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
-extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCacheWriteStopped;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
@@ -1122,7 +1121,6 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
-            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
             std::string failure_reason;
             /// Bytes left to read from the download offset (read_until_position is exclusive).

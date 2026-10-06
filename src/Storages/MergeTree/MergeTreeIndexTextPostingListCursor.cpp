@@ -23,6 +23,7 @@ namespace ProfileEvents
     extern const Event TextIndexLazySegmentsBuilt;
     extern const Event TextIndexLazyBruteForceIntersections;
     extern const Event TextIndexLazyLeapfrogIntersections;
+    extern const Event TextIndexLazyBruteForceEarlyExits;
     extern const Event TextIndexLazySegmentsSkippedDense;
     extern const Event TextIndexLazySegmentsSkippedResolved;
     extern const Event TextIndexLazyBlocksSkippedResolved;
@@ -37,18 +38,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
 /// occur and would underflow `out[v - row_offset]` indexing in `padColumn` / leapfrog
-/// writers (and the direct-fill path in `MergeTreeReaderTextIndex`). Throw rather than
-/// silently emit a zero filter and drop matches.
+/// writers. Throw rather than silently emit a zero filter and drop matches.
 void requireRowOffsetRepresentable(size_t row_offset)
 {
     if (row_offset > std::numeric_limits<uint32_t>::max())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
 }
-
-namespace
-{
 
 double computeDensity(const TokenPostingsInfo & info)
 {
@@ -105,37 +105,35 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
     density_val = span > 0.0 ? static_cast<double>(decoded_count) / span : 0.0;
 }
 
+LazyPostingsStats::~LazyPostingsStats()
+{
+    auto add = [](ProfileEvents::Event event, size_t value)
+    {
+        if (value)
+            ProfileEvents::increment(event, value);
+    };
+
+    add(ProfileEvents::TextIndexLazyPackedBlocksDecoded, blocks_decoded);
+    add(ProfileEvents::TextIndexLazyAdvanceCount, advance_count);
+    add(ProfileEvents::TextIndexLazySegmentsPrepared, segments_prepared);
+    add(ProfileEvents::TextIndexLazySegmentsSkippedDense, segments_skipped_dense);
+    add(ProfileEvents::TextIndexLazySegmentsSkippedResolved, segments_skipped_resolved);
+    add(ProfileEvents::TextIndexLazyBlocksSkippedResolved, blocks_skipped_resolved);
+    add(ProfileEvents::TextIndexLazyBruteForceIntersections, brute_force_intersections);
+    add(ProfileEvents::TextIndexLazyBruteForceEarlyExits, brute_force_early_exits);
+    add(ProfileEvents::TextIndexLazyLeapfrogIntersections, leapfrog_intersections);
+}
+
 UInt32 PostingListCursor::cardinality() const
 {
     return is_embedded ? static_cast<UInt32>(decoded_count) : info->cardinality;
 }
 
-PostingListCursor::~PostingListCursor()
-{
-    if (counters.blocks_decoded)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
-    if (counters.advance_count)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAdvanceCount, counters.advance_count);
-    if (counters.segments_prepared)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
-    if (counters.segments_skipped_dense)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
-    if (counters.segments_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
-    if (counters.blocks_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
-}
-
 void PostingListCursor::prepareSegment(size_t segment_idx)
 {
-    ++counters.segments_prepared;
-
+    ++stats.segments_prepared;
     current_segment_idx = segment_idx;
-    has_prepared_first_segment = true;
-
-    if (is_embedded)
-        return;
-
+    chassert(!is_embedded);
     chassert(segment_idx < total_segments);
 
     /// Obtain the decoded segment, sharing it via the cache (keyed by index id + segment offset) when one
@@ -180,9 +178,9 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     UInt64 codec_type = 0;
     readVarUInt(codec_type, *data_buffer);
 
-    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+    if (!isValidPostingListBlockCodecType(codec_type))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
+            "Corrupted data in lazy cursor: unknown posting list block codec type {}", codec_type);
 
     segment.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
 
@@ -214,6 +212,16 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count, range_span, segment_range.begin, segment_range.end);
     }
 
+    /// The row range of a segment in the dictionary is its first and its last row id (see `checkSegmentRowRange`
+    /// on the eager path). `advance` and the skip heuristics choose segments by the range, while `decodeBlock`
+    /// uses `first_row_id` as the delta base of the first block, so the two must agree.
+    if (segment.first_row_id != segment_range.begin)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: segment {} starts at row id {} while its row range is [{}, {}]",
+            segment_idx, segment.first_row_id, segment_range.begin, segment_range.end);
+    }
+
     /// Create the per-block codec for this segment's codec type now and reuse it for decoding (see
     /// `decodeBlock`). It owns the codec-specific per-block worst-case size, so the cursor can bound
     /// `payload_bytes` against corrupted metadata without naming a concrete codec.
@@ -221,7 +229,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
-    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
     const UInt64 per_block_cap = block_codec->maxBlockBytes();
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
@@ -256,6 +264,14 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count);
     }
 
+    if (num_blocks != max_blocks_count)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: number of blocks {} does not match "
+            "the expected {} for segment with {} documents",
+            num_blocks, max_blocks_count, segment.doc_count);
+    }
+
     segment.block_last_row_ids.resize(num_blocks);
     segment.block_offsets.resize(num_blocks);
 
@@ -272,6 +288,23 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
                 "monotonic at block {}: previous = {}, current = {}",
                 i, segment.block_last_row_ids[i - 1], segment.block_last_row_ids[i]);
         }
+    }
+
+    /// The block index must end at the last row id of the segment range: `advance` and the skip heuristics
+    /// look up blocks by `block_last_row_ids`, and `decodeBlock` uses them as delta bases of the next blocks.
+    /// Together with the strict monotonicity above this keeps every block boundary inside the segment range.
+    if (segment.block_last_row_ids.front() < segment.first_row_id)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: the first block of segment {} ends at row id {} before the segment starts at row id {}",
+            segment_idx, segment.block_last_row_ids.front(), segment.first_row_id);
+    }
+
+    if (segment.block_last_row_ids.back() != segment_range.end)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: segment {} ends at row id {} while its row range is [{}, {}]",
+            segment_idx, segment.block_last_row_ids.back(), segment_range.begin, segment_range.end);
     }
 
     for (size_t i = 0; i < num_blocks; ++i)
@@ -296,13 +329,13 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     }
 
     segment.block_count = num_blocks;
-    segment.tail_size = segment.doc_count % BLOCK_SIZE;
+    segment.tail_size = segment.doc_count % IPostingListBlockCodec::BLOCK_SIZE;
     return segment;
 }
 
 void PostingListCursor::decodeBlock(size_t block_idx)
 {
-    ++counters.blocks_decoded;
+    ++stats.blocks_decoded;
 
     const auto & segment = *current_segment;
     chassert(block_idx < segment.block_count);
@@ -322,8 +355,8 @@ void PostingListCursor::decodeBlock(size_t block_idx)
         last_decoded_doc_id = segment.block_last_row_ids[block_idx - 1];
     }
 
-    /// Determine block element count: BLOCK_SIZE for full blocks, tail_size for the last block.
-    size_t count = BLOCK_SIZE;
+    /// Determine block element count: a full block, or `tail_size` for the last block.
+    size_t count = IPostingListBlockCodec::BLOCK_SIZE;
     if (block_idx == segment.block_count - 1 && segment.tail_size > 0)
         count = segment.tail_size;
 
@@ -371,12 +404,21 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
     last_decoded_doc_id = count > 0 ? decoded_values[count - 1] : last_decoded_doc_id;
 
+    /// The decoded block must end at the row id the Index Section claims for it: `advance` and the skip
+    /// heuristics position by `block_last_row_ids`, and the next block decodes its deltas from it.
+    if (last_decoded_doc_id != segment.block_last_row_ids[block_idx])
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: block {} ends at row id {} while its Index Section entry is {}",
+            block_idx, last_decoded_doc_id, segment.block_last_row_ids[block_idx]);
+    }
+
     decoded_count = count;
     index = 0;
 }
 
-/// Lower bound over decoded posting values. The target is usually close to `first`.
-/// Probe at offsets 1, 2, 4, ... and binary-search only the last interval.
+/// Lower bound by galloping search: cheap when the answer is close to `first`, which is the common
+/// case for a cursor advancing over dense posting lists, and O(log n) otherwise.
 static const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32_t * last, uint32_t target)
 {
     const size_t size = static_cast<size_t>(last - first);
@@ -393,37 +435,35 @@ static const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32
 
 void PostingListCursor::advance(uint32_t target)
 {
-    ++counters.advance_count;
+    ++stats.advance_count;
 
     if (!is_valid)
         return;
 
-    if (is_embedded)
+    /// The target lies within the decoded block: the common case of a leapfrog over dense posting lists.
+    if (index < decoded_count && target <= decoded_values_ptr[decoded_count - 1])
     {
         const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
-        if (it != decoded_values_ptr + decoded_count)
-        {
-            index = static_cast<size_t>(it - decoded_values_ptr);
-        }
-        else
-        {
-            is_valid = false;
-        }
+        index = static_cast<size_t>(it - decoded_values_ptr);
+        return;
+    }
+
+    /// An embedded list is a single decoded block, and the target is past its last doc_id.
+    if (is_embedded)
+    {
+        is_valid = false;
         return;
     }
 
     /// Try current segment first.
-    if (has_prepared_first_segment)
+    if (current_segment && target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
     {
-        if (target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
-        {
-            if (advanceImpl(target))
-                return;
-        }
+        if (advanceImpl(target))
+            return;
     }
 
     /// Binary search across segments.
-    size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
+    size_t start = current_segment ? current_segment_idx + 1 : 0;
     const auto * it = std::lower_bound(
         info->ranges.begin() + start, info->ranges.end(), static_cast<size_t>(target),
         [](const RowsRange & range, size_t t) { return range.end < t; });
@@ -440,24 +480,15 @@ void PostingListCursor::advance(uint32_t target)
 
 bool PostingListCursor::advanceImpl(uint32_t target)
 {
-    /// If current block contains the target, search within it.
-    if (decoded_count > 0 && target <= decoded_values_ptr[decoded_count - 1])
-    {
-        const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
-        if (it != decoded_values_ptr + decoded_count)
-        {
-            index = static_cast<size_t>(it - decoded_values_ptr);
-            return true;
-        }
-    }
-
-    /// Binary search on the segment's block_last_row_ids.
+    /// The target is past the read position, so the search resumes from the current block.
     const auto & block_last_row_ids = current_segment->block_last_row_ids;
-    const auto * it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), target);
-    if (it == block_last_row_ids.end())
+    const auto * blocks_end = block_last_row_ids.data() + current_segment->block_count;
+    const auto * it = gallopingLowerBound(block_last_row_ids.data() + current_block, blocks_end, target);
+
+    if (it == blocks_end)
         return false;
 
-    size_t j = static_cast<size_t>(it - block_last_row_ids.begin());
+    size_t j = static_cast<size_t>(it - block_last_row_ids.data());
 
     if (j != current_block || decoded_count == 0)
         decodeBlock(j);
@@ -478,35 +509,34 @@ void PostingListCursor::next()
     if (!is_valid)
         return;
 
-    ++index;
+    if (++index < decoded_count)
+        return;
 
     if (is_embedded)
     {
-        if (index >= decoded_count)
-            is_valid = false;
+        is_valid = false;
         return;
     }
 
-    if (index >= decoded_count)
+    ++current_block;
+    chassert(current_segment);
+
+    if (current_block < current_segment->block_count)
     {
-        ++current_block;
-        if (current_block < current_segment->block_count)
-        {
-            decodeBlock(current_block);
-            return;
-        }
-
-        /// Current segment exhausted — advance to next one.
-        size_t next_segment = current_segment_idx + 1;
-        if (next_segment >= total_segments)
-        {
-            is_valid = false;
-            return;
-        }
-
-        prepareSegment(next_segment);
-        decodeBlock(0);
+        decodeBlock(current_block);
+        return;
     }
+
+    /// Current segment exhausted — advance to next one.
+    size_t next_segment = current_segment_idx + 1;
+    if (next_segment >= total_segments)
+    {
+        is_valid = false;
+        return;
+    }
+
+    prepareSegment(next_segment);
+    decodeBlock(0);
 }
 
 /// Scatter-write into `out` for doc_ids in values[begin..length).
@@ -519,10 +549,10 @@ namespace
 inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t * end, size_t row_offset, size_t num_rows)
 {
     size_t exclusive_end = row_offset + num_rows;
-    if (exclusive_end > std::numeric_limits<uint32_t>::max())
+    if (exclusive_end > std::numeric_limits<uint32_t>::max() || begin == end || *(end - 1) < exclusive_end)
         return end;
 
-    return std::lower_bound(begin, end, static_cast<uint32_t>(exclusive_end));
+    return gallopingLowerBound(begin, end, static_cast<uint32_t>(exclusive_end));
 }
 
 template <PadOp op>
@@ -615,31 +645,33 @@ inline bool canSkipRegion(const UInt8 * data, size_t count)
 
 } // anonymous namespace
 
-void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     requireRowOffsetRepresentable(row_offset);
 
     if (is_embedded)
-        linearEmbedded<PadOp::Or>(data, row_offset, num_rows);
-    else
-        linearSegments<PadOp::Or>(data, row_offset, num_rows);
+        return linearEmbedded<PadOp::Or>(data, row_offset, num_rows);
+
+    return linearSegments<PadOp::Or>(data, row_offset, num_rows);
 }
 
-void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     requireRowOffsetRepresentable(row_offset);
 
     if (is_embedded)
-        linearEmbedded<PadOp::And>(data, row_offset, num_rows);
-    else
-        linearSegments<PadOp::And>(data, row_offset, num_rows);
+        return linearEmbedded<PadOp::And>(data, row_offset, num_rows);
+
+    return linearSegments<PadOp::And>(data, row_offset, num_rows);
 }
 
 template <PadOp op>
-void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
 {
+    PostingsApplyWindow window;
+
     if (info->ranges.empty() || total_segments == 0)
-        return;
+        return window;
 
     for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
@@ -665,14 +697,14 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
 
                 if (canSkipRegion<op>(data + clip_off, clip_count))
                 {
-                    ++counters.segments_skipped_resolved;
+                    ++stats.segments_skipped_resolved;
                     continue;
                 }
             }
         }
 
         /// Skip re-preparing the segment if it is already loaded.
-        if (i != current_segment_idx || !has_prepared_first_segment)
+        if (i != current_segment_idx || !current_segment)
             prepareSegment(i);
 
         /// Level 1: dense segment shortcut.
@@ -687,19 +719,29 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
 
                 if (clip_begin < clip_end)
                 {
-                    ++counters.segments_skipped_dense;
+                    ++stats.segments_skipped_dense;
                     padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
+                    window.extend(clip_begin, clip_end);
                     continue;
                 }
             }
         }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
+        /// The windows come in ascending order, so the search for the first block resumes from the last
+        /// decoded block when that block still lies before the window, instead of bisecting the whole segment.
         const auto & block_last_row_ids = current_segment->block_last_row_ids;
-        const auto * first_block_it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), static_cast<uint32_t>(row_offset));
-        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.begin());
+        const size_t block_count = current_segment->block_count;
+        const size_t block_begin = (current_block > 0 && block_last_row_ids[current_block - 1] < row_offset) ? current_block : 0;
 
-        for (size_t block_idx = first_block_idx; block_idx < current_segment->block_count; ++block_idx)
+        const auto * first_block_it = gallopingLowerBound(
+            block_last_row_ids.data() + block_begin,
+            block_last_row_ids.data() + block_count,
+            static_cast<uint32_t>(row_offset));
+
+        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.data());
+
+        for (size_t block_idx = first_block_idx; block_idx < block_count; ++block_idx)
         {
             if (block_idx > 0 && block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
             {
@@ -727,30 +769,47 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
 
                     if (canSkipRegion<op>(data + blk_off, blk_cnt))
                     {
-                        ++counters.blocks_skipped_resolved;
+                        ++stats.blocks_skipped_resolved;
                         continue;
                     }
                 }
             }
 
-            /// A block that straddles two consecutive windows is still decoded from the previous call.
+            /// A block that straddles two consecutive windows is still decoded from the previous call
             if (block_idx != current_block || decoded_count == 0)
                 decodeBlock(block_idx);
 
-            const auto * begin_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+            chassert(index <= decoded_count);
+            const size_t value_begin = (index > 0 && decoded_values_ptr[index - 1] < row_offset) ? index : 0;
+
+            const auto * begin_it = gallopingLowerBound(
+                decoded_values_ptr + value_begin,
+                decoded_values_ptr + decoded_count,
+                static_cast<uint32_t>(row_offset));
+
             const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
+            index = end_idx;
+
+            /// No doc_ids of this block fall into the window. The block has a doc_id >= row_offset (`block_last`),
+            /// so that doc_id is past the window, and so is everything in the following blocks and segments.
+            if (begin_idx == end_idx)
+                return window;
+
             padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
+            window.extend(decoded_values_ptr[begin_idx], static_cast<size_t>(decoded_values_ptr[end_idx - 1]) + 1);
         }
     }
+
+    return window;
 }
 
 template <PadOp op>
-void PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsApplyWindow PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     if (decoded_count == 0)
-        return;
+        return {};
 
     /// Dense shortcut: if every row in the range is in the posting list,
     /// pad the entire clipped region at once without binary search.
@@ -766,35 +825,48 @@ void PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t n
 
         if (clip_begin < clip_end)
         {
-            ++counters.segments_skipped_dense;
+            ++stats.segments_skipped_dense;
             padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
-            return;
+            return {clip_begin, clip_end};
         }
     }
 
-    const auto * begin_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+    /// The windows come in ascending order: resume the search from the read position when it still lies
+    /// before the window, and leave it at the first doc_id past the window for the next scan.
+    chassert(index <= decoded_count);
+    const size_t search_from = (index > 0 && decoded_values_ptr[index - 1] < row_offset) ? index : 0;
+
+    const auto * begin_it = gallopingLowerBound(decoded_values_ptr + search_from, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
     const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
     size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
     size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
+    index = end_idx;
+
+    if (begin_idx == end_idx)
+        return {};
+
     padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
+    return {decoded_values_ptr[begin_idx], static_cast<size_t>(decoded_values_ptr[end_idx - 1]) + 1};
 }
 
 namespace
 {
 
 /// Two-cursor intersection. The lagging cursor advances to the leading cursor's doc_id.
-void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, size_t row_offset, size_t effective_end)
+bool intersectTwo(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid())
     {
         uint32_t v0 = c0->value();
         uint32_t v1 = c1->value();
         if (v0 >= effective_end || v1 >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
         }
@@ -807,11 +879,13 @@ void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1,
             c1->advance(v0);
         }
     }
+    return found;
 }
 
 /// Three-cursor intersection. All cursors behind the maximum advance forward.
-void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, size_t row_offset, size_t effective_end)
+bool intersectThree(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid() && c2->valid())
     {
         uint32_t v0 = c0->value();
@@ -820,11 +894,12 @@ void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c
 
         uint32_t max_val = std::max({v0, v1, v2});
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1 && v1 == v2)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
             c2->next();
@@ -836,11 +911,13 @@ void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c
             if (v2 < max_val) c2->advance(max_val);
         }
     }
+    return found;
 }
 
 /// Four-cursor intersection.
-void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, PostingListCursorPtr c3, size_t row_offset, size_t effective_end)
+bool intersectFour(UInt8 * out, PostingListCursor * c0, PostingListCursor * c1, PostingListCursor * c2, PostingListCursor * c3, size_t row_offset, size_t effective_end)
 {
+    bool found = false;
     while (c0->valid() && c1->valid() && c2->valid() && c3->valid())
     {
         uint32_t v0 = c0->value();
@@ -850,11 +927,12 @@ void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1
 
         uint32_t max_val = std::max({v0, v1, v2, v3});
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (v0 == v1 && v1 == v2 && v2 == v3)
         {
             out[v0 - row_offset] = 1;
+            found = true;
             c0->next();
             c1->next();
             c2->next();
@@ -868,16 +946,18 @@ void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1
             if (v3 < max_val) c3->advance(max_val);
         }
     }
+    return found;
 }
 
 /// N-way leapfrog intersection (N <= 8): linear scan for min/max.
-void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
     std::vector<uint32_t> vals(n);
     for (size_t i = 0; i < n; ++i)
         vals[i] = cursors[i]->value();
 
+    bool found = false;
     while (true)
     {
         uint32_t min_val = vals[0];
@@ -892,16 +972,17 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
         }
 
         if (max_val >= effective_end)
-            return;
+            return found;
 
         if (min_val == max_val)
         {
             out[min_val - row_offset] = 1;
+            found = true;
             for (size_t i = 0; i < n; ++i)
             {
                 cursors[i]->next();
                 if (!cursors[i]->valid())
-                    return;
+                    return found;
 
                 vals[i] = cursors[i]->value();
             }
@@ -914,7 +995,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
                 {
                     cursors[i]->advance(max_val);
                     if (!cursors[i]->valid())
-                        return;
+                        return found;
 
                     vals[i] = cursors[i]->value();
                 }
@@ -935,7 +1016,7 @@ struct HeapItem
 };
 
 /// N-way leapfrog intersection (N > 8): min-heap.
-void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
 
@@ -950,16 +1031,18 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
     }
     std::make_heap(heap.begin(), heap.end(), std::greater<>{});
 
+    bool found = false;
     while (true)
     {
         if (max_val >= effective_end)
-            return;
+            return found;
 
         uint32_t min_val = heap.front().val;
 
         if (min_val == max_val)
         {
             out[min_val - row_offset] = 1;
+            found = true;
             max_val = 0;
 
             for (size_t i = 0; i < n; ++i)
@@ -967,11 +1050,11 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
                 uint32_t idx = heap[i].idx;
                 cursors[idx]->next();
                 if (!cursors[idx]->valid())
-                    return;
+                    return found;
 
                 uint32_t val = cursors[idx]->value();
                 if (val >= effective_end)
-                    return;
+                    return found;
 
                 heap[i].val = val;
                 max_val = std::max(max_val, val);
@@ -985,11 +1068,11 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 
             cursors[min_idx]->advance(max_val);
             if (!cursors[min_idx]->valid())
-                return;
+                return found;
 
             uint32_t new_val = cursors[min_idx]->value();
             if (new_val >= effective_end)
-                return;
+                return found;
 
             max_val = std::max(max_val, new_val);
             heap.back() = {new_val, min_idx};
@@ -999,38 +1082,22 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 }
 
 /// Dispatch to the best leapfrog variant based on cursor count.
-void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
+bool intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t effective_end)
 {
     if (cursors.size() == 2)
-    {
-        intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
-        return;
-    }
+        return intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
 
     if (cursors.size() == 3)
-    {
-        intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
-        return;
-    }
+        return intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
 
     if (cursors.size() == 4)
-    {
-        intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
-        return;
-    }
+        return intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
 
     if (cursors.size() <= 8)
-    {
-        intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
-        return;
-    }
+        return intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
 
-    intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
+    return intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
 }
-
-/// Brute-force intersection via bitmap counting.
-/// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
-/// then a final pass converts count == n into 1, everything else into 0.
 
 #if USE_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
@@ -1066,26 +1133,98 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
         out[i] = (out[i] == target);
 }
 
-void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
+
+/// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.
+/// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
+/// then a final pass converts count == n into 1, everything else into 0.
+/// `out` must be passed with all-zero bytes. Returns false only if no byte of `out` is set.
+/// May return true when no row survives the final pass.
+bool intersectBruteForce(UInt8 * out, const std::vector<PostingListCursor *> & cursors, size_t row_offset, size_t num_rows, LazyPostingsStats & stats)
 {
-    cursors[0]->linearOr(out, row_offset, num_rows);
+    const PostingsApplyWindow first = cursors[0]->linearOr(out, row_offset, num_rows);
+
+    if (first.empty())
+    {
+        ++stats.brute_force_early_exits;
+        return false;
+    }
+
+    PostingsApplyWindow window = first;
 
     for (size_t i = 1; i < cursors.size(); ++i)
-        cursors[i]->linearAnd(out, row_offset, num_rows);
-
-    size_t n = cursors.size();
-    if (n > 1)
     {
-        UInt8 n8 = static_cast<UInt8>(n);
-        finalizeCounters(out, num_rows, n8);
+        PostingsApplyWindow written = cursors[i]->linearAnd(out + (window.begin - row_offset), window.begin, window.end - window.begin);
+
+        if (written.empty())
+        {
+            ++stats.brute_force_early_exits;
+            memset(out + (first.begin - row_offset), 0, first.end - first.begin);
+            return false;
+        }
+
+        chassert(written.begin >= window.begin && written.end <= window.end);
+        window = written;
     }
+
+    if (cursors.size() > 1)
+    {
+        chassert(cursors.size() < 256);
+        finalizeCounters(out + (first.begin - row_offset), first.end - first.begin, static_cast<UInt8>(cursors.size()));
+    }
+
+    return true;
 }
 
 } // anonymous namespace
 
-void lazyUnionPostingLists(
+void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors)
+{
+    std::ranges::stable_sort(cursors,
+        [](const PostingListCursor * a, const PostingListCursor * b)
+        { return a->density() > b->density(); });
+}
+
+void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors)
+{
+    std::ranges::sort(cursors,
+        [](const PostingListCursor * a, const PostingListCursor * b)
+        { return a->cardinality() < b->cardinality(); });
+}
+
+TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(const std::vector<PostingListCursor *> & cursors, TextIndexPostingsIntersectionAlgorithm algorithm)
+{
+    const size_t n = cursors.size();
+    bool use_brute_force = algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce;
+
+    /// `Auto` picks leapfrog only where it can skip whole packed blocks of the densest list.
+    /// A block of that list spans about `BLOCK_SIZE / max_density` rows.
+    /// Over that span, the sparsest list has about `min_density * BLOCK_SIZE / max_density` postings.
+    /// Once that reaches one, leapfrog decodes every block anyway and only adds a search per posting
+    /// on top of the brute-force counting pass.
+    if (algorithm == TextIndexPostingsIntersectionAlgorithm::Auto)
+    {
+        double min_density = std::numeric_limits<double>::max();
+        double max_density = 0.0;
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            min_density = std::min(min_density, cursors[i]->density());
+            max_density = std::max(max_density, cursors[i]->density());
+        }
+
+        use_brute_force = min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) >= max_density;
+    }
+
+    /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
+    if (n < 256 && use_brute_force)
+        return TextIndexPostingsIntersectionAlgorithm::BruteForce;
+
+    return TextIndexPostingsIntersectionAlgorithm::Leapfrog;
+}
+
+bool lazyUnionPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -1095,69 +1234,61 @@ void lazyUnionPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
-    /// Sort by descending density so the densest cursor fills the output buffer first.
-    auto sorted_cursors = cursors;
-    std::ranges::stable_sort(sorted_cursors,
-        [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
-        { return a->density() > b->density(); });
+    bool may_be_true = false;
+    for (auto * cursor : cursors)
+        may_be_true |= !cursor->linearOr(out, row_offset, num_rows).empty();
 
-    for (auto & cursor : sorted_cursors)
-        cursor->linearOr(out, row_offset, num_rows);
+    return may_be_true;
 }
 
-void lazyIntersectPostingLists(
+bool lazyIntersectPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    float density_threshold)
+    TextIndexPostingsIntersectionAlgorithm algorithm,
+    LazyPostingsStats & stats)
 {
+    const size_t n = cursors.size();
+    if (n == 0)
+        return false;
+
     requireRowOffsetRepresentable(row_offset);
 
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
-
-    const size_t n = cursors.size();
     const size_t end = row_offset + num_rows;
-
-    if (n == 0)
-        return;
 
     if (n == 1)
     {
-        cursors.front()->linearOr(out, row_offset, num_rows);
-        return;
+        return !cursors.front()->linearOr(out, row_offset, num_rows).empty();
     }
-
-    /// Algorithm selection uses the MINIMUM density across all cursors.
-    double min_density = std::numeric_limits<double>::max();
-    for (size_t i = 0; i < n; ++i)
-        min_density = std::min(min_density, cursors[i]->density());
-
-    /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && min_density >= static_cast<double>(density_threshold))
+    else if (algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
     {
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
-        intersectBruteForce(out, cursors, row_offset, num_rows);
-        return;
+        /// The counters are `UInt8`, `chooseIntersectionAlgorithm` never picks brute force for 256+ cursors.
+        if (n >= 256)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Brute-force intersection of {} posting lists would overflow its counters", n);
+
+        ++stats.brute_force_intersections;
+        return intersectBruteForce(out, cursors, row_offset, num_rows, stats);
     }
-
-    /// Sort cursors by ascending cardinality so the sparsest cursor leads the leapfrog.
-    auto sorted_cursors = cursors;
-    std::ranges::sort(sorted_cursors,
-        [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
-        { return a->cardinality() < b->cardinality(); });
-
-    for (size_t i = 0; i < n; ++i)
+    else if (algorithm == TextIndexPostingsIntersectionAlgorithm::Leapfrog)
     {
-        sorted_cursors[i]->advance(static_cast<uint32_t>(row_offset));
-        if (!sorted_cursors[i]->valid() || sorted_cursors[i]->value() >= end)
-            return;
-    }
+        for (size_t i = 0; i < n; ++i)
+        {
+            cursors[i]->advance(static_cast<uint32_t>(row_offset));
+            if (!cursors[i]->valid() || cursors[i]->value() >= end)
+                return false;
+        }
 
-    ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections);
-    intersectLeapfrog(out, sorted_cursors, row_offset, end);
+        ++stats.leapfrog_intersections;
+        return intersectLeapfrog(out, cursors, row_offset, end);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unresolved intersection algorithm: {}", algorithm);
+    }
 }
 
 }

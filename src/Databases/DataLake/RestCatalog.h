@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <unordered_set>
@@ -20,18 +21,8 @@ class ReadBuffer;
 namespace DataLake
 {
 
-struct AccessToken
-{
-    std::string token;
-    std::optional<std::chrono::system_clock::time_point> expires_at;
-
-    bool isExpired() const
-    {
-        if (!expires_at.has_value())
-            return false;
-        return std::chrono::system_clock::now() >= expires_at.value();
-    }
-};
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -89,6 +80,9 @@ public:
         Int32 previous_schema_id) const override;
 
     bool isTransactional() const override { return true; }
+
+    /// The Iceberg REST spec makes the server write the metadata file on create.
+    bool writesInitialMetadata() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
@@ -148,7 +142,7 @@ protected:
         bool flat_namespaces_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;

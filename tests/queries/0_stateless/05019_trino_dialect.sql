@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added `UUID`
+
 SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 

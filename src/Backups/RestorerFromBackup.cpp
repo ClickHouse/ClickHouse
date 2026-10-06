@@ -640,6 +640,8 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
+        /// The `ON CLUSTER` path gets the same flag from `QueryFlags::distributed_backup_restore` in `DDLWorker`.
+        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)

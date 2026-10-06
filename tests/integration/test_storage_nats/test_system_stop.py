@@ -1180,25 +1180,19 @@ def test_stop_while_viewless_does_not_drop_after_start(nats_cluster):
     ), f"consumer subscribed {subscribes}x; a stale unsubscribe fired after a STOP-while-viewless"
 
 
-def _server_cpu_jiffies():
-    """utime + stime of the clickhouse server process, in clock ticks."""
-    pid = instance.get_process_pid("clickhouse server")
-    content = instance.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat"])
-    # Skip 'pid (comm)' -- comm may contain spaces -- then fields start at 'state' (field 3).
-    rest = content[content.rindex(")") + 1:].split()
-    return int(rest[11]) + int(rest[12])  # utime (field 14) + stime (field 15)
-
-
-def _cpu_over(seconds):
-    before = _server_cpu_jiffies()
-    time.sleep(seconds)
-    return _server_cpu_jiffies() - before
+def broker_pool_tasks(table):
+    """(log_name, delayed) of each task of the table queued, running or delayed in the message broker pool."""
+    result = instance.query(
+        "SELECT log_name, delayed FROM system.background_schedule_pool "
+        f"WHERE pool = 'message_broker' AND database = 'test' AND table = '{table}' ORDER BY log_name"
+    )
+    return [(name, int(delayed)) for name, delayed in (line.split("\t") for line in result.splitlines())]
 
 
 def test_detach_last_view_does_not_busy_loop(nats_cluster):
-    # After the last view is detached, the viewless streaming task must back off, not tight-loop the
-    # message-broker schedule pool. Compare server CPU with a view (idle 500ms polling) vs viewless;
-    # a busy-loop pegs roughly a full core, while backing off stays near the baseline.
+    # After the last view is detached, the streaming task must stop rescheduling itself: it leaves the
+    # message broker pool, and only the consumer initialization task keeps polling for views, waiting
+    # between runs. A busy-looping streaming task never leaves the pool.
     table = "nats_detach_loop"
     subject = "detach_loop_subject"
     setup_consuming_table(table, subject)
@@ -1206,15 +1200,31 @@ def test_detach_last_view_does_not_busy_loop(nats_cluster):
     nats_publish(nats_cluster, subject, 0, 5)
     wait_dst_count_at_least(table, 5)
 
-    baseline = _cpu_over(4)
+    def task_names(tasks):
+        return [name for name, _ in tasks]
+
+    tasks = broker_pool_tasks(table)
+    assert task_names(tasks).count("NATSStreamingTask") == 1, tasks
 
     instance.query(f"DROP TABLE test.{table}_mv SYNC")
-    time.sleep(2)  # settle into the viewless state
 
-    viewless = _cpu_over(4)
-    assert viewless < baseline + 150, ( # based on test runs, where it's ~15, or ~400-800 for busy
-        f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
-        "CPU jiffies over 4s"
+    # The last streaming run may still be draining the subscription.
+    deadline = time.time() + 60
+    while True:
+        tasks = broker_pool_tasks(table)
+        if "NATSStreamingTask" not in task_names(tasks) and "NATSInitializeConsumersTask" in task_names(tasks):
+            break
+        assert time.time() < deadline, f"viewless streaming task appears to busy-loop: {tasks}"
+        time.sleep(0.5)
+
+    samples = []
+    for _ in range(8):
+        time.sleep(0.5)
+        tasks = broker_pool_tasks(table)
+        assert "NATSStreamingTask" not in task_names(tasks), f"viewless streaming task appears to busy-loop: {tasks}"
+        samples.append(tasks)
+    assert any(("NATSInitializeConsumersTask", 1) in tasks for tasks in samples), (
+        f"viewless consumer initialization task does not wait between runs: {samples}"
     )
 
 
