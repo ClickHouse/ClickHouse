@@ -490,8 +490,7 @@ void StorageBuffer::read(
                 return NameAndTypePair(column_name, header.getByName(column_name).type);
             };
 
-            /// The columns the destination lacks are filled from the inputs of their defaults, the sizes of their
-            /// `Nested` group and the row count, so read those too where the fill below runs on this column list.
+            /// Filling a column the destination lacks reads the inputs of its default, the sizes of its `Nested` group or the row count.
             NameSet fill_inputs;
             NameSet fill_support;
             Names fill_closure;
