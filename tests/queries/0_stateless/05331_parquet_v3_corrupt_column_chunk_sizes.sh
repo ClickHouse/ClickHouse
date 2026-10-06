@@ -4,8 +4,8 @@
 
 # The Parquet reader derives its memory estimates and pre-allocations from ColumnMetaData.num_values,
 # total_uncompressed_size and size_statistics.unencoded_byte_array_data_bytes. A negative value must be
-# rejected with INCORRECT_DATA; an absurdly large one must still read correctly, whatever the memory
-# watermarks are set to.
+# rejected with INCORRECT_DATA. An estimate above the reader's memory budget (the larger memory watermark,
+# at most 2^61 bytes) must be ignored, so such a file still reads correctly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
