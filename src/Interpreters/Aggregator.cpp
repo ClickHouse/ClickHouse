@@ -13,6 +13,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -984,9 +985,27 @@ void Aggregator::restoreDirectTimeDecayKeyMetadata(
 
         const auto * state = reinterpret_cast<const DirectTimeDecayKeyMetadataState *>(
             aggregate_data + descriptor.state_offset);
+
+        IColumn * nested_column = &column;
+        if (auto * nullable = typeid_cast<ColumnNullable *>(nested_column))
+            nested_column = &nullable->getNestedColumn();
+
+        if (auto * decaying = typeid_cast<ColumnExponentialTimeDecaying *>(nested_column))
+        {
+            decaying->setDirectMetadataAt(
+                row,
+                ExponentialTimeDecayingCanonicalDirectValue{
+                    .value_at_anchor = state->value,
+                    .anchor_time = state->timestamp,
+                });
+            continue;
+        }
+
+        /// Wrappers that own their physical representation cannot expose the nested row for
+        /// in-place metadata replacement. Reinsert the same semantic value; the representative
+        /// came from a row with this exact authoritative key.
         tuple[0] = state->value;
         tuple[1] = state->timestamp;
-
         column.popBack(1);
         column.insert(Field(std::move(tuple)));
     }
