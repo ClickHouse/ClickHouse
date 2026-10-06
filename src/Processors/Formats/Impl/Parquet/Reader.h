@@ -202,7 +202,7 @@ struct Reader
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
         /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
-        /// ColumnReplicated of dictionary values, so that functions applied to it run once per value.
+        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
         bool decode_dictionary_as_replicated = false;
 
         bool used_by_key_condition = false;
@@ -385,7 +385,7 @@ struct Reader
         /// zero when the dictionary is decoded later on the throttled data-read path instead.
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
-        /// All values of `dictionary` as a column of `decoded_type`; built by getDictionaryValues.
+        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
         ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
@@ -415,7 +415,7 @@ struct Reader
         /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
         MutableColumnPtr group_null_map;
 
-        /// If set, `column` is a ColumnUInt32 of indexes into these values.
+        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
         ColumnPtr dictionary_values;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at

@@ -1588,8 +1588,7 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
 
-    /// The single input of the last step may be read as dictionary indexes (see
-    /// decode_dictionary_as_replicated) if it is a plain column that only this step reads.
+    /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
     if (steps.empty() || steps.back().input_idxs.size() != 1
         || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
         return;
@@ -3780,8 +3779,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
-        /// Columns read with decode_dictionary_as_replicated, and outputs computed from them, are
-        /// materialized after the last step.
         auto materialize_replicated = [&]
         {
             if (step_idx == steps.size())
