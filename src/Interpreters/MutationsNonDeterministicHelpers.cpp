@@ -266,7 +266,6 @@ private:
     const NameSet & new_column_names;
     const NameSet & dropped_column_names;
     ContextPtr context;
-    /// Lambda parameters and aliases of the enclosing scopes.
     std::vector<Scope> bound_names;
     /// An alias is not visible inside its own expression: the alias and the index of its scope in `bound_names`.
     std::vector<std::pair<String, size_t>> aliases_in_definition;

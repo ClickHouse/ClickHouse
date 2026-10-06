@@ -148,9 +148,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
 
-    /// The rewrite below runs before the column commands of this query. For a mutation, a name is a column if an earlier
-    /// command leaves it added or renamed to, or a later command adds or renames to it, and is not if an earlier command
-    /// leaves it dropped or renamed away.
+    /// The rewrite below runs before the column commands of this query, so track the names they add, rename and drop.
     std::unordered_map<String, size_t> later_new_column_names;
     for (const auto & child : alter.command_list->children)
     {
