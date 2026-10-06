@@ -530,6 +530,14 @@ void StorageBuffer::read(
                     fill_support.insert(std::move(size_source));
                 }
 
+                /// The fill reads these destination columns for their values, so they need the grant a selected column needs.
+                if (!fill_support.empty())
+                {
+                    Names fill_support_names(fill_support.begin(), fill_support.end());
+                    std::ranges::sort(fill_support_names);
+                    local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), fill_support_names);
+                }
+
                 if (columns_intersection.empty())
                     columns_intersection.push_back(
                         ExpressionActions::getSmallestColumn(destination_metadata_snapshot->getColumns().getAllPhysical()).name);
