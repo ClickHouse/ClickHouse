@@ -1,0 +1,19 @@
+<test requires_s3="1" requires_s3_read_dataset="1">
+    <!-- Synthetic-IO twin of iceberg_suite_s3_read.xml: add a fixed delay to each HTTP response on the job-local S3 path. -->
+    <settings>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>tpch_ice10_s3</value></values>
+        </substitution>
+        <substitution>
+            <name>table_function</name>
+            <values><value>icebergS3(perf_s3_data, filename = 'tpch_ice_sf10/lineitem/')</value></values>
+        </substitution>
+    </substitutions>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_response</fill_query>
+    <include file="iceberg_suite_shared_read.xml.inc"/>
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_response</drop_query>
+</test>
