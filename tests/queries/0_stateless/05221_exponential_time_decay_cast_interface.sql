@@ -346,6 +346,23 @@ FROM
     )
 );
 
+-- The same representative rule applies to the 128-bit key. Signed zero timestamps
+-- produce the same exact curve/key while leaving distinguishable direct source metadata.
+SELECT
+    count(),
+    countIf(tupleElement(value, 'value') = 2)
+FROM
+(
+    SELECT value
+    FROM
+    (
+        SELECT CAST((toFloat64(2), toFloat64(0)), 'ExponentialTimeDecaying128(1, direct)') AS value
+        UNION ALL
+        SELECT CAST((toFloat64(2), -toFloat64(0)), 'ExponentialTimeDecaying128(1, direct)') AS value
+    )
+    GROUP BY value
+);
+
 -- Explicit width/mode conversion is a semantic operation on the key-defined
 -- curve, not on Direct metadata. Equal source keys must convert identically.
 WITH
