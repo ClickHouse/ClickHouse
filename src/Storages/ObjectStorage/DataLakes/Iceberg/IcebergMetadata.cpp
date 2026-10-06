@@ -75,6 +75,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -89,6 +90,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -134,6 +136,7 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
@@ -185,7 +188,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     LoggerPtr log)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, /* force_fetch_latest_metadata */ false);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
@@ -538,12 +541,18 @@ bool IcebergMetadata::optimize(
 
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
-            "atomically (no version increment, no version hint and no catalog commit), so which generation a reader "
-            "resolves is undefined, while the previous generation's files are deleted even though retained snapshots "
-            "still reference them");
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        auto snapshots_info = getHistory(context);
+        compactIcebergTable(
+            snapshots_info,
+            persistent_components,
+            object_storage,
+            getMetadataLookupSettings(),
+            format_settings,
+            sample_block,
+            context,
+            write_format);
+        return true;
     }
     else
     {
@@ -936,14 +945,15 @@ void IcebergMetadata::createInitial(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
 
-    const bool catalog_manages_location = catalog && catalog->managesTableLocation();
+    /// Either way the catalog writes the first metadata file, so the existence check and the prewrite move to it.
+    const bool catalog_writes_metadata = catalog && (catalog->managesTableLocation() || catalog->writesInitialMetadata());
 
     String namespace_name;
     String table_name;
     if (catalog)
         std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
 
-    if (catalog_manages_location)
+    if (catalog_writes_metadata)
     {
         DataLake::TableMetadata existing_table;
         if (catalog->tryGetTableMetadata(namespace_name, table_name, existing_table))
@@ -984,6 +994,15 @@ void IcebergMetadata::createInitial(
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
+    if (compression_method != CompressionMethod::None)
+    {
+        /// A catalog that writes the first metadata file itself reads the codec from this property.
+        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+        properties->set("write.metadata.compression-codec", toContentEncodingName(compression_method));
+        metadata_content_object->set("properties", properties);
+        metadata_content = stringifyJSON(metadata_content_object, 4);
+    }
+
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
     if (catalog)
@@ -992,10 +1011,10 @@ void IcebergMetadata::createInitial(
         /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
         /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
         /// a namespace over the plain directory those files would leave behind.
-        catalog->createNamespaceIfNotExists(namespace_name, location_path);
+        catalog->createNamespaceIfNotExists(namespace_name);
     }
 
-    if (!catalog_manages_location)
+    if (!catalog_writes_metadata)
     {
         try
         {
@@ -1222,7 +1241,7 @@ IcebergFileRecord buildIcebergFileRecord(
     record.file_format = parsed.file_format;
     record.record_count = parsed.record_count;
     record.file_size_in_bytes = parsed.file_size_in_bytes;
-    record.partition = formatPartitionKeyValue(parsed.partition_key_value);
+    record.partition = formatPartitionKeyValue(processed->normalized_partition_key_value);
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
@@ -1349,33 +1368,41 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return total_rows;
     }
 
+    const Int32 schema_id = actual_table_state_snapshot.schema_id;
+
     UInt64 result = 0;
-    for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
-    {
-        auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+    bool exact = true;
+    Iceberg::decodeManifestsInOrder(
+        actual_data_snapshot->manifest_list_entries,
+        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
+        getIcebergManifestDecodeThreadPool().get(),
+        DB::ThreadName::ICEBERG_ITERATOR,
+        [this, &local_context, schema_id](const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
+        {
+            auto manifest_file_ptr = getManifestFileEntriesHandle(
+                object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id);
 
-        /// Live delete files make an exact metadata-only count impossible:
-        /// - the record count of an equality delete file is the number of delete predicates,
-        ///   not the number of data rows they match;
-        /// - position delete records may be duplicated across delete files (the scan
-        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
-        ///   are no longer part of the snapshot, so subtracting their raw record count can
-        ///   miscount in both directions.
-        /// Bail out to a real scan, which applies the delete transformers and counts the
-        /// surviving rows exactly.
-        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
-            return {};
+            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+                return std::nullopt;
 
-        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
-        /// closed to a real scan instead of returning a wrong count.
-        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        if (!manifest_rows.has_value())
-            return {};
-        result += *manifest_rows;
-    }
+            return manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        },
+        [&result, &exact](std::optional<UInt64> manifest_rows)
+        {
+            if (!manifest_rows.has_value())
+            {
+                exact = false;
+                return false;
+            }
+            result += *manifest_rows;
+            return true;
+        });
 
+    if (!exact)
+        return {};
+
+    ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
 }
 

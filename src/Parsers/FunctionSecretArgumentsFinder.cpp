@@ -338,7 +338,7 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     }
     else if (name == "mongodb")
     {
-        find_secrets = [this] { findMongoDBSecretArguments(); };
+        find_secrets = [this] { findMongoDBSecretArguments(); findMongoDBConnectionStringSecretArguments(); };
     }
     else if ((name == "s3") || (name == "cosn") || (name == "oss") || (name == "deltaLake") || (name == "deltaLakeS3")
              || (name == "hudi") || (name == "iceberg") || (name == "gcs") || (name == "icebergS3") || (name == "paimon")
@@ -497,13 +497,13 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     /// MongoDB(named_collection, ..., password = 'password', ...)
     findPositionalAndNamedSecretArguments({.positional_secret_slot = 4, .secret_keys = password_key});
 
-    /// Hides the password of a uri, or the whole value when it is not a plain string literal.
+    /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
     auto mask_uri = [this](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
     {
         String uri;
         if (!value.tryGetString(&uri, /* allow_identifier= */ false))
             markSecretArgument(index, argument_is_named);
-        else if (maskURIPassword(&uri))
+        else if (maskMongoDBConnectionString(uri))
             result.replaced_arguments[index] = String(prefix) + quoteString(uri);
     };
 
@@ -517,7 +517,7 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
         {
             String name;
             /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
-            if (first->tryGetString(&name, /* allow_identifier= */ true) && maskURIPassword(&name))
+            if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
                 result.replaced_arguments[0] = backQuoteIfNeed(name);
         }
         else if (!first_function || first_function->name() != "equals")
@@ -532,6 +532,107 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     {
         const auto index = static_cast<size_t>(i);
         mask_uri(index, *function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+    }
+}
+
+void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
+{
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = "'[HIDDEN]'";
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = "'[HIDDEN]'";
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = "'[HIDDEN]'";
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
     }
 }
 
@@ -977,7 +1078,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
     else if (engine_name == "MongoDB")
     {
-        find_secrets = [this] { findMongoDBSecretArguments(); };
+        find_secrets = [this] { findMongoDBSecretArguments(); findMongoDBConnectionStringSecretArguments(); };
     }
     else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")

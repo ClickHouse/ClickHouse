@@ -424,7 +424,7 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
@@ -442,6 +442,16 @@ bool ICatalog::updateSchema(
     Int32 /*previous_schema_id*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
+}
+
+Poco::JSON::Object::Ptr ICatalog::removeSnapshots(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    Poco::JSON::Object::Ptr /*base_metadata*/,
+    const std::vector<Int64> & /*snapshot_ids*/,
+    const std::vector<String> & /*ref_names*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshots is not implemented");
 }
 
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const

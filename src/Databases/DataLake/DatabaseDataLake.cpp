@@ -931,6 +931,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         if (cached_storage)
         {
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;
@@ -995,7 +996,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
     /// When we applied static credentials from database settings, they are authoritative:
-    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
+    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestCredentials`)
     /// silently re-fetch credentials and override them. The same holds when the user disabled
     /// `vended_credentials` and no static credentials were applied (e.g. relying on default or
     /// environment S3 auth): the object storage layer invokes the refresh callback after an
@@ -1086,6 +1087,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         {
             /// Lost a race to another query; keep the already-cached storage and drop ours.
             result_storage->shutdown(/*is_drop*/ false);
+            /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);
             return cached_storage;

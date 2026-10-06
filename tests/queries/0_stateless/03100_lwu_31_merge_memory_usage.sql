@@ -3,6 +3,7 @@
 -- no-replicated-database because test may fail due to adding additional shard
 
 SET enable_lightweight_update = 1;
+SET use_columns_cache = 0;
 
 DROP TABLE IF EXISTS t_lwu_memory SYNC;
 
