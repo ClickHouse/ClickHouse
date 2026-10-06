@@ -1,0 +1,6 @@
+<test>
+    <!-- After the prewarm run, `count()` takes the row count of the 100M-row file from the schema cache. -->
+    <fill_query>INSERT INTO FUNCTION file('test_count_from_files_cache.parquet', Parquet, 'x UInt8') SELECT number % 7 FROM numbers(100000000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT count() FROM file('test_count_from_files_cache.parquet') FORMAT Null</query>
+</test>
