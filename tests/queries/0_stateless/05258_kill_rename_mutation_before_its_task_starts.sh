@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # no-parallel: the failpoint is server-wide and pauses the first mutation task of any table.
 # no-shared-merge-tree: the failpoint is in the mutation tasks of MergeTree and ReplicatedMergeTree tables.
 # no-replicated-database: another replica of the database can mutate the replicated part before the kill.
