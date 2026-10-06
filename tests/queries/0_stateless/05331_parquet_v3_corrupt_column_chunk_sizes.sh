@@ -90,15 +90,20 @@ rewrite("str_size_neg", "str", [(M(0, 6), -1)], drop=[M(0, 16)], old=positive)
 rewrite("nul_neg", "nul", [(M(0, 5), -5), (M(0, 12, 3), -5)], old=lambda p, cur: cur == (100 if p[-1] == 5 else 10))
 rewrite("i64_huge", "i64", [(M(0, 5), 2 ** 62)], old=rows(100))
 rewrite("str_bytes_huge", "str", [(M(0, 16, 1), 2 ** 63 - 1)], old=positive)
+rewrite("str_size_huge", "str", [(M(0, 6), 2 ** 63 - 1)], drop=[M(0, 16)], old=positive)
 rewrite("arr_huge", "arr", [(M(0, 5), 2 ** 60)], old=rows(200))
 rewrite("arr_4g", "arr", [(M(0, 5), 2 ** 32)], old=rows(200))
 rewrite("arr_2e59", "arr", [(M(0, 5), 2 ** 59)], old=rows(200))
 rewrite("strdict_huge", "strdict", [(M(0, 5), 2 ** 62)], drop=[M(0, 16)], old=rows(100))
 rewrite("wide_huge", "wide", [(M(c, 5), 2 ** 62) for c in range(5)], old=rows(100))
+rewrite("wide_neg", "wide", [(M(1, 5), -1)], old=rows(100))
 PYEOF
 
 read_file() { $CLICKHOUSE_LOCAL "${@:3}" -q "SELECT count(), sum(cityHash64(*)) FROM file('$WORK_DIR/$1.parquet', Parquet) $2" 2>&1; }
-negative() { echo "$1: $(read_file "$1" "$2" | grep -o -m1 'has a negative value count or size')"; }
+negative() {
+    out=$(read_file "$1" "$2")
+    echo "$1: $(grep -o -m1 'has a negative value count or size' <<< "$out") $(grep -o -m1 'INCORRECT_DATA' <<< "$out")"
+}
 declare -A expected
 for f in i64 arr str strdict wide; do expected[$f]=$(read_file $f ""); done
 same() {
@@ -111,11 +116,17 @@ $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$WORK_DIR/i64_neg.parquet', Parq
 for f in i64_neg arr_neg str_bytes_neg str_size_neg; do negative $f ""; done
 negative nul_neg "WHERE x = 5"
 
+# Only the columns a query reads are validated.
+cols() { $CLICKHOUSE_LOCAL -q "SELECT count(), sum(cityHash64(a, c)) FROM file('$WORK_DIR/$1.parquet', Parquet)" 2>&1; }
+if [ "$(cols wide_neg)" = "$(cols wide)" ]; then echo "wide_neg a, c: same as wide"; else echo "wide_neg a, c: $(cols wide_neg) (expected $(cols wide))"; fi
+negative wide_neg ""
+
 # The low watermark, unlike the high one, is not capped by the server memory limit.
 low=--input_format_parquet_memory_low_watermark
 for setting in "" "$low=9223372036854775808"; do
     same i64_huge i64 $setting
     same str_bytes_huge str $setting
+    same str_size_huge str $setting
     same arr_huge arr $setting
     same strdict_huge strdict $setting
 done

@@ -1,16 +1,20 @@
 100	2460400835682523501
 100
-i64_neg: has a negative value count or size
-arr_neg: has a negative value count or size
-str_bytes_neg: has a negative value count or size
-str_size_neg: has a negative value count or size
-nul_neg: has a negative value count or size
+i64_neg: has a negative value count or size INCORRECT_DATA
+arr_neg: has a negative value count or size INCORRECT_DATA
+str_bytes_neg: has a negative value count or size INCORRECT_DATA
+str_size_neg: has a negative value count or size INCORRECT_DATA
+nul_neg: has a negative value count or size INCORRECT_DATA
+wide_neg a, c: same as wide
+wide_neg: has a negative value count or size INCORRECT_DATA
 i64_huge: same as i64
 str_bytes_huge: same as str
+str_size_huge: same as str
 arr_huge: same as arr
 strdict_huge: same as strdict
 i64_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as i64
 str_bytes_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as str
+str_size_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as str
 arr_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as arr
 strdict_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as strdict
 wide_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as wide
