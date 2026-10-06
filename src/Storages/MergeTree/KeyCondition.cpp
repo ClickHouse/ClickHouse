@@ -6352,8 +6352,16 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            for (const auto & mapping : element.set_index->getIndexesMapping())
+            const auto & indexes_mapping = element.set_index->getIndexesMapping();
+            const auto & ordered_set = element.set_index->getOrderedSet();
+            for (size_t i = 0; i < indexes_mapping.size(); ++i)
             {
+                /// The NULL granules a NULL element matches may still be reported as not wholly matching (`mayReadNullKeyValue`).
+                if (ordered_set[i]->isNullAt(0))
+                    return false;
+
+                const auto & mapping = indexes_mapping[i];
+
                 auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
                 if (!is_chain_always_monotonic)
                     return false;

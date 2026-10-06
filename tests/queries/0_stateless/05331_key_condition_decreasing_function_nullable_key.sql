@@ -1,7 +1,7 @@
 -- Index analysis of a decreasing function of a `Nullable` sorting key, e.g. `intDiv(a, -3)`. NULL is analysed
 -- as `+inf` and the function maps it to NULL, so a granule of only NULLs must not match `intDiv(a, -3) = -2`,
 -- a granule `[8, NULL]` must keep its NULLs for a NULL-matching `IN`, and the debug-build check of an exact
--- continuous range of marks must not fire.
+-- continuous range of marks must not fire, neither here nor for any NULL-matching set.
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
@@ -62,6 +62,22 @@ INSERT INTO t_desc SELECT if(number >= 9, NULL, number) FROM numbers(14);
 SELECT (SELECT count() FROM t_desc WHERE intDiv(a, -3) = -2) = (SELECT countIf(intDiv(a, -3) = -2) FROM t_desc);
 SELECT (SELECT count() FROM t_desc WHERE intDiv(a, -3) IN (-2)) = (SELECT countIf(intDiv(a, -3) IN (-2)) FROM t_desc);
 SELECT (SELECT count() FROM t_desc WHERE intDiv(a, -3) = 0) = (SELECT countIf(intDiv(a, -3) = 0) FROM t_desc);
+
+SELECT 'NULL-matching set over an increasing function or the bare key';
+SELECT (SELECT count() FROM t_null WHERE a IN (NULL)) = (SELECT countIf(a IN (NULL)) FROM t_null)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT (SELECT count() FROM t_mixed WHERE a IN (NULL)) = (SELECT countIf(a IN (NULL)) FROM t_mixed)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT (SELECT count() FROM t_null WHERE intDiv(a, 3) IN (NULL)) = (SELECT countIf(intDiv(a, 3) IN (NULL)) FROM t_null)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT (SELECT count() FROM t_null WHERE intDiv(a, 3) IN (NULL)) = (SELECT countIf(intDiv(a, 3) IN (NULL)) FROM t_null)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT (SELECT count() FROM t_mixed WHERE intDiv(a, 3) IN (NULL)) = (SELECT countIf(intDiv(a, 3) IN (NULL)) FROM t_mixed)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 0;
+SELECT (SELECT count() FROM t_mixed WHERE intDiv(a, 3) IN (NULL)) = (SELECT countIf(intDiv(a, 3) IN (NULL)) FROM t_mixed)
+SETTINGS transform_null_in = 1, use_lightweight_primary_key_index_analysis = 1;
+SELECT (SELECT count() FROM t_desc WHERE intDiv(a, 3) IN (NULL)) = (SELECT countIf(intDiv(a, 3) IN (NULL)) FROM t_desc)
+SETTINGS transform_null_in = 1;
 
 SELECT 'minmax skip index and column statistics';
 CREATE TABLE t_skip (k UInt64, a Nullable(Int64), INDEX i a TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 2;
