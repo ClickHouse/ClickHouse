@@ -4,7 +4,8 @@
 -- A cached row count is returned as one chunk only when nothing reads the columns of the read.
 -- Each memory limit fails if the read of that query gets all 10M rows (80 MB of UInt64) in one chunk.
 
-SET optimize_count_from_files = 1, use_cache_for_count_from_files = 1, optimize_trivial_count_query = 1;
+-- `url()` and `s3()` are read locally: with parallel replicas their cluster form counts on the replicas, out of sight of the `query_log` check.
+SET optimize_count_from_files = 1, use_cache_for_count_from_files = 1, optimize_trivial_count_query = 1, parallel_replicas_for_cluster_engines = 0;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_x.parquet', Parquet, 'x UInt64') SELECT 0 FROM numbers(10000000) SETTINGS engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '_x.parquet', format = Parquet, structure = 'x UInt64') SELECT 0 FROM numbers(10000000) SETTINGS s3_truncate_on_insert = 1;
