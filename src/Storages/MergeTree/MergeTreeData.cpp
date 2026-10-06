@@ -13237,18 +13237,27 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     const bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+    const auto & columns = metadata_snapshot->getColumns();
+
+    auto get_name_in_storage = [&](const String & name) -> String
+    {
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return column ? column->getNameInStorage() : name;
+    };
 
     /// Expand a `Nested` group name to the physical columns it covers, so that a command naming the
     /// group and a command naming one member are recognised as touching the same storage columns.
     auto expand = [&](const String & name)
     {
-        const Names expanded = getColumnNamesAffectedByDrop(metadata_snapshot->columns, name, share_nested_offsets);
+        const Names expanded = getColumnNamesAffectedByDrop(columns, name, share_nested_offsets);
         return NameSet(expanded.begin(), expanded.end());
     };
 
     NameSet affected_column_names{command.column_name};
     if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
         affected_column_names = expand(command.column_name);
+
+    auto references_affected_column = [&](const String & name) { return affected_column_names.contains(get_name_in_storage(name)); };
 
     auto throw_exception = [] (
         const std::string & mutation_name,
@@ -13296,7 +13305,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                             mutation_column_names, [&](const auto & name) { return affected_column_names.contains(name); }))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
-                else if (affected_column_names.contains(mutation_command.column_name))
+                else if (references_affected_column(mutation_command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();
@@ -13312,8 +13321,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
-                    if (std::ranges::any_of(
-                            affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
+                    if (std::ranges::any_of(identifiers, references_affected_column))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
@@ -13322,7 +13330,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     for (const auto & child : alter->update_assignments->children)
                     {
                         const auto & assignment = child->as<ASTAssignment &>();
-                        if (affected_column_names.contains(assignment.column_name))
+                        if (references_affected_column(assignment.column_name))
                             throw_exception(mutation_name, action, "column", command.column_name);
 
                         ASTPtr assignment_expression = assignment.expression();
@@ -13330,8 +13338,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
 
                         auto query_tree = buildQueryTree(assignment_expression, local_context);
                         auto identifiers = collectIdentifiersFullNames(query_tree);
-                        if (std::ranges::any_of(
-                                affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
+                        if (std::ranges::any_of(identifiers, references_affected_column))
                             throw_exception(mutation_name, action, "column", command.column_name);
                     }
                 }

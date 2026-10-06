@@ -303,3 +303,54 @@ FORMAT Null;
 
 SYSTEM START MERGES nested_rename_unflattened_mutation;
 DROP TABLE nested_rename_unflattened_mutation;
+
+SET enable_json_type = 1;
+
+DROP VIEW IF EXISTS nested_drop_dynamic_json_mv;
+DROP TABLE IF EXISTS nested_drop_dynamic_json_source;
+
+CREATE TABLE nested_drop_dynamic_json_source
+(
+    json JSON,
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+CREATE MATERIALIZED VIEW nested_drop_dynamic_json_mv
+ENGINE = Null
+AS SELECT dynamicElement(json.a, 'Int64') AS a FROM nested_drop_dynamic_json_source;
+
+INSERT INTO nested_drop_dynamic_json_source VALUES ('{"a": 42}', 1);
+
+ALTER TABLE nested_drop_dynamic_json_source DROP COLUMN json; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_dynamic_json_mv;
+DROP TABLE nested_drop_dynamic_json_source;
+
+DROP TABLE IF EXISTS nested_drop_dynamic_json_mutation;
+
+CREATE TABLE nested_drop_dynamic_json_mutation
+(
+    json JSON,
+    x UInt64,
+    c Int64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+INSERT INTO nested_drop_dynamic_json_mutation VALUES ('{"a": 42}', 1, 0);
+SYSTEM STOP MERGES nested_drop_dynamic_json_mutation;
+ALTER TABLE nested_drop_dynamic_json_mutation
+    UPDATE c = dynamicElement(json.a, 'Int64') WHERE 1
+    SETTINGS mutations_sync = 0;
+
+ALTER TABLE nested_drop_dynamic_json_mutation DROP COLUMN json SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+
+KILL MUTATION
+WHERE database = currentDatabase() AND table = 'nested_drop_dynamic_json_mutation'
+SYNC
+FORMAT Null;
+
+SYSTEM START MERGES nested_drop_dynamic_json_mutation;
+DROP TABLE nested_drop_dynamic_json_mutation;

@@ -2633,30 +2633,14 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
 
 Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
 {
-    /// With `flatten_nested = 0` (or any column with subcolumns), the column is one real column in storage,
-    /// but a materialized view or mutation query may reference its subcolumns (e.g. `n.a`, `n.b`). Dropping the
-    /// storage column removes its unshadowed subcolumns too, regardless of `share_nested_offsets`.
-    if (columns.has(column_name))
-    {
-        Names names{column_name};
-        for (const auto & subcolumn : columns.getSubcolumns(column_name))
-            if (!columns.has(subcolumn.name))
-                names.push_back(subcolumn.name);
-        return names;
-    }
+    if (const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+        return {column->getNameInStorage()};
 
-    /// With `flatten_nested = 1`, the group is stored as the flattened columns `<name>.*` and there is
-    /// no column named `<name>`, so the name denotes the whole group. Include both the nested columns
-    /// and any deeper subcolumns (e.g. `n.a.b`) they may have.
     if (share_nested_offsets && columns.hasNested(column_name))
     {
         Names nested_column_names;
         for (const auto & nested_column : columns.getNested(column_name))
-        {
             nested_column_names.push_back(nested_column.name);
-            for (const auto & subcolumn : columns.getSubcolumns(nested_column.name))
-                nested_column_names.push_back(subcolumn.name);
-        }
         return nested_column_names;
     }
 
