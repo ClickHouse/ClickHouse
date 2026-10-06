@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
@@ -253,3 +255,53 @@ def test_split_topology_rolling_upgrade(start_cluster):
 
     for node in split_topology_nodes:
         node.query("drop table ts sync")
+
+
+def test_pre_v9_followers_do_not_read(start_cluster):
+    # Followers older than parallel-replicas protocol 9 do not announce their patch parts and on-the-fly
+    # mutations, so a new initiator must not let them read parts of its snapshot.
+    zk_path = f"/test_backward_compatability/test_parallel_replicas_protocol/split_topology/shard0/tsr_{uuid.uuid4().hex}"
+    for num, node in enumerate(split_topology_nodes):
+        node.query("drop table if exists tsr sync")
+        node.query(
+            f"""
+            create table tsr(a UInt64)
+            engine = ReplicatedMergeTree('{zk_path}', '{num}')
+            order by a
+            settings index_granularity = 64
+        """
+        )
+    split_topology_nodes[0].query("insert into tsr select number from numbers(262144)")
+    for node in split_topology_nodes:
+        node.query("system sync replica tsr")
+
+    query_id = "pre_v9_followers_" + uuid.uuid4().hex
+    assert (
+        split_topology_nodes[2].query(
+            "select count(), sum(a) from tsr where not ignore(sleepEachRow(0.00002))",
+            settings={
+                "cluster_for_parallel_replicas": "parallel_replicas",
+                "max_parallel_replicas": 3,
+                "allow_experimental_parallel_reading_from_replicas": 1,
+                "parallel_replicas_mark_segment_size": 128,
+                "merge_tree_min_read_task_size": 1,
+                "merge_tree_min_rows_for_concurrent_read": 0,
+                "merge_tree_min_bytes_for_concurrent_read": 0,
+                "max_threads": 1,
+            },
+            query_id=query_id,
+        )
+        == "262144\t34359607296\n"
+    )
+
+    for node in split_topology_nodes[:2]:
+        node.query("system flush logs")
+        assert (
+            node.query(
+                f"select max(read_rows) from system.query_log where initial_query_id = '{query_id}'"
+            )
+            == "0\n"
+        )
+
+    for node in split_topology_nodes:
+        node.query("drop table tsr sync")
