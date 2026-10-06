@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
--- The last PREWHERE step over a single dictionary-encoded column of a Parquet file is evaluated once per
--- dictionary value. Results must match a direct computation, and the step must not see a value of a row
--- that an earlier step rejected.
+-- In the last PREWHERE step over a single dictionary-encoded column of a Parquet file, the functions applied
+-- to that column run once per dictionary value. Results must match a direct computation, and the step must
+-- not see a value of a row that an earlier step rejected.
 
 SET engine_file_truncate_on_insert = 1;
 SET input_format_parquet_max_block_size = 1000, input_format_parquet_prefer_block_bytes = 0,

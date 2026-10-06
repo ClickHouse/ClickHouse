@@ -202,7 +202,7 @@ struct Reader
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
         /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
-        /// ColumnReplicated of dictionary values, so the step runs once per value.
+        /// ColumnReplicated of dictionary values, so that functions applied to it run once per value.
         bool decode_dictionary_as_replicated = false;
 
         bool used_by_key_condition = false;
