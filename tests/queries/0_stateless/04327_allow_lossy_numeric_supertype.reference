@@ -1,18 +1,32 @@
 Variant(Decimal(18, 2), Float64)
+Variant(Decimal(18, 2), Float64)
 Variant(Float64, Int64)
 Variant(Decimal(18, 2), Float64)
+Variant(Decimal(18, 2), Float64)
+Array(Variant(Decimal(18, 2), Float64))
 Array(Variant(Decimal(18, 2), Float64))
 Variant(Decimal(18, 2), Float64)
 Variant(Decimal(18, 2), Float64)
+Variant(Decimal(18, 2), Float64)
+Variant(Decimal(18, 2), Float64)
 Map(String, Variant(Decimal(18, 2), Float64))
+Map(String, Variant(Decimal(18, 2), Float64))
+Map(Variant(Decimal(18, 2), Float64), UInt8)
 Map(Variant(Decimal(18, 2), Float64), UInt8)
 Float64
 Float64
+Float64
+Array(Float64)
 Array(Float64)
 Float64
 Float64
+Float64
+Float64
+Map(String, Float64)
 Map(String, Float64)
 Nullable(Float64)
+Nullable(Float64)
+Map(Float64, String)
 Map(Float64, String)
 Array(LowCardinality(Float64))
 Array(Float64)
@@ -23,10 +37,16 @@ Map(String, Nullable(Float64))
 Float64
 1
 1
+1
+0.5	3
 0.5	3
 6
+6
+4
 4
 8
+8
+0.5
 0.5
 Variant(Int64, UInt64)
 Int32
@@ -36,9 +56,16 @@ Array(Variant(Array(UInt8), Int64))
 Float64
 Float64
 Float64
+Float64
+Float64
+Array(Float64)
 Array(Float64)
 Float64
 Float64
+Float64
+Float64
 Map(String, Float64)
+Map(String, Float64)
+1
 1
 1

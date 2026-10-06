@@ -91,6 +91,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_function_early_short_circuit;
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool transform_null_in;
@@ -1434,7 +1435,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
 
     bool left_is_null = isNullConstant(in_first_argument);
 
-    if (!left_is_null)
+    if (!left_is_null && scope.context->getSettingsRef()[Setting::enable_context_typed_number_literals])
         resolveNumberLiteralElementsForIn(array_elements, in_first_argument->getResultType());
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
@@ -2718,7 +2719,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool expand_single_tuple_value = false;
             bool wrapped_column_rhs = false;
 
-            if (!left_argument_is_lambda)
+            if (!left_argument_is_lambda && scope.context->getSettingsRef()[Setting::enable_context_typed_number_literals])
                 resolveNumberLiteralsInConstantInSet(in_second_argument, in_first_argument->getResultType());
 
             /// If the second argument of IN is a bare column reference (e.g. from `IN (col)` where the
@@ -3087,6 +3088,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve NumberLiteral constants: replace each with a properly typed value based on context.
+    if (scope.context->getSettingsRef()[Setting::enable_context_typed_number_literals])
     {
         bool is_comparison = functionIsComparisonOperator(function_name) || functionIsInOrGlobalInOperator(function_name);
 

@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -20,6 +21,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool enable_context_typed_number_literals;
 }
 
 namespace ErrorCodes
@@ -54,6 +56,7 @@ public:
         max_parser_backtracks = settings[Setting::max_parser_backtracks];
         print_pretty_type_names = settings[Setting::print_pretty_type_names];
         implicit_select = settings[Setting::implicit_select];
+        context_typed_number_literals = settings[Setting::enable_context_typed_number_literals];
     }
 
     String getName() const override { return name; }
@@ -153,6 +156,9 @@ private:
                 throw;
             }
 
+            if (!context_typed_number_literals)
+                resolveNumberLiteralsAsFloat64(*ast);
+
             IAST::FormatSettings settings(output_formatting == OutputFormatting::SingleLine);
             settings.show_secrets = true;
             settings.print_pretty_type_names = print_pretty_type_names;
@@ -182,6 +188,7 @@ private:
     size_t max_parser_backtracks;
     bool print_pretty_type_names;
     bool implicit_select;
+    bool context_typed_number_literals;
 };
 
 }

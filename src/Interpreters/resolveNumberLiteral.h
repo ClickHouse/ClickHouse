@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -28,5 +29,11 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralSetElement(
 
 /// Whether the field is a number literal, or a container holding one.
 bool fieldHasNumberLiteral(const Field & field);
+
+/// Resolve every number literal in the field to `Float64`, as before `enable_context_typed_number_literals`.
+Field resolveNumberLiteralsAsFloat64(const Field & field);
+
+/// Same, for every literal in the AST.
+void resolveNumberLiteralsAsFloat64(IAST & ast);
 
 }

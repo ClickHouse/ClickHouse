@@ -17,6 +17,8 @@ select CAST(1.0, 'Decimal(15,2)') != CAST(-1, 'Float32');
 
 SELECT toDecimal32('11.00', 2) > 1.;
 
+SELECT 0.1000000000000000055511151231257827021181583404541015625::Decimal256(70) = 0.1 SETTINGS enable_context_typed_number_literals = 0;
+-- With context typed literals `0.1` is compared exactly as a `Decimal`, not as the nearest `Float64`.
 SELECT 0.1000000000000000055511151231257827021181583404541015625::Decimal256(70) = 0.1;
 
 DROP TABLE IF EXISTS t;

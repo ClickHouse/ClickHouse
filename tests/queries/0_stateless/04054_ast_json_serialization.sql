@@ -164,6 +164,11 @@ FROM (SELECT parseQueryToJSON('SELECT NULL') AS j);
 -- Float64 literal
 SELECT 'Literal_float' AS t,
     JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'value', 'field_type') AS ft
+FROM (SELECT parseQueryToJSON('SELECT 3.14') AS j)
+SETTINGS enable_context_typed_number_literals = 0;
+-- With context typed literals `3.14` is a `Number` literal that keeps its text until its type is known.
+SELECT 'Literal_float' AS t,
+    JSONExtractString(j, 'list_of_selects', 'children', 1, 'select', 'children', 1, 'value', 'field_type') AS ft
 FROM (SELECT parseQueryToJSON('SELECT 3.14') AS j);
 
 -- Int64 literal (negative)

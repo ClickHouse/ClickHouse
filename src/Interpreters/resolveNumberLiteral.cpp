@@ -13,6 +13,8 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
+#include <Parsers/ASTLiteral.h>
+
 #include <algorithm>
 
 
@@ -237,6 +239,36 @@ bool fieldHasNumberLiteral(const Field & field)
         case Field::Types::Map: return any_of(field.safeGet<Map>());
         default: return false;
     }
+}
+
+Field resolveNumberLiteralsAsFloat64(const Field & field)
+{
+    auto resolve = [](const auto & container)
+    {
+        std::decay_t<decltype(container)> result;
+        result.reserve(container.size());
+        for (const auto & element : container)
+            result.push_back(resolveNumberLiteralsAsFloat64(element));
+        return result;
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::Number: return field.safeGet<NumberLiteral>().toFloat64();
+        case Field::Types::Array: return resolve(field.safeGet<Array>());
+        case Field::Types::Tuple: return resolve(field.safeGet<Tuple>());
+        case Field::Types::Map: return resolve(field.safeGet<Map>());
+        default: return field;
+    }
+}
+
+void resolveNumberLiteralsAsFloat64(IAST & ast)
+{
+    if (auto * literal = ast.as<ASTLiteral>(); literal && fieldHasNumberLiteral(literal->value))
+        literal->value = resolveNumberLiteralsAsFloat64(literal->value);
+
+    for (const auto & child : ast.children)
+        resolveNumberLiteralsAsFloat64(*child);
 }
 
 namespace

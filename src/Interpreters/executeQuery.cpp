@@ -92,6 +92,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -252,6 +253,7 @@ namespace Setting
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
     extern const SettingsBool apply_mutations_on_fly;
@@ -2746,6 +2748,13 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// Only for queries that are not stored: a stored definition keeps its literals, so they are typed by the
+            /// session that reads it, both before and after a restart.
+            if (!settings[Setting::enable_context_typed_number_literals]
+                && (out_ast->as<ASTSelectWithUnionQuery>() || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTExplainQuery>()
+                    || out_ast->as<ASTInsertQuery>()))
+                resolveNumberLiteralsAsFloat64(*out_ast);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

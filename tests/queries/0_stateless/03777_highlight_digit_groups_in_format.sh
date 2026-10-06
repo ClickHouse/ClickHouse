@@ -14,4 +14,6 @@ ${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1234567, -1234567, -1234567.000001
 ${CLICKHOUSE_FORMAT} --hilite --query "SELECT 12345678, -12345678, -12345678.000001";
 ${CLICKHOUSE_FORMAT} --hilite --query "SELECT 123456789, -123456789, -123456789.000001";
 ${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1234567890, -1234567890, -1234567890.000001";
+${CLICKHOUSE_FORMAT} --hilite --enable_context_typed_number_literals=0 --query "SELECT 1_234_567_890, 0x123456, 123456e78";
+# With context typed literals `123456e78` keeps its spelling instead of being written back as a `Float64`.
 ${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1_234_567_890, 0x123456, 123456e78";
