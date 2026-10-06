@@ -4,8 +4,8 @@
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
+#include <array>
 #include <atomic>
 #include <optional>
 
@@ -24,8 +24,9 @@ class Worker
     std::optional<Task> takeFromLocal();
     std::optional<Task> takeFromGlobal();
     std::optional<Task> takeFromOthers();
-    void pushToLocal(Task task);
+    void pushToLocal(const Task & task);
     void wakeOrSpawn(size_t threads_needed);
+    size_t moveAllToGlobal();
     size_t runTask(Task task);
 
 public:
@@ -46,9 +47,8 @@ private:
     const size_t worker_id;
     TaskRunner runner;
 
-    Wyrd::Mutex mutex;
     LocalTasks local_tasks;
-    Wyrd::Atomic<size_t> local_tasks_count = 0;
+    std::array<Task, LocalTasks::capacity / 2> offload_buffer;
 
     size_t picks_count = 0;
 

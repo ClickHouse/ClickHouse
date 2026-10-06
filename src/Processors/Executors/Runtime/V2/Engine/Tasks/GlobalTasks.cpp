@@ -8,24 +8,21 @@ namespace DB
 namespace Runtime::V2
 {
 
-void GlobalTasks::push(Task task)
+void GlobalTasks::push(const Task & task)
 {
     std::lock_guard lock(mutex);
     tasks.push_back(task);
     tasks_count.store(tasks.size());
 }
 
-void GlobalTasks::takeFront(LocalTasks & from, size_t count)
+void GlobalTasks::pushMany(std::span<const Task> many)
 {
-    std::lock_guard lock(mutex);
-    for (size_t i = 0; i < count; ++i)
-        tasks.push_back(from.popFront());
-    tasks_count.store(tasks.size());
-}
+    if (many.empty())
+        return;
 
-void GlobalTasks::takeAll(LocalTasks & from)
-{
-    takeFront(from, from.size());
+    std::lock_guard lock(mutex);
+    tasks.insert(tasks.end(), many.begin(), many.end());
+    tasks_count.store(tasks.size());
 }
 
 std::optional<Task> GlobalTasks::tryPop()

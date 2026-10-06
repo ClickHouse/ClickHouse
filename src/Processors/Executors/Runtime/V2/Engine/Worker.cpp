@@ -4,8 +4,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
-#include <mutex>
 #include <ranges>
+#include <span>
 
 namespace DB
 {
@@ -16,7 +16,6 @@ namespace Runtime::V2
 namespace
 {
 
-constexpr size_t max_local_tasks = 128;
 constexpr size_t max_sequential_full_rounds = 61;
 
 }
@@ -74,13 +73,7 @@ std::optional<Task> Worker::tryPickTask()
 
 std::optional<Task> Worker::takeFromLocal()
 {
-    std::lock_guard lock(mutex);
-    if (local_tasks.empty())
-        return std::nullopt;
-
-    Task task = local_tasks.popBack();
-    local_tasks_count.store(local_tasks.size());
-    return task;
+    return local_tasks.pop();
 }
 
 std::optional<Task> Worker::takeFromGlobal()
@@ -105,15 +98,13 @@ std::optional<Task> Worker::takeFromOthers()
     return std::nullopt;
 }
 
-void Worker::pushToLocal(Task task)
+void Worker::pushToLocal(const Task & task)
 {
-    std::lock_guard lock(mutex);
-    local_tasks.pushBack(task);
-
-    if (local_tasks.size() > max_local_tasks)
-        pool.global_tasks.takeFront(local_tasks, local_tasks.size() / 2);
-
-    local_tasks_count.store(local_tasks.size());
+    while (!local_tasks.push(task))
+    {
+        const size_t count = local_tasks.offload(offload_buffer);
+        pool.global_tasks.pushMany(std::span(offload_buffer).first(count));
+    }
 }
 
 void Worker::wakeOrSpawn(size_t threads_needed)
@@ -124,6 +115,28 @@ void Worker::wakeOrSpawn(size_t threads_needed)
 
     if (threads_needed > woken)
         pool.grow(threads_needed - woken);
+}
+
+size_t Worker::moveAllToGlobal()
+{
+    size_t moved = 0;
+    while (true)
+    {
+        size_t count = 0;
+        while (count < offload_buffer.size())
+        {
+            auto task = local_tasks.pop();
+            if (!task)
+                break;
+            offload_buffer[count++] = *task;
+        }
+
+        if (count == 0)
+            return moved;
+
+        pool.global_tasks.pushMany(std::span(offload_buffer).first(count));
+        moved += count;
+    }
 }
 
 size_t Worker::runTask(Task task)
@@ -166,22 +179,19 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
             break;
     }
 
+    if (const size_t moved = moveAllToGlobal(); moved > 0)
+        wakeOrSpawn(moved);
+
     if (pool.pipeline.step_profiler)
         pool.pipeline.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
 }
 
 std::optional<Task> Worker::steal()
 {
-    if (local_tasks_count.load() == 0)
+    Task stolen{};
+    if (local_tasks.grab(std::span(&stolen, 1)) == 0)
         return std::nullopt;
-
-    std::lock_guard lock(mutex);
-    if (local_tasks.empty())
-        return std::nullopt;
-
-    Task task = local_tasks.popFront();
-    local_tasks_count.store(local_tasks.size());
-    return task;
+    return stolen;
 }
 
 size_t Worker::poll(int timeout_ms)
@@ -198,14 +208,14 @@ size_t Worker::poll(int timeout_ms)
 
 void Worker::drain()
 {
-    std::lock_guard lock(mutex);
-    pool.global_tasks.takeAll(local_tasks);
-    local_tasks_count.store(0);
+    std::array<Task, LocalTasks::capacity> taken;
+    while (const size_t count = local_tasks.grab(taken))
+        pool.global_tasks.pushMany(std::span(taken).first(count));
 }
 
 size_t Worker::taskCount() const
 {
-    return local_tasks_count.load();
+    return local_tasks.size();
 }
 
 void Worker::park()

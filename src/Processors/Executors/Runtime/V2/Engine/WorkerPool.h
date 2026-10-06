@@ -37,7 +37,7 @@ public:
     WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control);
     ~WorkerPool();
 
-    void push(Task task);
+    void push(const Task & task);
     void run();
     void runUntil(std::atomic_bool * yield_flag);
     void grow(size_t threads_needed);

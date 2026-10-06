@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 
-#include <boost/container/devector.hpp>
+#include <array>
+#include <optional>
+#include <span>
 
 namespace DB
 {
@@ -11,18 +13,51 @@ namespace DB
 namespace Runtime::V2
 {
 
+/// Lock-Free Batch Workstealing Deque.
+/// Implementation of https://www.tvandijk.nl/pdf/2014lace.pdf
+
 class LocalTasks
 {
-public:
-    void pushBack(Task task);
-    Task popFront();
-    Task popBack();
+    struct Slot
+    {
+        Wyrd::Atomic<PackedTask> packed;
+    };
 
-    bool empty() const;
-    size_t size() const;
+    void setSplit(UInt32 new_split);
+    void growShared();
+    bool shrinkShared();
+    void afterPush(UInt32 first);
+
+public:
+#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+    static constexpr UInt32 capacity = 8;
+#else
+    static constexpr UInt32 capacity = 256;
+#endif
+
+    bool push(const Task & task);
+    UInt32 pushMany(std::span<const Task> many);
+
+    std::optional<Task> pop();
+    UInt32 offload(std::span<Task> out);
+    UInt32 grab(std::span<Task> out);
+
+    UInt32 size() const;
 
 private:
-    boost::container::devector<Task, AllocatorWithMemoryTracking<Task>> tasks;
+    std::array<Slot, capacity> buffer;
+
+    /// Owner state.
+    alignas(128) Wyrd::Atomic<UInt32> head = 0;
+    UInt32 owner_split = 0;
+    bool owner_all_stolen = true;
+
+    /// Shared state.
+    alignas(128) Wyrd::Atomic<UInt64> bounds = 0;
+    Wyrd::Atomic<bool> all_stolen = true;
+
+    /// Stealers state.
+    alignas(128) Wyrd::Atomic<bool> split_request = false;
 };
 
 }

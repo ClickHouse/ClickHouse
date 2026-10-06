@@ -130,7 +130,7 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
     coordinator.leave(worker_id);
 }
 
-void WorkerPool::push(Task task)
+void WorkerPool::push(const Task & task)
 {
     global_tasks.push(task);
 }
