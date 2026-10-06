@@ -2,14 +2,18 @@
 
 #include <IO/ReadPipeline.h>
 #include <IO/PipelineReadBuffer.h>
+#include <IO/LocalSourceReader.h>
+#include <IO/MMappedFileCache.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/DiskLocal.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
@@ -31,6 +35,13 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event CreatedReadBufferDirectIO;
     extern const Event CreatedReadBufferDirectIOFailed;
+    extern const Event CreatedReadBufferMMap;
+    extern const Event CreatedReadBufferMMapFailed;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace DB::FileCacheSetting
@@ -191,6 +202,54 @@ void checkLocalFileSourceReadAtEOF(bool known_size)
     EXPECT_EQ(counters[ProfileEvents::ReadBufferFromFileDescriptorRead] - reads_before_eof, known_size ? 0u : 1u);
 }
 
+void checkLocalFileSourceExecutorReadHint(LocalFSReadMethod method)
+{
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
+
+    const String data(8193, 'x');
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(data, out);
+        out.finalize();
+    }
+
+    MMappedFileCache mmap_cache(4);
+    ReadSettings settings;
+    settings.reader_executor.enabled = true;
+    settings.local_fs_settings.method = method;
+    settings.local_fs_settings.direct_io_threshold = 4096;
+    settings.local_fs_settings.mmap_threshold = 4096;
+    settings.local_fs_settings.mmap_cache = &mmap_cache;
+
+    const fs::path path(tmp_file->path());
+    DiskLocal disk("test_read_hint", path.parent_path().string() + "/");
+    ReadPipeline pipeline;
+    /// The file exceeds both thresholds, but this read's hint does not.
+    disk.prepareRead(path.filename().string(), settings, /* read_hint */ 64, pipeline);
+
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto direct_io_before = counters[ProfileEvents::CreatedReadBufferDirectIO];
+    const auto direct_io_failed_before = counters[ProfileEvents::CreatedReadBufferDirectIOFailed];
+    const auto mmap_before = counters[ProfileEvents::CreatedReadBufferMMap];
+    const auto mmap_failed_before = counters[ProfileEvents::CreatedReadBufferMMapFailed];
+
+    auto buf = pipeline.build();
+    ASSERT_NE(dynamic_cast<PipelineReadBuffer *>(buf.get()), nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+    /// `read_hint` estimates the read size; it does not truncate the file.
+    /// Failed attempts count too, so unsupported `O_DIRECT` or `mmap` cannot mask the regression.
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferDirectIO], direct_io_before);
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferDirectIOFailed], direct_io_failed_before);
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferMMap], mmap_before);
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferMMapFailed], mmap_failed_before);
+}
+
 FileCachePtr createTestFileCache(const String & name)
 {
     const auto cache_path = fs::current_path() / (name + "_cache");
@@ -292,6 +351,104 @@ TEST(ReadPipeline, LocalFileSourceExecutorUnknownSizeDoesNotUseDirectIO)
 }
 
 #endif
+
+TEST(ReadPipeline, LocalFileSourceExecutorReadHintDoesNotUseMMap)
+{
+    checkLocalFileSourceExecutorReadHint(LocalFSReadMethod::mmap);
+}
+
+#if defined(OS_LINUX)
+
+TEST(ReadPipeline, LocalFileSourceExecutorReadHintDoesNotUseDirectIO)
+{
+    checkLocalFileSourceExecutorReadHint(LocalFSReadMethod::pread);
+}
+
+#endif
+
+TEST(ReadPipeline, LocalFileSourceEmptyFileReturnsEOF)
+{
+    for (bool use_executor : {false, true})
+    {
+        SCOPED_TRACE(use_executor);
+        auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+        {
+            WriteBufferFromFile out(tmp_file->path());
+            out.finalize();
+        }
+        const fs::path path(tmp_file->path());
+        DiskLocal disk("test_empty_file", path.parent_path().string() + "/");
+        ReadSettings settings;
+        settings.reader_executor.enabled = use_executor;
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+        ReadPipeline pipeline;
+        disk.prepareRead(path.filename().string(), settings, std::nullopt, pipeline);
+        auto buf = pipeline.build();
+        ASSERT_NE(buf, nullptr);
+        EXPECT_TRUE(buf->eof());
+    }
+}
+
+TEST(ReadPipeline, LocalFileSourceRemovedEmptyFileThrows)
+{
+    for (bool use_executor : {false, true})
+    {
+        SCOPED_TRACE(use_executor);
+        auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+        {
+            WriteBufferFromFile out(tmp_file->path());
+            out.finalize();
+        }
+        const fs::path path(tmp_file->path());
+        DiskLocal disk("test_removed_empty_file", path.parent_path().string() + "/");
+        ReadSettings settings;
+        settings.reader_executor.enabled = use_executor;
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+        ReadPipeline pipeline;
+        disk.prepareRead(path.filename().string(), settings, std::nullopt, pipeline);
+        ASSERT_EQ(pipeline.getStoredObjects().front().bytes_size, 0u);
+        /// Remove the path after `prepareRead` snapshots its size, before any reader opens it.
+        ASSERT_TRUE(fs::remove(path));
+
+        try
+        {
+            auto buf = pipeline.build();
+            buf->eof();
+            FAIL() << "A removed empty file must not be reported as successful EOF";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::FILE_DOESNT_EXIST) << e.displayText();
+        }
+    }
+}
+
+TEST(ReadPipeline, LocalSourceReaderRemovedEmptyFileThrows)
+{
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        out.finalize();
+    }
+    const auto object = testObject(tmp_file->path(), 0);
+    ASSERT_TRUE(fs::remove(tmp_file->path()));
+    ReadSettings settings;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    LocalSourceReader reader(settings);
+
+    try
+    {
+        auto buf = reader.open(object);
+        buf->eof();
+        FAIL() << "Opening a removed empty file must fail";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::FILE_DOESNT_EXIST) << e.displayText();
+    }
+}
 
 
 /// -- Source + Gather: single object --
