@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -37,6 +38,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -238,6 +240,19 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot specify PRIMARY KEY in ALTER TABLE ... {}. The primary key can only be defined when the table is created",
             alter_name);
+}
+
+/// A `Replicated` database or Shared Catalog replica replaying an ALTER the initiator already committed.
+bool isAlterReplayOnAnotherReplica(const ContextPtr & context)
+{
+    const auto txn = context->getZooKeeperMetadataTransaction();
+    if (txn && !txn->isInitialQuery())
+        return true;
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return true;
+#endif
+    return false;
 }
 
 }
@@ -1340,35 +1355,53 @@ void AlterCommand::apply(
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
+        RenameColumnConflicts conflicts(rename_data);
+        auto rename_in = [&](ASTPtr & expression_ast, const String & where)
+        {
+            conflicts.add(expression_ast, where);
+            rename_visitor.visit(expression_ast);
+        };
+
+        std::vector<std::pair<ASTPtr, String>> defaults;
+        for (const auto & column : metadata.columns)
+            if (column.default_desc.expression)
+                defaults.emplace_back(
+                    column.default_desc.expression,
+                    fmt::format("the {} expression of column {}", toString(column.default_desc.kind), backQuote(column.name)));
+        conflicts.addColumnDefaults(defaults);
+
+        /// The analyzer resolves the defaults of all columns as one list.
+        RenameColumnData default_rename_data{column_name, rename_to, /*new_analyzer_binding=*/ true};
+        RenameColumnVisitor default_rename_visitor(default_rename_data);
         for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
             {
                 if (column_to_modify.default_desc.expression)
-                    rename_visitor.visit(column_to_modify.default_desc.expression);
+                    default_rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
-                    rename_visitor.visit(column_to_modify.ttl);
+                    rename_in(column_to_modify.ttl, fmt::format("the TTL of column {}", backQuote(column_to_modify.name)));
             });
         }
         if (metadata.table_ttl.definition_ast)
-            rename_visitor.visit(metadata.table_ttl.definition_ast);
+            rename_in(metadata.table_ttl.definition_ast, "the table TTL");
 
         auto constraints_data = metadata.constraints.getConstraints();
         for (auto & constraint : constraints_data)
-            rename_visitor.visit(constraint);
+            rename_in(constraint, fmt::format("constraint {}", backQuote(constraint->as<const ASTConstraintDeclaration &>().name)));
         metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
-            rename_visitor.visit(metadata.sorting_key.definition_ast);
+            rename_in(metadata.sorting_key.definition_ast, "the sorting key");
 
         if (metadata.isPrimaryKeyDefined())
-            rename_visitor.visit(metadata.primary_key.definition_ast);
+            rename_in(metadata.primary_key.definition_ast, "the primary key");
 
         if (metadata.isSamplingKeyDefined())
-            rename_visitor.visit(metadata.sampling_key.definition_ast);
+            rename_in(metadata.sampling_key.definition_ast, "the sampling key");
 
         if (metadata.isPartitionKeyDefined())
-            rename_visitor.visit(metadata.partition_key.definition_ast);
+            rename_in(metadata.partition_key.definition_ast, "the partition key");
 
         for (auto & index : metadata.secondary_indices)
         {
@@ -1384,8 +1417,30 @@ void AlterCommand::apply(
                     index.column_names = {rename_to};
             }
             else
-                rename_visitor.visit(index.definition_ast);
+            {
+                const auto & declaration = index.definition_ast->as<const ASTIndexDeclaration &>();
+                const String where = fmt::format("index {}", backQuote(index.name));
+                ASTPtr expression = declaration.getExpression();
+                rename_in(expression, where);
+
+                /// The other arguments of the index type are options, not column expressions.
+                if (auto index_type = declaration.getType(); index_type && index_type->arguments)
+                {
+                    for (const auto & argument : index_type->arguments->children)
+                    {
+                        const auto * function = argument->as<ASTFunction>();
+                        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+                            continue;
+                        const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+                        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+                            rename_in(function->arguments->children[1], where);
+                    }
+                }
+            }
         }
+
+        if (!isAlterReplayOnAnotherReplica(context))
+            conflicts.throwIfAny();
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
