@@ -1,0 +1,19 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test requires_s3="1" requires_s3_read_dataset="1">
+    <!-- Synthetic-IO twin of iceberg_suite_s3_tpch.xml: run the shared queries with a fixed delay on each HTTP response. -->
+    <settings file="../benchmarks/tpc-h/settings.json"/>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>tpch_ice10_s3</value></values>
+        </substitution>
+    </substitutions>
+    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT s3_slow_response</fill_query>
+    <include file="iceberg_suite_shared_tpch.xml.inc"/>
+    <drop_query>SYSTEM DISABLE FAILPOINT s3_slow_response</drop_query>
+</test>
