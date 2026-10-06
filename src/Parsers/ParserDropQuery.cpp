@@ -263,6 +263,31 @@ Limitations:
 - If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 
+## DROP DETACHED TABLE {#drop-detached-table}
+
+Removes a previously detached table's metadata and data from disk.
+
+The table must be detached first with [`DETACH TABLE`](/reference/statements/detach) before it can be dropped with this statement.
+
+<Tip>
+To undo the deletion of a table, please see [UNDROP TABLE](/reference/statements/undrop).
+</Tip>
+
+<Note>
+This experimental feature is gated by the [`allow_experimental_drop_detached_table`](/reference/settings/session-settings/allow-experimental#allow_experimental_drop_detached_table) setting, which is disabled by default.
+</Note>
+
+Syntax:
+
+```sql
+DROP DETACHED TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+Limitations:
+
+- Only supported for `Atomic` and `Replicated` database engines.
+- Cannot be used on detached views or dictionaries.
+
 ## DROP DICTIONARY {#drop-dictionary}
 
 Deletes the dictionary.
@@ -415,7 +440,7 @@ System log tables can be also attached back (e.g. `query_log`, `text_log`, etc.)
 
 Note that you can not detach permanently the table which is already detached (temporary). But you can attach it back and then detach permanently again.
 
-Also, you can not [DROP](/reference/statements/drop#drop-table) the detached table, or [CREATE TABLE](/reference/statements/create/table) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](/reference/statements/rename) query.
+Also, you can not [DROP](/reference/statements/drop#drop-table) the detached table, or [CREATE TABLE](/reference/statements/create/table) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](/reference/statements/rename) query. You can remove a detached table with [`DROP DETACHED TABLE`](/reference/statements/drop#drop-detached-table).
 
 The `SYNC` modifier executes the action without delay.
 

@@ -54,6 +54,7 @@ void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(is_view);
     hash_state.update(sync);
     hash_state.update(permanently);
+    hash_state.update(detached);
     ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
