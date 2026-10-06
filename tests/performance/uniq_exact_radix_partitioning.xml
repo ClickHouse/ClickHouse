@@ -21,5 +21,6 @@
 
     <query>SELECT uniqExact(number) FROM numbers_mt(100000000) FORMAT Null</query>
     <query>SELECT uniqExact(number % 1000000) FROM numbers_mt(100000000) FORMAT Null</query>
-    <query>SELECT uniqExact(toString(number)) FROM numbers_mt(20000000) FORMAT Null</query>
+    <!-- Without the setting, `uniqExact(toString(number))` is rewritten to `uniqExact(number)`. -->
+    <query>SELECT uniqExact(toString(number)) FROM numbers_mt(20000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
 </test>
