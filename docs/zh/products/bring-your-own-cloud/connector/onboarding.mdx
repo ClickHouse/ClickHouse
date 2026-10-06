@@ -1,194 +1,181 @@
 ---
 title: '引导'
 sidebarTitle: '引导'
-description: '以托管模式安装 ClickHouse 连接器，并在 Kubernetes 或 Linux VM 上进行注册'
-keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'onboarding', '托管模式']
+description: '安装 ClickHouse 连接器，并在 Kubernetes 或 Linux VM 上进行注册'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<PrivatePreviewBadge />
+本页将指导您使用注册标记完成连接器的部署与验证。连接器可安装到以下两种目标之一：Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程；如果您的环境无法直接访问 ClickHouse 端点，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。
 
-本页将指导您使用注册标记，在托管模式下完成连接器的验证；在该模式下，由 executor 执行由 ClickHouse Cloud 驱动的 service 生命周期。连接器可安装到 Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程。如果您的环境无法直接访问您的连接器端点，请参阅[隔离网络和 mirror 安装](#air-gapped-and-mirrored-installs)。如果要在不使用 executor 的情况下观测自行运行的 ClickHouse，请传入 `--no-managed`。
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
-## 前置条件 {#prerequisites}
+所有安装方式均需满足：
 
-### 注册你的环境 {#registration}
+* **连接器端点和注册标记**，由 ClickHouse 在引导过程中提供 (请参阅步骤 1) 。
+* **通过端口 443 的出站访问**：安装时需能访问 `https://<subdomain>.<connector-domain>`、`https://<subdomain>.enroll.<connector-domain>`、`releases.clicklink.clickhouse.com` 和亚马逊 ECR Public。如果其中任一地址无法访问，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。
+* **可从连接器运行位置访问的 ClickHouse 原生监听端点**：安全端口 (9440) 或明文端口 (9000) ；在 Kubernetes 上会自动检测。
+* **用于预配的 ClickHouse 管理员访问权限**：无密码的 `default` 用户、密码 (按提示输入，或通过 `--ch-admin-password-stdin` 提供) ，或者由 operator 管理的实例。对于后者，预配会切换为 CR 注入，无需密码。
+* **cosign**：在任何下载发行制品的位置都需安装。安装程序始终会验证 SHA-256 校验和；如果已安装 cosign，还会验证 cosign 签名；如果设置了 `CLICKLINK_REQUIRE_COSIGN=1`，则未安装 cosign 时会拒绝继续。
 
-在进行注册 (enroll) 之前，客户团队会为你注册环境，并为你的组织启用托管模式。请向他们提供：
+Kubernetes (Helm) 安装还需满足：
 
-* 你的 AWS 账户 ID、region 以及 EKS 集群名称
-* 连接器是运行在 Linux VM 上，还是运行在集群中
-* 用于平台 components 的 node group
-* services 的命名空间 prefix (默认为 `ns-`)
-* 你的集群以何种方式拉取 ClickHouse images：通过 ClickHouse Cloud 为你的 account 配置的 registry access，还是使用你自己的 mirror
+* **任何符合规范的 Kubernetes 集群。**
+* **kubeconfig**：必须能够创建和读取连接器命名空间、应用 Secret、在 ClickHouse pod (容器组) 中执行 exec (预配会在 pod 内运行 `clickhouse-client`) 、创建 ServiceAccount、Role 和 RoleBinding，以及安装 chart。
+* **默认存储类**，或通过 `--storage-class` 指定的存储类；troubleshooter 会将状态保存在 PersistentVolumeClaim 中。
+* **镜像拉取权限**：集群节点必须能够拉取公共 ECR 镜像或您托管的镜像。
 
-随后，ClickHouse Cloud 会为你签发连接器端点和一个一次性注册标记。该标记本身即可标识你的环境，因此注册时无需额外的 ID。
+Linux VM (systemd) 安装还需满足：
 
-### 所有安装方式通用 {#prerequisites-every-install}
-
-* **连接器 v0.17.0 或更高版本。** 更早的发行版没有托管模式、`platform` 命令或 `instances create`。除非你传入 `--version`，安装程序会提供最新发行版。
-* **你的连接器端点和注册标记**，在[注册](#registration)时提供。
-* **443 端口出站访问权限**，目标为 `https://<subdomain>.<connector-domain>` 和 `https://<subdomain>.enroll.<connector-domain>`，以及安装时访问 `releases.clicklink.clickhouse.com` 和 Amazon ECR Public。在托管模式下，当平台同步或创建操作从 ECR 拉取 chart 时，executor 还会访问 Amazon ECR 和 STS。若其中任何一项无法访问，请参阅[隔离网络与 mirror 安装](#air-gapped-and-mirrored-installs)。
-* **一个 Amazon EKS 集群**，用于托管模式。在其他任何集群上，`init` 都会拒绝启用托管模式，并提示使用 `--no-managed` 在不安装 executor 的情况下完成安装。
-* **用于 executor 授权的集群管理员权限。** 该授权会创建一个集群角色、一个 ClusterRoleBinding 和一个 ValidatingAdmissionPolicy，将 executor 限制在你的前缀下的命名空间内。在 Kubernetes 上，运行 `init` 时使用的 kubeconfig 需要该权限。在虚拟机上，则是主机的 kubeconfig 需要该权限；若主机不具备管理员权限，`init` 会打印出应在具备该权限的主机上运行的命令。
-* **尚未部署 ClickHouse。** 托管安装从零个服务开始；由 executor 创建的服务会自行注册。在托管模式下，`init` 不会注册任何你自行运行的 ClickHouse (在 Kubernetes 上会拒绝 `--instance` 和 `--instance-namespace`) 。若要观测这类集群，请使用 `--no-managed` 单独安装一套连接器部署。借助 `--ch-user-suffix`，两套部署可以共用同一个实例，而不会在连接器的用户上发生冲突。该部署需要一个可访问的原生监听端口，安全端口 9440 或明文端口 9000，在 Kubernetes 上会自动检测。它还需要用于预配的 ClickHouse 管理员访问权限：一个无密码的 `default` 用户、通过 `--ch-admin-password-stdin` 或在提示符处输入的密码，或者对由 operator 管理的实例使用 CR 注入。
-* **cosign**，凡是下载发行制品的位置都需要。安装程序始终会校验 SHA-256 校验和。若已安装 cosign，还会校验发行版签名；设置 `CLICKLINK_REQUIRE_COSIGN=1` 后，缺少 cosign 时将拒绝继续执行。
-
-### Kubernetes (Helm) 安装 {#prerequisites-kubernetes}
-
-* **一个 kubeconfig**，其当前 context 指向目标 EKS 集群。它必须能够创建和读取连接器命名空间、应用 Secrets、创建 ServiceAccounts、Roles 和 RoleBindings、安装 chart，并为 executor 授权集群级访问权限。
-* 工作站上具备 `eks:DescribeCluster` 和 `ec2:DescribeVpcs` 权限的 **AWS 凭证** (来自环境变量或 profile) 。`init` 会用它们读取集群 VPC 的 CIDR 块，用于配置 NetworkPolicy。若读取失败，它会发出警告，并将该列表留给你自行填写。
-* **连接器端点背后的 CIDR**，用于在安装时启用 chart 的默认拒绝 NetworkPolicy。若缺少这些信息，`init` 会以禁用状态部署该策略，并输出后续启用方法。
-* **一个默认存储类**，或通过 `--storage-class` 指定的存储类；故障排查工具和 executor 会将状态保存在 PersistentVolumeClaims 上。
-* **镜像拉取权限**：集群节点必须能够拉取公共 ECR image，或你自行托管的 mirror。
-
-### Linux VM (systemd) 安装 {#prerequisites-vm}
-
-* **任意 systemd Linux 主机**，amd64 或 arm64。Linux 构建以 FIPS 模式运行。
-* 安装程序和 `init` 需要 **root 权限**。
-* **空闲端口**：8082、8084 和 8086 用于健康状况与指标，回环接口上的 9999 用于 executor 的本地 API，启用支持会话网关时还需 8443。
-* **对 Kubernetes API server 的管理员访问权限**，用于预配以及 executor 的授权：可通过主机上的 kubeconfig、`--server` 与 `--ca-data` 参数，或交互式提示提供。访问包在两侧目标上均锚定到 Kubernetes ServiceAccount。在托管模式下，kubeconfig 的当前 context 必须指向你所管理的 EKS 集群；通过其他任何 context，`init` 都会拒绝执行授权。
+* **任何运行 systemd 的 Linux 主机**，支持 amd64 或 arm64。Linux 构建以 FIPS 模式运行。
+* 安装程序和 `init` 均需要 **Root 访问权限**。
+* **可用端口** 8080、8082 和 8084 (健康检查) ，以及 9090、9092 和 9094 (指标) ；启用支持会话 gateway 时还需要 8443。
+* **对 Kubernetes API server 的管理员访问权限**，可通过主机上的 kubeconfig、`--server` 和 `--ca-data`，或按提示提供。访问包以两个目标上的 Kubernetes ServiceAccount 为基础。
 
 <Note>
-  在 VM 上，`--skip-provision` 是绕过 Kubernetes API server 要求的唯一方式，且仅适用于 stage 环境。它会跳过 ClickHouse user 预配、executor 的授权、单元启用以及验证，因此仅凭它本身并不能得到一个正在运行的连接器。在 Kubernetes 上，它只跳过 ClickHouse user 预配。executor 的授权仍会应用，因为没有已授权的 ServiceAccount，chart 中的 executor 就无法调度。
+  `--skip-provision` 是绕过 Kubernetes 要求的唯一方式，但仅用于暂存：它会跳过 ClickHouse 用户预配；在 VM 上，还会跳过单元启用和验证，因此单独使用不会生成正在运行的连接器。
 </Note>
 
-## 安装并注册 {#install-and-enroll}
+<div id="install-and-enroll">
+  ## 安装并注册
+</div>
 
 <Steps>
-  <Step title="获取连接器端点和注册标记" id="get-endpoint-and-token">
-    环境注册完成后，这两项均由您的客户团队提供。端点格式如下：
+  <Step title="获取 connector 端点和注册令牌" id="get-endpoint-and-token">
+    在初始设置过程中，ClickHouse 会提供 connector 端点和一次性注册令牌。该端点的格式如下：
 
     ```text
     https://<subdomain>.<connector-domain>
     ```
 
-    该 token 仅可使用一次，且很快过期，因此请在收到后尽快完成 enrollment。请将其视为 secret：命令行客户端只会通过隐藏式 prompt 或 stdin 的第一行读取该 token，绝不会从命令行参数、磁盘或日志中读取。若在完成 enrollment 之前 token 已过期，请联系你的 account team 获取新的 token。
+    该标记只能使用一次，且很快会过期，因此收到后请尽快完成注册。请将其视为 secret：命令行客户端会通过隐藏提示 (或 stdin 的第一行) 读取该标记，绝不会从命令行参数、disk 或日志中读取。如果标记在使用前过期，请联系您的 ClickHouse account 团队获取新的标记。
   </Step>
 
   <Step title="安装并验证命令行客户端" id="install-and-verify-the-cli">
-    一条命令即可安装经过验证的 `clicklink` binary。它会检测您的平台(macOS 或 Linux,amd64 或 arm64),下载当前 release,并校验 SHA-256 checksum。若已安装 cosign,还会校验 release 签名。若 `/usr/local/bin` 可写,将安装到该目录,否则安装到 `~/.local/bin`(如有需要,请将其加入 `PATH`;也可使用 `--bin-dir` 进行 override)。如需在 Kubernetes 中安装,可在任意拥有该 cluster kubeconfig 访问权限的 workstation 上运行:
+    一条命令即可安装经过验证的 `clicklink` 可执行文件：它会检测您的平台和架构 (macOS 或 Linux、amd64 或 arm64) ，下载当前版本，验证 SHA-256 校验和；若已安装 cosign，还会验证版本签名，并将该可执行文件安装到您的 `PATH` 中。对于 Kubernetes 安装，请在任何可通过 kubeconfig 访问集群的工作站上运行此命令：
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
     ```
 
-    若在 VM 上安装，请在主机上使用 `--host` 运行同一脚本。完成校验下载后，脚本会创建 `clicklink` 系统用户，`/etc/clicklink`、`/var/lib/clicklink` 和 `/var/log/clicklink` 目录，以及三个组件各自的 systemd 单元。同时会在 `/etc/clicklink/redaction-patterns.yaml` 中预置一组初始脱敏 patterns (若该文件已存在则保留原文件) ，因此下一步即为 enrollment：
+    对于 VM 安装，请在主机上使用 `--host` 运行相同的脚本。下载验证完成后，脚本还会创建 `clicklink` 系统用户、`/etc/clicklink`、`/var/lib/clicklink` 和 `/var/log/clicklink` 目录以及 systemd 单元，并生成默认的 `/etc/clicklink/redaction-patterns.yaml` (如已存在则保留) ，因此下一步可直接进行注册：
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
     ```
 
-    两种形式都支持通过 `--version vX.Y.Z` 固定某个 release。重复运行任一形式都是安全的：主机安装会备份先前的 binary，并保留当前生效的 configuration。若要在运行前先检查该脚本，或自行拉取并校验 release 压缩包，请参阅[手动下载与校验](#manual-download-and-verification)。
+    两种方式都支持使用 `--version vX.Y.Z` 固定版本，且可安全地重复运行：在主机上安装时，会备份先前的二进制文件并保留当前配置。若要在运行前查看脚本，或自行下载并验证发布版 tarball，请参阅[手动下载和验证](#manual-download-and-verification)。
   </Step>
 
   <Step title="注册并安装连接器" id="enroll-and-install">
-    `init --enroll` 会兑换你的注册令牌，获取已签名的客户端证书以及 executor 的集群级授权 (grant) ，然后安装并验证连接器。
+    注册只需一条命令。该命令会兑换标记、配置 ClickHouse 访问权限、获取已签名的客户端证书、安装连接器，并完成端到端验证。
 
     <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse 连接器注册流程" />
 
-    在终端中，`init` 会询问 `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?`，并预选 `yes`。传入 `--managed` 可跳过该提示，或使用 `--no-managed` 进行不含 executor 的仅观察安装。若在无人值守的全新安装中未传入这两个 flag，则 managed 模式保持关闭 (使用 `--force` 重新运行时会沿用被替换配置的设定) ，因此在脚本中请始终传入 `--managed`。
-
     <Tabs>
-      <Tab title="Kubernetes" id="enroll-kubernetes">
-        在你的工作机上，将 kube context 指向你的 EKS cluster，然后运行：
+      <Tab title="Kubernetes">
+        在工作站上运行：
 
         ```bash
-        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
         ```
 
-        在隐藏输入提示处粘贴注册标记。`init` 会从当前 context 的 EKS ARN 中读取 cluster 的名称、region 和 AWS 账户，因此你无需输入任何与 cluster 相关的信息。随后它会提示输入：
+        在隐藏提示中粘贴注册标记。随后，命令行客户端会提示您输入：
 
-        * 连接器命名空间 (默认 `clicklink`)
-        * StorageClass，仅在 cluster 未标记默认值时需要
-        * 连接器端点背后的 CIDR，用于 NetworkPolicy 的 egress 允许列表 (留空则以禁用状态暂存该 policy)
-        * support-session 设定，以及启用时的 operator 邮箱允许列表
+        * 连接器命名空间 (默认为 `clicklink`)
+        * 运行 ClickHouse 实例的命名空间
+        * 实例连接信息，预先填入从检测到的 ClickHouse 服务获取的信息
+        * 存储类，仅当集群未标记默认存储类时需要
+        * 支持会话策略；如启用，还需提供运维人员电子邮件允许列表
+        * ClickHouse 管理员密码，仅当 SQL 配置需要时提供
 
-        `init` 会兑换注册标记，并将 enrollment bundle 保存为工作目录下的 `handoff.yaml`。它会暂存 Helm 配置值覆盖文件 `clicklink-values.yaml`，其中包含 `executor` 块，并以你的 cluster VPC 地址范围作为 NetworkPolicy 的 API 服务器 CIDR。它会创建命名空间、应用 `clicklink-hmac` Secret、在 `clicklink-mtls` Secret 内生成 private key，并写入 CSR。它会将 executor 的集群级 access 授予连接器命名空间，并由 ClickHouse Cloud 签发客户端证书。它使用内置的 Helm 客户端 (无需 `helm` binary) 安装 `clicklink-connector` Helm release，并验证其健康状态。
+        这条命令会完成整个流程：兑换标记 (将注册包以 `handoff.yaml` 保存到工作目录中) 、暂存 Helm 配置值覆盖文件 `clicklink-values.yaml`、创建命名空间、应用 `clicklink-hmac` 和 `clicklink-mtls` Secret、为每个实例配置只读 ClickHouse 用户 (对于由 operator 管理的实例，自动选择 SQL 授权或 CR 注入) 、生成私钥和 CSR，并由 ClickHouse 对客户端证书进行签名、使用内置 Helm 客户端安装 `clicklink-connector` Helm 发布版本 (无需 `helm` 二进制文件) ，以及验证运行状况。
 
-        对于无人值守运行，请改用 flag 来回答这些提示。可使用已保存的 bundle 作为入口，或将注册标记作为 stdin 的第一行通过管道传给 `--enroll`：
+        对于无人值守运行，请改用标志提供提示所需的答案。请使用已保存的注册包作为入口点，因为在非终端运行中，`--enroll` 会从 stdin 的第一行读取注册标记，从而会读取掉重定向的密码：
 
         ```bash
-        clicklink clctl init --handoff handoff.yaml --target helm --managed \
-          --egress-cidrs 203.0.113.0/24 \
+        clicklink clctl init --handoff handoff.yaml --target helm \
+          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
           --operators '<operator-email-1>,<operator-email-2>' \
-          --storage-class <storage-class>
+          --storage-class <storage-class> \
+          --ch-admin-password-stdin < admin-password.txt
         ```
 
-        若要禁用 support session，请传入 `--no-gateway` 而非 `--operators`；这两个 flag 互斥。
+        对每个 ClickHouse 实例重复指定 `--instance`。如需禁用支持会话，请传递 `--no-gateway` 而非 `--operators`；这两个标志互斥。
       </Tab>
 
-      <Tab title="Linux 虚拟机" id="enroll-vm">
-        上一步中的 `--host` 安装已部署好 binary、`clicklink` 系统用户及相关目录，以及 systemd 单元。请以 root 身份注册：
+      <Tab title="Linux 虚拟机">
+        上一步中的 `--host` 安装已部署二进制文件、`clicklink` 系统用户和目录，以及 systemd 单元。请以 root 身份注册：
 
         ```bash
-        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --managed
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
         ```
 
-        在隐藏输入提示处粘贴注册标记。`init` 会从 instance 元数据检测云环境，并从主机的 kubeconfig 检测 EKS cluster。cluster 的 region 和 AWS 账户取自该 cluster 的 ARN，并以 instance 元数据作为后备。在终端中，它会确认找到的 cluster 名称 (`EKS cluster to manage`) ，仅当 kubeconfig 中没有名称时才要求输入。传入 `--cluster-name` 可跳过该提示。随后它会询问 support-session 设定。
-
-        `init` 会兑换注册标记，并将 enrollment bundle 保存为 `handoff.yaml`。它会写入包含 `executor` 块的 `/etc/clicklink/config.yaml`，并安装 API 凭据和 CA 链。它会生成 private key 和 CSR，并由 ClickHouse Cloud 签发客户端证书。它会在 `/etc/clicklink/access/executor/_cluster` 下生成 executor 的集群级 access bundle，并通过主机的 kubeconfig 应用。随后，它会启用并启动 `clicklink-scraper`、`clicklink-troubleshooter` 和 `clicklink-executor` 单元，等待各单元报告存活，并运行完整的预检检查套件。
+        在隐藏提示中粘贴注册标记。该命令会兑换标记 (将注册包保存为 `handoff.yaml`) 、写入 `/etc/clicklink/config.yaml`、安装 API 凭据和 CA 证书链、生成私钥和 CSR，并由 ClickHouse 对客户端证书进行签名、为两个守护进程配置只读 ClickHouse 用户、启用并启动 `clicklink-scraper` 和 `clicklink-troubleshooter` 服务、等待两者均报告为存活状态，最后运行完整的预检套件。
       </Tab>
     </Tabs>
-
-    安装通过验证后，`init` 会输出 `Managed mode is on`，并给出用于准备第一个 service 的命令。请继续阅读[创建 service](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。
   </Step>
 
   <Step title="验证是否成功" id="verify-success">
-    `init` 会在报告安装成功之前先进行验证。在 Kubernetes 上，它会轮询每个已启用组件 (包括 executor) 的 `/livez` 端点，最长持续五分钟。若启用了支持会话网关，还要求该网关对未经身份验证的探测返回 `401`。在 VM 上，它会等待每个守护进程的 `/livez`，然后运行完整的 preflight 检查套件。该套件会检查配置、文件、端口冲突、网络可达性、ClickHouse 连通性、全部三个 systemd unit 的状态、各组件的访问权限、磁盘以及脱敏规则。
+    `init` 会在报告安装成功前进行验证。在 Kubernetes 上，它会在最多五分钟内轮询每个已启用组件的 `/livez` 端点；如果启用了支持会话 gateway，还要求 gateway 对未经身份验证的 probe 返回 `401`。在 VM 上，它会等待每个守护进程的 `/livez`，然后运行完整的 Preflight 检查：config、文件、端口冲突、网络可达性、ClickHouse 连接、systemd 单元状态、各组件访问权限、disk 和脱敏模式。
 
-    在 Kubernetes 上手动确认：
+    要在 Kubernetes 上手动确认：
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
     kubectl get pods -n "${CONNECTOR_NAMESPACE}"
     ```
 
-    所有连接器 Pod (容器组) 都应处于 `Running` 状态并已就绪：包括抓取器、故障排查工具和执行器。
+    所有 connector pod (容器组) 都应处于 `Running` 状态且已就绪。
 
-    若要在 VM 上手动确认：
+    如需在 VM 上手动确认：
 
     ```bash
     sudo clicklink clctl preflight
     ```
 
-    所有检查均通过时退出码为 `0`，出现任何失败时退出码为 `2`，并打印失败的检查项。
+    所有检查均通过时，它以 `0` 退出；如有任何检查失败，则以 `2` 退出，并输出失败的检查项。
   </Step>
 
   <Step title="清理" id="clean-up">
-    enrollment bundle `handoff.yaml` (权限 `0600`，位于工作目录中) 使安装过程中的重新运行和 recovery 无需再次使用 token 即可进行。该文件以 plaintext 形式保存连接器的 API secret，因此安装验证通过后请将其删除：
+    注册支持包 `handoff.yaml` (以 `0600` 模式写入工作目录) 可确保安装过程中重新运行或恢复时无需第二个标记。它以明文形式包含 connector 的 API secret，因此安装验证完成后请将其删除：
 
     ```bash
     rm handoff.yaml        # workstation (Kubernetes installs)
     sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
     ```
 
-    运行中的连接器会持有自己的一份凭据副本；升级和配置变更都用不到该文件。如果后续需要再次执行 `init`，请向你的客户团队申请新的注册标记，然后运行 `init --enroll --force`。
+    正在运行的连接器会保存自己的凭据副本，因此后续运维操作无需依赖该文件：升级和配置变更都不需要它；如果日后需要再次执行 `init`，请向 ClickHouse 账户团队申请新的注册令牌，然后运行 `init --enroll --force`。
   </Step>
 </Steps>
 
-## 隔离网络与镜像安装 {#air-gapped-and-mirrored-installs}
+<div id="air-gapped-and-mirrored-installs">
+  ## 隔离网络和镜像安装
+</div>
 
-根据您的环境能够访问的范围，有两部分内容可以独立地以带外方式完成。executor 不需要任何额外配置，它使用与其他组件相同的客户端证书和 API 凭据进行身份验证。其集群级 grant 通过 kubeconfig 授予，而非经由网络。
+根据您的环境可访问的资源，有两个独立部分可通过带外方式完成。
 
-**bundle 交付。** 如果您不希望在线兑换 token，您的客户团队可以在引导期间直接交付 enrollment bundle；此时请用 `clicklink clctl init --handoff <bundle-file>` 代替 `--enroll`。`--handoff` 仅替代 token 兑换这一环节，证书签名仍通过 enrollment 端点完成，因此只有当运行 `init` 的位置能够访问该端点时，才可单独使用 `--handoff`。
+**安装包交付。** 如果您不想在线兑换标记，ClickHouse 可在引导期间直接提供注册安装包；请使用 `clicklink clctl init --handoff <bundle-file>` 替代 `--enroll`。`--handoff` 仅替代标记兑换：证书签名仍会通过注册端点进行。因此，仅当运行 `init` 的位置可以访问该端点时，才单独使用此选项。
 
-**带外证书签名。** 当运行 `init` 的位置无法访问 enrollment 端点时，请添加 `--no-auto-sign`：`init` 会准备好所有内容并写出 `clicklink.csr`。将该 CSR 发送给您的客户团队，然后使用返回的证书和证书链完成安装。在虚拟机上，运行 `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt`。在 Kubernetes 上，运行 `clicklink clctl init --signed-cert client.crt --chain ca-chain.crt --target helm --target-namespace <connector-namespace> --values clicklink-values.yaml`；该准备阶段的运行会打印出等效的 `kubectl patch` 与 `helm upgrade --install` 命令序列。只有 CSR 会被传出，private key 始终不会离开您的环境。
+**带外证书签名。** 如果运行 `init` 的位置无法访问注册端点，请添加 `--no-auto-sign`：`init` 会暂存所有内容并写入 `clicklink.csr`。通过您的客户团队将 CSR 发送给 ClickHouse，然后使用返回的证书和证书链完成安装：在 VM 上运行 `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt`；在 Kubernetes 上，则运行暂存执行时输出的完整完成命令 (包括 `--target helm`) 。仅传输 CSR；私钥绝不会离开您的环境。
 
-在 Kubernetes 上，`--chart` 可接受通过 `--chart-repo` 解析的 chart 名称、`oci://` 引用、直接 URL，或本地归档文件或目录。`--chart-version` 默认取命令行客户端自身的版本，因此 binary 与 chart 会保持版本一致。若要从您自己的 registry 提供镜像，请镜像该容器 image，并在配置值覆盖层中设置 `image.repository`。如果您的 egress 路径向连接器出示的是 private CA，请传入 `--api-private-ca`，此时连接器会结合系统根证书和 enrollment bundle 中的 CA 证书链来验证您的连接器端点。
+在 Kubernetes 上，`--chart` 可接受通过 `--chart-repo` 解析的 chart 名称、`oci://` 引用、直接 URL，或本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，因此二进制文件与 chart 可保持同步迁移。要从您自己的 registry 提供镜像，请镜像容器镜像，并在配置值覆盖文件中设置 `image.repository`。如果您的出口路径向连接器提供私有 CA，请传入 `--api-private-ca`，以便使用注册安装包中的 CA 链而非系统信任库来验证 API 端点。
 
-安装程序同样支持从 mirror 安装：将发行制品和 `install.sh` 托管在您自己的 mirror 上，并通过 `CLICKLINK_MIRROR_URL` 指向它。
+安装程序也可通过镜像运行：在您自己的镜像站点上托管发行制品和 `install.sh`，并通过 `CLICKLINK_MIRROR_URL` 指向该镜像站点。
 
-### 手动下载和验证 {#manual-download-and-verification}
+<div id="manual-download-and-verification">
+  ### 手动下载和验证
+</div>
 
 如果不想通过管道运行安装程序，可以自行下载并验证发布版本。该代码块会检测你的平台和架构；可直接在 macOS 或 Linux、amd64 或 arm64 上原样运行：
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
-# Or pin a specific release: CLICKLINK_VERSION='v0.17.0'
+# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
 CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
 for suffix in '' .sha256 .sig .crt; do
   curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
@@ -218,29 +205,14 @@ tar -xzf "${CLICKLINK_TARBALL}"
 sudo install -m 0755 clicklink /usr/local/bin/clicklink
 ```
 
-在 VM 上，解压 tarball，然后在解压后的目录中运行 `sudo ./install.sh`。该脚本会在发行制品所在目录旁执行与 `--host` 相同的主机安装。
+在 VM 上，解压 tarball，然后在解压后的目录中运行 `sudo ./install.sh`；该脚本会在发行制品所在目录旁执行与 `--host` 相同的主机安装。
 
-## 如果出现失败 {#if-something-fails}
+<div id="if-something-fails">
+  ## 如果出现故障
+</div>
 
-重新运行相同的命令。`init` 是幂等的：重复运行会收敛到相同状态，保留现有配置和已暂存的文件，并跳过已完成的工作。若某个步骤中途失败，命令行客户端会打印出准确的恢复命令；这些命令可以安全地重复执行。
+请重新运行相同的命令。`init` 具有幂等性：重复运行会收敛到相同状态，保留现有配置和暂存文件，并跳过已完成的工作。如果某个步骤中途失败，命令行客户端会输出针对当前情况的准确恢复命令，且这些命令可安全地重复执行。
 
-如果注册被拒绝，说明令牌已被兑换、无效或已过期。对于已兑换的令牌，请加上 `--handoff handoff.yaml` 重新运行，该文件在清理步骤之前一直存在。否则请向客户团队申请新的令牌。如果注册因传输错误而失败，请重新运行相同的命令。如果重新运行仍被拒绝，说明第一次尝试已消耗该令牌，请另行申请一个新令牌。
+如果注册被拒绝，标记可能已被使用 (使用 `--handoff handoff.yaml` 重新运行；该文件会保留至最后的清理步骤) ，也可能无效或已过期 (请联系您的 ClickHouse 客户团队获取新的标记) 。如果注册因传输错误失败，标记尚未被使用；请重新运行相同的命令。
 
-如果因集群不是 EKS 而拒绝启用托管模式，请加上 `--no-managed` 重新运行，以在不安装 executor 的情况下完成安装。在 VM 上，如果 kubeconfig 的当前上下文指向其他集群，同样会被拒绝：请使用 `kubectl config use-context` 切换上下文后重新运行。
-
-如果无法为 executor 应用授权：
-
-* **在 VM 上**，`init` 不会失败。它会暂存该支持包，并打印一条警告，其中给出需要在具备集群管理员权限的 kubeconfig 下执行的准确命令。验证性预检会如实报告 executor 的状态。执行打印出的命令，然后重新运行相同的 `init` 命令进行验证：
-
-```bash
-sudo env KUBECONFIG=<path> clicklink clctl executor access apply --cluster --config /etc/clicklink/config.yaml
-```
-
-* **在 Kubernetes 上**，被拒绝的授权会在 chart 部署之前中止 `init`，因为 executor 需要绑定到已授权的 ServiceAccount，缺少它便无法启动。已暂存的覆盖文件、Secrets 和 CSR 会被保留，`init` 会打印出两条命令，需在具备集群管理员权限的主机上执行。执行完这两条命令后，再次运行相同的 `init` 命令即可继续：
-
-```bash
-clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
-clicklink clctl executor access apply --cluster --output-dir <dir>
-```
-
-`--force` 是显式的重置；常规重试并不需要它。它会覆盖保留下来的 config 或配置值覆盖层，重新生成客户端密钥，并取代尚未过期的客户端证书 (签名端点返回 `409` 即表示证书已存在) 。它会保留连接器的集群 UUID 及其托管模式状态。无人值守的重新运行会沿用该状态；在终端中运行时，提示的默认值也是该状态，除非你传入 `--managed` 或 `--no-managed`。使用 `--force` 来轮换凭据或取代证书；完整的重新运行与恢复模型请参阅[运维](/zh/products/bring-your-own-cloud/connector/operations)。
+`--force` 用于显式重置，而非例行重试：它会覆盖保留的配置或配置值覆盖文件，重新生成客户端密钥，并取代未过期的客户端证书 (签名端点返回 `409` 表示该证书已存在) 。即使使用 `--force`，连接器的集群 UUID 仍会保留，因此重新初始化后的连接器会保持其身份。请在轮换凭据或取代证书时使用它；有关完整的重新运行和恢复模型，请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。

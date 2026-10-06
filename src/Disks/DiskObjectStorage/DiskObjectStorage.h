@@ -148,7 +148,7 @@ public:
 
     time_t getLastChanged(const String & path) const override;
 
-    bool isRemote() const override;
+    bool isRemote() const override { return true; }
 
     void shutdown() override;
 
@@ -215,8 +215,6 @@ public:
     /// means that it does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
-
-    bool prefersRecursiveRemoval() const override;
 
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;

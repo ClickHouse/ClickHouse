@@ -25,6 +25,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
@@ -47,7 +48,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -64,6 +64,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
@@ -159,15 +160,11 @@ void refreshSettingsDerivedMetadata(
         return;
 
     MergeTreeSettings effective_settings = *settings_defaults;
-    SettingsChanges builtin_changes;
     for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
     {
         if (MergeTreeSettings::hasBuiltin(change.name))
-            builtin_changes.push_back(change);
+            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
     }
-    /// Only the implicit-index settings below are read here, and this runs before the statement is
-    /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
-    effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
 
     metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
     metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
@@ -796,20 +793,6 @@ void AlterCommand::apply(
         return if_exists && !metadata.columns.has(column_name);
     };
 
-    /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
-    /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
-    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
-    {
-        if (should_skip_column_operation())
-            return true;
-        if (metadata.columns.has(column_name))
-            return false;
-
-        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
-        metadata.columns.appendHintsMessage(message.text, column_name);
-        throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-    };
-
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -871,7 +854,7 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (skip_absent_column_or_fail("modify"))
+        if (should_skip_column_operation())
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
@@ -990,7 +973,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (skip_absent_column_or_fail("comment"))
+        if (should_skip_column_operation())
             return;
 
         metadata.columns.modify(column_name,
@@ -1240,9 +1223,8 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
-        /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
-        /// a part already has, so existing data picks up the new settings only when its parts are merged.
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
@@ -1276,16 +1258,23 @@ void AlterCommand::apply(
             return;
 #endif
 
-        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
+        SharedHeader as_select_sample;
 
-        /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
-        ColumnsDescription new_columns;
-        for (const auto & column : as_select_sample->getNamesAndTypesList())
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            const auto * previous_column = metadata.columns.tryGet(column.name);
-            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
         }
-        metadata.columns = std::move(new_columns);
+        else
+        {
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
+                context,
+                false /* is_subquery */,
+                metadata.refresh != nullptr /* is_create_parameterized_view */);
+        }
+
+        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -1846,8 +1835,6 @@ void AlterCommands::apply(
             command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
     }
 
-    const bool columns_changed = metadata_copy.columns != metadata.columns;
-
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
@@ -1863,16 +1850,18 @@ void AlterCommands::apply(
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
+    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
-    /// Derived inputs and types can change even when the partition key output structure does not.
-    if (metadata_copy.minmax_count_projection && columns_changed)
-    {
-        auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer::visit(partition_key.get());
-        metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
+        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        {
+            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key.get());
+            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+        }
     }
 
     // /// And in sample key expression
@@ -1881,15 +1870,12 @@ void AlterCommands::apply(
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
-    /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
-    /// in the global context, not in the session that happens to issue the `ALTER`.
-    const ContextPtr index_context = context->getGlobalContext();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1918,8 +1904,6 @@ void AlterCommands::apply(
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
-    for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
-        new_projections.addUnavailable(definition_ast->clone());
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
@@ -2128,7 +2112,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     const auto virtuals = metadata->virtuals;
 
     bool share_nested = true;
-    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     auto all_columns = metadata->columns;
@@ -2144,6 +2128,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
+    /// - `apply()` runs the commands one after another - so that a command is screened below only when
+    /// it will really install a declaration.
+    NameSet constraint_names;
+    for (const auto & constraint : metadata->constraints.getConstraints())
+        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2155,11 +2145,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
         /// it would check a row against another row's value, or read past the end of a shorter column.
         /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
-        /// just like `ADD CONSTRAINT` does. Screened wherever the expression is stated, whether or not
-        /// `apply()` goes on to install it, so that the answer does not depend on the name being taken.
-        if ((command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
-            && command.constraint_decl)
-            ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+        /// just like `ADD CONSTRAINT` does.
+        ///
+        /// Only a declaration that `apply()` will really install is screened. An
+        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
+        /// that is not there, install nothing, so they keep meaning what they meant before this check
+        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
+        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
+        if (command.type == AlterCommand::ADD_CONSTRAINT)
+        {
+            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+            constraint_names.insert(command.constraint_name);
+        }
+        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+        }
+        else if (command.type == AlterCommand::DROP_CONSTRAINT)
+            constraint_names.erase(command.constraint_name);
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
@@ -2341,6 +2346,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
+                    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
                     {
                         auto execution_context = Context::createCopy(context);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
@@ -2363,6 +2369,24 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                         if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (const ColumnDescription & column : all_columns)
+                        {
+                            if (const auto & default_expression = column.default_desc.expression)
+                            {
+                                ASTPtr query = default_expression->clone();
+                                auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
+                                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                                for (const auto & required_column : actions->getRequiredColumns())
+                                {
+                                    auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                                    if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }
                             }
                         }
@@ -2417,7 +2441,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (all_columns.hasNested(command.column_name))
             {
                 bool skip = false;
-                if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                     skip = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
                 if (!skip)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
@@ -2460,7 +2484,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             /// When share_nested_offsets is disabled, dotted-name columns are independent
             /// and not part of a Nested group, so they can be freely renamed.
-            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
             {
                 if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
                 {
@@ -2474,8 +2498,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
-                renamed_columns.emplace(command.column_name);
-                renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {
@@ -2512,12 +2534,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
-                /// The conversion holds its own copy of the default expression rather than referring to the
-                /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
-                /// referring to it made every error inside the default expression surface as a failure to
-                /// resolve a synthetic name the user has never seen.
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(command.default_expression->clone(), data_type_ptr->getName()),
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -2538,8 +2556,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(column_in_table.default_desc.expression->clone(), data_type_ptr->getName()),
-                    final_column_name));
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
 

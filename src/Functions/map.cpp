@@ -6,7 +6,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -18,7 +17,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -399,182 +397,6 @@ public:
         return ColumnMap::create(nested_column);
     }
 };
-
-/// mapContainsKeyValue(map, key, value) considers every entry, unlike `map[key] = value`, which sees
-/// only the first occurrence of `key`.
-class FunctionMapContainsKeyValue final : public IFunction
-{
-public:
-    static constexpr auto name = "mapContainsKeyValue";
-
-    explicit FunctionMapContainsKeyValue(ContextPtr context)
-        : function_equals(FunctionFactory::instance().get("equals", context))
-    {
-    }
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapContainsKeyValue>(context); }
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 3; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    /// A `NULL` needle is a value to search for, not one that makes the result `NULL`.
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    /// Unwrapped below, on the columns taken out of the map; the generic path would also wrap the result.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
-        if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a Map, got {} instead", getName(), arguments[0]->getName());
-
-        /// Reject incomparable arguments during analysis, not at execution time.
-        validateComparison(map_type->getKeyType(), arguments[1]);
-        validateComparison(map_type->getValueType(), arguments[2]);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-
-        auto map_column_ptr = recursiveRemoveLowCardinality(arguments[0].column->convertToFullColumnIfConst());
-        const auto * map_column = checkAndGetColumn<ColumnMap>(map_column_ptr.get());
-        if (!map_column)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be a map, got {} instead",
-                getName(), arguments[0].column->getName());
-
-        const auto & offsets = map_column->getNestedColumn().getOffsets();
-        const auto & entries = map_column->getNestedData();
-        const size_t num_entries = entries.size();
-
-        auto key_matches = matchEntries(entries.getColumnPtr(0), map_type.getKeyType(), arguments[1], offsets, num_entries);
-        auto value_matches = matchEntries(entries.getColumnPtr(1), map_type.getValueType(), arguments[2], offsets, num_entries);
-
-        auto result = ColumnUInt8::create(input_rows_count);
-        auto & result_data = result->getData();
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            UInt8 found = 0;
-            for (size_t i = offsets[row - 1]; !found && i < offsets[row]; ++i)
-                found = static_cast<UInt8>(key_matches[i] && value_matches[i]);
-            result_data[row] = found;
-        }
-
-        return result;
-    }
-
-private:
-    /// `Nothing` holds no values and `Nullable(Nothing)` only `NULL`s, so there is nothing to compare.
-    static bool isAlwaysNullOrEmpty(const DataTypePtr & type) { return isNothing(removeNullable(type)); }
-
-    struct NullCheck
-    {
-        const NullMap * nulls = nullptr;
-        bool always = false;
-
-        bool isNullAt(size_t row) const { return always || (nulls && (*nulls)[row]); }
-    };
-
-    static NullCheck makeNullCheck(const DataTypePtr & type, const IColumn & column)
-    {
-        if (isAlwaysNullOrEmpty(type))
-            return {.nulls = nullptr, .always = true};
-
-        /// A constant keeps its null bit inside the `ColumnConst`, out of reach of a null map.
-        if (isColumnConst(column))
-            return {.nulls = nullptr, .always = column.onlyNull()};
-
-        return {.nulls = getNullMap(column), .always = false};
-    }
-
-    /// `equals` decides what is comparable, so this accepts the arguments `map[key] = value` accepts.
-    void validateComparison(const DataTypePtr & element_type, const DataTypePtr & needle_type) const
-    {
-        if (isAlwaysNullOrEmpty(element_type) || isAlwaysNullOrEmpty(needle_type))
-            return;
-
-        ColumnsWithTypeAndName equals_arguments{
-            {nullptr, recursiveRemoveLowCardinality(element_type), ""},
-            {nullptr, recursiveRemoveLowCardinality(needle_type), ""}};
-        function_equals->build(equals_arguments);
-    }
-
-    /// One flag per entry: does its key (or value) equal the needle of the row the entry belongs to?
-    PaddedPODArray<UInt8> matchEntries(
-        const ColumnPtr & elements_argument,
-        const DataTypePtr & element_type_argument,
-        const ColumnWithTypeAndName & needle_argument,
-        const IColumn::Offsets & offsets,
-        size_t num_entries) const
-    {
-        if (num_entries == 0)
-            return {};
-
-        auto elements = recursiveRemoveLowCardinality(elements_argument);
-        auto element_type = recursiveRemoveLowCardinality(element_type_argument);
-        auto needle_type = recursiveRemoveLowCardinality(needle_argument.type);
-
-        /// One needle value per row, one comparison per entry: spread it over the entries of its row.
-        ColumnPtr needle;
-        if (isColumnConst(*needle_argument.column))
-            needle = needle_argument.column->cloneResized(num_entries);
-        else
-            needle = needle_argument.column->replicate(offsets);
-        needle = recursiveRemoveLowCardinality(needle);
-
-        const auto element_nulls = makeNullCheck(element_type, *elements);
-        const auto needle_nulls = makeNullCheck(needle_type, *needle);
-
-        ColumnPtr equals_result;
-        const PaddedPODArray<UInt8> * equals_data = nullptr;
-
-        /// `=` yields `NULL` against a `NULL` operand, so it says nothing when one side is all `NULL`.
-        if (!element_nulls.always && !needle_nulls.always)
-        {
-            ColumnsWithTypeAndName equals_arguments{{elements, element_type, ""}, {needle, needle_type, ""}};
-            auto equals = function_equals->build(equals_arguments);
-            equals_result = equals->execute(equals_arguments, equals->getResultType(), num_entries, /*dry_run=*/ false)
-                ->convertToFullColumnIfConst();
-
-            const auto * nullable_result = checkAndGetColumn<ColumnNullable>(equals_result.get());
-            equals_data = &assert_cast<const ColumnUInt8 &>(
-                nullable_result ? nullable_result->getNestedColumn() : *equals_result).getData();
-        }
-
-        PaddedPODArray<UInt8> matches(num_entries);
-
-        for (size_t i = 0; i < num_entries; ++i)
-        {
-            const bool element_is_null = element_nulls.isNullAt(i);
-            const bool needle_is_null = needle_nulls.isNullAt(i);
-
-            /// A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`.
-            matches[i] = (element_is_null || needle_is_null)
-                ? static_cast<UInt8>(element_is_null && needle_is_null)
-                : (*equals_data)[i];
-        }
-
-        return matches;
-    }
-
-    static const NullMap * getNullMap(const IColumn & column)
-    {
-        const auto * nullable = checkAndGetColumn<ColumnNullable>(&column);
-        return nullable ? &nullable->getNullMapData() : nullptr;
-    }
-
-    FunctionOverloadResolverPtr function_equals;
-};
 }
 
 REGISTER_FUNCTION(Map)
@@ -635,38 +457,6 @@ For two maps, returns the first map with values updated on the values for the co
     FunctionDocumentation::Category category_mapUpdate = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, {}, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
     factory.registerFunction<FunctionMapUpdate>(documentation_mapUpdate);
-
-    /// mapContainsKeyValue function documentation
-    FunctionDocumentation::Description description_mapContainsKeyValue = R"(
-Returns whether the map contains an entry with the given key and value.
-
-For arguments that are not `NULL` this is
-`arrayExists((k, v) -> k = key AND v = value, mapKeys(map), mapValues(map))`.
-A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`, rather than
-comparing as unknown the way `=` does.
-
-All entries are considered, unlike `map[key] = value`, which compares only the value of the first
-occurrence of `key`.
-
-A [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
-tokenizer answers this function from the index.
-)";
-    FunctionDocumentation::Syntax syntax_mapContainsKeyValue = "mapContainsKeyValue(map, key, value)";
-    FunctionDocumentation::Arguments arguments_mapContainsKeyValue = {
-        {"map", "The map to search.", {"Map(K, V)"}},
-        {"key", "The key to search for. Type must match the key type of the map.", {"Any"}},
-        {"value", "The value to search for. Type must match the value type of the map.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_mapContainsKeyValue = {"Returns `1` if the map contains an entry with the key and the value, `0` if not.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_mapContainsKeyValue = {
-        {"Basic usage", "SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v1')", "1"},
-        {"Key and value of different entries", "SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v2')", "0"},
-        {"Repeated key", "SELECT mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2'), map('k', 'v1', 'k', 'v2')['k'] = 'v2'", "1\t0"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyValue = {26, 9};
-    FunctionDocumentation::Category category_mapContainsKeyValue = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapContainsKeyValue = {description_mapContainsKeyValue, syntax_mapContainsKeyValue, arguments_mapContainsKeyValue, {}, returned_value_mapContainsKeyValue, examples_mapContainsKeyValue, introduced_in_mapContainsKeyValue, category_mapContainsKeyValue};
-    factory.registerFunction<FunctionMapContainsKeyValue>(documentation_mapContainsKeyValue);
 }
 
 }

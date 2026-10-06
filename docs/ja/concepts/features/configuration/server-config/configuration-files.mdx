@@ -358,7 +358,9 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## YAML の例 {#example-1}
+<div id="example-1">
+  ## YAML の例
+</div>
 
 ここでは、YAML で記述されたデフォルト設定を確認できます: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example)。
 
@@ -371,7 +373,7 @@ YAML フォーマットで設定を記述する際のヒントを以下に示し
 key: value
 ```
 
-対応する XML:
+対応するXML:
 
 ```xml
 <key>value</key>
@@ -433,7 +435,7 @@ map:
   key: 123
 ```
 
-対応する XML:
+対応するXML:
 
 ```xml
 <map attr1="value1" attr2="value2">
@@ -467,7 +469,7 @@ map_key:
   "#text": value2
 ```
 
-対応する XML:
+対応するXML：
 
 ```xml
 <map_key attr1="value1">value2</map_key>

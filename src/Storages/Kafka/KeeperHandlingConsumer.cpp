@@ -297,58 +297,37 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
 {
     const auto replica_names = keeper->getChildren(keeper_path / "replicas");
 
-    /// In affinity mode only replicas of our own shard share the quota; the shard num is stored
-    /// as the replica znode data. Filter by it first so we don't probe is_active for discarded replicas.
-    Strings candidates;
+    /// Fast path: when partition affinity is disabled, all replicas share the same
+    /// layout, so we can count them without reading individual znode data.
     if (shard_count == 0)
     {
-        candidates = replica_names;
-    }
-    else
-    {
-        const auto my_shard_num = toString(partition_shard_num);
-
-        Strings replica_paths;
-        replica_paths.reserve(replica_names.size());
-        for (const auto & name : replica_names)
-            replica_paths.push_back(keeper_path / "replicas" / name);
-
-        auto shard_num_responses = keeper->tryGet(replica_paths);
-        for (size_t i = 0; i < replica_names.size(); ++i)
-        {
-            const auto & response = shard_num_responses[i];
-            if (response.error == Coordination::Error::ZOK && response.data == my_shard_num)
-                candidates.push_back(replica_names[i]);
-        }
+        const auto replicas_count = replica_names.size();
+        LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
+        return ActiveReplicasInfo{replicas_count, replicas_with_lock.size() < replicas_count};
     }
 
-    /// The replica znode is persistent and outlives a dead replica, so is_active is the liveness signal.
-    Strings is_active_paths;
-    is_active_paths.reserve(candidates.size());
-    for (const auto & name : candidates)
-        is_active_paths.push_back(keeper_path / "replicas" / name / "is_active");
+    /// Only count replicas with the same shard num (stored as replica_path znode data).
+    const auto my_shard_num = toString(partition_shard_num);
 
-    auto is_active_responses = keeper->exists(is_active_paths);
-
-    size_t active_replica_count = 0;
-    size_t active_replicas_with_lock = 0;
-    for (size_t i = 0; i < candidates.size(); ++i)
+    size_t matching_replica_count = 0;
+    size_t matching_replicas_with_lock = 0;
+    for (const auto & name : replica_names)
     {
-        if (is_active_responses[i].error != Coordination::Error::ZOK)
+        String remote_replica_data;
+        if (!keeper->tryGet(keeper_path / "replicas" / name, remote_replica_data))
             continue;
 
-        ++active_replica_count;
-        if (replicas_with_lock.contains(candidates[i]))
-            ++active_replicas_with_lock;
+        if (remote_replica_data != my_shard_num)
+            continue;
+
+        matching_replica_count++;
+        if (replicas_with_lock.contains(name))
+            matching_replicas_with_lock++;
     }
 
-    /// Clamp to 1: our own is_active may be transiently missing, and 0 would divide by zero in
-    /// updatePermanentLocksLocked (its chassert is a no-op in the release build).
-    active_replica_count = std::max<size_t>(active_replica_count, 1);
-    LOG_TEST(log, "There are {} active replicas with lock, {} active replicas out of {} total replicas (shard_count={})",
-             active_replicas_with_lock, active_replica_count, replica_names.size(), shard_count);
-    const auto has_replica_without_locks = active_replicas_with_lock < active_replica_count;
-    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks};
+    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total (shard_num={})",
+             matching_replicas_with_lock, matching_replica_count, my_shard_num);
+    return ActiveReplicasInfo{matching_replica_count, matching_replicas_with_lock < matching_replica_count};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>

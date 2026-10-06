@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -52,9 +53,9 @@ public:
     {
         if (isDiskFunction(ast))
         {
-            auto & disk_function = assert_cast<ASTFunction &>(*ast);
-            auto * disk_function_args_expr = assert_cast<ASTExpressionList *>(disk_function.arguments.get());
-            auto & disk_function_args = disk_function_args_expr->children;
+            const auto & disk_function = assert_cast<const ASTFunction &>(*ast);
+            const auto * disk_function_args_expr = assert_cast<const ASTExpressionList *>(disk_function.arguments.get());
+            const auto & disk_function_args = disk_function_args_expr->children;
 
             auto is_secret_arg = [](const std::string & arg_name)
             {
@@ -63,29 +64,27 @@ public:
                 return arg_name != "type" && arg_name != "disk" && arg_name != "name" ;
             };
 
-            for (auto & arg : disk_function_args)
+            for (const auto & arg : disk_function_args)
             {
                 auto * setting_function = arg->as<ASTFunction>();
-                auto * function_args_expr = setting_function && setting_function->name == "equals" && setting_function->arguments
-                    ? setting_function->arguments->as<ASTExpressionList>()
-                    : nullptr;
-                const auto * key_identifier = function_args_expr && !function_args_expr->children.empty()
-                    ? function_args_expr->children[0]->as<ASTIdentifier>()
-                    : nullptr;
+                if (!setting_function || setting_function->name != "equals")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad format: expected equals function");
 
-                /// Not `key = value`, so the parser rejects it: hide it whole, a throw here would log the query unmasked.
+                auto * function_args_expr = assert_cast<ASTExpressionList *>(setting_function->arguments.get());
+                if (!function_args_expr)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad format: expected arguments");
+
+                auto & function_args = function_args_expr->children;
+                if (function_args.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad format: expected non zero number of arguments");
+
+                auto * key_identifier = function_args[0]->as<ASTIdentifier>();
                 if (!key_identifier)
-                {
-                    arg = make_intrusive<ASTLiteral>("[HIDDEN]");
-                    continue;
-                }
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad format: expected Identifier");
 
-                if (is_secret_arg(key_identifier->name()))
-                {
-                    auto & function_args = function_args_expr->children;
-                    for (size_t i = 1; i < function_args.size(); ++i)
-                        function_args[i] = make_intrusive<ASTLiteral>("[HIDDEN]");
-                }
+                const std::string & key = key_identifier->name();
+                if (is_secret_arg(key))
+                    function_args[1] = make_intrusive<ASTLiteral>("[HIDDEN]");
             }
         }
     }

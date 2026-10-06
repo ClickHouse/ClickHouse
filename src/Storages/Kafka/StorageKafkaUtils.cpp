@@ -116,13 +116,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(
-            args.engine_args,
-            args.getLocalContext(),
-            /*throw_unknown_collection=*/ true,
-            /*complex_args=*/ nullptr,
-            &args.table_id,
-            args.storage_def->settings))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -471,19 +465,6 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
-
-## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
-
-`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
-
-When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
-
-For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
-
-- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
-- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
-
-The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
 Examples:
 

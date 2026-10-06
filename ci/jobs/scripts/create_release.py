@@ -57,10 +57,11 @@ from ci.jobs.scripts.clickhouse_version import (
 )
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
-from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tools"))
+# S3Helper requires boto3 (installed on release machines); ssh has no external deps.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
+from s3_helper import S3Helper  # noqa: E402
 from ssh import SSHAgent  # noqa: E402
 
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
@@ -662,8 +663,10 @@ class PackageDownloader:
         self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
+        self.s3_release_prefix = release_packages.s3_release_prefix(release)
+        self.commit_sha = commit_sha
         self.version = version
+        self.s3 = S3Helper()
         self.deb_package_files = []
         self.rpm_package_files = []
         self.tgz_package_files = []
@@ -751,15 +754,16 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 self.file_to_job_name[package_file],
                 package_file,
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
         for macos_binary, job_name in self.macos_binary_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_binary
@@ -770,29 +774,31 @@ class PackageDownloader:
             # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 job_name,
                 "clickhouse",
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
         for macos_zip, job_name in self.macos_signed_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_zip
             print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
             s3_path = "/".join([
-                self.s3_commit_prefix,
+                self.s3_release_prefix,
+                self.commit_sha,
                 job_name,
                 release_packages.MACOS_SIGNED_S3_OBJECT,
             ])
-            if not S3.copy_file_from_s3(
-                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
-                local_path=local_path,
-            ):
-                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+            self.s3.download_file(
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=s3_path,
+                local_file_path=local_path,
+            )
 
     def local_deb_packages_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.deb_package_files)

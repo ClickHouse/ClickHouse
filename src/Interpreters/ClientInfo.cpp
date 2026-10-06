@@ -516,22 +516,6 @@ void ClientInfo::setClientVersionFromConnectionIfUnknown()
         client_tcp_protocol_version = connection_tcp_protocol_version;
 }
 
-void ClientInfo::setClientVersion(UInt64 client_version_major_, UInt64 client_version_minor_, UInt64 client_version_patch_, unsigned client_tcp_protocol_version_)
-{
-    client_version_major = client_version_major_;
-    client_version_minor = client_version_minor_;
-    client_version_patch = client_version_patch_;
-    client_tcp_protocol_version = client_tcp_protocol_version_;
-}
-
-void ClientInfo::setInitiatorVersionIfUnset()
-{
-    if (client_version_major != 0 || client_version_minor != 0 || client_version_patch != 0)
-        return;
-
-    setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-}
-
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
 {
     bool patch_equals = compare_patch ? client_version_patch == other.client_version_patch : true;
@@ -596,8 +580,6 @@ String toString(ClientInfo::Interface interface)
             return "BACKGROUND";
         case ClientInfo::Interface::ARROW_FLIGHT:
             return "ARROWFLIGHT";
-        case ClientInfo::Interface::ICEBERG_REST_CATALOG:
-            return "ICEBERG_REST_CATALOG";
     }
 
     return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));
@@ -696,7 +678,6 @@ constexpr std::array interface_names
     std::pair{std::string_view{"Prometheus"}, ClientInfo::Interface::PROMETHEUS},
     std::pair{std::string_view{"Background"}, ClientInfo::Interface::BACKGROUND},
     std::pair{std::string_view{"ArrowFlight"}, ClientInfo::Interface::ARROW_FLIGHT},
-    std::pair{std::string_view{"IcebergRESTCatalog"}, ClientInfo::Interface::ICEBERG_REST_CATALOG},
 };
 
 constexpr std::array http_method_names
