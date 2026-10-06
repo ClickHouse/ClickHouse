@@ -425,7 +425,9 @@ private:
     std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens);
 
     std::shared_ptr<TextIndexHeader> loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
-    void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    /// Reads the single-segment posting lists of the needed tokens and folds them into the analyzer.
+    /// Opens the postings stream itself, once the tokens are known, with a buffer that fits the largest of the lists.
+    void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
     MergeTreeIndexTextParams params;
@@ -492,6 +494,8 @@ struct MergeTreeIndexTextGranuleBuilder
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
     void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
+    /// Adds the rows from a column or array of `LowCardinality`, tokenizing each dictionary value once.
+    void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }

@@ -94,6 +94,16 @@ See also:
 
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives
 
+## array_count_legacy_uint32_result {#array_count_legacy_uint32_result}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`arrayCount` now returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements. Set this setting to `true` to return `UInt32` as before."}]}]}/>
+
+If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
+
+During a rolling upgrade, enable it on the upgraded servers for the users under which distributed queries execute on them, to keep distributed queries initiated by not-yet-upgraded servers fully unchanged (an old initiator does not forward this setting, so type-sensitive expressions evaluated locally on upgraded shards would otherwise observe `UInt64`), and remove it after the upgrade is complete. Which user a shard-side query runs under depends on the cluster configuration: with an interserver `secret` configured, it is the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+
 ## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
@@ -105,6 +115,14 @@ Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset na
 Possible values:
 - 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
 - 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
+
+## arrow_flight_request_timeout_sec {#arrow_flight_request_timeout_sec}
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "New setting bounding a single Arrow Flight request. No timeout was set before, so a Flight server that accepted a request and never answered blocked the query indefinitely; 0 restores that behavior."}]}]}/>
+
+Timeout in seconds for a single Arrow Flight request. It bounds the whole request: for a read that is the entire result stream, not just the wait for the first record batch. Zero means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -361,6 +379,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `allow_experimental_logsql_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
@@ -778,6 +797,8 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 
 Maximum number of allowed addresses (For external storages, table functions, etc).
 
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
+
 ## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -865,6 +886,21 @@ The interval in microseconds for checking whether request execution has been can
 
 Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+
+If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+
+Possible values:
+
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
+
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -872,6 +908,14 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
+
+## legacy_array_join_function_nondeterministic_evaluation {#legacy_array_join_function_nondeterministic_evaluation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated like with the `ARRAY JOIN` clause."}]}]}/>
+
+How non-deterministic and block-dependent functions next to the `arrayJoin` function are evaluated. By default `rand()` gives a different value on every output row and `runningDifference` or `neighbor` see the blocks of the expansion, like with the `ARRAY JOIN` clause. Enable to get the behavior of older versions.
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
@@ -1395,11 +1439,13 @@ Applies to queries received over the native TCP and HTTP protocols. Over HTTP, p
 
 The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 
-## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
+## secondary_indexes_enable_bulk_filtering {#secondary_indexes_enable_bulk_filtering}
+
+**Aliases**: `secondary_indices_enable_bulk_filtering`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Added an alias for setting `secondary_indices_enable_bulk_filtering`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
 
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 

@@ -6,7 +6,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node_server = cluster.add_instance(
-    "node_server", main_configs=["config.d/memory_overrides.yaml"]
+    "node_server",
+    main_configs=[
+        "config.d/memory_overrides.yaml",
+        "config.d/no_memory_tracker_correction.yaml",
+    ],
 )
 node_user = cluster.add_instance(
     "node_user", user_configs=["users.d/memory_overrides.yaml"]

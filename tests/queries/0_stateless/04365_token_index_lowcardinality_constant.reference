@@ -50,5 +50,6 @@ tokenbf hasToken LowCardinality(Nullable)
 1
 ngrambf hasToken LowCardinality(Nullable)
 1
-tokenbf hasToken separator needle: String prunes, LowCardinality raises
+tokenbf hasToken separator needle: String and LowCardinality prune alike
+0
 0

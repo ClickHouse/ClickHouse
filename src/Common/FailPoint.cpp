@@ -50,7 +50,9 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
+    PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -78,6 +80,7 @@ static struct InitFiu
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
+    PAUSEABLE_ONCE(mt_lightweight_update_pause_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
@@ -87,6 +90,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
     REGULAR(azure_inject_auth_failure_on_request) \
@@ -151,12 +155,14 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(runtime_filter_skip_finish_insert) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
@@ -238,6 +244,8 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_tree_load_mutations_pause_before_read) \
+    PAUSEABLE(merge_tree_drop_all_data_pause_before_removing_parts) \
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
@@ -262,10 +270,14 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
+    REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
+    PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    PAUSEABLE_ONCE(hudi_pause_before_iterate) \
+    PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
@@ -312,6 +324,7 @@ static struct InitFiu
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
+    PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
@@ -361,9 +374,11 @@ static struct InitFiu
     PAUSEABLE(atomic_populate_pause_before_subscription) \
     PAUSEABLE(atomic_populate_pause_after_view_publication) \
     PAUSEABLE(atomic_populate_pause_before_source_guard) \
+    PAUSEABLE(atomic_populate_pause_before_population) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
+    ONCE(mt_drop_selected_ttl_merge_once) \
     ONCE(mt_fail_selected_merge_before_start_once) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
@@ -373,6 +388,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_after_check_data) \
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
+    REGULAR(transaction_hold_unknown_state) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
@@ -401,6 +417,8 @@ static struct InitFiu
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
+    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \

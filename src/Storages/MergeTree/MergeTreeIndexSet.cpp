@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -34,13 +35,7 @@ static const Field UNKNOWN_FIELD(3u);
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
 static bool hasMeaningfulFieldExtremes(const IDataType & type)
 {
-    bool result = !isDynamic(type) && !isVariant(type);
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (isDynamic(child) || isVariant(child))
-            result = false;
-    });
-    return result;
+    return !anyInTypeTree(type, [](const IDataType & subtype) { return isDynamic(subtype) || isVariant(subtype); });
 }
 
 
@@ -688,8 +683,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
@@ -844,8 +838,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     if (WhichDataType(node.result_type).isSet())
     {

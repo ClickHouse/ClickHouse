@@ -8,6 +8,24 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
+# Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
+# is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
+# Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
+function refuse_if_dest_aliases_source()
+{
+    for dest_dir in "$@"; do
+        for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+            if [ "$dest_dir" -ef "$src_dir" ]; then
+                echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+                exit 1
+            fi
+        done
+    done
+}
+
+refuse_if_dest_aliases_source "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"
+
 if [ $# -ge 2 ]; then
     shift 2
 fi
@@ -236,6 +254,9 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 0 && "$PREVIOUS_RELEASE_CONFIG" -eq 0 ]]; then
+    ln -sf $SRC_PATH/config.d/columns_cache.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 # `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
 # them as unknown config elements and refuses to start. Gate the drop-in on the installed
@@ -382,12 +403,19 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
-# The http_allow_* settings are introduced by this feature and are not present in any
-# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
-# that can contain them) to keep the previous-release server of the upgrade check bootable.
+# The `url_prefix` handler option is introduced by this feature and is not present in any
+# released version before 26.8, so gate on 26.8 (the first version that can contain it) to
+# keep the previous-release server of the upgrade check bootable.
 if check_clickhouse_version 26.8; then
-    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+    # The path-as-URL features are enabled by default since 26.10. An older server - the
+    # previous-release one of the upgrade check - still needs them turned on explicitly,
+    # because that release's tests expect the feature to work. On 26.10 and newer the tests
+    # must exercise the defaults, so these files are deliberately not installed there.
+    if ! check_clickhouse_version 26.10; then
+        ln -sf $SRC_PATH/config.d/http_allow_path_requests.xml $DEST_SERVER_PATH/config.d/
+        ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    fi
 fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
@@ -625,6 +653,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
+    # The configs are copied into and edited in these sibling directories; check them only now, when they exist,
+    # so that `..` is resolved the same way as by the commands below.
+    refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
+        "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
 #    chown clickhouse $ch_server_1_path
 #    chown clickhouse $ch_server_2_path
 #    chgrp clickhouse $ch_server_1_path

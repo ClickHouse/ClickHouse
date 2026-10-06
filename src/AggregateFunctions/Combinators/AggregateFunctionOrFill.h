@@ -80,9 +80,19 @@ public:
         return nested_function->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_function);
     }
 
     bool isState() const override
@@ -291,6 +301,20 @@ public:
         nested_function->serialize(place, buf, version);
 
         writeChar(place[size_of_data], buf);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
+            return *nested_bound + sizeof(char);
+        return std::nullopt;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        dst = nested_function->serializeToMemory(place, dst, version);
+        writeBinary(place[size_of_data], dst);
+        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
