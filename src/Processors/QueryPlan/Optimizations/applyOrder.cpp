@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -72,20 +71,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
-                properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
-        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
-        /// which may spill, has to restore the order after the spill (see
-        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
-        /// description carries no order to preserve.
+        /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-        {
-            if (!distinct_step->isPreliminary() && !properties->sort_description.empty())
-                distinct_step->preserveInputOrder();
             return *properties;
-        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)
@@ -137,8 +128,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(
-            properties->sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
         if (prefix.size() == limit_by_step->getColumns().size())
             limit_by_step->applyOrder(prefix);
 
@@ -150,20 +140,9 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(
-            properties->sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
             negative_limit_by_step->applyOrder(prefix);
-
-        return std::move(*properties);
-    }
-
-    if (typeid_cast<LimitRangeStep *>(parent->step.get()))
-    {
-        /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
-        /// concatenated without a merge and only a global order survives the step.
-        if (properties->sort_scope != SortingProperty::SortScope::Global)
-            return {};
 
         return std::move(*properties);
     }

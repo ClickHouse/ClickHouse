@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -19,7 +18,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -85,17 +83,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
-}
-
-UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
-{
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
-    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            return value->safeGet<UInt64>();
-    return settings.min_compress_block_size;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -706,7 +693,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
+        auto compression = getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 
@@ -746,23 +733,6 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
-}
-
-CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
-    const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
-{
-    const auto & substream_type = substream_path.back().data.type;
-    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
-    /// The type is omitted so the codecs about to be dropped are not validated against it.
-    const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
-    auto codec = CompressionCodecFactory::instance().get(
-        effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
-
-    /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
-    if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
-
-    return codec;
 }
 
 void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)

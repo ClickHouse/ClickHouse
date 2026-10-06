@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# Create connection (":memory:" is a temporary, non-persistent database)
+# 创建连接（默认为内存模式）
 conn = chdb.connect(":memory:")
-# Or use file-based: conn = chdb.connect("mydata.db")
+# 或使用基于文件的方式：conn = chdb.connect("mydata.db")
 
-# Create cursor for query execution
+# 创建游标以执行查询
 cur = conn.cursor()
 
-# Execute queries
+# 执行查询
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# Fetch results in different ways
-print(cur.fetchone())    # Single row: (0, '0')
-print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
+# 以不同方式获取结果
+print(cur.fetchone())    # 单行：(0, '0')
+print(cur.fetchmany(2))  # 多行：((1, '1'), (2, '2'))
 
-# Get metadata
+# 获取元数据
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# Use cursor as iterator
+# 将游标用作迭代器
 for row in cur:
     print(row)
 
-# Always close resources
+# 始终关闭资源
 cur.close()
 conn.close()
 ```

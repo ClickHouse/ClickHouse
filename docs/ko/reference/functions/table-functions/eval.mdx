@@ -3,7 +3,7 @@ description: '`eval` 테이블 함수는 상수 표현식을 쿼리 문자열로
 sidebarTitle: 'eval'
 slug: /sql-reference/table-functions/eval
 title: 'eval'
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
 `eval` 테이블 함수는 인수를 쿼리 문자열로 평가한 후, 해당 문자열을 단일 `SELECT` 쿼리로 실행합니다.
@@ -14,14 +14,20 @@ doc_type: 'reference'
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## 구문 {#syntax}
+또한 기본적으로 활성화되어 있는 분석기([`enable_analyzer`](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer))가 필요합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## 인수 {#arguments}
+<div id="arguments">
+  ## 인수
+</div>
 
 * `expression` — 쿼리 문자열을 반환하는 상수 표현식입니다. 쿼리 매개변수와 스칼라 서브쿼리를 사용할 수 있습니다.
 * `SELECT ...` — 쿼리 문자열을 반환하는 `SELECT` 쿼리입니다. 이 형식은 스칼라 서브쿼리의 문법적 설탕으로, `eval(SELECT ...)`는 `eval((SELECT ...))`와 동일합니다. 따라서 이 쿼리는 정확히 1개의 행과 1개의 컬럼을 반환해야 합니다.
@@ -35,13 +41,17 @@ eval(SELECT ...)
 
 값이 `NULL`이면 `eval`은 예외를 발생시킵니다.
 
-## 반환 값 {#returned-value}
+<div id="returned-value">
+  ## 반환 값
+</div>
 
 생성된 `SELECT` 쿼리의 결과를 테이블로 반환합니다.
 
 출력 스키마는 `eval` 테이블 함수가 분석되는 시점에 결정되므로, 외부 쿼리에서 생성된 쿼리의 실제 컬럼명과 타입을 참조할 수 있습니다.
 
-## 예시 {#examples}
+<div id="examples">
+  ## 예시
+</div>
 
 상수 표현식을 평가합니다:
 
@@ -100,8 +110,11 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 └────────────┘
 ```
 
-## 제한 사항 {#restrictions}
+<div id="restrictions">
+  ## 제한 사항
+</div>
 
+* `eval`은 쿼리 분석기(`enable_analyzer = 1`)에서만 작동합니다.
 * 생성된 쿼리는 `INTO OUTFILE` 또는 `FORMAT`과 같은 출력 옵션이 없는 단일 `SELECT` 쿼리여야 합니다. `eval`은 여러 SQL 문을 실행하지 않습니다.
 * 생성된 쿼리는 독립적이어야 합니다. 즉, 자체 범위에서 해석되며 외부 쿼리의 `WITH` 별칭이나 컬럼을 참조할 수 없습니다.
 * 생성된 쿼리에서는 `eval` 테이블 함수를 다시 사용할 수 없습니다.
@@ -109,7 +122,9 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 * 인수는 각 행이나 블록마다 한 번씩이 아니라, 쿼리를 분석하는 동안 한 번만 평가됩니다.
 * 외부 쿼리의 쿼리 로그에는 `eval`이 포함된 원래 쿼리만 기록되며, 생성된 `SELECT` 쿼리는 별도의 사용자 쿼리로 기록되지 않습니다.
 
-## 관련 항목 {#related}
+<div id="related">
+  ## 관련 항목
+</div>
 
 * [`view` 테이블 함수](/ko/reference/functions/table-functions/view)
 * `allow_experimental_eval_table_function` 설정

@@ -38,7 +38,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
-    extern const char local_object_storage_network_error_during_every_remove[];
 }
 
 namespace ErrorCodes
@@ -49,7 +48,6 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int FAULT_INJECTED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_LINK;
     extern const int CANNOT_STAT;
@@ -717,24 +715,13 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
     });
-
-    fiu_do_on(FailPoints::local_object_storage_network_error_during_every_remove, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
-    });
 }
 
-void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)
-    {
         removeObjectIfExists(object);
-
-        if (successful_objects)
-            successful_objects->emplace_back(object);
-    }
 }
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
@@ -806,16 +793,8 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// `PreconditionFailed`.
     struct stat file_stat{};
     if (0 != ::stat(resolved_path.c_str(), &file_stat))
-    {
-        const int stat_errno = errno;
-        const bool does_not_exist = isVanishedEntryError(std::error_code(stat_errno, std::generic_category()));
-        ErrnoException::throwFromPathWithErrno(
-            does_not_exist ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_STAT,
-            resolved_path,
-            stat_errno,
-            "Cannot get metadata of file {}",
-            resolved_path);
-    }
+        throw fs::filesystem_error(
+            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
 
     return makeObjectMetadata(file_stat);
 }
@@ -968,11 +947,6 @@ void LocalObjectStorage::throwIfReadonly() const
 ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
-}
-
-ObjectStoragePtr LocalObjectStorage::cloneImpl() const
-{
-    return std::make_shared<LocalObjectStorage>(settings);
 }
 
 }

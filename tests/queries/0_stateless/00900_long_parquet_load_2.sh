@@ -65,9 +65,6 @@ EXCLUDE=(
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet
     05035_delta_byte_array_decimal.parquet
-    # Hand-crafted files with only min or only max statistics for the 05230 partial-statistics test.
-    05230_date_max_only_statistics.parquet
-    05230_date_min_only_statistics.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

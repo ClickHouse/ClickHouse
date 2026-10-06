@@ -1,0 +1,21 @@
+<clickhouse>
+    <!--
+        Initial config for the failed-reload invariant test: a static HTTP handler serves a known
+        `config://` payload. A subsequent *failed* reload (one that changes the payload AND adds an
+        unknown top-level key) must be rejected BEFORE the new config is installed, leaving the live
+        config untouched, so the ORIGINAL payload is still served afterwards.
+    -->
+    <reload_invariant_payload>original payload</reload_invariant_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/reload_invariant</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://reload_invariant_payload</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

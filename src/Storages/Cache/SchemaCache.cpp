@@ -1,5 +1,4 @@
 #include <Storages/Cache/SchemaCache.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Common/ProfileEvents.h>
 #include <ctime>
 
@@ -71,54 +70,18 @@ void SchemaCache::checkOverflow()
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheEvictions);
 }
 
-/// An inferred `DateTime`/`DateTime64` without an explicit time zone latches the effective time zone of
-/// the session that inferred it: `DateLUT::instance` resolves `session_timezone` of the current query at
-/// the moment the type object is constructed, and the cache stores the type objects themselves. A session
-/// with another `session_timezone` served such a schema would parse the values in its own zone but format
-/// and compute them in the inferring session's zone. The type name of an implicit zone is just `DateTime`,
-/// so re-creating the type from its name binds it to the zone of the session that is reading the cache.
-/// A type with an explicit zone re-creates to the same type. The key stays free of the time zone, so all
-/// sessions keep sharing one entry per source, and the cached number of rows is served to all of them.
-static ColumnsDescription rebindImplicitTimeZones(const ColumnsDescription & columns)
-{
-    bool has_time_zone_dependent_type = false;
-    for (const auto & column : columns)
-    {
-        if (column.type->getName().contains("DateTime"))
-        {
-            has_time_zone_dependent_type = true;
-            break;
-        }
-    }
-
-    if (!has_time_zone_dependent_type)
-        return columns;
-
-    ColumnsDescription result;
-    for (const auto & column : columns)
-    {
-        ColumnDescription rebound = column;
-        if (rebound.type->getName().contains("DateTime"))
-            rebound.type = DataTypeFactory::instance().get(rebound.type->getName());
-        result.add(std::move(rebound));
-    }
-    return result;
-}
-
 std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
 {
     auto schema_info = tryGetImpl(key, get_last_mod_time);
     if (!schema_info)
         return std::nullopt;
 
-    if (!schema_info->columns)
-    {
+    if (schema_info->columns)
+        ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheSchemaHits);
+    else
         ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheSchemaMisses);
-        return std::nullopt;
-    }
 
-    ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheSchemaHits);
-    return rebindImplicitTimeZones(*schema_info->columns);
+    return schema_info->columns;
 }
 
 std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)

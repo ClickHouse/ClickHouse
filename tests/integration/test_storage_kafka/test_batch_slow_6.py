@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 
+from kafka import KafkaAdminClient
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -207,7 +208,9 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         ORDER BY key;
     """)
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "topic_with_multiple_partitions" + k.get_topic_postfix(
         create_query_generator
     )

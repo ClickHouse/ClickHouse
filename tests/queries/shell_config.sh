@@ -190,13 +190,8 @@ function wait_for_query_to_start()
 {
     local query_id="$1"
     local timeout="${2:-120}"
-    # PID of the client running the query, optional: a short query can start and end between two polls.
-    local client_pid="${3:-}"
     local start=$EPOCHSECONDS
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
-        if [[ -n "$client_pid" ]] && ! kill -0 "$client_pid" 2>/dev/null; then
-            return 0
-        fi
         if ((EPOCHSECONDS - start > timeout)); then
             echo "Timeout waiting for query $query_id to start" >&2
             exit 1
@@ -226,17 +221,6 @@ function random_str()
     # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
     # bytes from /dev/urandom under a UTF-8 locale.
     LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
-}
-
-# Repeat a string N times: rep '(' 100
-function rep()
-{
-    local s=$1 n=$2 i
-    if [[ ${#s} == 1 ]]; then
-        head -c "$n" /dev/zero | tr '\0' "$s"
-    else
-        for ((i = 0; i < n; i++)); do printf '%s' "$s"; done
-    fi
 }
 
 function query_with_retry()
