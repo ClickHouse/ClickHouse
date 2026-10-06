@@ -47,7 +47,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 {
     if (filter == nullptr && prewhere == nullptr)
     {
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
     }
     else if (filter == nullptr)
     {
@@ -86,7 +86,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -244,12 +244,15 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
+    /// Unfiltered relation profiles must also reject sketches for an outdated column type.
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
+        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
+            continue;
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
