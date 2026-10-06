@@ -291,33 +291,57 @@ SELECT
     exponentialTimeDecayingValueAt(a, toFloat64(0))
         = exponentialTimeDecayingValueAt(b, toFloat64(0));
 
--- Equal Direct keys form one group. The metadata chosen for the grouped
--- representative is deliberately unspecified.
-SELECT count()
+-- Equal Direct keys form one group, but the printable metadata is any actual
+-- source representative. Canonical reconstruction would have value +/-1, so value=2
+-- proves that grouping preserved metadata without making it part of key identity.
+SELECT
+    count(),
+    countIf(tupleElement(value, 'value') = 2)
 FROM
 (
     SELECT value
     FROM
     (
-        SELECT CAST((toFloat64(1), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
+        SELECT CAST((toFloat64(2), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
         UNION ALL
         SELECT CAST(
-            (toFloat64(1), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            (toFloat64(2), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
             'ExponentialTimeDecaying64(1, direct)') AS value
     )
     GROUP BY value
 );
 
-SELECT count()
+-- The ordinary aggregate GROUP BY path uses the same any-representative rule.
+SELECT
+    count(),
+    countIf(tupleElement(value, 'value') = 2),
+    sum(rows)
+FROM
+(
+    SELECT value, count() AS rows
+    FROM
+    (
+        SELECT CAST((toFloat64(2), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
+        UNION ALL
+        SELECT CAST(
+            (toFloat64(2), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            'ExponentialTimeDecaying64(1, direct)') AS value
+    )
+    GROUP BY value
+);
+
+SELECT
+    count(),
+    countIf(tupleElement(value, 'value') = 2)
 FROM
 (
     SELECT DISTINCT value
     FROM
     (
-        SELECT CAST((toFloat64(1), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
+        SELECT CAST((toFloat64(2), toFloat64(1)), 'ExponentialTimeDecaying64(1, direct)') AS value
         UNION ALL
         SELECT CAST(
-            (toFloat64(1), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
+            (toFloat64(2), reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1)),
             'ExponentialTimeDecaying64(1, direct)') AS value
     )
 );
