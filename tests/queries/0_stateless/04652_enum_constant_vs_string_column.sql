@@ -10,6 +10,9 @@
 -- construction goes through convertFieldToType and is storage independent, so an unindexed table returns
 -- the same wrong answer and could not detect the bug.
 
+-- these cases compare a string column and an `Enum` constant by name
+SET compare_enum_with_string_lexicographically = 1;
+
 -- Half the assertions read an index section out of EXPLAIN indexes = 1, and a remote-only parallel
 -- replicas plan is a single ReadFromRemoteParallelReplicas node carrying no index section, so every one of
 -- them would read 0. The runner randomizes parallel_replicas_local_plan, so parallel replicas are turned

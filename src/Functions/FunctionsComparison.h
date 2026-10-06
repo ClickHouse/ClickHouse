@@ -886,7 +886,7 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
-    bool compare_enum_with_string_lexicographically = true;
+    bool compare_enum_with_string_lexicographically = false;
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).

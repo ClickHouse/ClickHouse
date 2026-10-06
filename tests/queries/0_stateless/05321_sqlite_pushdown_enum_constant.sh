@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # filter pushed to the external database must select the rows the local filter selects, so the constant must
 # reach it in that form, also inside a tuple, an `IN` list, a `Nullable`, a `Variant` or a `Dynamic`.
 
+# compare by name, so that a string column and an `Enum` constant use a string comparison
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --compare_enum_with_string_lexicographically 1"
+
 BASE="${USER_FILES_PATH}/05321_sqlite_enum_constant_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
 
