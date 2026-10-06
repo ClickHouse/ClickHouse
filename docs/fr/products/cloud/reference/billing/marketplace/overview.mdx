@@ -42,7 +42,9 @@ REMARQUE : vos services et organisations existants issus d’inscriptions préc
 
 Vous pouvez passer d’une organisation à l’autre depuis le menu en bas à gauche de la console ClickHouse Cloud.
 
-### Je suis déjà utilisateur de ClickHouse Cloud. Que dois-je faire si je veux que mes services existants soient facturés via le marketplace ?​ {#i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace}
+<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
+  ### Je suis déjà utilisateur de ClickHouse Cloud. Que dois-je faire si je veux que mes services existants soient facturés via le marketplace ?​
+</div>
 
 Vous devrez vous abonner à ClickHouse Cloud via le marketplace de votre fournisseur cloud. Une fois l’abonnement finalisé sur le marketplace et après votre redirection vers ClickHouse Cloud, vous aurez la possibilité d’associer une organisation ClickHouse Cloud existante à la facturation via la marketplace. À partir de ce moment-là, vos ressources existantes seront facturées via le marketplace.
 
@@ -81,16 +83,18 @@ Si vous rencontrez des difficultés pour réactiver votre organisation liée à 
 * [Commandes GCP Marketplace](https://console.cloud.google.com/marketplace/orders) (sélectionnez le compte de facturation que vous avez utilisé pour l’abonnement)
 
 <div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
-  ### Pourquoi les dates figurant sur les relevés Usage ne correspondent-elles pas à celles de ma facture Marketplace​ ?
+  ### Pourquoi les dates figurant sur les relevés Usage ne correspondent-elles pas à celles de ma facture Marketplace​ ?
 </div>
 
-La facturation Marketplace suit un cycle mensuel calendaire. Par exemple, pour une utilisation comprise entre le 1er décembre et le 1er janvier, une facture sera générée entre le 3 et le 5 janvier.
+La facturation Marketplace suit un cycle mensuel calendaire. Par exemple, pour une utilisation comprise entre le 1er décembre et le 1er janvier, une facture sera générée entre le 3 et le 5 janvier.
 
-Pour certaines organisations existantes, les relevés d’utilisation de ClickHouse Cloud suivent un cycle de facturation qui débute un jour autre que le premier du mois. Les nouvelles organisations suivent un cycle de facturation mensuel commençant le premier jour du mois.
+Les relevés d’utilisation de ClickHouse Cloud suivent un cycle de facturation différent, dans lequel l’utilisation est mesurée et signalée sur une période de 30 jours à compter de la date d’inscription.
 
 Les dates d’utilisation et de facturation diffèrent lorsque ces dates ne coïncident pas. Étant donné que les relevés d’utilisation suivent la consommation au jour le jour pour un service donné, vous pouvez vous y fier pour consulter la ventilation des coûts.
 
-### Où puis-je trouver des informations générales sur la facturation​? {#where-can-i-find-general-billing-information}
+<div id="where-can-i-find-general-billing-information">
+  ### Où puis-je trouver des informations générales sur la facturation​?
+</div>
 
 Veuillez consulter la [page de présentation de la facturation](/fr/products/cloud/reference/billing/billing-overview).
 
@@ -106,10 +110,14 @@ Il n’y a aucune différence de tarification entre une facturation via la marke
 
 Oui. Plusieurs organisations ClickHouse peuvent être configurées pour facturer leur utilisation à terme échu sur le même compte de facturation de cloud marketplace (AWS, GCP ou Azure). Cependant, les crédits prépayés ne sont pas partagés entre les organisations par défaut. Si vous avez besoin de partager des crédits entre plusieurs organisations, veuillez contacter [ClickHouse Cloud Support](https://clickhouse.com/support/program).
 
-### Puis-je facturer différents services d&#39;une même organisation via différents abonnements Marketplace ? {#can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions}
+<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
+  ### Puis-je facturer différents services d&#39;une même organisation via différents abonnements Marketplace ?
+</div>
 
 Non. La facturation est configurée au niveau de l&#39;organisation. Tous les services d&#39;une même organisation ClickHouse Cloud sont donc facturés via le même abonnement Marketplace. Si vous devez facturer les services séparément, créez des organisations distinctes pour chaque configuration de facturation. Vous pouvez gérer plusieurs organisations depuis un même compte utilisateur dans la console ClickHouse Cloud, chacune disposant de sa propre configuration de facturation.
 
-### Si mon organisation ClickHouse est facturée via un accord d’engagement de dépenses conclu sur une cloud marketplace, basculerai-je automatiquement vers la facturation PAYG lorsque j’aurai épuisé mes crédits ? {#automatically-move-to-PAYG-when-running-out-of-credit}
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### Si mon organisation ClickHouse est facturée via un accord d’engagement de dépenses conclu sur une cloud marketplace, basculerai-je automatiquement vers la facturation PAYG lorsque j’aurai épuisé mes crédits ?
+</div>
 
 Si votre contrat d’engagement de dépenses sur la marketplace est actif et que vous épuisez vos crédits, nous ferons automatiquement basculer votre organisation vers la facturation PAYG. En revanche, à l’expiration de votre contrat actuel, vous devrez associer un nouveau contrat marketplace à votre organisation ou passer à une facturation directe par carte de crédit.

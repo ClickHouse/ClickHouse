@@ -71,7 +71,7 @@ should be carefully researched and tested.
 
 | Option | Description                                                                                                                                                | Default if any |
 |--------|------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
-| codec  | A string consisting of arguments passed to `CODEC()` in the column's DDL. For example: `codec: "Delta, ZSTD"` will be compiled as `CODEC(Delta, ZSTD)`.    |
+| codec  | A string consisting of arguments passed to `CODEC()` in the column's DDL. For example: `codec: "Delta, ZSTD"` will be compiled as `CODEC(Delta, ZSTD)`.    |    
 | ttl    | A string consisting of a [TTL (time-to-live) expression](/concepts/features/operations/delete/ttl) that defines a TTL rule in the column's DDL. For example: `ttl: ts + INTERVAL 1 DAY` will be compiled as `TTL ts + INTERVAL 1 DAY`. |
 
 #### Example of schema configuration {#example-of-schema-configuration}
@@ -109,7 +109,7 @@ select
   -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
   -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
-  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
+  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count, 
   -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
@@ -270,11 +270,11 @@ Configurations that are specific for this materialization type are listed below:
 | `unique_key`             | A tuple of column names that uniquely identify rows. For more details on uniqueness constraints, see [here](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                       | Required. If not provided altered rows will be added twice to the incremental table. |
 | `inserts_only`           | It has been deprecated in favor of the `append` incremental `strategy`, which operates in the same way. If set to True for an incremental model, incremental updates will be inserted directly to the target table without creating intermediate table. . If `inserts_only` is set, `incremental_strategy` is ignored. | Optional (default: `False`)                                                          |
 | `incremental_strategy`   | The strategy to use for incremental materialization.  `delete+insert`, `append`, `insert_overwrite`, or `microbatch` are supported.  For additional details on strategies, see [here](#incremental-model-strategies) | Optional (default: 'default')                                                        |
-| `incremental_predicates` | Additional conditions to be applied to the incremental materialization (only applied to `delete+insert` strategy                                                                                                                                                                                    | Optional
+| `incremental_predicates` | Additional conditions to be applied to the incremental materialization (only applied to `delete+insert` strategy                                                                                                                                                                                    | Optional                      
 
 ### Incremental Model Strategies {#incremental-model-strategies}
 
-`dbt-clickhouse` supports the following incremental model strategies.
+`dbt-clickhouse` supports three incremental model strategies.
 
 #### The Default (Legacy) Strategy {#default-legacy-strategy}
 
@@ -289,20 +289,27 @@ expensive and slow to execute.
 
 #### The Delete+Insert Strategy {#delete-insert-strategy}
 
-The `delete+insert` strategy uses [lightweight deletes](/concepts/features/operations/delete/lightweight-delete) to remove the affected rows and then inserts the new ones. Because it doesn't copy the whole table, it performs significantly better than the "legacy" strategy. Setting `use_lw_deletes: true` in your profile makes `delete+insert` the default incremental strategy.
+ClickHouse added "lightweight deletes" as an experimental feature in version 22.8. Lightweight deletes are significantly
+faster than ALTER TABLE ... DELETE
+operations, because they don't require rewriting ClickHouse data parts. The incremental strategy `delete+insert`
+utilizes lightweight deletes to implement
+incremental materializations that perform significantly better than the "legacy" strategy. However, there are important
+caveats to using this strategy:
 
-There are important caveats to using this strategy:
-
-- It operates directly on the affected table without creating any intermediate or temporary tables, so if there is an
-  issue during the operation, the data in the incremental model is likely to be in an invalid state.
-- It requires the ClickHouse setting `allow_nondeterministic_mutations`. The adapter enables it automatically for its
-  own sessions when possible. When it can't be enabled (for example, it's read-only for your dbt user), the behavior
-  depends on how the strategy was chosen: models relying on the default strategy silently fall back to the legacy
-  strategy, models that explicitly set `delete+insert` or `microbatch` fail at runtime, and `use_lw_deletes: true` in
-  the profile fails at connection time.
-- In some very rare cases, using non-deterministic `incremental_predicates` could result in a race condition for the
-  updated/deleted items. To ensure consistent results, the incremental predicates should only include sub-queries on
-  data that will not be modified during the incremental materialization.
+- Lightweight deletes must be enabled on your ClickHouse server using the setting
+  `allow_experimental_lightweight_delete=1` or you
+  must set `use_lw_deletes=true` in your profile (which will enable that setting for your dbt sessions)
+- Lightweight deletes are now production ready, but there may be performance and other problems on ClickHouse versions
+  earlier than 23.3.
+- This strategy operates directly on the affected table/relation (with creating any intermediate or temporary tables),
+  so if there is an issue during the operation, the
+  data in the incremental model is likely to be in an invalid state
+- When using lightweight deletes, dbt-clickhouse enabled the setting `allow_nondeterministic_mutations`. In some very
+  rare cases using non-deterministic incremental_predicates
+  this could result in a race condition for the updated/deleted items (and related log messages in the ClickHouse logs).
+  To ensure consistent results the
+  incremental predicates should only include sub-queries on data that will not be modified during the incremental
+  materialization.
 
 #### The Microbatch Strategy (Requires dbt-core >= 1.9) {#microbatch-strategy}
 
@@ -338,7 +345,7 @@ in the data or excluded by the incremental query WHERE clause/filter.
 
 #### The insert_overwrite Strategy (Experimental) {#insert-overwrite-strategy}
 
-> [IMPORTANT]
+> [IMPORTANT]  
 > Currently, the insert_overwrite strategy is not fully functional with distributed materializations.
 
 Performs the following steps:
@@ -367,67 +374,10 @@ Due to its depth, this materialization has its own dedicated page. **[Go to the 
 
 ## Materialization: dictionary (experimental) {#materialization-dictionary}
 
-A dbt model can be created as a ClickHouse [dictionary](/concepts/features/dictionaries/index). On every `dbt run` the dictionary is replaced with the current model definition using `CREATE OR REPLACE DICTIONARY`.
-
-### Configurations {#dictionary-configurations}
-
-| Option                 | Description                                                                                                                                                                                                       | Required             |
-|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|
-| `fields`               | The dictionary structure, as a list of `(name, type)` pairs.                                                                                                                                                     | Yes                  |
-| `primary_key`          | The dictionary primary key. Must match the key type expected by the chosen layout (for example, a complex key for `COMPLEX_KEY_*` layouts).                                                                      | Yes                  |
-| `layout`               | The [layout](/reference/statements/create/dictionary/layouts/overview) used to store the dictionary in memory, such as `HASHED()`, `COMPLEX_KEY_HASHED()` or `DIRECT()`.                                        | Yes                  |
-| `source_type`          | Where the dictionary reads its data from: `clickhouse` (default, uses the model's SQL or the `table` option) or `http`.                                                                                          |                      |
-| `lifetime`             | The [`LIFETIME`](/reference/statements/create/dictionary/lifetime) clause controlling how often the dictionary is refreshed, e.g. `MIN 0 MAX 300`. Optional since dbt-clickhouse 1.10.0 — omit it for layouts that don't use it, such as `DIRECT()`. |                      |
-| `table`                | `clickhouse` source only. Read from an existing table instead of the model's SQL.                                                                                                                                |                      |
-| `update_field`         | `clickhouse` source only. Refresh the dictionary incrementally by fetching only rows whose value in this column changed since the previous update. See [LIFETIME](/reference/statements/create/dictionary/lifetime). Available since dbt-clickhouse 1.10.0. |                      |
-| `update_lag`           | `clickhouse` source only. Number of seconds subtracted from the previous update time when using `update_field`, to account for late-arriving updates. Available since dbt-clickhouse 1.10.0.                     |                      |
-| `connection_overrides` | `clickhouse` source only. Overrides for the credentials used in the dictionary's `SOURCE` clause, e.g. `{'user': 'dictionary_reader'}`.                                                                          |                      |
-| `url`, `format`        | `http` source only. The URL of the source file and its input format.                                                                                                                                             | Yes for `http`       |
-| `range`                | The `RANGE` clause for `RANGE_HASHED()` layouts, e.g. `'min start max stop'`.                                                                                                                                    |                      |
-
-### Example with a ClickHouse source {#dictionary-clickhouse-source-example}
-
-The model's SQL becomes the dictionary source query:
-
-```sql
-{{ config(
-       materialized='dictionary',
-       fields=[
-           ('id', 'UInt64'),
-           ('name', 'String'),
-       ],
-       primary_key='id',
-       layout='HASHED()',
-       lifetime='MIN 0 MAX 300'
-) }}
-
-select id, name from {{ source('raw', 'people') }}
-```
-
-### Example with an HTTP source {#dictionary-http-source-example}
-
-When using `source_type='http'` (or the `table` option), the model's SQL is not used as the source, but dbt still requires a body — use a `select 1` placeholder:
-
-```sql
-{{ config(
-       materialized='dictionary',
-       fields=[
-           ('LocationID', 'UInt16 DEFAULT 0'),
-           ('Borough', 'String'),
-           ('Zone', 'String'),
-       ],
-       primary_key='LocationID',
-       layout='HASHED()',
-       lifetime='MIN 0 MAX 0',
-       source_type='http',
-       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
-       format='CSVWithNames'
-) }}
-
-select 1
-```
-
-See the [dictionary tests](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py) for more examples, including range and direct dictionaries.
+See the tests
+in https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py for
+examples of how to
+implement materializations for ClickHouse dictionaries
 
 ## Materialization: distributed_table (experimental) {#materialization-distributed-table}
 
@@ -534,37 +484,23 @@ CREATE TABLE db.table on cluster cluster (
 
 ## Snapshot {#snapshot}
 
-dbt [snapshots](https://docs.getdbt.com/docs/build/snapshots) record how the rows of a mutable model change over time as [type-2 slowly changing dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row), so analysts can "look back in time" at a previous state of a model. The ClickHouse adapter supports both the `timestamp` and the `check` strategies. It builds each new version of the snapshot table in a staging table and swaps it in with `EXCHANGE TABLES` (or a drop and rename where the server can't exchange tables), so readers always see a complete version of the snapshot.
+dbt snapshots allow a record to be made of changes to a mutable model over time. This in turn allows point-in-time
+queries on models, where analysts can "look back in time" at the previous state of a model. This functionality is
+supported by the ClickHouse connector and is configured using the following syntax:
 
-Since dbt 1.9, snapshots are defined in YAML, in `snapshots/<name>.yml`:
-
-```yaml
-snapshots:
-  - name: <snapshot-name>
-    relation: ref('<model-name>')
-    config:
-      unique_key: <column-name>
-      strategy: timestamp             # or check
-      updated_at: <column-name>       # timestamp strategy
-      # check_cols: [<column-name>, ...]  # check strategy
-```
-
-The older Jinja form in `snapshots/<name>.sql` keeps working:
-
+Config block in `snapshots/<model_name>.sql`:
 ```python
-{% snapshot <snapshot-name> %}
 {{
    config(
+     schema = "<schema-name>",
      unique_key = "<column-name>",
      strategy = "<strategy>",
      updated_at = "<updated-at-column-name>",
    )
 }}
-select * from {{ ref('<model-name>') }}
-{% endsnapshot %}
 ```
 
-For a worked example on the Jaffle Shop, see the [snapshot section of the guides](/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). For all options, check out the [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) reference page.
+For more information on configuration, check out the [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) reference page.
 
 ## Contracts and Constraints {#contracts-and-constraints}
 

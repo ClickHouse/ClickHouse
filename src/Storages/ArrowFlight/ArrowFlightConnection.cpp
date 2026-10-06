@@ -1,8 +1,6 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 
 #if USE_ARROWFLIGHT
-#include <algorithm>
-#include <limits>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -28,46 +26,24 @@ ArrowFlightConnection::ArrowFlightConnection(const StorageArrowFlight::Configura
 {
 }
 
-arrow::flight::TimeoutDuration ArrowFlightConnection::toTimeoutDuration(UInt64 timeout_sec)
+std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient() const
 {
-    /// Zero is Arrow's own "no deadline"; it has to come before the clamp, because a zero
-    /// TimeoutDuration would mean "deadline already reached".
-    if (timeout_sec == 0)
-        return arrow::flight::TimeoutDuration(-1);
-
-    /// Arrow builds the deadline as now() + timeout and narrows the sum to the clock's microsecond
-    /// rep, so a bound is only usable while that sum stays representable. Half of the rep's range is
-    /// left for now(), which still keeps every value a caller can mean.
-    static constexpr UInt64 max_timeout_sec = static_cast<UInt64>(std::numeric_limits<Int64>::max() / 2 / 1'000'000);
-    return arrow::flight::TimeoutDuration(std::min(timeout_sec, max_timeout_sec));
-}
-
-std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient(UInt64 timeout_sec) const
-{
-    connect(toTimeoutDuration(timeout_sec));
-
     std::lock_guard lock{mutex};
+    connect();
     return client;
 }
 
-arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 timeout_sec) const
+std::shared_ptr<const arrow::flight::FlightCallOptions> ArrowFlightConnection::getOptions() const
 {
-    auto timeout = toTimeoutDuration(timeout_sec);
-    connect(timeout);
-
     std::lock_guard lock{mutex};
-    auto call_options = *options;
-    call_options.timeout = timeout;
-    return call_options;
+    connect();
+    return options;
 }
 
-void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) const
+void ArrowFlightConnection::connect() const
 {
-    {
-        std::lock_guard lock{mutex};
-        if (client)
-            return;
-    }
+    if (client)
+        return;
 
     auto location_result = enable_ssl ? arrow::flight::Location::ForGrpcTls(host, port) : arrow::flight::Location::ForGrpcTcp(host, port);
     if (!location_result.ok())
@@ -91,38 +67,21 @@ void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) cons
         throw Exception(
             ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to connect to Arrow Flight server: {}", client_result.status().ToString());
     }
-    auto new_client = std::move(client_result).ValueOrDie();
+    client = std::move(client_result).ValueOrDie();
 
-    auto new_options = std::make_shared<arrow::flight::FlightCallOptions>();
+    auto res_options = std::make_shared<arrow::flight::FlightCallOptions>();
+    options = res_options;
 
     if (use_basic_authentication)
     {
-        arrow::flight::FlightCallOptions auth_options;
-        auth_options.timeout = timeout;
-
-        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, password);
+        auto auth_result = client->AuthenticateBasicToken({}, username, password);
         if (!auth_result.ok())
         {
             throw Exception(
                 ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to authenticate Arrow Flight server: {}", auth_result.status().ToString());
         }
         auto auth_token = std::move(auth_result).ValueOrDie();
-        new_options->headers.push_back(auth_token);
-    }
-
-    /// Destroyed after the lock below is released: dropping a client shuts its gRPC transport down,
-    /// which is the kind of call this function keeps off the locked path.
-    std::shared_ptr<arrow::flight::FlightClient> superseded;
-    std::lock_guard lock{mutex};
-
-    /// Published only now, and only if nobody published first: a connection whose handshake failed
-    /// must not be reused, and every query has to see the same authenticated client.
-    if (client)
-        superseded = std::move(new_client);
-    else
-    {
-        client = std::move(new_client);
-        options = std::move(new_options);
+        res_options->headers.push_back(auth_token);
     }
 }
 

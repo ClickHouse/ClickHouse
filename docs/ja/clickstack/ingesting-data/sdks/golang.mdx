@@ -6,17 +6,29 @@ doc_type: 'guide'
 keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry インテグレーション', 'Golang オブザーバビリティ', 'Go トレーシング インストルメンテーション', 'ClickStack Go SDK']
 ---
 
-import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
-
 ClickStack は、テレメトリーデータ (ログと
 トレース) の収集に OpenTelemetry 標準を使用します。トレースは自動インストルメンテーションによって自動生成されるため、トレーシングの価値を得るのに手動の
 インストルメンテーションは必要ありません。
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+**このガイドで統合される項目:**
 
-## はじめに {#getting-started}
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ ログ</td>
+      <td className="pe-2">✅ メトリクス</td>
+      <td className="pe-2">✅ トレース</td>
+    </tr>
+  </tbody>
+</table>
 
-### OpenTelemetry のインストルメンテーションパッケージをインストールする {#install-opentelemetry}
+<div id="getting-started">
+  ## はじめに
+</div>
+
+<div id="install-opentelemetry">
+  ### OpenTelemetry のインストルメンテーションパッケージをインストールする
+</div>
 
 OpenTelemetry と HyperDX の Go パッケージをインストールするには、以下のコマンドを使用します。トレース情報が正しく付与されるよう、[最新のインストルメンテーションパッケージ](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)を確認し、必要なパッケージをインストールすることをおすすめします。
 
@@ -27,7 +39,9 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-### ネイティブな HTTP サーバーの例 (net/http) {#native-http-server-example}
+<div id="native-http-server-example">
+  ### ネイティブな HTTP サーバーの例 (net/http)
+</div>
 
 この例では、`net/http/otelhttp` を使用します。
 
@@ -135,7 +149,9 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Gin アプリケーションの例 {#gin-application-example}
+<div id="gin-application-example">
+  ### Gin アプリケーションの例
+</div>
 
 この例では、`gin-gonic/gin` を使用します。
 
@@ -219,24 +235,26 @@ func main() {
 }
 ```
 
-### 環境変数を設定する {#configure-environment-variables}
+<div id="configure-environment-variables">
+  ### 環境変数を設定する
+</div>
 
 その後、OpenTelemetry collector 経由で ClickStack にテレメトリーを取り込むため、シェルで次の環境変数を設定する必要があります。
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

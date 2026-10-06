@@ -552,28 +552,10 @@ void DataPartStorageOnDiskPacked::commitTransaction()
 
     transaction->commit();
 
-    /// Reset the transaction before loading the reader: it is already committed, so if loading the reader throws,
-    /// `undoTransaction` must not run and remove the blobs of the committed part.
-    transaction.reset();
-    is_precommitted = false;
-
     if (!reader)
         reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-}
 
-void DataPartStorageOnDiskPacked::undoTransaction()
-{
-    if (!transaction || (!writer && !is_precommitted))
-        return;
-
-    if (has_shared_transaction)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
-
-    transaction->undo();
     transaction.reset();
-    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
-    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
-    writer.reset();
     is_precommitted = false;
 }
 
@@ -596,17 +578,31 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
 
     if (!mayRetryCommit(options, result))
     {
-        /// Reset the transaction before loading the reader, see `commitTransaction`.
-        transaction.reset();
-        is_precommitted = false;
-
         if (!reader && isSuccessfulOutcome(result))
             reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
+
+        transaction.reset();
+        is_precommitted = false;
     }
 
     return result;
 }
 
+void DataPartStorageOnDiskPacked::undoTransaction()
+{
+    if (!transaction || (!writer && !is_precommitted))
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
+
+    transaction->undo();
+    transaction.reset();
+    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
+    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
+    writer.reset();
+    is_precommitted = false;
+}
 #endif
 
 String DataPartStorageOnDiskPacked::getRelativeDataPath() const
@@ -645,21 +641,6 @@ bool DataPartStorageOnDiskPacked::cloneCopiesWholeArchive(const ClonePartParams 
     return params.metadata_version_to_write.has_value()
         || !params.keep_metadata_version
         || anyArchivedFileRequestedForCopy(params.files_to_copy_instead_of_hardlinks);
-}
-
-void DataPartStorageOnDiskPacked::copyInvalidatedSystemColumnsFile(
-    DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const
-{
-    auto src_disk = volume->getDisk();
-    const String src_path = fs::path(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    if (!src_disk->existsFile(src_path))
-        return;
-
-    auto read_buf = src_disk->readFile(src_path, read_settings);
-    auto write_buf = dest_storage.writeFile(
-        IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-    copyData(*read_buf, *write_buf);
-    write_buf->finalize();
 }
 
 void DataPartStorageOnDiskPacked::resetReader(const ReadSettings & read_settings)
@@ -980,15 +961,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
 
-    /// invalidated_system_columns.txt is written separately, next to data.packed, so neither the
-    /// archive rewrite nor the data.packed hardlink/copy above carries it. Copy it from the source
-    /// explicitly - the Full storage freeze inherits it by hardlinking every file of the part - so
-    /// a frozen or detached clone of an adopted part does not resurrect the disclaimed physically
-    /// stored _block_number/_block_offset values. A non-empty set from the caller rewrites the file
-    /// below, so the copy matters only when the caller has nothing of its own to write.
-    if (params.invalidated_columns_to_write.empty())
-        copyInvalidatedSystemColumnsFile(*dest_storage, read_settings, write_settings);
-
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
     std::vector<std::string> all_files;
@@ -1129,15 +1101,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
         }
     }
-
-    /// invalidated_system_columns.txt is written separately, next to data.packed, so neither the
-    /// archive rewrite nor the data.packed hardlink/copy above carries it. Copy it from the source
-    /// explicitly - the Full storage freeze inherits it by hardlinking every file of the part - so
-    /// a frozen or detached clone of an adopted part does not resurrect the disclaimed physically
-    /// stored _block_number/_block_offset values. A non-empty set from the caller rewrites the file
-    /// below, so the copy matters only when the caller has nothing of its own to write.
-    if (params.invalidated_columns_to_write.empty())
-        copyInvalidatedSystemColumnsFile(*dest_storage, read_settings, write_settings);
 
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
