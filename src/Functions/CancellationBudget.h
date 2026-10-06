@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class Exception;
+
 /// Throttled cancellation checkpoint for a loop inside one function call. Lives on the stack of a single
 /// vector call, so it is never shared between threads. Counted in loop ITERATIONS, not bytes: an iteration
 /// can cost a full search or match attempt while advancing almost no data. Bytes are charged on top,
@@ -48,5 +50,9 @@ private:
 /// Empty when there is no query to observe. Out of line so that including this header does not pull in
 /// `ProcessList`.
 std::function<void()> makeCancellationCheck(const char * function_name);
+
+/// For a catch block that ignores the failures of a best-effort evaluation: rethrows a timeout, which the `break`
+/// overflow mode raises without marking the query as killed, and throws if the query is killed.
+void rethrowIfQueryCancelled(const Exception & e);
 
 }

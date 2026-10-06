@@ -11,9 +11,12 @@ SELECT intDiv(length(arrayResize([], 8000, repeat('x', 16384))), 0) SETTINGS max
 
 -- The edit distance of two 20000-character strings is a constant that takes longer than the deadline to evaluate.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), intDiv(1, 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
--- The next function is not built after the deadline either, with constant or other arguments; otherwise it reports the unknown tokenizer.
+-- The next function is not built after the deadline either, with constant or other arguments, as an aggregate function or
+-- after its lambda; otherwise it reports the unknown tokenizer or the illegal argument or lambda result type.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase('a', 'a', 'invalid') SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase(toString(dummy), 'a', 'invalid') FROM system.one SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), sum('x') SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT arrayFilter(x -> editDistance(repeat('a', 20000), repeat('b', 20000)), [1]) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 -- A constant of more than 1 MiB is not kept by the analyzer, so it is evaluated again when the query plan is built.
 SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 
@@ -32,3 +35,17 @@ CREATE TABLE t_partition_fold (p UInt8) ENGINE = MergeTree PARTITION BY p ORDER 
 INSERT INTO t_partition_fold SELECT number FROM numbers(10);
 SELECT count() FROM t_partition_fold WHERE length(arrayResize([], 8000, repeat(toString(p), 16384))) = editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS use_constant_folding_in_index_analysis = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 DROP TABLE t_partition_fold;
+
+-- The same holds for the filter that rewriting an outer JOIN evaluates for not-matched and for matched rows,
+-- and for a constant that index analysis transforms with the primary key expression.
+DROP TABLE IF EXISTS t_join_fold;
+CREATE TABLE t_join_fold (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
+SELECT count() FROM t_join_fold AS l LEFT JOIN t_join_fold AS r ON l.k = r.k WHERE length(arrayResize([], 8000, repeat(r.s || 'x', 16384))) = 0 SETTINGS query_plan_convert_outer_join_to_inner_join = 1, max_execution_time = 0.001, timeout_overflow_mode = 'break', join_use_nulls = 0; -- { serverError TIMEOUT_EXCEEDED }
+SELECT count() FROM t_join_fold AS l ANY LEFT JOIN (SELECT k, arrayResize(materialize([]), 8000, materialize(repeat('x', 16384))) AS a FROM t_join_fold) AS r ON l.k = r.k WHERE length(r.a) = 0 SETTINGS query_plan_convert_outer_join_to_inner_join = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1, max_execution_time = 0.001, timeout_overflow_mode = 'break', join_use_nulls = 0; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_join_fold;
+
+DROP TABLE IF EXISTS t_key_fold;
+CREATE TABLE t_key_fold (p UInt16) ENGINE = MergeTree ORDER BY length(arrayResize([], p, repeat('x', 16384)));
+INSERT INTO t_key_fold VALUES (1);
+SELECT count() FROM t_key_fold WHERE p = 8000 SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_key_fold;

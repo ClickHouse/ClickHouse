@@ -35,4 +35,11 @@ std::function<void()> makeCancellationCheck(const char * function_name)
     };
 }
 
+void rethrowIfQueryCancelled(const Exception & e)
+{
+    if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+        throw;
+    CurrentThread::checkIfNotCancelled();
+}
+
 }

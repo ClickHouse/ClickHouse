@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Functions/CancellationBudget.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -22,7 +23,6 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <base/defines.h>
-#include <Common/CurrentThread.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -30,11 +30,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TIMEOUT_EXCEEDED;
-}
 
 namespace
 {
@@ -232,9 +227,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
-        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
-            throw;
-        CurrentThread::checkIfNotCancelled();
+        rethrowIfQueryCancelled(e);
         return generateUnsubstituted();
     }
 }

@@ -21,6 +21,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
+#include <Functions/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -61,7 +62,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -143,11 +143,9 @@ void tryFoldFunctionToConstant(
     }
     catch (const Exception & e)
     {
-        /// A best-effort fold gives up on evaluation failures, not on a cancelled query. A timeout in
-        /// the `break` overflow mode does not mark the query as killed, so it is recognized by its code.
-        if (!best_effort || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+        if (!best_effort)
             throw;
-        CurrentThread::checkIfNotCancelled();
+        rethrowIfQueryCancelled(e);
         return;
     }
 
