@@ -17,11 +17,6 @@ void LocalTasks::pushBack(Task task)
     tasks.push_back(task);
 }
 
-void LocalTasks::pushFront(Task task)
-{
-    tasks.push_front(task);
-}
-
 Task LocalTasks::popFront()
 {
     if (tasks.empty())

@@ -18,7 +18,6 @@ namespace
 
 constexpr size_t max_local_tasks = 128;
 constexpr size_t max_sequential_full_rounds = 61;
-constexpr size_t max_sequential_lifo_usages = 79;
 
 }
 
@@ -64,9 +63,6 @@ std::optional<Task> Worker::tryPickTask()
             return task;
     }
 
-    if (auto task = takeFromNext())
-        return task;
-
     if (auto task = takeFromLocal())
         return task;
 
@@ -74,25 +70,6 @@ std::optional<Task> Worker::tryPickTask()
         return task;
 
     return takeFromOthers();
-}
-
-std::optional<Task> Worker::takeFromNext()
-{
-    if (!next)
-    {
-        next_streak = 0;
-        return std::nullopt;
-    }
-
-    Task task = *std::exchange(next, std::nullopt);
-    if (++next_streak <= max_sequential_lifo_usages)
-        return task;
-
-    std::lock_guard lock(mutex);
-    next_streak = 0;
-    local_tasks.pushFront(task);
-    local_tasks_count.store(local_tasks.size());
-    return std::nullopt;
 }
 
 std::optional<Task> Worker::takeFromLocal()
@@ -128,13 +105,6 @@ std::optional<Task> Worker::takeFromOthers()
     return std::nullopt;
 }
 
-void Worker::pushToNext(Task task)
-{
-    if (next)
-        pushToLocal(*next);
-    next = task;
-}
-
 void Worker::pushToLocal(Task task)
 {
     std::lock_guard lock(mutex);
@@ -161,7 +131,7 @@ size_t Worker::runTask(Task task)
     runner.run(task);
 
     for (const auto & found : runner.getFoundTasks() | std::views::reverse)
-        pushToNext(found);
+        pushToLocal(found);
 
     for (const auto & found : runner.getFoundPollRequests())
         pool.poller.add(found);
@@ -228,14 +198,9 @@ size_t Worker::poll(int timeout_ms)
 
 void Worker::drain()
 {
-    {
-        std::lock_guard lock(mutex);
-        pool.global_tasks.takeAll(local_tasks);
-        local_tasks_count.store(0);
-    }
-
-    if (next)
-        pool.global_tasks.push(*std::exchange(next, std::nullopt));
+    std::lock_guard lock(mutex);
+    pool.global_tasks.takeAll(local_tasks);
+    local_tasks_count.store(0);
 }
 
 size_t Worker::taskCount() const
