@@ -35,6 +35,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1390,7 +1391,11 @@ void AlterCommand::apply(
             for (const auto & element : metadata.table_ttl.definition_ast->children)
                 if (auto * ttl_element = element->as<ASTTTLElement>())
                     for (auto & assignment : ttl_element->group_by_assignments)
+                    {
                         rename_in(assignment, "the table TTL");
+                        if (auto & target = assignment->as<ASTAssignment &>().column_name; target == column_name)
+                            target = rename_to;
+                    }
         }
 
         auto constraints_data = metadata.constraints.getConstraints();

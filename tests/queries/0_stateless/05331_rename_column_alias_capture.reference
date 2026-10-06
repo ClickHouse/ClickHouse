@@ -12,7 +12,7 @@ field pair	[1001,2002]
 field new	[101,102]
 lambda	[101,102]	5
 lambda	[101,102]	5
-index options	s2	text(tokenizer = keyword, preprocessor = lower(s2))
+index options	s2	text(tokenizer = keyword, preprocessor = lower(s2), postprocessor = upper(s2))
 nested lambda	[[2,3],[3,4]]
 nested lambda	[[2,3],[3,4]]
 arrayMap(y -> arrayMap(x -> (x + y), arr), arr)
@@ -29,7 +29,9 @@ to field name	[11,12]
 to field name	[11,12]
 subquery alias	1
 subquery local	1
+subquery outer alias	1
 ttl set	1
+ttl set target	1
 self alias	20
 self alias	20
 (u AS u) + u

@@ -108,7 +108,7 @@ DROP TABLE t_ttl_set_alias;
 
 -- The options of an index type are not column expressions.
 DROP TABLE IF EXISTS t_index_options;
-CREATE TABLE t_index_options (keyword String, s String, INDEX i s TYPE text(tokenizer = keyword, preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_index_options (keyword String, s String, INDEX i s TYPE text(tokenizer = keyword, preprocessor = lower(s), postprocessor = upper(s))) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_index_options RENAME COLUMN keyword TO array;
 ALTER TABLE t_index_options RENAME COLUMN s TO s2;
 SELECT 'index options', expr, type_full FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_index_options';
@@ -172,12 +172,24 @@ ALTER TABLE t_subquery_local RENAME COLUMN x TO u;
 SELECT 'subquery local', position(create_table_query, 'WHERE u < (SELECT max(x) FROM (SELECT 100 AS x))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_local';
 DROP TABLE t_subquery_local;
 
--- A TTL GROUP BY SET expression is renamed like the other expressions.
+DROP TABLE IF EXISTS t_subquery_outer_alias;
+CREATE TABLE t_subquery_outer_alias (d DateTime, c0 UInt64, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE (c0 AS u) > 0 AND c0 < (SELECT max(x) FROM (SELECT 100 AS x));
+ALTER TABLE t_subquery_outer_alias RENAME COLUMN x TO u;
+SELECT 'subquery outer alias', position(create_table_query, 'SELECT max(x) FROM (SELECT 100 AS x)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_outer_alias';
+DROP TABLE t_subquery_outer_alias;
+
+-- A TTL GROUP BY SET assignment, target and expression, is renamed like the other expressions.
 DROP TABLE IF EXISTS t_ttl_set;
 CREATE TABLE t_ttl_set (d Date, key UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = max(c1);
 ALTER TABLE t_ttl_set RENAME COLUMN c1 TO v;
 SELECT 'ttl set', position(create_table_query, 'SET value = max(v)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_set';
 DROP TABLE t_ttl_set;
+
+DROP TABLE IF EXISTS t_ttl_set_target;
+CREATE TABLE t_ttl_set_target (d Date, key UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = max(c1);
+ALTER TABLE t_ttl_set_target RENAME COLUMN value TO v;
+SELECT 'ttl set target', position(create_table_query, 'SET v = max(c1)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_set_target';
+DROP TABLE t_ttl_set_target;
 
 -- Renames that keep every reference bound to the same column.
 DROP TABLE IF EXISTS t_self_alias;
