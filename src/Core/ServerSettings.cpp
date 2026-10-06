@@ -1677,6 +1677,7 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
+    DECLARE(String, allow_experimental_cluster_discovery, "", R"(Cluster discovery is no longer experimental and is always enabled for clusters with the `discovery` section in `remote_servers`. The setting is deprecated and has no effect. It is kept as a `String` so that any previously accepted value, including an empty tag, is still accepted.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, allow_experimental_webterminal, true, R"(Former (experimental) name of `enable_webterminal`. Still honored for backward compatibility when `enable_webterminal` is not set. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
     DECLARE(UInt64, max_open_files, 0, R"(
@@ -2250,7 +2251,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "zookeeper",
         "keeper",
         "auxiliary_zookeepers",
-        "allow_experimental_cluster_discovery",
         "macros",
         "interserver_http_credentials",
         "replica_group_name",

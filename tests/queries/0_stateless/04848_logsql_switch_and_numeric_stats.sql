@@ -15,7 +15,7 @@ INSERT INTO logs_04848 VALUES
     ('2024-01-01 00:20:00', 'cache miss', 'info', 'api', 'unknown', 100),
     ('2024-01-01 00:30:00', 'cache hit', 'debug', 'api', '', 1);
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04848';
 SET dialect = 'logsql';
 

@@ -1164,6 +1164,67 @@ def test_remove_orphan_files_with_catalog(started_cluster):
     )
 
 
+def test_expire_snapshots_with_catalog(started_cluster):
+    # A REST catalog writes the table metadata itself, so expire_snapshots commits the removal of
+    # the snapshots to it (`remove-snapshots`) and then deletes the files only they referenced.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_expire_snapshots_with_catalog_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    for value in (1, 2, 3):
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    bucket = "warehouse-rest"
+
+    def committed_snapshots():
+        return catalog.load_table(f"{root_namespace}.{table_name}").metadata.snapshots
+
+    def object_exists(location):
+        assert location.startswith(f"s3://{bucket}/"), location
+        key = location[len(f"s3://{bucket}/"):]
+        prefix, name = key.rsplit("/", 1)
+        return name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
+
+    snapshots = committed_snapshots()
+    assert len(snapshots) == 3, snapshots
+    expired, retained = snapshots[:2], snapshots[2]
+    assert all(object_exists(snapshot.manifest_list) for snapshot in snapshots)
+
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots("
+        f"snapshot_ids = [{expired[0].snapshot_id}, {expired[1].snapshot_id}]);",
+        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+    )
+
+    assert [snapshot.snapshot_id for snapshot in committed_snapshots()] == [retained.snapshot_id]
+    for snapshot in expired:
+        assert not object_exists(snapshot.manifest_list), (
+            f"the manifest list of the expired snapshot {snapshot.snapshot_id} was not deleted"
+        )
+    assert object_exists(retained.manifest_list)
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n"
+
+    # The retention policy path: with `retain_last = 1` only the current snapshot is kept.
+    node.query(f"INSERT INTO {table_ref} VALUES (4);", settings=write_settings)
+    assert len(committed_snapshots()) == 2
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",
+        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+    )
+    snapshots = committed_snapshots()
+    assert len(snapshots) == 1 and snapshots[0].snapshot_id != retained.snapshot_id, snapshots
+    assert not object_exists(retained.manifest_list)
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n4\n"
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [

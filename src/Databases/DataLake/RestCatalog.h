@@ -79,6 +79,13 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
+
     bool isTransactional() const override { return true; }
 
     /// The Iceberg REST spec makes the server write the metadata file on create.
@@ -213,7 +220,8 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    virtual void sendRequest(
+    /// Returns the body of the response, empty with `ignore_result`.
+    virtual String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
