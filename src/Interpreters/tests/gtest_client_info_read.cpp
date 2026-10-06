@@ -129,7 +129,7 @@ TEST(ClientInfoRead, InitialQueryCannotOverrideCoordinatorReplicasCount)
     /// only the out-of-band context carrier, written by the dispatch itself, counts.
     context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     context->getClientInfo().obsolete_count_participating_replicas = 5;
-    context->setParallelReplicasCoordinatorCount(2, /*cluster_name=*/ "");
+    context->setParallelReplicasCoordinatorCount(2, /*cluster_scope=*/ "");
 
     EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
@@ -144,7 +144,7 @@ TEST(ClientInfoRead, SpoofedFollowerBitsCannotOverrideLocalCoordinatorReplicasCo
     context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     context->getClientInfo().collaborate_with_initiator = true;
     context->getClientInfo().obsolete_count_participating_replicas = 5;
-    context->setParallelReplicasCoordinatorCount(2, /*cluster_name=*/ "");
+    context->setParallelReplicasCoordinatorCount(2, /*cluster_scope=*/ "");
 
     EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
