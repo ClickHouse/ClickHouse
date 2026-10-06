@@ -1,8 +1,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -73,17 +71,6 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
-
-    /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
-    const auto * list = child->as<ASTExpressionList>();
-    if (second_with_brackets != (list != nullptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
-    if (list)
-        for (const auto & element : list->children)
-            if (!element || !element->as<ASTPair>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
     set(second, child);
 }
 
@@ -100,32 +87,16 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri" || first == "options"))
+    else if (!settings.show_secrets && (first == "uri"))
     {
-        /// A MongoDB connection string or option list.
-        const auto * literal = second->as<ASTLiteral>();
-        const auto * identifier = second->as<ASTIdentifier>();
-        if (literal && literal->value.getType() == Field::Types::String)
-        {
-            String value = literal->value.safeGet<String>();
-            if (maskMongoDBConnectionString(value))
-                make_intrusive<ASTLiteral>(Field(value))->format(ostr, settings, state, frame);
-            else
-                second->format(ostr, settings, state, frame);
-        }
-        else if (identifier)
-        {
-            String value = identifier->name();
-            if (maskMongoDBConnectionString(value))
-                make_intrusive<ASTIdentifier>(value)->format(ostr, settings, state, frame);
-            else
-                second->format(ostr, settings, state, frame);
-        }
-        else
-        {
-            /// An expression is evaluated only after the query is logged.
-            ostr << "'[HIDDEN]'";
-        }
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(settings.one_line);
+        FormatState tmp_state;
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        ostr << temp_buf.str();
     }
     else
     {
@@ -139,7 +110,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || first == "uri" || first == "options" || second->hasSecretParts();
+    return isSecretKey(first) || second->hasSecretParts();
 }
 
 

@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # without the displaySecretsInShowAndSelect privilege, must not recover the decrypted key through
 # any EXPLAIN flavour, while SHOW CREATE keeps hiding the decrypt() arguments and SELECT stays usable.
 # The plans are not dumped into the reference (they depend on the configuration); only the absence
-# of the plaintext and the presence of the sealed view step are checked.
+# of the plaintext is checked.
 
 db=${CLICKHOUSE_DATABASE}
 owner="owner_${db}_$RANDOM"
@@ -71,12 +71,10 @@ for view in protected_v derived_v pos_literal_v pos_alias_v; do
     echo "-- $view: SELECT works and returns nothing"
     as_attacker "SELECT count() FROM $db.$view"
 
-    # The pretty format prints constant values; without the privilege the view's plan is sealed, so
-    # none of them, masked or not, reaches the output.
+    # The pretty format prints constant values; the secret argument positions must render as [HIDDEN].
     for options in "actions = 1" "actions = 1, pretty = 1" "header = 1"; do
-        echo "-- $view: EXPLAIN PLAN $options: lines with the secret, then whether the view plan is sealed"
+        echo "-- $view: EXPLAIN PLAN $options: lines with the secret"
         as_attacker "EXPLAIN PLAN $options SELECT * FROM $db.$view SETTINGS enable_analyzer = 1" | grep -c "$plaintext\|_SECRET" || true
-        as_attacker "EXPLAIN PLAN $options SELECT * FROM $db.$view SETTINGS enable_analyzer = 1" | grep -q "ReadFromSealedView" && echo 1 || echo 0
     done
 
     # The legacy and JSON formats print node names only; the key is referenced by its column name.

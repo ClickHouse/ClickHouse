@@ -7,8 +7,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -177,10 +175,7 @@ MatchedTrees::Matches matchTrees(
                         for (const auto * parent : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            /// One function name resolves to different result types depending on the settings
-                            /// the DAG was built with, and differently-typed results are not one calculation.
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
-                                && parent->result_type->equals(*frame.node->result_type))
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
@@ -440,16 +435,13 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
-        /// An output that is not computed from a sort column (a constant, a function of several columns or of
-        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
-        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            continue;
+            break;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            continue;
+            break;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -457,16 +449,14 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            continue;
+            break;
 
-        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
-        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            continue;
+            break;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            continue;
+            break;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
@@ -559,105 +549,6 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     }
 
     return new_inputs;
-}
-
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
-{
-    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
-
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
-        return {};
-
-    const auto function_name = node.function_base->getName();
-    ActionsDAGLineageKind kind{};
-    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
-        kind = ActionsDAGLineageKind::ValuePreserving;
-    else if (function_name == "_CAST" || function_name == "CAST")
-        kind = ActionsDAGLineageKind::DistinctValuesBound;
-    else if (node.children.size() == 1 && node.function_base->isDeterministic())
-        kind = ActionsDAGLineageKind::DistinctValuesBound;
-    else
-        return {};
-
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
-    /// non-Nullable result can map NULL to one additional counted value.
-    const bool collapses_null
-        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
-    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
-}
-
-std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
-{
-    using TraceState = std::optional<ActionsDAGInputLineage>;
-
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
-    const auto & inputs = actions.getInputs();
-    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
-        input_positions[inputs[input_position]] = input_position;
-
-    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
-    const auto & outputs = actions.getOutputs();
-    for (const auto * output : outputs)
-    {
-        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
-        nodes_to_process.push({output, false});
-        while (!nodes_to_process.empty())
-        {
-            auto [node, child_pushed] = nodes_to_process.top();
-            if (traced.contains(node))
-            {
-                nodes_to_process.pop();
-                continue;
-            }
-
-            if (auto input = input_positions.find(node); input != input_positions.end())
-            {
-                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
-                nodes_to_process.pop();
-                continue;
-            }
-
-            const auto hop = describeActionsDAGLineageHop(*node);
-            if (hop && !child_pushed)
-            {
-                nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
-                continue;
-            }
-
-            TraceState result;
-            if (hop)
-            {
-                const auto & child = traced.at(node->children[0]);
-                if (child)
-                {
-                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
-                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
-                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
-                        kind = ActionsDAGLineageKind::DistinctValuesBound;
-                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
-                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
-                        kind = ActionsDAGLineageKind::ValuePreserving;
-                    result = ActionsDAGInputLineage{
-                        child->input_position,
-                        kind,
-                        child->ndv_delta + hop->ndv_delta,
-                        child->preserves_width && hop->preserves_width};
-                }
-            }
-            traced[node] = result;
-            nodes_to_process.pop();
-        }
-    }
-
-    std::vector<ActionsDAGOutputLineage> result;
-    result.reserve(outputs.size());
-    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
-        result.push_back({output_position, traced.at(outputs[output_position])});
-    return result;
 }
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)

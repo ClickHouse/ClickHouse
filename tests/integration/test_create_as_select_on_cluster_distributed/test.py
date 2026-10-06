@@ -56,10 +56,7 @@ def started_cluster():
                 "ENGINE = MergeTree ORDER BY num"
             )
             node.query(
-                # Declared with the shard table's own type: `Int32` over a `UInt64` shard
-                # column does not preserve the order, so `ORDER BY num` over it is refused
-                # since `StorageDistributed` checks the declared types of sorted-by columns.
-                "CREATE TABLE dist (num UInt64, d Date) "
+                "CREATE TABLE dist (num Int32, d Date) "
                 "ENGINE = Distributed(test_cluster, currentDatabase(), local, cityHash64(num))"
             )
         node1.query("INSERT INTO local SELECT number, today() FROM numbers(50000)")

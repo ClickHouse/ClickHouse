@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: enables the global failpoint `prepared_sets_build_ordered_set_inplace_fail`, which
 # would abandon set builds in concurrently running tests.
 
