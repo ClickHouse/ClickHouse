@@ -219,29 +219,26 @@ String resolveDefaultDependencyToStorage(const String & required_name, const Col
 /// `m`), including subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m`
 /// resolves to `m`).
 ///
-/// The dependency closure is transitive through intermediate columns that will be re-evaluated
-/// during the merge, so that a default depending on an expired column *through* another column is
-/// still detected:
+/// The dependency closure is transitive through intermediate columns that have no values in any
+/// source, so that a default depending on an expired column *through* another column is still
+/// detected:
 /// - `ALIAS` columns are never physically stored, so they are always expanded into the physical
 ///   columns their expression reads (and are not themselves reported).
 /// - An ordinary `DEFAULT`/`MATERIALIZED` column that is recomputed from its expression for the
-///   rows of at least one source part during the merge has its dependencies expanded too (and the
-///   column itself is still reported). A chain such as `tmp DEFAULT m.keys`, `n.b DEFAULT tmp` with
-///   `m` expired therefore reports `m`, so `n.b` is expired as well. Missing defaults are evaluated
-///   per part (see `IMergeTreeReader::evaluateMissingDefaults`), so the recursion must stop only for
-///   columns that no part recomputes, not for columns stored in at least one of them: an intermediate
-///   materialized in one part (e.g. by a partially applied mutation) and missing in another is still
-///   recomputed for the rows of the latter.
-/// `columns_recomputed_from_default_in_some_part` is that marker-aware predicate: a column stored in
-/// a part is read as stored, and a column omitted from a part with a `MissingColumnInfo` marker is
-/// filled with the type default frozen at write time (see `IMergeTreeReader::fillMissingColumns`),
-/// so in both cases its current expression is not evaluated and its own dependencies are not
-/// followed. Over-approximating is safe: an extra dependency only moves a column from being
-/// materialized at merge time to being recomputed at read time.
+///   rows of every source part during the merge has its dependencies expanded too (and the column
+///   itself is still reported). A chain such as `tmp DEFAULT m.keys`, `n.b DEFAULT tmp` with `m`
+///   expired therefore reports `m`, so `n.b` is expired as well.
+/// `columns_to_follow` holds such intermediates. The recursion stops at an intermediate that the merge
+/// is forced to write anyway: one stored in some source part, omitted with a `MissingColumnInfo`
+/// marker in some part, backed by a patch part, or being a pending rename target. The merge computes
+/// that intermediate, computes the outer default from it, and reconciles the outer value with the
+/// shared `Nested` offsets (see `reconcileEvaluatedDefaultWithSharedOffsets`), so the outer column
+/// can be materialized safely. Expiring it instead would turn a merge-time value into a read-time
+/// one, which changes the data for a non-deterministic default.
 NameSet collectDefaultStorageDependencies(
     const ASTPtr & default_expression,
     const ColumnsDescription & columns_desc,
-    const NameSet & columns_recomputed_from_default_in_some_part)
+    const NameSet & columns_to_follow)
 {
     NameSet result;
     NameSet visited_columns;
@@ -277,12 +274,11 @@ NameSet collectDefaultStorageDependencies(
                 continue;
             }
 
-            /// A physical column that some source part neither stores nor marks as omitted is
-            /// recomputed from its own `DEFAULT`/`MATERIALIZED` expression during the merge (for the
-            /// rows of that part), so follow its dependencies too: the subcolumn we started from
-            /// transitively reads whatever this expression reads.
+            /// A physical column that has no values in any source is recomputed from its own
+            /// `DEFAULT`/`MATERIALIZED` expression for all rows, so follow its dependencies too: the
+            /// subcolumn we started from transitively reads whatever this expression reads.
             if (dependency_default && dependency_default->expression
-                && columns_recomputed_from_default_in_some_part.contains(storage_name)
+                && columns_to_follow.contains(storage_name)
                 && visited_columns.emplace(storage_name).second)
                 to_visit.push_back(dependency_default->expression);
 
@@ -955,17 +951,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             }
         }
 
-        /// A column recomputed for the rows of at least one part propagates its dependencies (missing
-        /// defaults are evaluated per part). A column recomputed for the rows of every part is the
-        /// only kind the merge may leave out entirely: a column stored in some part, or omitted with a
-        /// marker in some part, has live or frozen values there that the merged part must carry, and
-        /// a marker cannot be re-emitted when another part lacks it or freezes a different type
-        /// (see `missing_columns_to_materialize`), so such a column is written by the merge instead.
-        NameSet columns_recomputed_from_default_in_some_part;
+        /// A column recomputed for the rows of every part is the only kind the merge may leave out
+        /// entirely: a column stored in some part, or omitted with a marker in some part, has live or
+        /// frozen values there that the merged part must carry, and a marker cannot be re-emitted when
+        /// another part lacks it or freezes a different type (see `missing_columns_to_materialize`),
+        /// so such a column is written by the merge instead.
         NameSet columns_recomputed_from_default_in_all_parts;
         for (const auto & [column_name, part_count] : recomputed_from_default_part_counts)
         {
-            columns_recomputed_from_default_in_some_part.emplace(column_name);
             if (part_count == global_ctx->future_part->parts.size())
                 columns_recomputed_from_default_in_all_parts.emplace(column_name);
         }
@@ -980,14 +973,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & col : patch_part->getColumns())
                 columns_present_in_patch_parts.emplace(col.name);
         }
-
-        /// A column with values in a patch part has live values and is never expired (see the outer
-        /// guard below), so the merged part stores it and reads never recompute it. Do not follow its
-        /// expression either: otherwise a patched intermediate would drag an unrelated `Nested`
-        /// subcolumn onto the `expired_columns` path, turning it from materialized at merge time into
-        /// recomputed at read time from the stored (patched) intermediate.
-        for (const auto & column_name : columns_present_in_patch_parts)
-            columns_recomputed_from_default_in_some_part.erase(column_name);
 
         /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
         /// already carries `new`, while the source parts still physically store `old`. Treat `new`
@@ -1011,6 +996,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     && !storage_column_names.contains(rename.rename_from))
                     renamed_column_targets.emplace(rename.rename_to);
             }
+        }
+
+        /// The intermediates the dependency closure follows (see `collectDefaultStorageDependencies`):
+        /// the columns without values in any source. A column with values in a patch part, or a pending
+        /// rename target, has live values and is never expired (see the guard below), so the merged
+        /// part stores it and reads never recompute it. Following its expression would drag an
+        /// unrelated `Nested` subcolumn onto the `expired_columns` path, turning it from materialized
+        /// at merge time into recomputed at read time from the stored intermediate.
+        NameSet default_dependencies_to_follow;
+        for (const auto & column_name : columns_recomputed_from_default_in_all_parts)
+        {
+            if (!columns_present_in_patch_parts.contains(column_name) && !renamed_column_targets.contains(column_name))
+                default_dependencies_to_follow.emplace(column_name);
         }
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
@@ -1067,7 +1065,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     /// expands `ALIAS` columns, so both false positives (a lambda parameter that
                     /// happens to share a name with an expired column) and false negatives (a
                     /// dependency reached through an alias) are avoided.
-                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, columns_recomputed_from_default_in_some_part))
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, default_dependencies_to_follow))
                     {
                         if (expired_columns.contains(dependency))
                         {

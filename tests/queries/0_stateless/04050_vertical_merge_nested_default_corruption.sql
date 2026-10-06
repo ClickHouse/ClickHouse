@@ -298,12 +298,12 @@ DROP TABLE t_nested_default_chain;
 
 -- The same transitive chain, but with *mixed* source parts: the intermediate `tmp` is materialized in
 -- one source part (by a mutation that touches only the rows of that part) and still missing in the
--- other. Missing defaults are evaluated per part, so `tmp` is recomputed from the expired `m` for the
--- rows of the part where it is absent, and `` `n.b` `` must be expired all the same. A dependency
--- closure that stops recursing as soon as the intermediate is stored in *some* source part leaves
--- `` `n.b` `` on the vertical-materialization path and corrupts the shared Nested offsets of the
--- present sibling `n.a`. `max_bytes_to_merge_at_max_space_in_pool` keeps background merges from
--- consuming the mixed parts before `OPTIMIZE ... FINAL` (which ignores that limit).
+-- other. The merge has to write `tmp` anyway, so the dependency closure stops at it and
+-- `` `n.b` `` is materialized from the merged `tmp`. For the rows of the part where `tmp` is
+-- recomputed from the expired `m`, the value of `` `n.b` `` is reconciled with the shared Nested
+-- offsets, so the offsets of the present sibling `n.a` are not corrupted.
+-- `max_bytes_to_merge_at_max_space_in_pool` keeps background merges from consuming the mixed parts
+-- before `OPTIMIZE ... FINAL` (which ignores that limit).
 DROP TABLE IF EXISTS t_nested_mixed_parts;
 
 CREATE TABLE t_nested_mixed_parts (
@@ -333,16 +333,61 @@ SELECT count() FROM system.parts_columns
 
 OPTIMIZE TABLE t_nested_mixed_parts FINAL;
 
--- `` `n.b` `` must be expired instead of materialized from the recomputed `tmp`: expired columns are
--- not written, so they have no row in `system.parts_columns` (0 rows here, 1 row without the fix).
+-- `` `n.b` `` is written by the merge: it has a row in `system.parts_columns`.
 SELECT count() FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 't_nested_mixed_parts' AND active AND column = 'n.b';
 
 -- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
 SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts;
-SELECT id, `n.a` FROM t_nested_mixed_parts ORDER BY id;
+SELECT id, `n.a`, length(`n.b`) FROM t_nested_mixed_parts ORDER BY id;
+CHECK TABLE t_nested_mixed_parts SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_nested_mixed_parts;
+
+-- The same mixed state with a non-deterministic outer default. The merge writes `tmp`, so
+-- `` `n.b` `` must be materialized from it rather than expired: an expired `` `n.b` `` would be
+-- recomputed on every read and return different values each time, while the merge can freeze one
+-- value. `tmp` evaluates to the sizes of `n.a`, so no reconciliation is needed here.
+DROP TABLE IF EXISTS t_nested_mixed_parts_rand;
+
+CREATE TABLE t_nested_mixed_parts_rand (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_parts_rand VALUES (1, [10,20]);
+INSERT INTO t_nested_mixed_parts_rand VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_mixed_parts_rand ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_parts_rand ADD COLUMN tmp Array(UInt32) DEFAULT arrayConcat(m, `n.a`);
+ALTER TABLE t_nested_mixed_parts_rand ADD COLUMN `n.b` Array(UInt64) DEFAULT arrayMap(x -> rand64(x), tmp);
+
+-- Touches only the part holding `id = 1`, so `tmp` becomes stored there and stays missing elsewhere.
+ALTER TABLE t_nested_mixed_parts_rand UPDATE tmp = tmp WHERE id = 1 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts_rand' AND active AND column = 'tmp';
+
+OPTIMIZE TABLE t_nested_mixed_parts_rand FINAL;
+
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts_rand' AND active AND column = 'n.b';
+
+SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts_rand;
+SELECT id, `n.a`, tmp, length(`n.b`) FROM t_nested_mixed_parts_rand ORDER BY id;
+
+-- Two reads return the same frozen values.
+SELECT (SELECT groupArray(`n.b`) FROM (SELECT `n.b` FROM t_nested_mixed_parts_rand ORDER BY id))
+     = (SELECT groupArray(`n.b`) FROM (SELECT `n.b` FROM t_nested_mixed_parts_rand ORDER BY id));
+CHECK TABLE t_nested_mixed_parts_rand SETTINGS check_query_single_value_result = 1;
+
+DROP TABLE t_nested_mixed_parts_rand;
 
 -- Mixed source parts for the Nested subcolumn *itself*: one part stores `` `n.b` `` (inserted
 -- explicitly after the ALTERs), the other still relies on its DEFAULT, whose dependency `m` is
