@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -134,8 +135,7 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
             const auto * custom = type.getCustomSerialization();
             writeStringBinary(custom ? custom->getCustomSerializationIdentity() : "", out);
         };
-        describe_custom_serialization(*column.type);
-        column.type->forEachChild(describe_custom_serialization);
+        forEachInTypeTree(*column.type, describe_custom_serialization);
     }
     return out.str();
 }
@@ -261,7 +261,7 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
 
 size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const SerializationGroupKey & key) const noexcept
 {
-    XXH3_state_t state;
+    XXH_INLINE_XXH3_state_t state;
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     XXH_INLINE_XXH3_64bits_update(&state, &key.column_position, sizeof(key.column_position));
@@ -284,7 +284,7 @@ size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const Serializa
     /// The settings go through their `updateHash` so that new fields are picked up automatically;
     /// a stale hash could only miss sharing between equal keys, never share between unequal ones
     /// (equality compares the full key).
-    XXH3_state_t state;
+    XXH_INLINE_XXH3_state_t state;
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     SipHash settings_hash;
@@ -374,7 +374,7 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
     /// Assemble the name lookup map from the names stored in the groups (no subcolumn
     /// enumeration). The map is a pure function of the name sequence, so the sequence hash is its
     /// interning key, verified by full content comparison on a hit.
-    XXH3_state_t name_sequence_hash;
+    XXH_INLINE_XXH3_state_t name_sequence_hash;
     XXH_INLINE_XXH3_128bits_reset(&name_sequence_hash);
     size_t total_names = 0;
     for (const auto & group : groups)

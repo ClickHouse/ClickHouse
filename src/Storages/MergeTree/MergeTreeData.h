@@ -1104,6 +1104,12 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
+    /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
+    /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.
+    virtual void removeOwnFilesInDiskRootOnDrop(const DiskPtr & /*disk*/) {}
+
     /// This flag is for hardening and assertions.
     bool all_data_dropped = false;
 
@@ -1128,6 +1134,9 @@ public:
     /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
+
+    /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
+    static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.

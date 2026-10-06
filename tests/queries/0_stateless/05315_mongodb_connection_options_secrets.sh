@@ -18,9 +18,10 @@ NC2="nc2_05315_${CLICKHOUSE_DATABASE}"
 PROBE="05315_probe_${CLICKHOUSE_DATABASE}"
 
 # A statement carrying a secret. A rejected one prints the name of its object and the error code.
+# Further arguments are passed to the client.
 probe()
 {
-    $CLICKHOUSE_CLIENT --log_queries=1 --log_comment "$PROBE" -q "$1" 2>&1 | grep -oE '^Code: [0-9]+' | sed "s/^/$(cut -d' ' -f3 <<< "$1") /"
+    $CLICKHOUSE_CLIENT --log_queries=1 --log_comment "$PROBE" "${@:2}" -q "$1" 2>&1 | grep -oE '^Code: [0-9]+' | sed "s/^/$(cut -d' ' -f3 <<< "$1") /"
 }
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
@@ -36,11 +37,13 @@ probe "CREATE TABLE e02 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/d
 probe "CREATE TABLE e03 (x String) ENGINE = MongoDB(concat('mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=', 'OPTSECRET15'), 'c', '_id')"
 probe "CREATE TABLE e04 (x String) ENGINE = MongoDB('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', 'appName=keep&tlsCertificateKeyFilePassword=OPTSECRET3')"
 probe "CREATE TABLE e05 (x String) ENGINE = MongoDB('127.0.0.1:27017', 'db', 'c', 'usr', 'pw', concat('tlsCertificateKeyFilePassword=', 'OPTSECRET4'))"
-probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&tlsCertificateKeyFilePassword=OPTSECRET19')"
-probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')"
-probe "CREATE TABLE e08 (x String) ENGINE = MongoDB(${NC2}, collection = 'c2', uri = 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET25')"
+# ast_fuzzer_any_query = 0: a fuzzed DETACH of a table that uses a collection, or a `__fuzz_N` clone of it,
+# would leave metadata naming a collection that is dropped at the end.
+probe "CREATE TABLE e06 (x String) ENGINE = MongoDB(${NC}, options = 'tls=true&tlsCertificateKeyFilePassword=OPTSECRET19')" --ast_fuzzer_any_query=0
+probe "CREATE TABLE e07 (x String) ENGINE = MongoDB(${NC}, concat('op', 'tions') = 'tlsCertificateKeyFilePassword=OPTSECRET13')" --ast_fuzzer_any_query=0
+probe "CREATE TABLE e08 (x String) ENGINE = MongoDB(${NC2}, collection = 'c2', uri = 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET25')" --ast_fuzzer_any_query=0
 probe "CREATE TABLE e09 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?authMechanismProperties=ENVIRONMENT:azure%2CAWS_SESSION_TOKEN%3AOPTSECRET26', 'c')"
-probe "CREATE TABLE e10 (x String) ENGINE = MongoDB(${NC}, 'mongodb://usr:OPTSECRET27@127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET27B')"
+probe "CREATE TABLE e10 (x String) ENGINE = MongoDB(${NC}, 'mongodb://usr:OPTSECRET27@127.0.0.1:27017/db?tlsCertificateKeyFilePassword=OPTSECRET27B')" --ast_fuzzer_any_query=0
 
 # Table function: the URI form with a public property kept, the positional and the named options of the
 # host:port form, a URI written after a named argument, an upper-case OPTIONS key (both rejected after being
@@ -54,7 +57,7 @@ probe "CREATE VIEW f05 AS SELECT * FROM mongodb('127.0.0.1:27017', 'db', 'c', 'u
 probe "CREATE VIEW f06 AS SELECT * FROM mongodb(oid_columns = 'tlsCertificateKeyFilePassword=OPTSECRET22', '127.0.0.1:27017', 'db', 'c', '', 'x String')"
 probe "CREATE VIEW f07 AS SELECT * FROM mongodb(options = 'OPTSECRET23', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String')"
 probe "CREATE VIEW f08 AS SELECT * FROM mongodb(oid_columns = 'appName=keep', '127.0.0.1:27017', 'db', 'c', 'usr', 'x String', 'OPTSECRET24')"
-probe "CREATE VIEW f09 AS SELECT * FROM mongodb(${NC}, structure = 'x String', 'OPTSECRET28')"
+probe "CREATE VIEW f09 AS SELECT * FROM mongodb(${NC}, structure = 'x String', 'OPTSECRET28')" --ast_fuzzer_any_query=0
 
 # Dictionary source: an option given twice, a URI written as an identifier with '#' in the value, the
 # OPTIONS of the host form, and OPTIONS given as an expression.
@@ -105,5 +108,14 @@ SELECT 'probes logged', count(), countIf(query LIKE '%[HIDDEN]%') FROM system.qu
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '${PROBE}' AND type != 'QueryStart';
 "
 
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC}"
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC2}"
+# A table keeps its named collection from being dropped, so the objects that use the named collections go first.
+# A table left with a dropped named collection could not be attached, so the server would not start again with
+# this database (the stress test restarts the server).
+$CLICKHOUSE_CLIENT -m -q "
+SET ast_fuzzer_any_query = 0;
+DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
+DROP NAMED COLLECTION ${NC2}; -- { serverError NAMED_COLLECTION_IS_USED }
+DROP TABLE IF EXISTS e06, e07, e08, e10, f09;
+DROP NAMED COLLECTION ${NC};
+DROP NAMED COLLECTION ${NC2};
+"

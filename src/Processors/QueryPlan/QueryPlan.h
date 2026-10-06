@@ -82,6 +82,9 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Print the values of secret function arguments (keys, passwords) in pretty expressions instead of
+    /// `[HIDDEN]`. Not a user-facing EXPLAIN option: set from `canDisplaySecrets` by the interpreter.
+    bool show_secrets = false;
     /// Show estimates
     bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
