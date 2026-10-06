@@ -1,0 +1,147 @@
+---
+slug: /native-protocol/client
+title: '네이티브 클라이언트 패킷'
+description: '네이티브 프로토콜 클라이언트'
+doc_type: '참고'
+keywords: ['클라이언트 패킷', '네이티브 프로토콜 클라이언트', '프로토콜 패킷', '클라이언트 통신', 'TCP 클라이언트']
+---
+
+| 값 | 이름                | 설명             |
+| - | ----------------- | -------------- |
+| 0 | [Hello](#hello)   | 클라이언트 핸드셰이크 시작 |
+| 1 | [Query](#query)   | 쿼리 요청          |
+| 2 | [데이터](#data)     | 데이터 블록         |
+| 3 | [Cancel](#cancel) | 쿼리 취소          |
+| 4 | [Ping](#ping)     | Ping 요청        |
+| 5 | TableStatus       | 테이블 상태 요청      |
+
+`Data` 패킷은 압축할 수 있습니다.
+
+<div id="hello">
+  ## Hello
+</div>
+
+예를 들어, `54451` 프로토콜 버전을 지원하는 `Go Client` v1.10을 사용해
+`default` 데이터베이스에 `default` 사용자와 `secret` 비밀번호로 연결하려고 한다고 가정합니다.
+
+| 필드                   | 유형      | 값             | 설명           |
+| -------------------- | ------- | ------------- | ------------ |
+| client&#95;name      | String  | `"Go Client"` | 클라이언트 구현 이름  |
+| version&#95;major    | UVarInt | `1`           | 클라이언트 메이저 버전 |
+| version&#95;minor    | UVarInt | `10`          | 클라이언트 마이너 버전 |
+| protocol&#95;version | UVarInt | `54451`       | TCP 프로토콜 버전  |
+| database             | String  | `"default"`   | 데이터베이스 이름    |
+| username             | String  | `"default"`   | 사용자 이름       |
+| password             | String  | `"secret"`    | 비밀번호         |
+
+<div id="protocol-version">
+  ### 프로토콜 버전
+</div>
+
+프로토콜 버전은 클라이언트가 사용하는 TCP 프로토콜 버전입니다.
+
+일반적으로 최신 호환 서버 리비전과 같지만,
+이와 혼동해서는 안 됩니다.
+
+<div id="defaults">
+  ### 기본값
+</div>
+
+모든 값은 **명시적으로 설정해야** 하며, 서버 측에는 기본값이 없습니다.
+클라이언트 측의 기본값은 `"default"` 데이터베이스(database), `"default"` 사용자 이름, 그리고 `""` (빈 문자열) 비밀번호입니다.
+
+<div id="query">
+  ## 쿼리
+</div>
+
+| field           | 유형                         | 값          | 설명                    |
+| --------------- | -------------------------- | ---------- | --------------------- |
+| query&#95;id    | String                     | `1ff-a123` | 쿼리 ID, UUIDv4일 수 있습니다 |
+| client&#95;info | [ClientInfo](#client-info) | 유형 참조      | 클라이언트 정보              |
+| settings        | [설정](#settings)            | 유형 참조      | 설정 목록                 |
+| secret          | String                     | `secret`   | 서버 간 공유 비밀            |
+| [stage](#stage) | UVarInt                    | `2`        | 쿼리 단계까지 실행            |
+| compression     | UVarInt                    | `0`        | 비활성화=0, 활성화=1         |
+| body            | String                     | `SELECT 1` | 쿼리 텍스트                |
+
+<div id="client-info">
+  ### 클라이언트 정보
+</div>
+
+| 필드                       | 유형              | 설명                             |
+| ------------------------ | --------------- | ------------------------------ |
+| query&#95;kind           | byte            | None=0, Initial=1, Secondary=2 |
+| initial&#95;user         | String          | 초기 사용자                         |
+| initial&#95;query&#95;id | String          | 초기 쿼리 ID                       |
+| initial&#95;address      | String          | 초기 주소                          |
+| initial&#95;time         | Int64           | 초기 시간                          |
+| interface                | byte            | TCP=1, HTTP=2                  |
+| os&#95;user              | String          | OS 사용자                         |
+| client&#95;hostname      | String          | 클라이언트 호스트명                     |
+| client&#95;name          | String          | 클라이언트 이름                       |
+| version&#95;major        | UVarInt         | 클라이언트 메이저 버전                   |
+| version&#95;minor        | UVarInt         | 클라이언트 마이너 버전                   |
+| protocol&#95;version     | UVarInt         | 클라이언트 프로토콜 버전                  |
+| quota&#95;key            | String          | QUOTA 키                        |
+| distributed&#95;depth    | UVarInt         | 분산 깊이                          |
+| version&#95;patch        | UVarInt         | 클라이언트 패치 버전                    |
+| otel                     | Bool            | 트레이스 필드 포함                     |
+| trace&#95;id             | FixedString(16) | 트레이스 ID                        |
+| span&#95;id              | FixedString(8)  | 스팬 ID                          |
+| trace&#95;state          | String          | 트레이싱 상태                        |
+| trace&#95;flags          | Byte            | 트레이싱 플래그                       |
+
+<div id="settings">
+  ### 설정
+</div>
+
+| 필드        | 유형     | 값                 | 설명       |
+| --------- | ------ | ----------------- | -------- |
+| key       | String | `send_logs_level` | 설정의 키    |
+| value     | String | `trace`           | 설정의 값    |
+| important | Bool   | `true`            | 무시 가능 여부 |
+
+목록 형태로 인코딩되며, key와 value가 비어 있으면 목록의 끝을 나타냅니다.
+
+<div id="stage">
+  ### 단계
+</div>
+
+| 값 | 이름                 | 설명                   |
+| - | ------------------ | -------------------- |
+| 0 | FetchColumns       | 컬럼 타입만 가져옵니다         |
+| 1 | WithMergeableState | 머지 가능한 상태까지          |
+| 2 | Complete           | 완전한 상태까지(기본값이어야 합니다) |
+
+<div id="data">
+  ## 데이터
+</div>
+
+| 필드      | 유형              | 설명           |
+| ------- | --------------- | ------------ |
+| info    | BlockInfo       | 인코딩된 블록 정보   |
+| columns | UVarInt         | 컬럼 수         |
+| rows    | UVarInt         | 행 수          |
+| columns | [[]컬럼](#column) | 데이터를 포함하는 컬럼 |
+
+<div id="column">
+  ### 컬럼
+</div>
+
+| 필드   | 유형     | 값               | 설명     |
+| ---- | ------ | --------------- | ------ |
+| name | String | `foo`           | 컬럼 이름  |
+| type | String | `DateTime64(9)` | 컬럼 유형  |
+| data | bytes  | ~               | 컬럼 데이터 |
+
+<div id="cancel">
+  ## Cancel
+</div>
+
+패킷 본문은 없습니다. 서버는 쿼리를 취소해야 합니다.
+
+<div id="ping">
+  ## Ping
+</div>
+
+패킷 본문은 없습니다. 서버는 [pong으로 응답해야 합니다](/ko/resources/develop-contribute/native-protocol/server#pong).

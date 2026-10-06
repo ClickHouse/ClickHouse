@@ -13,36 +13,48 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自定义角色并分配给用户。有关系统角色及其对应权限的更多信息，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。本指南将详细介绍如何管理自定义角色。
 
-## 创建自定义角色 {#create-custom-role}
+<div id="create-custom-role">
+  ## 创建自定义角色
+</div>
 
 自定义角色可以包含组织、服务和数据库权限的任意组合。权限可应用于全部或部分服务和数据库。
 
 <Steps>
-  <Step title="进入组织设置并选择 Users and roles" id="users-and-roles-1">
+  <Step>
+    ### 访问组织设置并选择 Users and roles
+
     在 services 页面中，选择你的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title={<>选择 <code>Roles</code> 选项卡</>} id="roles-tab">
+  <Step>
+    ### 选择 `Roles` 选项卡
+
     在屏幕顶部中间选择 `Roles` 选项卡。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step title={<>在右上角选择 <code>Create new role</code></>} id="create-new-role">
+  <Step>
+    ### 在右上角选择 `Create new role`
+
     点击屏幕右上角的 `Create new role` 按钮。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step title="为角色命名" id="name-the-role">
+  <Step>
+    ### 为角色命名
+
     输入一个便于识别的角色名称。这将是在为用户和 API 密钥 分配角色时显示的名称。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step title={<>点击 <code>Allow</code> 并选择权限范围</>} id="scope-permissions">
+  <Step>
+    ### 点击 `Allow` 并选择权限范围
+
     点击 `Allow` 按钮，然后从 Organization、Service 和/或 Database 权限中进行选择。有关所有权限的说明，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
 
     <Tip>
@@ -50,88 +62,22 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
     </Tip>
 
     <Info>
-      **Data Sources tab access**
+      **Data Sources 选项卡访问**
 
-      要访问 **Data Sources** 选项卡，该角色目前需要 `Manage selected services` 权限。
+      要访问 **Data Sources** 选项卡，该角色目前需要 `Manage and Delete Selected Services` 权限。
     </Info>
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step title="检查新角色" id="review-role">
+  <Step>
+    ### 检查新角色
+
     完成之前，请检查分配给新角色的权限。确认无误后，点击 `Create role`。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
-
-## 管理数据库角色 {#manage-database-roles}
-
-除控制台权限外，自定义角色还可包含 `Data` 策略，以控制对所选服务中数据库的访问。这样，您可以在一个位置管理控制台和数据库访问权限，无需在每个数据库中分别维护角色。
-
-<Note>
-  此功能适用于运行 ClickHouse 26.4 及更高版本的服务。
-</Note>
-
-向自定义角色添加 `Data` 策略时，ClickHouse Cloud 会在每个所选服务中创建一个对应的角色，并添加 `cloud:` 前缀。例如，名为 `readonly` 的自定义角色会在数据库中显示为 `cloud:readonly`。自定义角色的成员通过 SQL 控制台的免密码身份验证连接到服务时，将获得这些数据库权限。
-
-<Warning>
-  Cloud 托管的数据库角色会替代手动分配的 [`sql-console-role:<email>`](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 角色；后者与 SQL 控制台中的 JWT 会话不兼容。
-</Warning>
-
-### 前置条件 {#manage-database-roles-prerequisites}
-
-服务上的自定义数据库角色依赖于 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)，禁用时不会生效。在向角色添加 `Data` 策略之前，请进入相应服务，打开 `Settings`，然后在 `Security` 部分找到 `JWT authentication` 卡片。确保已启用 `SQL 控制台` 切换开关。
-
-<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="已启用 SQL 控制台 切换开关的 JWT 身份验证卡片" size="lg" force />
-
-<Steps>
-  <Step title="打开角色对话框" id="open-role-dialog">
-    [创建自定义角色](#create-custom-role)，或编辑现有角色。
-  </Step>
-
-  <Step title="添加组织策略" id="add-organization-policy">
-    在角色对话框中，单击 `Allow`，选择 `Organization`，并启用 `Access organization` 权限。
-  </Step>
-
-  <Step title="添加服务策略" id="add-service-policy">
-    单击 `Allow permissions`，选择 `Service`，选择数据策略将应用到的服务，并启用 `View selected services` 权限。
-
-    该角色的成员需要同时具备这两项权限，才能登录控制台并在 SQL 控制台中打开服务，数据策略在此处生效。
-  </Step>
-
-  <Step title="添加数据策略" id="add-data-permissions">
-    单击 `Allow permissions` 并选择 `Data`。
-  </Step>
-
-  <Step title="选择服务" id="select-data-permissions-service">
-    选择要应用该策略的服务。添加更多服务即可在多个服务中应用相同的 `Read-only` 或 `Admin` 权限。
-  </Step>
-
-  <Step title="选择访问级别" id="choose-data-access-level">
-    选择 `Read-only`、`Admin` 或 `Custom` 访问级别。选择 `Custom` 时，可通过 ClickHouse [`GRANT` 语句](/zh/reference/statements/grant)定义具体的数据访问权限。仅当该策略针对单个服务时才能选择 `Custom` 访问；若要为多个服务定义自定义权限，请为每个服务单独添加一项 `Data` 策略。
-
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="新建角色对话框，其中的数据权限由自定义授权语句定义" size="md" />
-  </Step>
-
-  <Step title="创建角色" id="create-role-with-data-permissions">
-    单击 `Create role`。系统将在所选服务中创建数据库角色。角色最多可能需要 10 分钟才能同步到服务，但被分配该角色的用户在查询服务时会立即获得其权限。
-  </Step>
-</Steps>
-
-### 验证数据库角色 {#verify-database-roles}
-
-通过控制台管理的角色会在数据库中创建，其名称带有 `cloud:` 前缀，存储类型为 `cloud`，创建后最多可能需要 10 分钟才会显示。要列出这些角色，请查询服务中的 `system.roles` 表：
-
-```sql
-SELECT * FROM system.roles;
-```
-
-```response
-┌─name───────────┬─id───────────────────────────────────┬─storage─┐
-│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
-└────────────────┴──────────────────────────────────────┴─────────┘
-```
 
 <div id="update-custom-role">
   ## 更新自定义角色

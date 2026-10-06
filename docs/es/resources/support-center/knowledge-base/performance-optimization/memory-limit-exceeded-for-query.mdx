@@ -6,6 +6,10 @@ tags: ['Errores y excepciones']
 keywords: ['OOM', 'límite de memoria superado']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="troubleshooting-out-of-memory-issues">
@@ -28,8 +32,8 @@ En ese caso, los usuarios tienen varias opciones.
 </div>
 
 Para escenarios de agregación u ordenación que consumen mucha memoria, los usuarios pueden usar los ajustes
-[`max_bytes_before_external_group_by`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
-y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort), respectivamente.
+[`max_bytes_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_before_external_group_by)
+y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_sort), respectivamente.
 El primero de ellos se analiza en detalle [aquí](/es/reference/statements/select/group-by#group-by-in-external-memory).
 
 En resumen, esto garantiza que cualquier agregación pueda volcarse a disco si se supera un
@@ -39,7 +43,7 @@ con ordenaciones que consumen mucha memoria. Esto puede ser especialmente import
 entornos distribuidos donde un nodo coordinador recibe respuestas ordenadas
 de segmentos secundarios. En este caso, se puede pedir al
 servidor coordinador que ordene un
-conjunto de datos más grande que la memoria disponible. Con [`max_bytes_before_external_sort`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort),
+conjunto de datos más grande que la memoria disponible. Con [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
 se puede permitir que la ordenación se vuelque a disco. Esta configuración también es útil en
 casos en los que el usuario tiene un `ORDER BY` después de un `GROUP BY` con un `LIMIT`,
 especialmente cuando la consulta es distribuida.
@@ -55,7 +59,7 @@ Este algoritmo carga la tabla del lado derecho del `JOIN` en una tabla hash en m
 sobre la que luego se evalúa la tabla del lado izquierdo. Para minimizar el uso de memoria,
 los usuarios deben, por tanto, colocar la tabla más pequeña en el lado derecho. Sin embargo, este enfoque
 sigue teniendo limitaciones en escenarios con restricciones de memoria. En esos casos, se puede
-habilitar el join `partial_merge` mediante la configuración [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm).
+habilitar el join `partial_merge` mediante la configuración [`join_algorithm`](/es/reference/settings/session-settings#join_algorithm).
 Esta variante del [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join)
 primero ordena la tabla derecha en bloques y crea un índice min-max para ellos.
 Luego ordena partes de la tabla izquierda por la clave del join y las combina con la

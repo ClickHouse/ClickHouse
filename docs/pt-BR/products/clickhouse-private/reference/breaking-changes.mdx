@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "Alterações incompatíveis"
+sidebarTitle: "Alterações incompatíveis"
+description: "Alterações incompatíveis específicas da versão dos componentes Private do ClickHouse."
+---
+
+Alterações incompatíveis específicas da versão dos componentes Private do ClickHouse. Revise esta página antes de atualizar.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` version `1.1.245` — Shared Catalog e servidores sem estado habilitados por padrão
+</div>
+
+A partir da versão `1.1.245` do chart, `featureFlags.enableSharedCatalog` e `featureFlags.disableMetadataPersistentVolumes` passam a ter `true` como valor padrão. Novas instalações usarão por padrão o engine de banco de dados [Shared](https://clickhouse.com/docs/engines/database-engines/shared) e nós de servidor sem estado.
+
+**Novas instalações** não exigem nenhuma ação — os novos valores padrão se aplicam automaticamente.
+
+**Instalações existentes que ainda não estão no Shared Catalog** devem definir explicitamente os valores padrão anteriores para evitar uma migração não intencional durante a atualização:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+Quando estiver tudo pronto para migrar, siga o guia [Migrar para o Shared Catalog](/pt-BR/products/clickhouse-private/guides/migrate-to-shared-catalog).
+
+**Instalações existentes que já usam o Shared Catalog** não exigem nenhuma ação — os novos valores padrão correspondem à sua configuração atual.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` version `1.1.210`
+</div>
+
+A partir da versão `1.1.210` do chart, novas restrições de configuração são incluídas por padrão. Se você estiver usando uma versão do servidor ClickHouse **inferior a 25.10**, deverá excluir essas restrições adicionando o seguinte à configuração do servidor:
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+Sem essa configuração, o ClickHouse não iniciará, pois essas configurações não são reconhecidas em versões anteriores à 25.10.

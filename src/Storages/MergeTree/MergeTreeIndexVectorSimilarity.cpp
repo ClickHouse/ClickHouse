@@ -24,10 +24,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
-#include <atomic>
 #include <cmath>
-#include <condition_variable>
-#include <mutex>
 #include <ranges>
 #include <string_view>
 
@@ -310,9 +307,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check a few things to prevent undefined behavior further down in Usearch
+/// Check two things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
+/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -345,9 +342,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
         throw Exception(error_code,
-            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>
@@ -377,9 +374,12 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        /// USearch internally does not check for cancellation, and a single `add` call can take a very long time
-        /// under sanitizers. Without this check, KILL QUERY or cancelling a merge cannot stop the index building.
-        CurrentThread::checkIfNotCancelled();
+        /// Check if the query has been cancelled. USearch internally does not check for cancellation,
+        /// and a single `add` call can take a very long time under sanitizers. Without this check, KILL QUERY
+        /// cannot stop the index building. The check is cheap (reads an atomic flag).
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->throwIfKilled();
 
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
 
@@ -410,51 +410,14 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
 
     size_t index_size = index->size();
-
-    /// Stop waiting at the first error (e.g. cancellation) instead of waiting for every queued row: the pool is shared with
-    /// other index builds, so the rest of our rows may sit behind a lot of their work. The runner's destructor drops them.
-    std::mutex mutex;
-    std::condition_variable finished_or_failed;
-    size_t remaining_rows = rows;
-    std::exception_ptr first_exception;
-    std::atomic<bool> failed = false;
-    auto add_row = [&](USearchIndex::vector_key_t key, size_t row)
-    {
-        if (failed)
-            return;
-        try
-        {
-            add_vector_to_index(key, row);
-        }
-        catch (...)
-        {
-            std::lock_guard lock(mutex);
-            if (!first_exception)
-                first_exception = std::current_exception();
-            failed = true;
-            finished_or_failed.notify_all();
-            return;
-        }
-        std::lock_guard lock(mutex);
-        if (--remaining_rows == 0)
-            finished_or_failed.notify_all();
-    };
-
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-    /// Enqueueing can block on a full pool queue for a long time, so it must stop on an error too
-    for (size_t row = 0; row < rows && !failed; ++row)
+    for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        /// Passing add_row by reference is safe because it outlives the runner
-        runner.enqueueAndKeepTrack([&add_row, key, row] { add_row(key, row); });
+        /// Passing add_vector_to_index by reference is safe because it outlives the runner
+        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
-    {
-        std::unique_lock lock(mutex);
-        finished_or_failed.wait(lock, [&] { return remaining_rows == 0 || first_exception; });
-        if (first_exception)
-            std::rethrow_exception(first_exception);
-    }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
 
@@ -596,14 +559,9 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
-    {
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        /// The product is compared with the cap while it is still a double: a LIMIT close to the maximum of UInt64 multiplied by the
-        /// factor exceeds the range of size_t, and the conversion of such a value is undefined behavior.
-        const double scaled_limit = static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier);
-        limit = (scaled_limit >= static_cast<double>(max_limit)) ? max_limit : static_cast<size_t>(scaled_limit);
-    }
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to

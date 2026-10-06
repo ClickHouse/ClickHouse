@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "破坏性变更"
+sidebarTitle: "破坏性变更"
+description: "ClickHouse 私网组件在特定版本中的破坏性变更。"
+---
+
+ClickHouse 私网组件在特定版本中的破坏性变更。升级前请先阅读本页。
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` 版本 `1.1.245` — 默认启用 Shared Catalog 和无状态服务器
+</div>
+
+从 chart 版本 `1.1.245` 开始，`featureFlags.enableSharedCatalog` 和 `featureFlags.disableMetadataPersistentVolumes` 的默认值均为 `true`。新安装将默认使用 [Shared](https://clickhouse.com/docs/engines/database-engines/shared) 数据库引擎和无状态 Server 节点。
+
+**新安装** 无需执行任何操作——新默认值会自动生效。
+
+**尚未使用 Shared Catalog 的现有安装** 必须显式设置回之前的默认值，以避免在升级时发生意外迁移：
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+准备迁移时，请按照[迁移到 Shared Catalog](/zh/products/clickhouse-private/guides/migrate-to-shared-catalog)指南操作。
+
+**已在使用 Shared Catalog 的现有安装**无需执行任何操作——新的默认设置与您当前的配置一致。
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` 版本 `1.1.210`
+</div>
+
+自 `1.1.210` 版本的 chart 起，默认包含新的配置约束。如果你使用的 ClickHouse server 版本**低于 25.10**，则必须在服务器配置中添加以下内容，以排除这些约束：
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+如果没有此配置，ClickHouse 将无法启动，因为 25.10 之前的版本不识别这些设置。

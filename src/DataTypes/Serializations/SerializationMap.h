@@ -44,15 +44,6 @@ public:
 
     bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
-    /// Whether a resolved subcolumn is really the `.keys` / `.values` array, which its name alone
-    /// cannot tell. A `Map` exposes them through its nested `Array(Tuple(keys, values))`, so the last
-    /// path element alone is not enough either.
-    static bool isKeysSubcolumn(const SubstreamPath & path);
-    static bool isValuesSubcolumn(const SubstreamPath & path);
-
-    /// Whether a resolved subcolumn is really the value stored under one key (`m.key_<key>`).
-    static bool isKeyValueSubcolumn(const SubstreamPath & path);
-
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -70,7 +61,6 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -99,7 +89,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -117,6 +108,21 @@ private:
     friend SerializationMapSize;
     friend SerializationMapKeysOrValues;
     friend SerializationMapKeyValue;
+
+    /// Small shared state cached at the current substream path so that both
+    /// `SerializationMap` and `SerializationMapKeyValue` can coordinate.
+    /// `SerializationMap` sets `reading_full_map = true` during prefix deserialization;
+    /// `SerializationMapKeyValue` reads the flag to decide whether to keep the
+    /// intermediate nested column (needed for cache sharing) or discard it after extraction.
+    struct DeserializeBinaryBulkStateMapReadingInfo : public DeserializeBinaryBulkState
+    {
+        bool reading_full_map = false;
+
+        DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateMapReadingInfo>(*this);
+        }
+    };
 
     /// State read from the buckets info stream during deserialization prefix.
     /// Contains the bucket count and optional statistics that were written
@@ -140,6 +146,7 @@ private:
     };
 
     static DeserializeBinaryBulkStatePtr deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
+    static DeserializeBinaryBulkStatePtr deserializeMapReadingInfoStatePrefix(SubstreamsDeserializeStatesCache * cache, const ISerialization::SubstreamPath & path);
 
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;

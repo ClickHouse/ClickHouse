@@ -30,26 +30,11 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    /// `readImpl` forwards the requested column NAMES into the inner query, whose column types may
-    /// differ from the view's declared ones, so a rewritten `arr.size0` may not resolve there.
-    bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
-
-    /// A view whose query runs with privileges other than the invoker's (`SQL SECURITY DEFINER` or `NONE`)
-    /// can hide rows that the invoker must not see. Such a view is sealed: it is read through an opaque step,
-    /// so no optimization of the outer query can evaluate an outer expression on the rows the view drops,
-    /// or use an outer predicate to analyze the indexes of the tables behind it.
-    /// A plain projection of a `MergeTree` table hides no rows unless the view's context has a row policy on it,
-    /// or the invoker has a row policy on the view itself, so it stays transparent.
-    bool isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
-
-    /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
-    /// Returns nullptr otherwise.
-    StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;
 
     void readImpl(
         QueryPlan & query_plan,
@@ -62,7 +47,7 @@ public:
         size_t num_streams) override;
 
     void drop() override;
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
 

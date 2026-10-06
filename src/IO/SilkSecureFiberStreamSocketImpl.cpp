@@ -8,6 +8,7 @@
 #include <base/defines.h>
 
 #include <silk/fibers/fiber.h>
+#include <silk/fibers/future.h>
 #include <silk/fibers/mutex.h>
 
 #include <openssl/bio.h>
@@ -15,10 +16,11 @@
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include <poll.h>
-#include <sys/socket.h>
+#include <sys/uio.h>
 
 
 namespace Silk
@@ -27,58 +29,84 @@ namespace Silk
 namespace
 {
 
-FiberStreamSocketImpl * getUnderlyingSocket(BIO * bio)
+uint64_t timeoutNs(const Poco::Timespan & timeout)
 {
-    return static_cast<FiberStreamSocketImpl *>(static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio)));
+    return static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000ULL;
 }
 
 int silkBioRead(BIO * bio, char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
+    const uint64_t timeout_ns = timeoutNs(socket_impl->getReceiveTimeout());
 
-    /// Do not schedule a fiber-aware read or wait for its future here. This callback runs
-    /// inside an OpenSSL operation, and suspending the fiber could resume it on another
-    /// OS thread before `SSL_get_error` reads that thread's error queue. Use a non-blocking
-    /// syscall and report retry through the `BIO` flags instead. `SecureSocketImpl` saves
-    /// the OpenSSL result first, then `SecureSocketImpl::mustRetry` performs the timed,
-    /// fiber-aware wait through `pollImpl`.
-    /// https://docs.openssl.org/3.5/man3/SSL_get_error/
-    BIO_clear_retry_flags(bio);
-    const ssize_t n = ::recv(fd, buf, len, MSG_DONTWAIT);
-    if (n < 0)
+    uint64_t bytes_read = 0;
+    silk::FiberScheduler::IoFuture future;
+    iovec iov{buf, static_cast<size_t>(len)};
+    silk::FiberScheduler::read(fd, &iov, 1, 0, &bytes_read, &future);
+
+    int r = timeout_ns > 0
+        ? silk::FiberFuture::waitWithTimeout(&future, timeout_ns)
+        : future.wait();
+
+    if (r == ETIMEDOUT)
     {
-        /// Capture `errno` immediately; fiber migration makes a later read invalid.
-        const int err = errno;
-        if (BIO_sock_non_fatal_error(err))
-            BIO_set_retry_read(bio);
-        return -1;
+        future.cancel();
+        r = future.wait();
+        if (r == ECANCELED)
+            r = ETIMEDOUT;
     }
 
-    /// TODO(mstetsyuk): should be done at Silk level.
-    __msan_unpoison(buf, static_cast<size_t>(n));
+    BIO_clear_retry_flags(bio);
 
-    if (n == 0)
-        BIO_set_flags(bio, BIO_FLAGS_IN_EOF);
-    return static_cast<int>(n);
+    if (r == 0)
+    {
+        /// TODO(mstetsyuk): should be done at Silk level.
+        __msan_unpoison(buf, bytes_read);
+
+        if (bytes_read == 0)
+            BIO_set_flags(bio, BIO_FLAGS_IN_EOF);
+        return static_cast<int>(bytes_read);
+    }
+
+    errno = r;
+    if (BIO_sock_non_fatal_error(r) || r == ETIMEDOUT)
+        BIO_set_retry_read(bio);
+    return -1;
 }
 
 int silkBioWrite(BIO * bio, const char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
+    const uint64_t timeout_ns = timeoutNs(socket_impl->getSendTimeout());
 
-    /// See `silkBioRead`: never suspend from inside an OpenSSL operation.
-    BIO_clear_retry_flags(bio);
-    const ssize_t n = ::send(fd, buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
-    if (n < 0)
+    uint64_t bytes_written = 0;
+    silk::FiberScheduler::IoFuture future;
+    iovec iov{const_cast<char *>(buf), static_cast<size_t>(len)};
+    silk::FiberScheduler::write(fd, &iov, 1, 0, &bytes_written, &future);
+
+    int r = timeout_ns > 0
+        ? silk::FiberFuture::waitWithTimeout(&future, timeout_ns)
+        : future.wait();
+
+    if (r == ETIMEDOUT)
     {
-        const int err = errno;
-        if (BIO_sock_non_fatal_error(err))
-            BIO_set_retry_write(bio);
-        return -1;
+        future.cancel();
+        r = future.wait();
+        if (r == ECANCELED)
+            r = ETIMEDOUT;
     }
-    return static_cast<int>(n);
+
+    BIO_clear_retry_flags(bio);
+
+    if (r == 0)
+        return static_cast<int>(bytes_written);
+
+    errno = r;
+    if (BIO_sock_non_fatal_error(r) || r == ETIMEDOUT)
+        BIO_set_retry_write(bio);
+    return -1;
 }
 
 long silkBioCtrl(BIO * bio, int cmd, [[maybe_unused]] long larg, void * parg) // NOLINT(google-runtime-int)
@@ -172,12 +200,7 @@ private:
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
-    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl, context)
-{
-}
-
-SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
-    : Poco::Net::SecureStreamSocketImpl(underlying_, context)
+    : Poco::Net::SecureStreamSocketImpl(new FiberStreamSocketImpl, context)
 {
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());

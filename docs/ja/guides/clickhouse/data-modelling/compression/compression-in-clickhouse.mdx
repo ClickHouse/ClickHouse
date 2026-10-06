@@ -70,8 +70,8 @@ GROUP BY name
 
 <Accordion title="compact パーツと wide パーツについて">
   `compressed_size` または `uncompressed_size` の値が `0` になっている場合、パーツのタイプが `wide` ではなく `compact` であることが原因の可能性があります ([`system.parts`](/ja/reference/system-tables/parts) の `part_type` の説明を参照) 。
-  パーツのフォーマットは、設定 [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
-  および [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) によって制御されます。つまり、挿入された
+  パーツのフォーマットは、設定 [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  および [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_rows_for_wide_part) によって制御されます。つまり、挿入された
   データから作成されるパーツが前述の設定値を超えない場合、そのパーツは `wide` ではなく `compact` になり、
   `compressed_size` や `uncompressed_size` の値は表示されません。
 
@@ -140,7 +140,7 @@ GROUP BY name
 
 > 上記のクエリは、システムデータベース内の `columns` テーブルを利用しています。このデータベースは ClickHouse によって管理されており、クエリ性能のメトリクスからバックグラウンドのクラスター ログまで、有用な情報の宝庫です。さらに詳しく知りたい方には、[&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) と関連する記事[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) をおすすめします。
 
-テーブルの合計サイズを確認するには、上記のクエリを簡略化できます:
+テーブル全体のサイズを要約するには、上記のクエリを次のように簡略化できます。
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
@@ -235,7 +235,7 @@ ClickHouse は多数のコーデックと圧縮アルゴリズムをサポート
 | **`Gorilla` and `T64` for unknown patterns?** | データのパターンが不明な場合は、`Gorilla` と `T64` を試してみる価値があるかもしれません。                                                                                                                                                                                       |
 | **`Gorilla` for gauge data**                  | `Gorilla` は浮動小数点データ、特に Gauge の測定値、つまりランダムなスパイクを表すデータに対して効果的なことがあります。                                                                                                                                                                        |
 
-さらに選択肢については、[こちら](/ja/reference/statements/create/table/codec)を参照してください。
+さらに選択肢については、[こちら](/ja/reference/statements/create/table#column_compression_codec)を参照してください。
 
 以下では、`Id`、`ViewCount`、`AnswerCount` に `Delta` コーデックを指定しています。これらはソートキーと線形に相関していると仮定しており、そのため Delta エンコーディングの恩恵を受けるはずです。
 

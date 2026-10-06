@@ -191,22 +191,14 @@ protected:
     /// internal mutex is released, while a concurrent resetReader/seed can replace or drop the
     /// cached reader. Holding a shared_ptr for the duration of use keeps the object alive and
     /// avoids a use-after-free on the cached archive index.
-    ///
-    /// Virtual so packed part storage can route the probe through its outer data.packed reader:
-    /// there skp_idx.packed is a virtual member of data.packed rather than a standalone disk file,
-    /// so the disk-probe default always misses.
-    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
     /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
     /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
     /// prefix gate keeps unrelated files (checksums.txt, count.txt, columns.txt, ...) from loading
     /// or probing skp_idx.packed at all -- avoiding extra metadata I/O on remote/Keeper disks and
     /// keeping a bad/future-version archive from blocking reads of unrelated files.
-    ///
-    /// Virtual so packed part storage can disable the base file-read overlay by returning nullptr:
-    /// its skp_idx.packed lives inside data.packed, so the overlay's standalone-archive read
-    /// composition is invalid there. Packed serves index substreams through its *Impl hooks instead.
-    virtual std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
+    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
 
     /// Copy a single archive member into @target, reading it through this storage's readFile
     /// overlay. Shared by copyPackedSkipIndicesFilesInto and filterPackedSkipIndicesArchiveTo.
@@ -287,13 +279,5 @@ private:
     /// Returns the destination path for the part directory while copying a detached part.
     String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;
 };
-
-/// Make a freeze/clone hardlink directory tree durable: fsync `clone_dir_path` and every
-/// subdirectory below it (children first), then fsync every ancestor directory from its
-/// immediate parent up to and including the disk root. fsync(dir) persists the entries inside
-/// dir, not dir's own entry in its parent, so the parent chain must be synced too. Shared by
-/// both freeze overrides (Full and Packed). A no-op on remote/object disks
-/// (getDirectorySyncGuard returns nullptr there).
-void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path);
 
 }

@@ -64,12 +64,12 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
         .description = R"DOCS_MD(
 ## Description {#description}
 
-The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/reference/data-types/string) or similar.
+The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/sql-reference/data-types/string.md) or similar.
 The result is output as a binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 ### Raw formats comparison {#raw-formats-comparison}
 
-Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](/reference/formats/TabSeparated/TabSeparatedRaw).
+Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](./TabSeparated/TabSeparatedRaw.md).
 
 `RawBLOB`:
 - data is output in binary format, no escaping;
@@ -81,7 +81,7 @@ Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](/referenc
 - the rows contain values separated by tabs;
 - there is a line feed after the last value in every row.
 
-The following is a comparison of the `RawBLOB` and [RowBinary](/reference/formats/RowBinary/RowBinary) formats.
+The following is a comparison of the `RawBLOB` and [RowBinary](./RowBinary/RowBinary.md) formats.
 
 `RawBLOB`:
 - String fields are output without being prefixed by length.

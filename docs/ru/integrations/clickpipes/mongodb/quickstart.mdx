@@ -149,7 +149,7 @@ SELECT toTypeName(doc.customer_id) AS type FROM t1;
 └─────────┘
 ```
 
-Чтобы узнать базовые типы данных поля, можно воспользоваться функцией `dynamicType`. Обратите внимание: у одного и того же имени поля в разных строках могут быть разные типы данных:
+Чтобы узнать фактические типы данных поля, можно воспользоваться функцией `dynamicType`. Обратите внимание: у одного и того же имени поля в разных строках могут быть разные типы данных:
 
 ```sql title="Query"
 SELECT dynamicType(doc.customer_id) AS type FROM t1;
@@ -161,7 +161,7 @@ SELECT dynamicType(doc.customer_id) AS type FROM t1;
 └───────┘
 ```
 
-[Обычные функции](/ru/reference/functions/regular-functions/overview) работают с типом Dynamic так же, как и с обычными столбцами:
+[Обычные функции](/ru/reference/functions/regular-functions/regular-functions-index) работают с типом Dynamic так же, как и с обычными столбцами:
 
 **Пример 1: Парсинг даты**
 

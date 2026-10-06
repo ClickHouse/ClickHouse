@@ -3,9 +3,6 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
-#include <Functions/CancellationBudget.h>
-
-#include <functional>
 
 
 namespace DB
@@ -34,11 +31,8 @@ struct ReplaceStringImpl
         const String & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count,
-        const std::function<void()> & check_cancellation = {})
+        size_t input_rows_count)
     {
-        CancellationBudget budget(check_cancellation);
-
         if (needle.empty())
         {
             res_data.assign(haystack_data.begin(), haystack_data.end());
@@ -67,19 +61,9 @@ struct ReplaceStringImpl
                 res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
                 const auto from = static_cast<UInt8>(needle[0]);
                 const auto to = static_cast<UInt8>(replacement[0]);
-                /// Chunked so the time limit is observed inside this single whole-column loop. Chunking
-                /// measurably perturbs how the scan is compiled, so the chunk is kept large.
-                static constexpr size_t chunk_size = 64 * 1024 * 1024;
-                UInt8 * const data = res_data.data();
-                const size_t size = res_data.size();
-                for (size_t chunk_begin = 0; chunk_begin < size; chunk_begin += chunk_size)
-                {
-                    const size_t chunk_end = std::min(chunk_begin + chunk_size, size);
-                    for (UInt8 * p = data + chunk_begin, * const chunk_last = data + chunk_end; p != chunk_last; ++p)
-                        if (*p == from)
-                            *p = to;
-                    budget.charge(chunk_end - chunk_begin);
-                }
+                for (auto & c : res_data)
+                    if (c == from)
+                        c = to;
                 return;
             }
         }
@@ -106,14 +90,11 @@ struct ReplaceStringImpl
             res_data.resize(res_data.size() + (match - pos));
             memcpy(&res_data[res_offset], pos, match - pos);
 
-            budget.charge(match - pos);
-
             /// Determine which index the match belongs to.
             while (i < input_rows_count && begin + haystack_offsets[i] <= match)
             {
                 res_offsets[i] = res_offset + ((begin + haystack_offsets[i]) - pos);
                 ++i;
-                budget.charge();
             }
             res_offset += (match - pos);
 
@@ -130,8 +111,6 @@ struct ReplaceStringImpl
                 res_data.resize(res_data.size() + replacement.size());
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
-                /// The output is work too: a large replacement writes far more than it reads.
-                budget.charge(replacement.size());
                 pos = match + needle.size();
                 if constexpr (replace == ReplaceStringTraits::Replace::First)
                     can_finish_current_string = true;
@@ -146,15 +125,12 @@ struct ReplaceStringImpl
 
             if (can_finish_current_string)
             {
-                const size_t rest_of_string = begin + haystack_offsets[i] - pos;
-                res_data.resize(res_data.size() + rest_of_string);
-                memcpy(&res_data[res_offset], pos, rest_of_string);
-                res_offset += rest_of_string;
+                res_data.resize(res_data.size() + (begin + haystack_offsets[i] - pos));
+                memcpy(&res_data[res_offset], pos, (begin + haystack_offsets[i] - pos));
+                res_offset += (begin + haystack_offsets[i] - pos);
                 res_offsets[i] = res_offset;
                 pos = begin + haystack_offsets[i];
                 ++i;
-                /// Unconditional, and the whole rest of the row.
-                budget.charge(rest_of_string);
             }
         }
     }
@@ -178,12 +154,9 @@ struct ReplaceStringImpl
         const String & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count,
-        const std::function<void()> & check_cancellation = {})
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
-
-        CancellationBudget budget(check_cancellation);
 
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
@@ -195,7 +168,6 @@ struct ReplaceStringImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            budget.charge();
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
@@ -208,8 +180,8 @@ struct ReplaceStringImpl
 
             if (cur_needle_length)
             {
-                /// Cheap-to-initialize searcher instead of Volnitsky because there is a different pattern in each row
-                CaseSensitiveStringSearcher searcher(cur_needle_data, cur_needle_length);
+                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
+                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
 
                 while (start_pos < cur_haystack_end)
                 {
@@ -220,8 +192,6 @@ struct ReplaceStringImpl
 
                         /// Insert replacement for match
                         copyToOutput(replacement.data(), replacement.size(), res_data, res_offset);
-
-                        budget.charge((match - start_pos) + replacement.size());
 
                         last_match = match;
                         start_pos = match + cur_needle_length;
@@ -238,8 +208,6 @@ struct ReplaceStringImpl
             size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
                                                    : (cur_haystack_end - last_match - cur_needle_length);
             copyToOutput(start_pos, bytes, res_data, res_offset);
-            /// Unconditional, and the whole row when it never matches.
-            budget.charge(bytes);
 
             res_offsets[i] = res_offset;
 
@@ -256,12 +224,9 @@ struct ReplaceStringImpl
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count,
-        const std::function<void()> & check_cancellation = {})
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == replacement_offsets.size());
-
-        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {
@@ -278,17 +243,16 @@ struct ReplaceStringImpl
         size_t prev_haystack_offset = 0;
         size_t prev_replacement_offset = 0;
 
-        CaseSensitiveStringSearcher searcher(needle.data(), needle.size());
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            budget.charge();
-
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             const auto * const cur_replacement_data = &replacement_data[prev_replacement_offset];
             const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset;
+
+            /// Using "slow" "stdlib searcher instead of Volnitsky just to keep things simple
+            StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(needle.data(), needle.size());
 
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
@@ -304,8 +268,6 @@ struct ReplaceStringImpl
                     /// Insert replacement for match
                     copyToOutput(cur_replacement_data, cur_replacement_length, res_data, res_offset);
 
-                    budget.charge((match - start_pos) + cur_replacement_length);
-
                     last_match = match;
                     start_pos = match + needle.size();
 
@@ -320,8 +282,6 @@ struct ReplaceStringImpl
             size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
                                                    : (cur_haystack_end - last_match - needle.size());
             copyToOutput(start_pos, bytes, res_data, res_offset);
-            /// See `vectorVectorConstant`: unconditional, and the whole row when it never matches.
-            budget.charge(bytes);
 
             res_offsets[i] = res_offset;
 
@@ -339,13 +299,10 @@ struct ReplaceStringImpl
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count,
-        const std::function<void()> & check_cancellation = {})
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
         chassert(needle_offsets.size() == replacement_offsets.size());
-
-        CancellationBudget budget(check_cancellation);
 
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
@@ -358,8 +315,6 @@ struct ReplaceStringImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            budget.charge();
-
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
@@ -375,8 +330,8 @@ struct ReplaceStringImpl
 
             if (cur_needle_length)
             {
-                /// Cheap-to-initialize searcher instead of Volnitsky because there is a different pattern in each row
-                CaseSensitiveStringSearcher searcher(cur_needle_data, cur_needle_length);
+                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
+                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
 
                 while (start_pos < cur_haystack_end)
                 {
@@ -387,8 +342,6 @@ struct ReplaceStringImpl
 
                         /// Insert replacement for match
                         copyToOutput(cur_replacement_data, cur_replacement_length, res_data, res_offset);
-
-                        budget.charge((match - start_pos) + cur_replacement_length);
 
                         last_match = match;
                         start_pos = match + cur_needle_length;
@@ -404,8 +357,6 @@ struct ReplaceStringImpl
             size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data)
                                                    : (cur_haystack_end - last_match - cur_needle_length);
             copyToOutput(start_pos, bytes, res_data, res_offset);
-            /// See `vectorVectorConstant`: unconditional, and the whole row when it never matches.
-            budget.charge(bytes);
 
             res_offsets[i] = res_offset;
 
@@ -423,22 +374,15 @@ struct ReplaceStringImpl
         const String & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count,
-        const std::function<void()> & check_cancellation = {})
+        size_t input_rows_count)
     {
-        CancellationBudget budget(check_cancellation);
-
         if (needle.empty() || needle == replacement)
         {
             chassert(input_rows_count == haystack_data.size() / n);
             res_data.assign(haystack_data.begin(), haystack_data.end());
             res_offsets.resize(input_rows_count);
-            /// The copy above is one bulk operation, but filling the offsets is an unbounded per-row loop.
             for (size_t i = 1; i <= input_rows_count; ++i)
-            {
                 res_offsets[i - 1] = i * n;
-                budget.charge();
-            }
             return;
         }
 
@@ -460,8 +404,6 @@ struct ReplaceStringImpl
         {
             const UInt8 * match = searcher.search(pos, end - pos);
 
-            budget.charge(match - pos);
-
 #define COPY_REST_OF_CURRENT_STRING() \
     do \
     { \
@@ -472,7 +414,6 @@ struct ReplaceStringImpl
         res_offsets[i] = res_offset; \
         pos = begin + n * (i + 1); \
         ++i; \
-        budget.charge(len); \
     } while (false)
 
             /// Copy skipped strings without any changes.
@@ -499,8 +440,6 @@ struct ReplaceStringImpl
                 res_data.resize(res_data.size() + replacement.size());
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
-                /// See the same charge in `vectorConstantConstant`: the written bytes are work as well.
-                budget.charge(replacement.size());
                 pos = match + needle.size();
                 if constexpr (replace == ReplaceStringTraits::Replace::First)
                     can_finish_current_string = true;

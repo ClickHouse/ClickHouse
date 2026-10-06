@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "ClickHouse Private のアップグレード"
+description: "ClickHouse Private のコンポーネント（operator と ClickHouse クラスター（Keeper + server））を新しいリリースにアップグレードします。"
+---
+
+ClickHouse Private のコンポーネント (operator と ClickHouse クラスター (Keeper + server) ) を新しいリリースにアップグレードします。
+
+> **ベストプラクティス:** 本番環境に適用する前に、必ずステージング環境またはテスト用クラスターで先にアップグレードを実行してください。標準的なアップグレード手順の一環として、本番環境を模した専用のテスト用クラスターを用意することを強く推奨します。
+
+<div id="pre-upgrade-checklist">
+  ## アップグレード前チェックリスト
+</div>
+
+アップグレードを開始する前に、以下を確認してください。
+
+1. **クラスターが正常であることを確認する** — すべての server および Keeper のポッドが実行中かつ準備完了で、`ClickhouseCluster` CR のステータスにエラーがないことを確認します。
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   いずれかのポッドが crashlooping 状態である場合、またはクラスターが正常でない場合は、先に進まないでください。
+
+2. **&#x20;(本番環境では強く推奨) クラスターのフルバックアップを取得する** — [Back Up and Restore ClickHouse](/ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) を参照してください。先に進む前に、バックアップが正常に完了していること (`system.backups` で `status = BACKUP_DONE`) を確認してください。
+
+3. **ロールバック用に前のバージョンを利用できるようにしておく** — 以前のアーティファクトのバージョンに引き続き内部 ECR からアクセスできることを確認します。必要に応じてすばやくロールバックできるよう、イメージとチャートが存在していれば十分です。
+
+4. **新しいバージョンのすべてのイメージを内部 ECR にコピーする**。対象のリリースについては、[Component Versions reference](/ja/products/clickhouse-private/reference/component-versions) を参照してください。
+
+5. **Preflight チェックを実行する**。Preflight チェックでは、追加要件を検証し、非推奨の feature flag を確認します。詳細については、[How To: Run Preflight Checks](/ja/products/clickhouse-private/guides/run-preflight-checks) ページを参照してください。
+
+<div id="upgrade-procedure">
+  ## アップグレード手順
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Operator の Helm チャートをアップグレードする
+
+    既存の helm の values はすべてそのままにし、operator のバージョンのみを新しい対象バージョンに更新します。
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **注:** operator をアップグレードすると、管理しているすべての ClickHouse クラスターでローリング再起動が発生する可能性があります。複数のクラスターがあり、operator が他のクラスターをリコンサイルする前に 1 つのクラスターでアップグレードを検証したい場合は、以下の [アップグレード中にクラスターを保護する](#protecting-clusters-during-upgrade) を参照してください。
+  </Step>
+
+  <Step>
+    ### 2. アップグレード後の Operator を検証する
+
+    operator のデプロイメントが正常に稼働していることを確認します。
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    ログにエラーがなく、管理対象のすべてのクラスターが正常にリコンサイルされていることを確認します。
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. onprem-clickhouse-cluster Helm チャートをアップグレードする
+
+    各クラスターについて `onprem-clickhouse-cluster` Helm チャートをアップグレードします。既存の helm の values はすべてそのままにし、ClickHouse server と Keeper のイメージバージョンのみを新しい対象バージョンに更新します。
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    これにより、**Keeper と server のポッドのローリング再起動** (一度に 1 つのポッド) が発生します。各クラスターに対してこれを繰り返してください。
+  </Step>
+
+  <Step>
+    ### 4. アップグレード後のクラスターを検証する
+
+    ローリング再起動の完了後、クラスターが正常であることを確認します。
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    すべてのポッドが `Running` 状態で、`ClickhouseCluster` CR にエラーが表示されていないことを確認してください。さらに接続性を検証するには、ClickHouse service をポートフォワードし (該当する [tutorial](/ja/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) の Port-forward セクションを参照) 、テストクエリを実行します。
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## アップグレード中にクラスターを保護する
+</div>
+
+単一の operator の下で複数のクラスターを管理していて、ほかのクラスターをリコンサイルさせる前に 1 つのクラスターで operator のアップグレードを検証したい場合 (たとえば、production の前に staging クラスターでテストする場合) は、`clickhouse.com/skip-reconcile` アノテーションを使用して特定のクラスターのリコンサイルを一時停止します。
+
+operator をアップグレードする前に、保護したいクラスターにアノテーションを追加します:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+operator は、アノテーションが付いたクラスターに対するリコンシリエーションを完全にスキップするため、再起動や設定変更は一切適用されません。テスト用クラスターでアップグレードを検証したら、アノテーションを削除して、operator が通常のリコンシリエーションを再開できるようにします。
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+operator のログに次の内容が出力されていることを確認し、アノテーションが認識されていることを確認します。
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## ロールバック
+</div>
+
+アップグレード後に問題が見つかった場合:
+
+* **Operator のロールバック:** 以前の Operator の Helm チャート バージョンを再デプロイします。
+* **クラスターのロールバック:** 以前の server および Keeper のイメージ バージョンを使用して、以前の `onprem-clickhouse-cluster` Helm チャート バージョンを再デプロイします。
+* **データの復旧:** データに問題がある可能性がある場合は、アップグレード前チェックリストで取得したバックアップから復元してください。詳しくは [Back Up and Restore ClickHouse](/ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) を参照してください。

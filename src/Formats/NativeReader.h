@@ -59,7 +59,7 @@ public:
 
     static void readData(
         const ISerialization & serialization,
-        IColumn & column,
+        ColumnPtr & column,
         ReadBuffer & istr,
         const FormatSettings * format_settings,
         size_t rows,

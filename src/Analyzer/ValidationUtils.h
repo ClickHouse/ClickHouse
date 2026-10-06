@@ -1,16 +1,10 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
-#include <memory>
-#include <string_view>
-#include <unordered_map>
+#include <cstddef>
+#include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
 {
-
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /// Validate PREWHERE, WHERE, HAVING in query node
 void validateFilters(const QueryTreeNodePtr & query_node);
@@ -53,7 +47,7 @@ void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquer
 /**
   * Validate that correlated subqueries do not present in the context of distributed query.
   */
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context);
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node);
 
 /**
   * Validate that if correlated subquery appears in the FROM clause then it uses columns from outer query.

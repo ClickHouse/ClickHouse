@@ -67,7 +67,7 @@ public:
 
     void checkDatabase() const override;
 
-    void shutdown() override;
+    void shutdown() override {}
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
@@ -137,8 +137,7 @@ private:
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
-        DataLakeStorageSettingsPtr storage_settings,
-        DataLake::DataLakeTableFormat table_format) const;
+        DataLakeStorageSettingsPtr storage_settings) const;
 
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
@@ -159,22 +158,7 @@ private:
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
-    StoragePtr tryGetTableImpl(
-        const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true) const;
-
-    void evictStatefulTable(const String & name) const;
-
-    /// For tables which have merges.
-    struct StatefulTable
-    {
-        StoragePtr storage;
-        String endpoint;
-        UUID uuid;
-        MultiVersion<DatabaseDataLakeSettings>::Version settings_version;
-    };
-
-    mutable std::mutex stateful_tables_mutex;
-    mutable std::unordered_map<String, StatefulTable> stateful_tables TSA_GUARDED_BY(stateful_tables_mutex);
+    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;
 
     const UUID db_uuid;
 };

@@ -1,0 +1,32 @@
+---
+sidebarTitle: 'HyperDX'
+slug: /cloud/manage/hyperdx
+title: 'HyperDX'
+description: 'Предоставляет HyperDX — интерфейс ClickStack, платформы для обсервабилити промышленного уровня, построенной на ClickHouse и OpenTelemetry (OTel) и объединяющей журналы, трассировки, метрики и сеансы в едином высокопроизводительном и масштабируемом решении.'
+doc_type: 'guide'
+keywords: ['hyperdx', 'обсервабилити', 'интеграция', 'возможности Cloud', 'мониторинг']
+---
+
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+HyperDX — это интерфейс для [**ClickStack**](/ru/clickstack/overview) — платформы обсервабилити промышленного уровня, построенной на ClickHouse и OpenTelemetry (OTel) и объединяющей журналы, трассировки, метрики и данные сеансов в одном высокопроизводительном решении. ClickStack создан для мониторинга и отладки сложных систем и позволяет разработчикам и SRE прослеживать проблемы от начала до конца, не переключаясь между инструментами и не сопоставляя данные вручную по временным меткам или идентификаторам корреляции.
+
+HyperDX — это специализированный интерфейс для исследования и визуализации данных обсервабилити, который поддерживает запросы в стиле Lucene и SQL, интерактивные панели мониторинга, оповещения, исследование трассировок и многое другое — всё это оптимизировано для ClickHouse как backend.
+
+HyperDX в ClickHouse Cloud позволяет использовать ClickStack в более готовом к работе формате: не нужно управлять инфраструктурой или настраивать отдельную аутентификацию.
+HyperDX можно запустить одним щелчком и подключить к вашим данным — он полностью интегрирован в систему аутентификации ClickHouse Cloud, обеспечивая удобный и безопасный доступ к данным обсервабилити.
+
+<div id="main-concepts">
+  ## Развертывание
+</div>
+
+HyperDX в ClickHouse Cloud сейчас доступен только в рамках закрытой предварительной версии, и его нужно включить на уровне организации. После этого HyperDX появится в левом основном навигационном меню при выборе любого сервиса.
+
+<Image img="/images/use-cases/observability/hyperdx_cloud.webp" alt="ClickHouse Cloud HyperDX" size="lg" />
+
+Чтобы начать работу с HyperDX в ClickHouse Cloud, рекомендуем ознакомиться с нашим специальным [руководством по началу работы](/ru/clickstack/deployment/managed).
+
+Подробнее о ClickStack см. в [полной документации](/ru/clickstack/overview).

@@ -14,7 +14,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ITokenizer.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -26,7 +25,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 
 namespace DB
 {
@@ -60,12 +59,6 @@ public:
 
         for (const auto & substream : text_index.getSubstreams())
             index_streams[substream.type] = {text_index.getFileName() + substream.suffix, substream.extension};
-
-        if (header->has("token_key"))
-            token_key_pos = header->getPositionByName("token_key");
-
-        if (header->has("token_value"))
-            token_value_pos = header->getPositionByName("token_value");
     }
 
     String getName() const override { return "MergeTreeTextIndex"; }
@@ -80,9 +73,6 @@ protected:
         size_t total_rows = 0;
         size_t num_columns = header->columns();
         MutableColumns result_columns = header->cloneEmptyColumns();
-
-        for (auto & column : result_columns)
-            column->reserve(max_block_size);
 
         /// Total rows may overflow the max_block_size.
         /// It is considered ok because dictionary block size
@@ -104,10 +94,6 @@ protected:
                 if (column_name == "token")
                 {
                     result_columns[pos]->insertRangeFrom(*dict_block->tokens, 0, block_size);
-                }
-                else if (column_name == "token_key" || column_name == "token_value")
-                {
-                    /// Filled together below: one decode per token serves both columns.
                 }
                 else if (column_name == "cardinality")
                 {
@@ -157,7 +143,6 @@ protected:
                 }
             }
 
-            fillDecodedTokenColumns(*dict_block, result_columns);
             total_rows += block_size;
         }
 
@@ -168,30 +153,6 @@ protected:
     }
 
 private:
-    /// Fill `token_key` and `token_value` (whichever are requested) from the block's tokens.
-    /// Present only for the `keyValuePairs` tokenizer, whose every token decodes.
-    void fillDecodedTokenColumns(const DictionaryBlock & dict_block, MutableColumns & result_columns) const
-    {
-        if (!token_key_pos && !token_value_pos)
-            return;
-
-        ColumnString * key_column = token_key_pos ? &assert_cast<ColumnString &>(*result_columns[*token_key_pos]) : nullptr;
-        ColumnString * value_column = token_value_pos ? &assert_cast<ColumnString &>(*result_columns[*token_value_pos]) : nullptr;
-        const size_t block_size = dict_block.size();
-
-        for (size_t i = 0; i < block_size; ++i)
-        {
-            const std::string_view token = dict_block.tokens->getDataAt(i);
-            const auto decoded = KeyValuePairsTokenizer::decodeToken(token);
-
-            if (key_column)
-                key_column->insertData(decoded.key.data(), decoded.key.size());
-
-            if (value_column)
-                value_column->insertData(decoded.value.data(), decoded.value.size());
-        }
-    }
-
     /// Read the next dictionary block.
     /// Returns std::nullopt when all parts are exhausted.
     std::optional<DictionaryBlock> readNextDictionaryBlock()
@@ -215,7 +176,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -225,7 +186,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -322,10 +283,6 @@ private:
     size_t max_block_size;
     std::shared_ptr<const KeyCondition> token_key_condition;
     std::map<MergeTreeIndexSubstream::Type, std::pair<String, String>> index_streams;
-
-    /// Positions of `token_key` / `token_value` in the header, if requested.
-    std::optional<size_t> token_key_pos;
-    std::optional<size_t> token_value_pos;
 
     /// State for current part
     String current_part_name;
@@ -470,9 +427,8 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
     return desc;
 }
 
-void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IStorage & source_table, const IMergeTreeIndex & index)
+void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    const auto source_storage_id = source_table.getStorageID();
     /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
     /// initiating user: authenticated by the interserver secret, or reached by `remote(...)` as the same user, which the
     /// initiator confirms by pushing its roles (it does not when it rewrote the initial user to the connection user).
@@ -489,7 +445,10 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IS
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
-    if (getEffectiveRowPolicyFilter(source_table, context))
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot read from `mergeTreeTextIndex` because a row policy is applied on table {}. "
             "The text index covers all rows of the table, so reading its tokens would violate the row policy",
@@ -506,7 +465,7 @@ void StorageMergeTreeTextIndex::readImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    checkAccess(context, *source_table, *text_index);
+    checkAccess(context, source_table->getStorageID(), *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

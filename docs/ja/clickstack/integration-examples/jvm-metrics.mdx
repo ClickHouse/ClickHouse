@@ -33,7 +33,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * JVM の起動引数を変更できること
 
 <Steps>
-  <Step title="ClickStack の API key を取得する" id="get-api-key">
+  <Step>
+    #### ClickStack の API key を取得する
+
     OpenTelemetry Java agent はデータを ClickStack の OTLP エンドポイントに送信しますが、その際に認証が必要です。
 
     1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
@@ -44,7 +46,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
   </Step>
 
-  <Step title="OpenTelemetry Java agent をダウンロードする" id="download-agent">
+  <Step>
+    #### OpenTelemetry Java agent をダウンロードする
+
     OpenTelemetry Java agent の JAR ファイルをダウンロードします。
 
     ```bash
@@ -54,7 +58,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     これにより、agent は現在のディレクトリにダウンロードされます。デプロイ先に応じて適切な場所 (例: `/opt/opentelemetry/` やアプリケーションの JAR と同じ場所) に配置できます。
   </Step>
 
-  <Step title="JVM の起動引数を設定する" id="configure-jvm">
+  <Step>
+    #### JVM の起動引数を設定する
+
     Java agent を JVM の起動コマンドに追加します。agent は JVM メトリクスを自動的に収集し、ClickStack に送信します。
 
     ##### オプション 1: コマンドラインフラグ
@@ -115,7 +121,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Tip>
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verifying-metrics">
+  <Step>
+    #### HyperDX でメトリクスを確認する
+
     アプリケーションを agent 付きで起動したら、メトリクスが ClickStack に送られていることを確認します。
 
     1. http://localhost:8080 (または ClickStack の URL) で HyperDX を開きます
@@ -131,7 +139,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 アプリケーションをインストルメントする前に JVM メトリクスのインテグレーションを試したいユーザー向けに、安定して中程度のトラフィックがある中規模マイクロサービスにおける、現実的な JVM の挙動を示す事前生成済みメトリクスを含むサンプルデータセットを提供しています。
 
 <Steps>
-  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
     ```bash
     # Gauge メトリクス（メモリ、スレッド、CPU、クラス）をダウンロード
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/jvm/jvm-metrics-gauge.jsonl
@@ -149,7 +159,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     * CPU 使用率のパターン
   </Step>
 
-  <Step title="ClickStack を起動する" id="start-clickstack">
+  <Step>
+    #### ClickStack を起動する
+
     まだ ClickStack を起動していない場合は、次を実行します。
 
     ```bash
@@ -161,7 +173,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ClickStack が完全に起動するまで少し待ってください。
   </Step>
 
-  <Step title="デモデータセットをインポートする" id="import-demo-data">
+  <Step>
+    #### デモデータセットをインポートする
+
     ```bash
     # Gauge メトリクス（メモリ、スレッド、CPU、クラス）をインポート
     docker exec -i clickstack clickhouse-client --query="
@@ -177,7 +191,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     これにより、メトリクスが ClickStack の Metrics テーブルに直接インポートされます。
   </Step>
 
-  <Step title="デモデータを確認する" id="verify-demo-metrics">
+  <Step>
+    #### デモデータを確認する
+
     インポート後は、次の手順で確認します。
 
     1. http://localhost:8080 で HyperDX を開き、ログインします (必要に応じてアカウントを作成してください)
@@ -202,11 +218,13 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 ClickStack で JVM アプリケーションを監視できるように、JVM メトリクスの主要な可視化を含む、あらかじめ用意されたダッシュボードを提供しています。
 
 <Steps>
-  <Step title="ダッシュボード設定をダウンロードする" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">ダウンロード</TrackedLink> ダッシュボード設定
   </Step>
 
-  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
@@ -217,7 +235,9 @@ ClickStack で JVM アプリケーションを監視できるように、JVM メ
     <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="インポートを完了" />
   </Step>
 
-  <Step title="ダッシュボードを表示する" id="created-dashboard">
+  <Step>
+    #### ダッシュボードを表示する
+
     ダッシュボードは、すべての可視化が事前に設定された状態で作成されます。
 
     <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka メトリクス ダッシュボード" />
@@ -294,6 +314,6 @@ ClickStack がリモートホスト上にある場合は、アプリケーショ
   ## 本番環境への移行
 </div>
 
-このガイドでは、ローカルテスト向けに OpenTelemetry Java agent を設定する方法を説明します。本番環境にデプロイする場合は、管理しやすいように agent JAR をコンテナーイメージに含め、環境変数で設定してください。JVM インスタンスが多数ある大規模環境では、ClickStack に直接送信する代わりに、一元化された OpenTelemetry Collector をデプロイし、複数のアプリケーションからのメトリクスをバッチ処理して転送してください。
+このガイドでは、ローカルテスト向けに OpenTelemetry Java agent を設定する方法を説明します。本番環境にデプロイする際は、管理しやすいように agent JAR をコンテナーイメージに含め、環境変数で設定してください。JVM インスタンスが多数ある大規模環境では、ClickStack に直接送信するのではなく、複数のアプリケーションからのメトリクスをバッチ化して転送する一元化された OpenTelemetry Collector をデプロイしてください。
 
-本番環境でのデプロイパターンと collector の設定例については、[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+本番環境向けのデプロイパターンや collector の設定例については、[OpenTelemetry での取り込み](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
