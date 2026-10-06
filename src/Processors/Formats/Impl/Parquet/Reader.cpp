@@ -3733,7 +3733,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             return;
         }
 
-        /// Every row passes: keep the columns and the row filter as they are.
         if (rows_pass == filter.size())
             return;
 

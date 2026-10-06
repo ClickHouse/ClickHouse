@@ -352,7 +352,6 @@ struct PlainFixedSizeDecoder : public PageDecoder
             return;
         }
 
-        /// Gather the passing values, directly into the column if no conversion is needed.
         const bool direct = converter->isTrivial();
         char * to = nullptr;
         if (direct)
@@ -384,8 +383,7 @@ struct PlainFixedSizeDecoder : public PageDecoder
 private:
     PaddedPODArray<char> temp_buffer;
 
-    /// Appends the values whose filter byte is nonzero to `to`, in order, and returns the new end.
-    /// `static_value_size` 0 means `value_size`.
+    /// Appends the passing values to `to` and returns the new end; `static_value_size` 0 means `value_size`.
     template <size_t static_value_size>
     static char * copyPassingValues(const char * from, const UInt8 * filter, size_t num_values, size_t value_size, char * to)
     {
