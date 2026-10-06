@@ -21,6 +21,11 @@ namespace
   * - else any `arrayJoin` function -> `KeepInHaving` (before aggregation it would multiply the rows);
   * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
+  *
+  * Inside subqueries only the non-deterministic functions are taken into account: aggregate, window and
+  * `grouping` functions there belong to the scope of the subquery. A non-deterministic subquery keeps the
+  * conjunct in `HAVING`, because in `WHERE` a correlated subquery would be evaluated per source row instead of
+  * per group.
   */
 enum class HavingConjunctMoveAction
 {
@@ -33,46 +38,59 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 {
     HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
 
-    QueryTreeNodes nodes_to_visit = {node};
+    /// The second element is true for the nodes inside a subquery.
+    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_visit = {{node, false}};
     while (!nodes_to_visit.empty())
     {
-        auto current = nodes_to_visit.back();
+        auto [current, inside_subquery] = std::move(nodes_to_visit.back());
         nodes_to_visit.pop_back();
 
         auto current_type = current->getNodeType();
         if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
-            continue;
+            inside_subquery = true;
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
-                return HavingConjunctMoveAction::AbortRewrite;
-
-            if (function_node->isOrdinaryFunction())
+            if (inside_subquery)
             {
-                if (auto function_base = function_node->getFunction())
+                if (function_node->isOrdinaryFunction())
                 {
-                    if (function_base->isStateful())
-                        return HavingConjunctMoveAction::AbortRewrite;
-
-                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                    auto function_base = function_node->getFunction();
+                    if (function_base && !function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
                         verdict = HavingConjunctMoveAction::KeepInHaving;
                 }
             }
+            else
+            {
+                if (function_node->isWindowFunction())
+                    return HavingConjunctMoveAction::AbortRewrite;
 
-            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
-                verdict = HavingConjunctMoveAction::KeepInHaving;
+                if (function_node->isOrdinaryFunction())
+                {
+                    if (auto function_base = function_node->getFunction())
+                    {
+                        if (function_base->isStateful())
+                            return HavingConjunctMoveAction::AbortRewrite;
 
-            /// `GroupingFunctionsResolvePass` replaces `grouping` with its specializations, like `__groupingOrdinary`.
-            const auto & function_name = function_node->getFunctionName();
-            bool is_grouping_function = function_name == "grouping" || function_name.starts_with("__grouping");
-            if ((is_grouping_function || function_name == "arrayJoin") && verdict == HavingConjunctMoveAction::Move)
-                verdict = HavingConjunctMoveAction::KeepInHaving;
+                        if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                            verdict = HavingConjunctMoveAction::KeepInHaving;
+                    }
+                }
+
+                if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                    verdict = HavingConjunctMoveAction::KeepInHaving;
+
+                /// `GroupingFunctionsResolvePass` replaces `grouping` with its specializations, like `__groupingOrdinary`.
+                const auto & function_name = function_node->getFunctionName();
+                bool is_grouping_function = function_name == "grouping" || function_name.starts_with("__grouping");
+                if ((is_grouping_function || function_name == "arrayJoin") && verdict == HavingConjunctMoveAction::Move)
+                    verdict = HavingConjunctMoveAction::KeepInHaving;
+            }
         }
 
         for (const auto & child : current->getChildren())
             if (child)
-                nodes_to_visit.push_back(child);
+                nodes_to_visit.emplace_back(child, inside_subquery);
     }
 
     return verdict;

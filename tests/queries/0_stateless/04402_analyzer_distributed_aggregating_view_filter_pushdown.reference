@@ -16,6 +16,12 @@
 2024-01-05	60002
 2024-01-05	60002
 2024-01-05	60002
+--- HAVING with deterministic subquery
+2024-01-05	60002
+1	0
+--- HAVING with non-deterministic subquery
+2024-01-05	60002
+0	1
 --- WITH ROLLUP
 2024-01-05	60002
 --- WITH TOTALS

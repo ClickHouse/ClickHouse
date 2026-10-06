@@ -82,6 +82,27 @@ SELECT '--- HAVING with grouping and arrayJoin';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date = '2024-01-05' AND grouping(date) = 0;
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING arrayJoin([date, date]) = '2024-01-05';
 
+-- A conjunct with a deterministic subquery is moved; with a non-deterministic subquery it stays in HAVING,
+-- because a correlated subquery in WHERE would be evaluated per source row instead of per group.
+SELECT '--- HAVING with deterministic subquery';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05'));
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05'))
+);
+SELECT '--- HAVING with non-deterministic subquery';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05') + rand() % 1);
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05') + rand() % 1)
+);
+
 -- The predicate is not moved for ROLLUP and TOTALS, where it would change the super-aggregate rows.
 SELECT '--- WITH ROLLUP';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date WITH ROLLUP HAVING date = '2024-01-05' ORDER BY date;

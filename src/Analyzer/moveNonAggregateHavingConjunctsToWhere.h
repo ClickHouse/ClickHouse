@@ -11,7 +11,8 @@ class QueryNode;
   * aggregation result into `WHERE`. This mimics the `tryMovePredicatesFromHavingToWhere` rewrite of the
   * query analysis that ClickHouse used before v24.3.
   *
-  * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`.
+  * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`,
+  * as well as conjuncts with subqueries containing non-deterministic functions.
   * If any conjunct contains a window function or a stateful function, nothing is moved.
   * Nothing is moved for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` and `GROUPING SETS`, because
   * there the result of `HAVING` depends on the super-aggregate rows or on the totals.
