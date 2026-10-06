@@ -33,22 +33,22 @@ rm -rf "${LAKE}"
 mkdir -p "${LAKE}"
 
 # sel(a1 < b1) ~ 0.5, sel(a2 < b2) = 1, sel(a3 < b3) ~ 0.005: the best key pair is (a1 < b1, a3 < b3).
-# nu: a file written before `ADD COLUMN c`, a file where c is NULL, and 2000 values of c in [0, 3998].
+# ice_added_column: a file written before `ADD COLUMN added`, a file where it is NULL, and 2000 values in [0, 3998].
 ${CLICKHOUSE_CLIENT} ${PINS} --query "
-    CREATE TABLE sel_l (a1 Int64, a2 Int64, a3 Int64) ENGINE = IcebergLocal('${LAKE}/sel_l');
-    INSERT INTO sel_l SELECT number % 1000, number % 1000, (number * 97) % 100000 FROM numbers(1000);
-    CREATE TABLE sel_r (b1 Int64, b2 Int64, b3 Int64) ENGINE = IcebergLocal('${LAKE}/sel_r');
-    INSERT INTO sel_r SELECT number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
-    CREATE TABLE nf (k Int64, n Nullable(Int64), d Date32, ts DateTime64(6), dc Decimal(10, 2), s String)
-        ENGINE = IcebergLocal('${LAKE}/nf');
-    INSERT INTO nf SELECT number, if(number % 4 = 0, NULL, number % 100), toDate32('2020-01-01') + number % 365,
+    CREATE TABLE ice_left (a1 Int64, a2 Int64, a3 Int64) ENGINE = IcebergLocal('${LAKE}/ice_left');
+    INSERT INTO ice_left SELECT number % 1000, number % 1000, (number * 97) % 100000 FROM numbers(1000);
+    CREATE TABLE ice_right (b1 Int64, b2 Int64, b3 Int64) ENGINE = IcebergLocal('${LAKE}/ice_right');
+    INSERT INTO ice_right SELECT number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+    CREATE TABLE ice_types (id Int64, nullable_int Nullable(Int64), day Date32, event_time DateTime64(6),
+        decimal_value Decimal(10, 2), string_value String) ENGINE = IcebergLocal('${LAKE}/ice_types');
+    INSERT INTO ice_types SELECT number, if(number % 4 = 0, NULL, number % 100), toDate32('2020-01-01') + number % 365,
         toDateTime64('2020-01-01 00:00:00', 6) + number, number / 4, toString(number) FROM numbers(1000);
-    CREATE TABLE nu (k Int64) ENGINE = IcebergLocal('${LAKE}/nu');
-    INSERT INTO nu SELECT number FROM numbers(1000);
-    ALTER TABLE nu ADD COLUMN c Nullable(Int64);
-    INSERT INTO nu SELECT number + 1000, NULL FROM numbers(1000);
-    INSERT INTO nu SELECT number + 2000, number * 2 FROM numbers(2000);
-    CREATE TABLE dim10 (k Int64) ENGINE = MergeTree ORDER BY k
+    CREATE TABLE ice_added_column (id Int64) ENGINE = IcebergLocal('${LAKE}/ice_added_column');
+    INSERT INTO ice_added_column SELECT number FROM numbers(1000);
+    ALTER TABLE ice_added_column ADD COLUMN added Nullable(Int64);
+    INSERT INTO ice_added_column SELECT number + 1000, NULL FROM numbers(1000);
+    INSERT INTO ice_added_column SELECT number + 2000, number * 2 FROM numbers(2000);
+    CREATE TABLE dim10 (id Int64) ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO dim10 SELECT number FROM numbers(10);
 "
@@ -58,37 +58,40 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 
-# Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 echo '--- T1: ie_join keys chosen by the min/max from the manifests'
+echo 'Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${IE_JOIN} --query "
     SELECT extract(explain, 'Conditions: .*') FROM (EXPLAIN actions = 1
-        SELECT count() FROM sel_l AS l JOIN sel_r AS r ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3)
+        SELECT count() FROM ice_left JOIN ice_right
+        ON ice_left.a1 < ice_right.b1 AND ice_left.a2 < ice_right.b2 AND ice_left.a3 < ice_right.b3)
     WHERE explain LIKE '%Conditions:%'"
 
-# Prints the `Estimated statistics` trace line of relation a: its rows, then its column entries sorted (the map is
-# unordered). Usage: relation_a <query>.
-relation_a()
+# Prints the `Estimated statistics` trace line of a relation: its rows, then its column entries sorted (the map is
+# unordered). Usage: relation <relation> <query>.
+relation()
 {
     local line
-    line=$(${CLICKHOUSE_CLIENT_TRACE} ${PINS} ${REORDER} --query "EXPLAIN $1" 2>&1 >/dev/null \
-        | grep -oE 'Estimated statistics for [A-Za-z]+ a: .*' | head -n 1)
-    echo "${line}" | grep -oE 'a: [0-9a-z]+ rows'
+    line=$(${CLICKHOUSE_CLIENT_TRACE} ${PINS} ${REORDER} --query "EXPLAIN $2" 2>&1 >/dev/null \
+        | grep -oE "Estimated statistics for [A-Za-z]+ $1: .*" | head -n 1)
+    echo "${line}" | grep -oE "$1: [0-9a-z]+ rows"
     echo "${line}" | grep -oE '__table1\.[a-z0-9_]+: [0-9]+( \[[^]]*\])?' | LC_ALL=C sort
 }
 
-# Rule 3 divides the Parquet column chunk size of `dc` (field id 5), which depends on the encoder.
-DC_NDV=$(${CLICKHOUSE_CLIENT} --query "
+# Rule 3 divides the Parquet column chunk size of `decimal_value` (field id 5), which depends on the encoder.
+DECIMAL_NDV=$(${CLICKHOUSE_CLIENT} --query "
     SELECT greatest(least(intDiv(sum(column_sizes[5]), 8), 1000), 1)
-    FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'nf'")
+    FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'ice_types'")
 
-# Expect NDV k 1000, d 365, n 99 (75 true) by range, dc column_sizes / 8, s 10% of rows, ts range clamped to rows;
-# n is NULL every 4th row (0.25); bounds as MergeTree keeps them: Date32 in days (18262 = 2020-01-01), ts in seconds.
 echo '--- T2: rows, then NDV [min, max, NULL fraction] per column'
-relation_a "SELECT a.n, a.d, a.ts, a.dc, a.s FROM nf AS a JOIN dim10 AS d ON a.k = d.k" \
-    | sed "s/__table1\.dc: ${DC_NDV} /__table1.dc: <column_sizes \/ 8> /"
+echo 'Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value column_sizes / 8, string_value'
+echo '10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row; Date32 in days, DateTime64 in s.'
+relation ice_types "SELECT ice_types.nullable_int, ice_types.day, ice_types.event_time, ice_types.decimal_value,
+    ice_types.string_value FROM ice_types JOIN dim10 ON ice_types.id = dim10.id" \
+    | sed "s/__table1\.decimal_value: ${DECIMAL_NDV} /__table1.decimal_value: <column_sizes \/ 8> /"
 
-# Expect c 2000, null 0.5: 2000 of the 4000 rows count as NULLs, and the range 3999 is clamped to the 2000 others.
 echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
-relation_a "SELECT a.c FROM nu AS a JOIN dim10 AS d ON a.k = d.k"
+echo 'Expect added 2000, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is clamped to the 2000 others.'
+relation ice_added_column "SELECT ice_added_column.added FROM ice_added_column
+    JOIN dim10 ON ice_added_column.id = dim10.id"
 
 rm -rf "${LAKE}"

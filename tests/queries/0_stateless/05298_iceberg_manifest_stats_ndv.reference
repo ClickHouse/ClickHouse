@@ -1,39 +1,50 @@
---- fixture: data files and rows per Iceberg table; format and column_sizes of f in the files of mx
-f	1	100000
-fd	3	30000
-fp	5	100000
-mx	2	2000
-pr	2	2000
+--- fixture: data files and rows per Iceberg table; format and float_key column_sizes of ice_mixed_formats
+ice_decimal_partitioned	3	30000
+ice_keys	1	100000
+ice_mixed_formats	2	2000
+ice_partitioned	5	100000
+ice_promoted	2	2000
 [('AVRO',0),('PARQUET',1)]
 --- T1: rule 1, identity partition: 5 values
-Join: fp[100000] ⋈ d[1]
+Expect 20000: 100000 rows over 5 partition values, so 20000 rows have part_key = 0, the one key of dim1.
+Join: ice_partitioned[100000] ⋈ dim1[1]
 ResultRows: 20000
 --- T2: rule 1 after partition pruning: 2 values in the remaining files
-Join: fp[no_stats~40000] ⋈ d[1]
+Expect ~~20000: 2 remaining partitions hold 40000 rows, so 40000 * 1 / max(2, 1); a filter makes it imprecise.
+Join: ice_partitioned[no_stats~40000] ⋈ dim1[1]
 ResultRows: ~~20000
 --- T3: rule 1, decimal partition: 3 values
-Join: fd[30000] ⋈ d[1]
+Expect 10000: 30000 rows over 3 partition values, so 10000 rows have part_key = 2.25, the one key of dim1.
+Join: ice_decimal_partitioned[30000] ⋈ dim1[1]
 ResultRows: 10000
 --- T4: rule 2, dense integer: range 2500
-Join: f[100000] ⋈ d[10]
+Expect 400: dense_int is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.
+Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 400
 --- T5: use_iceberg_manifest_column_statistics = 0
-Join: f[100000] ⋈ d[10]
+Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.
+Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 10
 --- T6: use_statistics = 0
-Join: f[100000] ⋈ d[no_stats~10]
+Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.
+Join: ice_keys[100000] ⋈ dim10[no_stats~10]
 ResultRows: ~~10
 --- T7: rule 2, sparse integer: range clamped to the rows
-Join: f[100000] ⋈ d[10]
+Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).
+Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 10
 --- T8: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8
+Expect 100000 * 10 / (column_sizes of decimal_key / 8); the size depends on the Parquet encoder, so it is read.
 as expected
 --- T9: rule 4, String: 10% of the rows
-Join: f[100000] ⋈ d[10]
+Expect 100: 10% of the 100000 rows, as MergeTree without `uniq`: 100000 * 10 / 10000 (true NDV 2500, result 400).
+Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 100
---- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 10% of the rows
-Join: t[2000] ⋈ d[10]
+--- T10: Float64: no bounds written, not countable, no column_sizes in the Avro file: rule 4, 10% of rows
+Expect 100: rule 2 skips floats, rule 3 needs column_sizes in every file: 10% of 2000 rows, 2000 * 10 / 200.
+Join: ice_mixed_formats[2000] ⋈ dim10[10]
 ResultRows: 100
---- T11: k Int32, then Int64, then renamed to kk: range 1000
-Join: t[2000] ⋈ d[10]
+--- T11: int_key Int32, then Int64, then renamed to renamed_key: range 1000
+Expect 20: int_key is 0..499 as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if the bounds were lost).
+Join: ice_promoted[2000] ⋈ dim10[10]
 ResultRows: 20
