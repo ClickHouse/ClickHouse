@@ -1,6 +1,6 @@
 // Reference COLUMNAR_V1 wire frames, one per supported type shape. These bytes are the
 // contract a guest must read and write; changing any of them is a wire-format change.
-// gtest_column_binary_wire.cpp checks that the host decodes each one and re-encodes it
+// gtest_columnar_wire.cpp checks that the host decodes each one and re-encodes it
 // byte for byte.
 #pragma once
 #include <cstddef>
