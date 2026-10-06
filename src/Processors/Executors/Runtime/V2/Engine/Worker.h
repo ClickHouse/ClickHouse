@@ -26,7 +26,6 @@ class Worker
     std::optional<Task> takeFromOthers();
     void pushToLocal(const Task & task);
     void wakeOrSpawn(size_t threads_needed);
-    size_t moveAllToGlobal();
     size_t runTask(Task task);
 
 public:
@@ -36,7 +35,7 @@ public:
 
     std::optional<Task> steal();
     size_t poll(int timeout_ms);
-    void drain();
+    size_t drain();
     size_t taskCount() const;
 
     void park();

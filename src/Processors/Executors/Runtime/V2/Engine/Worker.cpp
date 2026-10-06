@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
@@ -102,7 +103,7 @@ void Worker::pushToLocal(const Task & task)
 {
     while (!local_tasks.push(task))
     {
-        const size_t count = local_tasks.offload(offload_buffer);
+        const size_t count = local_tasks.grab(offload_buffer);
         pool.global_tasks.pushMany(std::span(offload_buffer).first(count));
     }
 }
@@ -115,28 +116,6 @@ void Worker::wakeOrSpawn(size_t threads_needed)
 
     if (threads_needed > woken)
         pool.grow(threads_needed - woken);
-}
-
-size_t Worker::moveAllToGlobal()
-{
-    size_t moved = 0;
-    while (true)
-    {
-        size_t count = 0;
-        while (count < offload_buffer.size())
-        {
-            auto task = local_tasks.pop();
-            if (!task)
-                break;
-            offload_buffer[count++] = *task;
-        }
-
-        if (count == 0)
-            return moved;
-
-        pool.global_tasks.pushMany(std::span(offload_buffer).first(count));
-        moved += count;
-    }
 }
 
 size_t Worker::runTask(Task task)
@@ -179,7 +158,7 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
             break;
     }
 
-    if (const size_t moved = moveAllToGlobal(); moved > 0)
+    if (const size_t moved = drain(); moved > 0)
         wakeOrSpawn(moved);
 
     if (pool.pipeline.step_profiler)
@@ -206,11 +185,19 @@ size_t Worker::poll(int timeout_ms)
     return fired.size();
 }
 
-void Worker::drain()
+size_t Worker::drain()
 {
     std::array<Task, LocalTasks::capacity> taken;
-    while (const size_t count = local_tasks.grab(taken))
-        pool.global_tasks.pushMany(std::span(taken).first(count));
+    size_t moved = 0;
+    while (local_tasks.size() > 0)
+    {
+        if (const size_t count = local_tasks.grab(taken))
+        {
+            pool.global_tasks.pushMany(std::span(taken).first(count));
+            moved += count;
+        }
+    }
+    return moved;
 }
 
 size_t Worker::taskCount() const

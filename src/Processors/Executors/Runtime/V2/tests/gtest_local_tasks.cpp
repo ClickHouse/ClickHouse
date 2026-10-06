@@ -47,7 +47,42 @@ WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
     EXPECT_EQ(ring.size(), 0u);
 }
 
-WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(LocalTasks, GrabTakesHalfRoundedUpWithinSpan)
+{
+    std::vector<ProcessorState> states(5);
+    LocalTasks ring;
+    for (auto & state : states)
+        EXPECT_TRUE(ring.push(taskFor(state)));
+
+    std::array<Task, 8> grabbed{};
+    EXPECT_EQ(ring.grab(grabbed), 3u);
+    for (size_t index = 0; index < 3; ++index)
+        EXPECT_EQ(&grabbed[index].state(), &states[index]);
+
+    std::array<Task, 1> one{};
+    EXPECT_EQ(ring.grab(one), 1u);
+    EXPECT_EQ(&one[0].state(), &states[3]);
+
+    EXPECT_EQ(popped(ring), &states[4]);
+    EXPECT_EQ(popped(ring), nullptr);
+    EXPECT_EQ(ring.size(), 0u);
+}
+
+WYRD_TEST(LocalTasks, FullRingRefusesPushUntilGrab)
+{
+    std::vector<ProcessorState> states(LocalTasks::capacity + 1);
+    LocalTasks ring;
+    for (UInt32 index = 0; index < LocalTasks::capacity; ++index)
+        EXPECT_TRUE(ring.push(taskFor(states[index])));
+    EXPECT_FALSE(ring.push(taskFor(states.back())));
+
+    std::array<Task, LocalTasks::capacity> grabbed{};
+    EXPECT_EQ(ring.grab(grabbed), LocalTasks::capacity / 2);
+    EXPECT_TRUE(ring.push(taskFor(states.back())));
+    EXPECT_EQ(ring.size(), LocalTasks::capacity / 2 + 1);
+}
+
+WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 3 })
 {
     constexpr UInt32 total = 20;
     constexpr UInt32 thieves = 3;
