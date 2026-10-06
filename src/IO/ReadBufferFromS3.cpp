@@ -244,8 +244,7 @@ bool ReadBufferFromS3::nextImpl()
             /// Try to read a next portion of data.
             next_result = impl->next();
 
-            /// The right bound is set locally and the layers above take it as the length of the data, so a response that
-            /// ends before it is continued at once, and a new request that delivers nothing is a failed attempt.
+            /// The layers above take the right bound as the length of the data, so a bounded read must not end before it.
             if (!next_result && read_until_position && offset < read_until_position)
             {
                 if (new_request)
