@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-parallel, no-fasttest
+# no-parallel: arms the server-global fail point parallel_replicas_wait_for_unused_replicas.
 # no-fasttest: the dispatched arm needs the stateless worker configuration (tests/config/config.d/distributed_query.xml).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
