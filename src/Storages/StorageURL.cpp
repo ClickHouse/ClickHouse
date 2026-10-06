@@ -722,6 +722,7 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            input_format->setStringSizesColumns(info.string_sizes_columns);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1740,13 +1741,11 @@ std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
-    /// The `.size` subcolumn of a String column is read by the format itself without materializing
-    /// the strings (see filterTupleColumnsToRead), so `length(s)`, `empty(s)` and `s != ''` can be
-    /// rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
+    /// `s.size` is read by the format from the string lengths, so `length(s)`, `empty(s)` and `s != ''`
+    /// can be rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
     if (supports_prewhere)
-        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (column.type->getTypeId() == TypeIndex::String && names.contains(column.name))
-                names.insert(column.name + ".size");
+        for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns_to_read_from_file_path.getNameSet()))
+            names.insert(name + ".size");
     return names;
 }
 
@@ -1878,7 +1877,8 @@ void IStorageURLBase::read(
         local_context,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
-        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()},
+        /*read_string_sizes=*/ true);
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
@@ -2055,7 +2055,8 @@ void StorageURLWithFailover::read(
         local_context,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
-        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()},
+        /*read_string_sizes=*/ true);
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);

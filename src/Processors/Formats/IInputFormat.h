@@ -123,6 +123,11 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// Names of the requested `x.size` columns that are the sizes of the String column `x`, not columns
+    /// named `x.size` (see `ReadFromFormatInfo::string_sizes_columns`). Only formats that read such
+    /// columns themselves (`supports_tuple_elements` in `prepareReadingFromFormat`) receive any.
+    virtual void setStringSizesColumns(const NameSet & /*columns*/) {}
+
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }

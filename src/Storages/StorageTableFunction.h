@@ -216,7 +216,13 @@ public:
             return result;
         }
 
-        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        /// `x.size` is the String size subcolumn of `x` (see getStringColumnsWithNativeSizes).
+        static constexpr std::string_view size_suffix = ".size";
+        std::erase_if(*supported, [&](const String & name)
+        {
+            return drifted.contains(name)
+                || (name.ends_with(size_suffix) && drifted.contains(name.substr(0, name.size() - size_suffix.size())));
+        });
         return supported;
     }
 

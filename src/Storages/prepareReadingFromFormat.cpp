@@ -17,6 +17,8 @@
 #include <base/scope_guard.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
+#include <Poco/String.h>
+
 #include <unordered_map>
 
 namespace DB
@@ -38,7 +40,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns,
     bool supports_tuple_elements,
-    const PrepareReadingFromFormatHiveParams & hive_parameters)
+    const PrepareReadingFromFormatHiveParams & hive_parameters,
+    bool read_string_sizes)
 {
     const NamesAndTypesList & columns_in_data_file =
         hive_parameters.file_columns.empty() ? storage_snapshot->metadata->getColumns().getAllPhysical() : hive_parameters.file_columns;
@@ -78,7 +81,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
+            NameSet string_columns_with_native_sizes;
+            if (read_string_sizes)
+            {
+                NameSet hive_partition_columns;
+                for (const auto & [name, _] : hive_parameters.hive_partition_columns_to_read_from_file_path_map)
+                    hive_partition_columns.insert(name);
+                string_columns_with_native_sizes = getStringColumnsWithNativeSizes(*storage_snapshot->metadata, hive_partition_columns);
+            }
+            columns_to_read = filterTupleColumnsToRead(info.requested_columns, string_columns_with_native_sizes, &info.string_sizes_columns);
         }
         else if (!columns_to_read.empty())
         {
@@ -138,7 +149,23 @@ ReadFromFormatInfo prepareReadingFromFormat(
     return info;
 }
 
-Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
+NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata, const NameSet & hive_partition_columns)
+{
+    const auto & columns = metadata.getColumns();
+    NameSet lowercase_names;
+    for (const auto & column : columns)
+        lowercase_names.insert(Poco::toLower(column.name));
+
+    NameSet res;
+    for (const auto & column : columns.getAllPhysical())
+        if (column.type->getTypeId() == TypeIndex::String && !columns.get(column.name).default_desc.expression
+            && !hive_partition_columns.contains(column.name) && !lowercase_names.contains(Poco::toLower(column.name) + ".size"))
+            res.insert(column.name);
+    return res;
+}
+
+Names filterTupleColumnsToRead(
+    NamesAndTypesList & requested_columns, const NameSet & string_columns_with_native_sizes, NameSet * string_sizes_columns)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
     /// But we still need to do some processing on the set of requested columns:
@@ -177,7 +204,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         column_info.type = column_to_read.getTypeInStorage();
 
         if (column_to_read.isSubcolumn() && column_to_read.getSubcolumnName() == "size"
-            && column_info.type->getTypeId() == TypeIndex::String)
+            && column_info.type->getTypeId() == TypeIndex::String
+            && string_columns_with_native_sizes.contains(column_to_read.getNameInStorage()))
         {
             /// The sizes of a String column, e.g. `length(s)` rewritten to `s.size`. The format reads it
             /// natively (Parquet decodes it from the string lengths without materializing the strings).
@@ -282,6 +310,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
         if (!column_info.is_duplicate)
             new_columns_to_read.push_back(column_info.name);
+        if (column_info.is_string_sizes && string_sizes_columns)
+            string_sizes_columns->insert(column_info.name);
     }
     return new_columns_to_read;
 
@@ -298,6 +328,8 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
+    /// Also the columns read only as PREWHERE inputs: the format still reads them.
+    new_info.string_sizes_columns = info.string_sizes_columns;
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere outputs (the actual prewhere filter column is only added if
@@ -670,6 +702,7 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     lazy_info.source_header = lazy_source_header;
     lazy_info.columns_description = info.columns_description;
     lazy_info.serialization_hints = info.serialization_hints;
+    lazy_info.string_sizes_columns = info.string_sizes_columns;
     for (const auto & column : info.requested_columns)
         if (lazy_names.contains(column.name))
             lazy_info.requested_columns.push_back(column);

@@ -237,6 +237,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
+        const bool is_top_level = node.name.empty();
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
 
@@ -245,20 +246,26 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         /// later re-added `x` have different field ids), so it must not be matched by name.
         if (sample_block && !not_in_schema)
         {
+            const bool case_insensitive = options.format.parquet.case_insensitive_column_matching;
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
-            std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
-            bool string_sizes = false;
-            if (!pos.has_value() && !node.requested && levels.back().rep == 0)
+            std::optional<size_t> pos = sample_block->findPositionByName(node.name, case_insensitive);
+            /// The sizes of a String column `x` are never read from a column named `x.size`.
+            if (pos && options.string_sizes_columns.contains(sample_block->getByPosition(*pos).name))
+                pos.reset();
+            std::optional<size_t> sizes_pos;
+            if (is_top_level)
             {
-                /// The `.size` subcolumn of a String column, see TraversalNode::string_sizes.
-                pos = sample_block->findPositionByName(node.name + ".size", options.format.parquet.case_insensitive_column_matching);
-                if (pos.has_value() && sample_block->getByPosition(pos.value()).type->getTypeId() != TypeIndex::UInt64)
-                    pos.reset();
-                string_sizes = pos.has_value();
+                sizes_pos = sample_block->findPositionByName(node.name + ".size", case_insensitive);
+                if (sizes_pos && !options.string_sizes_columns.contains(sample_block->getByPosition(*sizes_pos).name))
+                    sizes_pos.reset();
             }
+            /// Only the sizes are requested, see TraversalNode::string_sizes.
+            const bool string_sizes = !pos && sizes_pos;
+            if (string_sizes)
+                std::swap(pos, sizes_pos);
             if (pos.has_value())
             {
                 if (node.requested)
@@ -290,12 +297,8 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                     node.type_hint = std::make_shared<DataTypeString>();
                     outer_type_hint = nullptr;
                 }
-                else if (levels.back().rep == 0)
-                {
-                    auto sizes_pos = sample_block->findPositionByName(node.name + ".size", options.format.parquet.case_insensitive_column_matching);
-                    if (sizes_pos.has_value() && sample_block->getByPosition(sizes_pos.value()).type->getTypeId() == TypeIndex::UInt64)
-                        also_sizes_idx_in_output_block = sizes_pos;
-                }
+                else
+                    also_sizes_idx_in_output_block = sizes_pos;
 
                 idx_in_output_block = pos;
             }
@@ -425,6 +428,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 void SchemaConverter::makeStringSizesOutput(size_t output_idx)
 {
     OutputColumnInfo & output = output_columns.at(output_idx);
+    output.string_sizes = true;
     /// Statistics, bloom filters and dictionaries describe the strings, not their sizes.
     for (size_t i = output.primitive_start; i < output.primitive_end; ++i)
         primitive_columns[i].decoder.allow_stats = false;
@@ -445,7 +449,7 @@ void SchemaConverter::makeStringSizesOutput(size_t output_idx)
         /// Read the column as String (converted if needed) and output the sizes of the strings.
         output.output_type = std::make_shared<DataTypeString>();
         output.needs_cast = !output.output_type->equals(*output.input_type);
-        output.string_sizes = true;
+        output.string_sizes_from_strings = true;
     }
 }
 

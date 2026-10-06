@@ -477,15 +477,14 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(
-        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
-    /// The `.size` subcolumn of a String column is read by the format itself without materializing
-    /// the strings (see filterTupleColumnsToRead), so `length(s)`, `empty(s)` and `s != ''` can be
-    /// rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
-    if (supports_prewhere)
-        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (column.type->getTypeId() == TypeIndex::String && names.contains(column.name))
-                names.insert(column.name + ".size");
+    const auto & hive_partition_columns = hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path;
+    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns);
+    /// `s.size` is read by the format from the string lengths, so `length(s)`, `empty(s)` and `s != ''`
+    /// can be rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE. A data lake
+    /// may also hold files in formats that cannot read it.
+    if (supports_prewhere && !configuration->isDataLakeConfiguration())
+        for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns.getNameSet()))
+            names.insert(name + ".size");
     return names;
 }
 
