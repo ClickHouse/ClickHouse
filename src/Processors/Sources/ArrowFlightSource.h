@@ -28,6 +28,7 @@ public:
 protected:
     String getName() const override { return "ArrowFlightSource"; }
     Chunk generate() override;
+    void onCancel() noexcept override;
 
 private:
     std::shared_ptr<ArrowFlightConnection> connection;
@@ -35,10 +36,17 @@ private:
     Block sample_block;
     Block virtual_header;
     ContextPtr context;
+    UInt64 request_timeout_sec = 0;
     std::vector<arrow::flight::FlightEndpoint> endpoints;
     size_t current_endpoint = 0;
-    std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
+    std::shared_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;
+
+    std::mutex flight_reader_mutex;
+    /// Non-null only while a DoGet stream is open. Held separately from `stream_reader` because
+    /// only a DoGet stream can be cancelled, and because onCancel runs on another thread while
+    /// generate is blocked reading from it.
+    std::shared_ptr<arrow::flight::FlightStreamReader> flight_reader TSA_GUARDED_BY(flight_reader_mutex);
 };
 
 }

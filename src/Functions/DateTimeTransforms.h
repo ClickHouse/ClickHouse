@@ -825,24 +825,20 @@ struct ToYearWeekImpl
     static UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         // TODO: ditch toDayNum()
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
 
     static UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
     static UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(ExtendedDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
     static UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
 
     static constexpr bool hasMonotonicity() { return true; }
@@ -1181,10 +1177,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
 template <>
 struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
-    static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
+    static Int64 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        /// Clamped: a Date past 2106-02-07 floors to a value beyond UInt32 seconds.
-        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days), 0, std::numeric_limits<UInt32>::max()));
+        return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -2113,6 +2108,58 @@ struct ToDaysInMonthImpl
     using FactorTransform = ToStartOfMonthImpl;
 };
 
+/// The factor transform that decides the monotonicity of `toDayOfWeek` (see
+/// `IFunctionCustomWeek::getMonotonicityForRange`): the function is monotonic on a range iff both ends of
+/// the range share the factor.
+///
+/// `toDayOfWeek` is monotonic on a range iff the range stays inside one week in the ordering of its
+/// `week_mode`: a Monday-week for modes 0 and 1, a Sunday-week for modes 2 and 3. The mode is a constant
+/// argument that `getMonotonicityForRange` does not see, so the factor pairs both weeks: two days share
+/// it iff they lie in the same Monday-week and in the same Sunday-week, that is, in the same
+/// Monday-to-Saturday run or on the same Sunday. A range inside such a run is monotonic for every mode,
+/// which keeps the key usable for granules that span several days; a range with a Sunday boundary inside
+/// it, where the Sunday-first modes run from 7 down to 1, is not.
+///
+/// The factor is the unclamped day number: of the Monday for Monday to Saturday, of the day itself for a
+/// Sunday. It must not be narrowed to `UInt16` the way `toMonday` and `toDate` do, since that aliases
+/// the day number modulo 65536 on the extended carriers (`1970-01-01` and `2149-06-07` would share a
+/// factor). There is deliberately no `DecimalComponents` overload: `TransformDateTime64` then rounds a
+/// `DateTime64` down to whole seconds before calling the `Int64` overload, whereas reading the whole
+/// part of the components truncates towards zero and gives a pre-epoch value at 23:59:59.5 the factor
+/// of the next day.
+struct ToDayOfWeekFactorImpl
+{
+    static constexpr auto name = "toDayOfWeekFactor";
+
+    static Int64 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(time_zone.toDayNum(t), time_zone);
+    }
+    static Int64 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        /// Don't saturate.
+        return fromDayNum(time_zone.toDayNum<Int64>(t), time_zone);
+    }
+    static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+    static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+
+    using FactorTransform = ZeroTransform;
+
+private:
+    static Int64 fromDayNum(ExtendedDayNum day, const DateLUTImpl & time_zone)
+    {
+        if (time_zone.toDayOfWeek(day) == 7)
+            return day.toUnderType();
+        return time_zone.toFirstDayNumOfWeek(day).toUnderType();
+    }
+};
+
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
@@ -2139,7 +2186,7 @@ struct ToDayOfWeekImpl
     }
 
     static constexpr bool hasMonotonicity() { return true; }
-    using FactorTransform = ToMondayImpl;
+    using FactorTransform = ToDayOfWeekFactorImpl;
 };
 
 struct ToDayOfYearImpl
@@ -3140,7 +3187,44 @@ struct Transformer
                 {
                     using FromValueType = typename FromTypeVector::value_type;
                     bool is_valid_input = false;
-                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                    if constexpr (std::is_same_v<FromType, DataTypeTime64> || std::is_same_v<FromType, DataTypeTime>)
+                    {
+                        /// `Time` and `Time64` are timezone-unaware counts of seconds of a clock reading
+                        /// (scaled, for `Time64`). Widening an exact `Time` value to `Time64(0)` must not
+                        /// change the outcome of an accurate cast, so both share the same checks.
+                        Int64 seconds = 0;
+                        bool has_whole_seconds = true;
+
+                        if constexpr (std::is_same_v<FromType, DataTypeTime64>)
+                        {
+                            const Int64 scale_multiplier = transform.getScaleMultiplier();
+                            const Int64 value = vec_from[i].value;
+
+                            /// `Time64` is a scaled integer. An accurate conversion to a whole-second type
+                            /// must not discard a fractional part before applying the target range check.
+                            has_whole_seconds = value % scale_multiplier == 0;
+                            seconds = value / scale_multiplier;
+                        }
+                        else
+                        {
+                            seconds = static_cast<Int64>(vec_from[i]);
+                        }
+
+                        if (has_whole_seconds)
+                        {
+                            if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                                is_valid_input = seconds >= -MAX_TIME_TIMESTAMP && seconds <= MAX_TIME_TIMESTAMP;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate>)
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL)
+                                    && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                                is_valid_input = seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
+                                    && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeTime>)
                     {
                         /// `Time` is a signed count of seconds of a clock reading within
                         /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`

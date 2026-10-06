@@ -1,0 +1,22 @@
+--- Time64(6): t >= toTime64('03:00:00', 6)
+200	03:00:00.000000	04:00:00.099000
+ParquetPrunedRowGroups: 2
+ParquetReadRowGroups: 2
+--- Time64(6): t = toTime64('02:00:00.050', 6)
+1	02:00:00.050000	02:00:00.050000
+ParquetPrunedRowGroups: 3
+ParquetReadRowGroups: 1
+--- Time64(6): t > toTime64('05:00:00', 6)
+0	00:00:00.000000	00:00:00.000000
+ParquetPrunedRowGroups: 4
+--- Time64(3): t >= toTime64('03:00:00', 3)
+200	03:00:00.000	04:00:00.099
+ParquetPrunedRowGroups: 2
+ParquetReadRowGroups: 2
+--- Time64(3): t = toTime64('02:00:00.050', 3)
+1	02:00:00.050	02:00:00.050
+ParquetPrunedRowGroups: 3
+ParquetReadRowGroups: 1
+--- Time64(3): t > toTime64('05:00:00', 3)
+0	00:00:00.000	00:00:00.000
+ParquetPrunedRowGroups: 4

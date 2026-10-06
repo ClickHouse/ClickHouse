@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
+-- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- The `id_type` setting keeps the type of the `id` column in the definition of a TimeSeries table when the type
 -- isn't kept there otherwise: if the tags target is an external table, or if the `id_generator` setting is set.
 -- The normalization rules are covered by the unit test gtest_normalize_time_series_definition.cpp; this test checks
@@ -13,7 +17,7 @@ DROP TABLE IF EXISTS ext_tags_with_default;
 SELECT '-- the setting declares the `id` type of the inner tables';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS id_type = 'UInt64';
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table LIKE '.inner_id.tags.%' AND name = 'id';
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
 SELECT id = sipHash64(tags), metric_name FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts');
 
 SELECT '-- the setting cannot be altered';
@@ -25,7 +29,7 @@ CREATE TABLE ext_tags (id UInt64, metric_name LowCardinality(String), tags Map(L
     min_time Nullable(DateTime64(3)), max_time Nullable(DateTime64(3)))
 ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
 CREATE TABLE ts ENGINE = TimeSeries TAGS ext_tags;
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
 SELECT id = sipHash64(tags), metric_name FROM ext_tags;
 DROP TABLE ts;
 
@@ -34,7 +38,7 @@ CREATE TABLE ext_tags_with_default (id UInt64 DEFAULT cityHash64(tags), metric_n
     min_time Nullable(DateTime64(3)), max_time Nullable(DateTime64(3)))
 ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
 CREATE TABLE ts ENGINE = TimeSeries TAGS ext_tags_with_default;
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(toDateTime64(1000, 3), 1.5)]);
 SELECT id = cityHash64(tags), metric_name FROM ext_tags_with_default;
 DROP TABLE ts;
 

@@ -27,9 +27,7 @@ doc_type: 'guide'
   3. для работы с данными в Hadoop Distributed File System (не поддерживается) используйте движок таблицы [HDFS](/ru/reference/engines/table-engines/integrations/hdfs).
 </Note>
 
-<div id="configuring-external-storage">
-  ## Настройка внешнего хранилища
-</div>
+## Настройка внешнего хранилища {#configuring-external-storage}
 
 Семейства движков таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) и [`Log`](/ru/reference/engines/table-engines/log-family/log)
 могут хранить данные в `S3`, `AzureBlobStorage`, `HDFS` (не поддерживается), используя соответственно диски типов `s3`,
@@ -180,9 +178,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-<div id="refresh-parts-interval-and-table-disk">
-  ## refresh_parts_interval and table_disk
-</div>
+## refresh_parts_interval and table_disk {#refresh-parts-interval-and-table-disk}
 
 Эта настройка предназначена для нереплицируемых таблиц MergeTree, в которых части могут записываться извне и требуется обновлять обнаружение метаданных из хранилища.
 
@@ -202,9 +198,7 @@ SETTINGS disk = 's3';
   Эта настройка применима только к нереплицируемым таблицам MergeTree, в которых части записываются извне и требуется обновление метаданных.
 </Note>
 
-<div id="dynamic-configuration">
-  ## Динамическая конфигурация
-</div>
+## Динамическая конфигурация {#dynamic-configuration}
 
 Конфигурацию хранилища также можно задать в файле конфигурации без
 предопределённого диска, а затем настроить её через параметры запроса
@@ -330,13 +324,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="s3-storage">
-  ### Использование хранилища S3
-</div>
+### Использование хранилища S3 {#s3-storage}
 
-<div id="required-parameters-s3">
-  #### Обязательные параметры
-</div>
+#### Обязательные параметры {#required-parameters-s3}
 
 | Параметр            | Описание                                                                                                                                                                                     |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -344,9 +334,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `access_key_id`     | Идентификатор ключа доступа S3, используемый для аутентификации.                                                                                                                             |
 | `secret_access_key` | Секретный ключ доступа S3, используемый для аутентификации.                                                                                                                                  |
 
-<div id="optional-parameters-s3">
-  #### Необязательные параметры
-</div>
+#### Необязательные параметры {#optional-parameters-s3}
 
 | Параметр                                        | Описание                                                                                                                                                                                                                                                                                                                                                      | Значение по умолчанию                    |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -358,8 +346,8 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `proxy`                                         | Конфигурация прокси для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси.                                                                                                                                                                                                                                             | -                                        |
 | `connect_timeout_ms`                            | Тайм-аут подключения сокета в миллисекундах.                                                                                                                                                                                                                                                                                                                  | `10000` (10 секунд)                      |
 | `request_timeout_ms`                            | Тайм-аут запроса в миллисекундах.                                                                                                                                                                                                                                                                                                                             | `5000` (5 секунд)                        |
-| `retry_attempts`                                | Количество повторных попыток для неудачных запросов.                                                                                                                                                                                                                                                                                                          | `10`                                     |
-| `single_read_retries`                           | Количество повторных попыток при разрыве соединения во время чтения.                                                                                                                                                                                                                                                                                          | `4`                                      |
+| `s3_retry_attempts`                             | Количество повторных попыток для неудачных запросов.                                                                                                                                                                                                                                                                                                          | `500`                                    |
+| `s3_max_single_read_retries`                    | Количество повторных попыток при разрыве соединения во время чтения.                                                                                                                                                                                                                                                                                          | `4`                                      |
 | `min_bytes_for_seek`                            | Минимальное количество байт, при котором используется операция seek вместо последовательного чтения.                                                                                                                                                                                                                                                          | `1 MB`                                   |
 | `metadata_path`                                 | Путь в локальной файловой системе для хранения файлов метаданных S3.                                                                                                                                                                                                                                                                                          | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | Если `true`, пропускает проверку доступа к диску при запуске.                                                                                                                                                                                                                                                                                                 | `false`                                  |
@@ -372,17 +360,15 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | Максимальное число одновременных PUT-запросов до достижения лимита RPS.                                                                                                                                                                                                                                                                                       | То же, что и `s3_max_put_rps`            |
 | `s3_max_get_rps`                                | Максимальное число GET-запросов в секунду до применения ограничения скорости.                                                                                                                                                                                                                                                                                 | `0` (без ограничений)                    |
 | `s3_max_get_burst`                              | Максимальное число одновременных GET-запросов до достижения лимита RPS.                                                                                                                                                                                                                                                                                       | То же, что и `s3_max_get_rps`            |
-| `key_template`                                  | Определяет формат генерации ключей объектов с использованием синтаксиса [re2](https://github.com/google/re2/wiki/Syntax). Требует флага `storage_metadata_write_full_object_key`. Несовместим с `root path` в `endpoint`. Требует `key_compatibility_prefix`.                                                                                                 | -                                        |
-| `key_compatibility_prefix`                      | Требуется вместе с `key_template`. Указывает предыдущий `root path` из `endpoint` для чтения старых версий метаданных.                                                                                                                                                                                                                                        | -                                        |
+| `key_template`                                  | Определяет формат генерации ключей объектов с использованием синтаксиса [re2](https://github.com/google/re2/wiki/Syntax). Требует флага `storage_metadata_write_full_object_key`. Несовместим с `корневой путь` в `endpoint`. Требует `key_compatibility_prefix`.                                                                                                 | -                                        |
+| `key_compatibility_prefix`                      | Требуется вместе с `key_template`. Указывает предыдущий `корневой путь` из `endpoint` для чтения старых версий метаданных.                                                                                                                                                                                                                                        | -                                        |
 | `read_only`                                     | Разрешает только чтение с диска.                                                                                                                                                                                                                                                                                                                              | -                                        |
 
 <Note>
   Google Cloud Storage (GCS) также поддерживается при использовании типа `s3`. См. [GCS backed MergeTree](/ru/integrations/connectors/data-sources/gcs).
 </Note>
 
-<div id="plain-storage">
-  ### Использование Plain Storage
-</div>
+### Использование Plain Storage {#plain-storage}
 
 В `22.10` появился новый тип диска `s3_plain`, который предоставляет хранилище с однократной записью.
 Параметры его конфигурации такие же, как у типа диска `s3`.
@@ -423,9 +409,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </s3_plain>
 ```
 
-<div id="s3-plain-rewritable-storage">
-  ### Использование простого перезаписываемого хранилища в S3
-</div>
+### Использование простого перезаписываемого хранилища в S3 {#s3-plain-rewritable-storage}
 
 Новый тип диска `s3_plain_rewritable` появился в версии `24.4`.
 Как и тип диска `s3_plain`, он не требует дополнительного хранилища для
@@ -465,9 +449,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 Начиная с версии `24.5`, можно настроить любой диск объектного хранилища
 (`s3`, `azure`, `local`), используя тип метаданных `plain_rewritable`.
 
-<div id="azure-blob-storage">
-  ### Использование Azure Blob Storage
-</div>
+### Использование Azure Blob Storage {#azure-blob-storage}
 
 Движки таблиц семейства `MergeTree` могут хранить данные в [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 с помощью диска типа `azure_blob_storage`.
@@ -485,7 +467,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -493,9 +474,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="azure-blob-storage-connection-parameters">
-  #### Параметры подключения
-</div>
+#### Параметры подключения {#azure-blob-storage-connection-parameters}
 
 | Параметр                             | Описание                                                                                                                                                                                                                                      | Значение по умолчанию |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
@@ -511,22 +490,18 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `account_name`      | Для аутентификации с использованием Shared Key (используется с `account_key`).  |
 | `account_key`       | Для аутентификации с использованием Shared Key (используется с `account_name`). |
 
-<div id="azure-blob-storage-limit-parameters">
-  #### Параметры ограничений
-</div>
+#### Параметры ограничений {#azure-blob-storage-limit-parameters}
 
-| Параметр                             | Описание                                                                         |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| `s3_max_single_part_upload_size`     | Максимальный размер однократной загрузки блока в Blob Storage.                   |
-| `min_bytes_for_seek`                 | Минимальный размер области, в которой возможно позиционирование.                 |
-| `max_single_read_retries`            | Максимальное число попыток чтения фрагмента данных из Blob Storage.              |
-| `max_single_download_retries`        | Максимальное число попыток скачать буфер, доступный для чтения, из Blob Storage. |
-| `thread_pool_size`                   | Максимальное число потоков для создания экземпляров `IDiskRemote`.               |
-| `s3_max_inflight_parts_for_one_file` | Максимальное число параллельных PUT-запросов для одного объекта.                 |
+| Параметр                          | Описание                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `max_single_part_upload_size`     | Максимальный размер однократной загрузки блока в Blob Storage.                   |
+| `min_bytes_for_seek`              | Минимальный размер области, в которой возможен seek.                              |
+| `max_single_read_retries`         | Максимальное число попыток чтения фрагмента данных из Blob Storage.              |
+| `max_single_download_retries`     | Максимальное число попыток скачать буфер, доступный для чтения, из Blob Storage. |
+| `thread_pool_size`                | Максимальное число потоков для создания экземпляров `IDiskRemote`.               |
+| `max_inflight_parts_for_one_file` | Максимальное число параллельных PUT-запросов для одного объекта.                 |
 
-<div id="azure-blob-storage-other-parameters">
-  #### Другие параметры
-</div>
+#### Другие параметры {#azure-blob-storage-other-parameters}
 
 | Параметр                         | Описание                                                                       | Значение по умолчанию                    |
 | -------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------- |
@@ -542,9 +517,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   В ClickHouse версии 22.8 и выше репликация zero-copy по умолчанию отключена. Эта возможность не рекомендуется для использования в продакшне.
 </Info>
 
-<div id="using-hdfs-storage-unsupported">
-  ## Использование хранилища HDFS (не поддерживается)
-</div>
+## Использование хранилища HDFS (не поддерживается) {#using-hdfs-storage-unsupported}
 
 В этой примерной конфигурации:
 
@@ -585,9 +558,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 Имейте в виду, что HDFS может не работать в некоторых нестандартных сценариях.
 
-<div id="encrypted-virtual-file-system">
-  ### Использование шифрования данных
-</div>
+### Использование шифрования данных {#encrypted-virtual-file-system}
 
 Вы можете шифровать данные, хранящиеся на внешних дисках [S3](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) или [HDFS](#using-hdfs-storage-unsupported) (не поддерживается), а также на локальном диске. Чтобы включить режим шифрования, в конфигурационном файле необходимо определить диск типа `encrypted` и выбрать диск, на котором будут сохраняться данные. Диск `encrypted` шифрует все записываемые файлы на лету, а при чтении файлов с диска `encrypted` автоматически расшифровывает их. Таким образом, с диском `encrypted` можно работать как с обычным диском.
 
@@ -612,9 +583,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 При записи того же файла на `disk2` он фактически будет записан на физический диск по пути `/path1/path2/store/all_1_1_0/data.bin` в зашифрованном виде.
 
-<div id="required-parameters-encrypted-disk">
-  ### Обязательные параметры
-</div>
+### Обязательные параметры {#required-parameters-encrypted-disk}
 
 | Параметр | Тип    | Описание                                                                                                                                                       |
 | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -622,9 +591,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `disk`   | String | Тип диска, используемого для нижележащего хранилища.                                                                                                           |
 | `key`    | Uint64 | Ключ для шифрования и дешифрования. Может быть указан в шестнадцатеричном формате с помощью `key_hex`. Несколько ключей можно указать с помощью атрибута `id`. |
 
-<div id="optional-parameters-encrypted-disk">
-  ### Необязательные параметры
-</div>
+### Необязательные параметры {#optional-parameters-encrypted-disk}
 
 | Параметр         | Тип    | По умолчанию     | Описание                                                                                                                                                                       |
 | ---------------- | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -655,9 +622,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-<div id="using-local-cache">
-  ### Использование локального кэша
-</div>
+### Использование локального кэша {#using-local-cache}
 
 Начиная с версии 22.3 в конфигурации хранилища можно настроить локальный кэш для дисков.
 Для версий 22.3–22.7 кэш поддерживается только для дисков типа `s3`. Для версий &gt;= 22.8 кэш поддерживается для любых типов дисков: S3, Azure, Local, Encrypted и т. д.
@@ -722,7 +687,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-Настройки **дисковой конфигурации** File Cache:
+Настройки **конфигурации диска** File Cache:
 
 Эти настройки должны быть заданы в разделе конфигурации диска.
 
@@ -731,9 +696,8 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `path`                                | String  | -            | **Обязательно**. Путь к каталогу, где будет храниться кэш.                                                                                                                                                              |
 | `max_size`                            | Size    | -            | **Обязательно**. Максимальный размер кэша в байтах или в удобочитаемом формате (например, `10Gi`). При достижении лимита файлы вытесняются по политике LRU. Поддерживаются форматы `ki`, `Mi`, `Gi` (начиная с v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`      | Включает сквозное кэширование для запросов `INSERT` и фоновых слияний. Может быть переопределено для конкретного запроса с помощью `enable_filesystem_cache_on_write_operations`.                                       |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`      | Включает ограничение размера кэша для каждого запроса на основе `max_query_cache_size`.                                                                                                                                 |
-| `enable_cache_hits_threshold`         | Boolean | `false`      | Если параметр включен, данные кэшируются только после нескольких чтений.                                                                                                                                                |
-| `cache_hits_threshold`                | Integer | `0`          | Количество чтений, необходимое перед кэшированием данных (требуется `enable_cache_hits_threshold`).                                                                                                                     |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`      | Включает ограничение размера кэша для каждого запроса на основе `filesystem_cache_max_download_size`.                                                                                                                   |
+| `cache_hits_threshold`                | Integer | `0`          | Устарело; не оказывает влияния.                                                                                                                                                                                         |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`      | Пропускает кэш для больших диапазонов чтения.                                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`      | Размер диапазона чтения, при котором кэш обходится (требуется `enable_bypass_cache_with_threshold`).                                                                                                                    |
 | `max_file_segment_size`               | Size    | `8Mi`        | Максимальный размер одного файла кэша в байтах или в удобочитаемом формате.                                                                                                                                             |
@@ -744,47 +708,37 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 > **Примечание**: Для значений размера поддерживаются единицы измерения `ki`, `Mi`, `Gi` и т. д. (например, `10Gi`).
 
-<div id="file-cache-query-profile-settings">
-  ## Настройки запросов/профилей для File Cache
-</div>
+## Настройки запросов/профилей для File Cache {#file-cache-query-profile-settings}
 
-| Setting                                                                 | Type    | Default                 | Description                                                                                                                                                                             |
-| ----------------------------------------------------------------------- | ------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enable_filesystem_cache`                                               | Boolean | `true`                  | Включает или отключает использование кэша для отдельного запроса, даже при использовании диска типа `cache`.                                                                            |
-| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                 | Если включено, использует кэш только при наличии данных; новые данные кэшироваться не будут.                                                                                            |
-| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`) | Включает сквозное кэширование при операциях записи. Требует `cache_on_write_operations` в конфигурации кэша.                                                                            |
-| `enable_filesystem_cache_log`                                           | Boolean | `false`                 | Включает подробное логирование использования кэша в `system.filesystem_cache_log`.                                                                                                      |
-| `filesystem_cache_allow_background_download`                            | Boolean | `true`                  | Разрешает завершать загрузку частично загруженных сегментов в фоновом режиме. Отключите этот параметр, чтобы загрузка выполнялась в рамках текущего запроса/сеанса.                     |
-| `max_query_cache_size`                                                  | Size    | `false`                 | Максимальный размер кэша для одного запроса. Требует `enable_filesystem_query_cache_limit` в конфигурации кэша.                                                                         |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                  | Определяет поведение при достижении `max_query_cache_size`: <br />- `true`: Прекращает загрузку новых данных <br />- `false`: Вытесняет старые данные, чтобы освободить место для новых |
+| Setting                                                                 | Type    | Default                  | Description                                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | ------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | Boolean | `true`                   | Включает или отключает использование кэша для отдельного запроса, даже при использовании диска типа `cache`.                                                                                          |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                  | Если включено, использует кэш только при наличии данных; новые данные кэшироваться не будут.                                                                                                          |
+| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`)  | Включает сквозное кэширование при операциях записи. Требует `cache_on_write_operations` в конфигурации кэша.                                                                                          |
+| `enable_filesystem_cache_log`                                           | Boolean | `false`                  | Включает подробное логирование использования кэша в `system.filesystem_cache_log`.                                                                                                                    |
+| `filesystem_cache_allow_background_download`                            | Boolean | `true`                   | Разрешает завершать загрузку частично загруженных сегментов в фоновом режиме. Отключите этот параметр, чтобы загрузка выполнялась в рамках текущего запроса/сеанса.                                   |
+| `filesystem_cache_max_download_size`                                    | UInt64  | `137438953472` (128 GiB) | Максимальный объём данных кэша удалённой файловой системы, который может загрузить один запрос. Требует `enable_filesystem_query_cache_limit` в конфигурации кэша.                                    |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                   | Определяет поведение при достижении `filesystem_cache_max_download_size`: <br />- `true`: Прекращает загрузку новых данных <br />- `false`: Вытесняет старые данные, чтобы освободить место для новых |
 
 <Warning>
   Параметры конфигурации кэша и параметры кэша запросов соответствуют последней версии ClickHouse;
   в более ранних версиях некоторые возможности могут не поддерживаться.
 </Warning>
 
-<div id="cache-system-tables-file-cache">
-  #### Системные таблицы файлового кэша
-</div>
+#### Системные таблицы файлового кэша {#cache-system-tables-file-cache}
 
 | Имя таблицы                   | Описание                                                               | Требования                                     |
 | ----------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
 | `system.filesystem_cache`     | Отображает текущее состояние файлового кэша.                           | Нет                                            |
 | `system.filesystem_cache_log` | Показывает подробную статистику использования кэша по каждому запросу. | Требуется `enable_filesystem_cache_log = true` |
 
-<div id="cache-commands-file-cache">
-  #### Команды управления кэшем
-</div>
+#### Команды управления кэшем {#cache-commands-file-cache}
 
-<div id="system-clear-filesystem-cache-on-cluster">
-  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
-</div>
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 Эта команда поддерживается только без указания `<cache_name>`
 
-<div id="show-filesystem-caches">
-  ##### `SHOW FILESYSTEM CACHES`
-</div>
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 Выводит список файловых кэшей, настроенных на сервере.
 (В версиях `22.8` и ниже команда называется `SHOW CACHES`)
@@ -799,9 +753,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-<div id="describe-filesystem-cache">
-  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
-</div>
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 Показывает конфигурацию кэша и некоторую общую статистику для указанного кэша.
 Имя кэша можно получить с помощью команды `SHOW FILESYSTEM CACHES`. (Для версий ниже
@@ -824,9 +776,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                          | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                          | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-<div id="web-storage">
-  ### Использование статического Web-хранилища (только для чтения)
-</div>
+### Использование статического Web-хранилища (только для чтения) {#web-storage}
 
 Это диск в режиме только для чтения. Данные на нем можно только читать, но нельзя изменять. Новая таблица
 подключается к этому диску с помощью запроса `ATTACH TABLE` (см. пример ниже). Локальный диск
@@ -1091,24 +1041,16 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-<div id="required-parameters-s3">
-  #### Обязательные параметры
-</div>
+#### Обязательные параметры {#static-web-storage-required-parameters}
 
 | Параметр   | Описание                                                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`     | `web`. В противном случае диск не будет создан.                                                                                           |
 | `endpoint` | URL конечной точки в формате `path`. URL конечной точки должен содержать корневой путь для хранения данных, в который они были загружены. |
 
-<div id="optional-parameters-s3">
-  #### Необязательные параметры
-</div>
+#### Необязательные параметры {#optional-parameters-web}
 
-| Параметр                            | Описание                                                                                              | Значение по умолчанию |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------- |
-| `min_bytes_for_seek`                | Минимальное количество байтов, при котором используется операция seek вместо последовательного чтения | `1` MB                |
-| `remote_fs_read_backoff_threashold` | Максимальное время ожидания при попытке чтения данных с удалённого диска                              | `10000` секунд        |
-| `remote_fs_read_backoff_max_tries`  | Максимальное количество попыток чтения с задержкой                                                    | `5`                   |
+Бэкенд объектного хранилища `web` использует только параметр `endpoint`. Дополнительные необязательные параметры, относящиеся только к web, отсутствуют; общие параметры диска по-прежнему применяются.
 
 Если запрос завершается исключением `DB:Exception Unreachable URL`, попробуйте изменить настройки: [http&#95;connection&#95;timeout](/ru/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/ru/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/ru/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1119,11 +1061,9 @@ SETTINGS storage_policy='web';
 
 Если при загрузке диска URL недоступен в момент, когда сервер поднимает таблицы, все ошибки перехватываются. В этом случае при наличии ошибок таблицы можно перезагрузить (снова сделать видимыми) через `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Если метаданные были успешно загружены при запуске сервера, таблицы становятся доступными сразу.
 
-Используйте настройку [http&#95;max&#95;single&#95;read&#95;retries](/ru/concepts/features/configuration/server-config/storing-data#web-storage), чтобы ограничить максимальное количество повторных попыток в рамках одного HTTP-чтения.
+Используйте [`http_max_tries`](/ru/reference/settings/session-settings/http-max#http_max_tries), чтобы ограничить количество попыток HTTP-чтения, включая первоначальную попытку. Используйте [`http_retry_initial_backoff_ms`](/ru/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) и [`http_retry_max_backoff_ms`](/ru/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms), чтобы настроить начальную и максимальную задержки между повторными попытками.
 
-<div id="zero-copy">
-  ### Репликация без копирования (не готово к использованию в production)
-</div>
+### Репликация без копирования (не готово к использованию в production) {#zero-copy}
 
 Репликация без копирования возможна, но не рекомендуется для дисков `S3` и `HDFS` (не поддерживается). Репликация без копирования означает, что если данные удалённо хранятся на нескольких машинах и их нужно синхронизировать, то реплицируются только метаданные (пути к частям данных), а не сами данные.
 

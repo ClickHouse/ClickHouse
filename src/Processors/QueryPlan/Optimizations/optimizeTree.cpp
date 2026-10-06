@@ -1,6 +1,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -14,9 +17,13 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <fmt/ranges.h>
 
+#include <algorithm>
 #include <memory>
+#include <ranges>
 #include <stack>
 #include <unordered_map>
 #include <utility>
@@ -85,10 +92,25 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.enable_parallel_replicas,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
+        optimization_settings.legacy_array_join_function_nondeterministic_evaluation,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.filter_push_down_below_limit_by,
     };
+}
+
+static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
+{
+    if (reject_reasons.empty())
+        return "no projection was considered";
+
+    std::vector<String> formatted_reasons;
+    for (const auto & [projection, reason] : reject_reasons)
+        formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
+
+    return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
@@ -222,11 +244,15 @@ void optimizeTreeSecondPass(
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
+    std::unordered_map<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
 
     Stack stack;
+
+    /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
+    convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
 
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
@@ -307,6 +333,8 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -317,7 +345,7 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (optimization_settings.enable_join_runtime_filters)
+            if (add_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
@@ -353,12 +381,44 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
+
+                /// `tryMergeExpressions` fuses an expression step into a filter step, which makes those
+                /// expressions required outputs of the filter, so they run on the rows the filter removes.
+                /// `trySplitFilter` splits such a filter; it also extracts a logical join's ON conditions.
+                if ((rewrite_regardless_of_settings || optimization_settings.split_filter)
+                    && typeid_cast<FilterStep *>(frame_node.step.get()))
+                    trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
         if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
             traverseQueryPlan(stack, root,
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+    }
+
+    /// The runtime `FilterStep`s added and pushed down just above are invisible to the
+    /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
+    /// running TopK threshold. Re-walk the plan so a TopK read under such a filter stops reusing and
+    /// writing threshold-dependent query condition cache entries.
+    if (join_runtime_filters_were_added && optimization_settings.use_query_condition_cache)
+    {
+        Stack top_k_qcc_stack;
+        top_k_qcc_stack.push_back({.node = &root});
+        while (!top_k_qcc_stack.empty())
+        {
+            disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
+
+            auto & top_k_qcc_frame = top_k_qcc_stack.back();
+            if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
+            {
+                auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
+                ++top_k_qcc_frame.next_child;
+                top_k_qcc_stack.push_back({.node = next_node});
+                continue;
+            }
+
+            top_k_qcc_stack.pop_back();
+        }
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
@@ -459,11 +519,15 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+                const bool is_aggregation_step = typeid_cast<const AggregatingStep *>(frame.node->step.get()) || typeid_cast<const DistinctStep *>(frame.node->step.get());
 
-                /// Projection optimization relies on PK optimization
-                if (optimization_settings.optimize_projection)
-                    if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
-                        applied_projection_names.insert(*applied_projection);
+                if (optimization_settings.optimize_projection && is_aggregation_step)
+                {
+                    auto result = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings);
+                    projection_reject_reasons.merge(result.projection_reject_reasons);
+                    if (result.applied_projection)
+                        applied_projection_names.insert(*result.applied_projection);
+                }
 
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
@@ -484,12 +548,14 @@ void optimizeTreeSecondPass(
             }
         }
 
-        if (optimization_settings.optimize_projection)
+        const auto * reading = typeid_cast<const ReadFromMergeTree *>(stack.back().node->step.get());
+        if (reading && optimization_settings.optimize_projection)
         {
-            /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
+            auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings);
+            projection_reject_reasons.merge(result.projection_reject_reasons);
+            if (result.applied_projection)
             {
-                applied_projection_names.insert(*applied_projection);
+                applied_projection_names.insert(*result.applied_projection);
 
                 if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
                 {
@@ -548,6 +614,14 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
+    /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the
+    /// PREWHERE the TopK filter joins, or whether it is added.
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            installTopKDynamicFilter(frame_node, nodes);
+        });
+
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.
@@ -577,11 +651,10 @@ void optimizeTreeSecondPass(
             /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
-            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
+            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
+            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -796,14 +869,20 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED, "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            ErrorCodes::PROJECTION_NOT_USED,
+            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1: {}",
+            describeProjectionRejections(projection_reject_reasons));
 
     if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt
         && !applied_projection_names.contains(optimization_settings.force_projection_name))
+    {
+        auto it = projection_reject_reasons.find(optimization_settings.force_projection_name);
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Projection {} is specified in setting force_optimize_projection_name but not used",
-            optimization_settings.force_projection_name);
+            "Projection {} is specified in setting force_optimize_projection_name but not used: {}",
+            optimization_settings.force_projection_name,
+            it != projection_reject_reasons.end() ? it->second : "the projection was not considered by any read");
+    }
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
@@ -842,6 +921,13 @@ void optimizeTreeSecondPass(
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
+
+    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 }
 

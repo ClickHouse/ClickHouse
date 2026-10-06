@@ -130,7 +130,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -167,6 +167,8 @@ public:
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
+
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;

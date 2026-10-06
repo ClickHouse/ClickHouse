@@ -58,7 +58,7 @@ public:
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get metric metadata (/api/v1/metadata): the distinct (type, help, unit) entries stored in the Metrics target table,
+    /// Get metric metadata (/api/v1/metadata): the distinct (type, help, unit) entries stored in the metric families target table,
     /// grouped by metric family. `metric` (if not empty) restricts the result to one metric family;
     /// `limit` caps the number of returned metric families (a negative value means no limit, 0 returns an empty result);
     /// `limit_per_metric` caps the number of returned entries per metric family (zero and negative values mean no limit).

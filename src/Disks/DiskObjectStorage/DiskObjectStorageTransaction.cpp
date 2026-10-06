@@ -312,34 +312,31 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         ForkWriteBuffer::WriteBufferPtrs writers;
         for (const auto & location : enabled_locations)
         {
-            size_t use_buffer_size = buf_size;
             std::unique_ptr<WriteBufferFromFileBase> writer;
 
             if (location == disk_tx->cluster->getLocalLocation())
             {
                 ObjectStoragePtr object_storage = disk_tx->object_storages->takePointingTo(location);
 
-#if ENABLE_DISTRIBUTED_CACHE
-                bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(write_settings, *object_storage);
-
-                if (use_distributed_cache && write_settings.distributed_cache_settings.write_through_cache_buffer_size)
-                    use_buffer_size = write_settings.distributed_cache_settings.write_through_cache_buffer_size;
-#endif
+                #if ENABLE_DISTRIBUTED_CACHE
+                    bool use_distributed_cache = disk_tx->metadata_storage->mayCacheByObjectPath()
+                        && DistributedCache::canUseDistributedCacheForWrite(write_settings, *object_storage);
+                #endif
 
                 writer = object_storage->writeObject(
                     object,
                     /// We always use mode Rewrite because we simulate append using metadata and different files
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
-                    use_buffer_size,
+                    buf_size,
                     write_settings);
 
                 writer->setCancellationHook(write_cancellation_hook);
 
-#if ENABLE_DISTRIBUTED_CACHE
-                if (use_distributed_cache)
-                    writer = DistributedCache::writeWithDistributedCache(path, object, write_settings, *object_storage, std::move(writer));
-#endif
+                #if ENABLE_DISTRIBUTED_CACHE
+                    if (use_distributed_cache)
+                        writer = DistributedCache::writeWithDistributedCache(path, object, write_settings, *object_storage, std::move(writer));
+                #endif
             }
             else
             {
@@ -348,7 +345,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /// We always use mode Rewrite because we simulate append using metadata and different files
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
-                    use_buffer_size,
+                    buf_size,
                     write_settings);
                 writer->setCancellationHook(write_cancellation_hook);
             }

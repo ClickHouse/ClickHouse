@@ -39,6 +39,21 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     return result.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
+void carryForwardRefreshCursor(
+    Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
+{
+    std::optional<String> cursor = new_cursor;
+    if (!cursor.has_value() && parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
+    {
+        auto parent_summary = parent_snapshot->get(Iceberg::f_summary).extract<Poco::JSON::Object::Ptr>();
+        if (parent_summary->has(Iceberg::f_refresh_cursor))
+            cursor = parent_summary->getValue<String>(Iceberg::f_refresh_cursor);
+    }
+    if (cursor.has_value())
+        summary->set(Iceberg::f_refresh_cursor, *cursor);
+}
+
 /// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
 std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
 {
@@ -164,6 +179,11 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
+Int64 MetadataGenerator::generateSnapshotId()
+{
+    return static_cast<Int64>(dis(gen));
+}
+
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -176,7 +196,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
-    SnapshotOperation operation)
+    SnapshotOperation operation,
+    const std::optional<String> & refresh_cursor)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -206,7 +227,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(generateSnapshotId());
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -228,6 +249,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else if (num_deleted_rows != 0)
         operation_name = Iceberg::f_overwrite;
     summary->set(Iceberg::f_operation, operation_name);
+    carryForwardRefreshCursor(summary, parent_snapshot, refresh_cursor);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
@@ -339,7 +361,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = static_cast<Int64>(dis(gen));
+    Int64 snapshot_id = generateSnapshotId();
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -356,6 +378,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, Iceberg::f_replace);
+    carryForwardRefreshCursor(summary, parent_snapshot, std::nullopt);
     summary->set(Iceberg::f_added_data_files, "0");
     summary->set(Iceberg::f_added_records, "0");
     summary->set(Iceberg::f_added_files_size, "0");

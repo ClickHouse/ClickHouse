@@ -6,25 +6,15 @@ doc_type: 'guide'
 keywords: ['Elixir ClickStack SDK', 'Elixir オブザーバビリティ', 'HyperDX Elixir', 'Elixir ログ SDK', 'ClickStack Elixir インテグレーション']
 ---
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ ログ</td>
-      <td className="pe-2">✖️ メトリクス</td>
-      <td className="pe-2">✖️ トレース</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['logs']} />
 
 *🚧 OpenTelemetry のメトリクスおよびトレーシング向けインストルメンテーションは近日提供予定です！*
 
-<div id="getting-started">
-  ## はじめに
-</div>
+## はじめに {#getting-started}
 
-<div id="install-hyperdx-logger-backend-package">
-  ### ClickStack ロガー バックエンドパッケージをインストールする
-</div>
+### ClickStack ロガー バックエンドパッケージをインストールする {#install-hyperdx-logger-backend-package}
 
 このパッケージは、`mix.exs` の依存関係リストに
 `hyperdx` を追加することでインストールできます。
@@ -37,9 +27,7 @@ def deps do
 end
 ```
 
-<div id="configure-logger">
-  ### ロガーを設定する
-</div>
+### ロガーを設定する {#configure-logger}
 
 次の内容を`config.exs`ファイルに追加します。
 
@@ -51,23 +39,21 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-<div id="configure-environment-variables">
-  ### 環境変数を設定する
-</div>
+### 環境変数を設定する {#configure-environment-variables}
 
 続いて、OpenTelemetry collector 経由で ClickStack にテレメトリーを送信するため、シェルで以下の環境変数を設定します。
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 </Tabs>

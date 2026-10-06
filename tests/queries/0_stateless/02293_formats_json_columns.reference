@@ -6,7 +6,7 @@ JSONColumns
 }
 a	Nullable(Int64)					
 b	Nullable(String)					
-c	Array(Tuple(Array(Nullable(Int64)), Nullable(String)))					
+c	Array(Nullable(Tuple(Array(Nullable(Int64)), Nullable(String))))					
 0	String	[([],'String'),([],'gnirtS')]
 1	String	[([0],'String'),([0],'gnirtS')]
 2	String	[([0,1],'String'),([0,1],'gnirtS')]
@@ -20,7 +20,7 @@ JSONCompactColumns
 ]
 c1	Nullable(Int64)					
 c2	Nullable(String)					
-c3	Array(Tuple(Array(Nullable(Int64)), Nullable(String)))					
+c3	Array(Nullable(Tuple(Array(Nullable(Int64)), Nullable(String))))					
 0	String	[([],'String'),([],'gnirtS')]
 1	String	[([0],'String'),([0],'gnirtS')]
 2	String	[([0,1],'String'),([0,1],'gnirtS')]

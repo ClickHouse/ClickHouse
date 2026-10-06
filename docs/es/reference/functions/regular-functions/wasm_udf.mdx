@@ -15,9 +15,7 @@ ClickHouse admite la creación de funciones definidas por el usuario (UDFs) escr
 
 <ExperimentalBadge />
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
 Un módulo de WebAssembly es un archivo binario compilado que contiene una o varias funciones a las que se puede llamar desde ClickHouse.
 Piense en un módulo como una biblioteca o un objeto compartido que se carga una vez y se reutiliza muchas veces.
@@ -34,9 +32,7 @@ El módulo debe seguir uno de los protocolos de comunicación (ABI) compatibles 
 Una vez compilado, el código binario del módulo se carga en ClickHouse insertándolo en la tabla `system.webassembly_modules`.
 Después, puede crear UDFs que hagan referencia a las funciones exportadas por el módulo mediante la sentencia `CREATE FUNCTION ... LANGUAGE WASM`.
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
 Active la compatibilidad con WebAssembly en la configuración de ClickHouse:
 
@@ -51,9 +47,7 @@ Implementaciones del motor disponibles:
 
 * `wasmtime` (predeterminado y actualmente el único) — usa [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
-<div id="quick-start">
-  ## Inicio rápido
-</div>
+## Inicio rápido {#quick-start}
 
 Este ejemplo muestra el flujo de trabajo completo para crear una UDF de WebAssembly implementando una calculadora de la [conjetura de Collatz](https://en.wikipedia.org/wiki/Collatz_conjecture).
 
@@ -109,9 +103,7 @@ En el resultado obtuvimos la secuencia de pasos de Collatz para los números del
 [0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
 ```
 
-<div id="manage-wasm-modules-via-system-table">
-  ## Administrar módulos WASM mediante la tabla del sistema
-</div>
+## Administrar módulos WASM mediante la tabla del sistema {#manage-wasm-modules-via-system-table}
 
 Los módulos de WebAssembly se almacenan en la tabla `system.webassembly_modules`, que tiene la siguiente estructura:
 
@@ -122,9 +114,7 @@ Los módulos de WebAssembly se almacenan en la tabla `system.webassembly_modules
 
 La gestión de módulos se realiza mediante operaciones SQL estándar sobre esta tabla:
 
-<div id="insert-a-module">
-  ### Insertar un módulo
-</div>
+### Insertar un módulo {#insert-a-module}
 
 ```sql
 INSERT INTO system.webassembly_modules (name, code)
@@ -140,9 +130,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 Si el hash proporcionado no coincide con el SHA256 calculado para el código del módulo, la inserción falla. Esto puede resultar útil al cargar módulos desde fuentes externas, como S3 o HTTP.
 
-<div id="distribute-a-module-across-a-cluster">
-  ### Distribuir un módulo en un clúster
-</div>
+### Distribuir un módulo en un clúster {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` es una tabla por instancia: un `INSERT` solo se aplica a la réplica que gestiona la conexión. No existe una forma `ON CLUSTER` de la sentencia `INSERT`, por lo que un `CREATE FUNCTION ... ON CLUSTER` posterior fallará en las réplicas que no tengan el módulo:
 
@@ -181,9 +169,7 @@ SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_mo
 
 Las inserciones en `system.webassembly_modules` son idempotentes para el mismo par `(name, hash)`, por lo que volver a ejecutar la inserción distribuida es seguro y una forma razonable de reparar el estado después de reemplazar una réplica. Tenga en cuenta que los servidores recién añadidos no reciben retroactivamente los módulos existentes; debe volver a ejecutar la inserción en el clúster actualizado, o colocar el binario en el directorio `user_scripts/wasm/` del nuevo host.
 
-<div id="list-modules">
-  ### Listar módulos
-</div>
+### Listar módulos {#list-modules}
 
 ```sql
 SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
@@ -193,9 +179,7 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
    └─────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="delete-a-module">
-  ### Eliminar un módulo
-</div>
+### Eliminar un módulo {#delete-a-module}
 
 La eliminación se realiza mediante la sentencia `DELETE FROM system.webassembly_modules WHERE name = '...'`.
 El predicado debe ser `name = 'literal'` para una coincidencia exacta o `name LIKE 'pattern'` para eliminar todos los módulos cuyo nombre coincida con el patrón; no se acepta ninguna otra forma.
@@ -209,9 +193,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 
 Si alguna UDF existente hace referencia a uno de los módulos coincidentes, la eliminación fallará, por lo que primero debe eliminar esas UDFs.
 
-<div id="create-a-webassembly-udf">
-  ## Crear una UDF de WebAssembly
-</div>
+## Crear una UDF de WebAssembly {#create-a-webassembly-udf}
 
 **Sintaxis**:
 
@@ -242,9 +224,7 @@ RETURNS return_type
   * `serialization_format` String — Formato utilizado para serializar los bloques de argumentos que se pasan al módulo y para analizar el resultado devuelto. Se usa únicamente con `ABI BUFFERED_V1`. Valores admitidos: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` y `Buffers`. Predeterminado: `MsgPack`. Los formatos basados en bloques, como `Buffers`, deben devolver una sola columna cuyo tipo coincida con la firma de la función declarada.
   * `webassembly_udf_enable_fuel` Bool — Habilita un presupuesto de fuel finito para la función. Predeterminado: `true`. Cuando es `false`, la configuración de nivel de consulta `webassembly_udf_max_fuel` se ignora para esta función. Deshabilitar los límites de fuel puede mejorar el rendimiento. Sin embargo, para código guest no confiable o con errores, puede aumentar el riesgo de ejecución descontrolada.
 
-<div id="abis-versions">
-  ## Versiones de las ABI
-</div>
+## Versiones de las ABI {#abis-versions}
 
 Para interactuar con ClickHouse, los módulos de WebAssembly deben cumplir con una de las ABI (interfaz binaria de aplicación) compatibles.
 
@@ -252,9 +232,7 @@ Para interactuar con ClickHouse, los módulos de WebAssembly deben cumplir con u
 * `BUFFERED_V1`: tipos complejos con serialización
 * `ASSEMBLYSCRIPT`: interoperabilidad fila por fila con módulos de [AssemblyScript](https://www.assemblyscript.org); admite tipos numéricos y `String`.
 
-<div id="abi-row_direct">
-  ### ABI ROW_DIRECT
-</div>
+### ABI ROW_DIRECT {#abi-row_direct}
 
 Llama directamente a una función WASM exportada para cada fila.
 
@@ -277,9 +255,7 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 
 WebAssembly no distingue entre argumentos con signo y sin signo, sino que utiliza distintas instrucciones para interpretar los valores. Por lo tanto, el tamaño del argumento debe coincidir exactamente, mientras que si es con signo o sin signo lo determinan las operaciones dentro de la función.
 
-<div id="abi-buffered_v1">
-  ### ABI BUFFERED_V1
-</div>
+### ABI BUFFERED_V1 {#abi-buffered_v1}
 
 <Note>
   Esta ABI es experimental y está sujeta a cambios en versiones futuras.
@@ -287,7 +263,7 @@ WebAssembly no distingue entre argumentos con signo y sin signo, sino que utiliz
 
 Procesa bloques completos de una sola vez mediante (des)serialización a través de la memoria WASM. Admite cualquier tipo de argumento y de retorno.
 
-Los datos se intercambian mediante búferes en la memoria WASM. Un búfer es una estructura de 8 bytes que contiene un puntero a los datos y su tamaño (dos valores `u32` en orden little-endian). Los búferes se pasan mediante un identificador: un puntero a esta estructura, no a los propios datos. El código guest debe exportar dos funciones para crear y destruir estos búferes.
+Los datos se intercambian mediante búferes en la memoria WASM. Un búfer es una estructura de 8 bytes que contiene un puntero a los datos y su tamaño (dos valores `u32` en orden little-endian). Los búferes se pasan mediante un identificador: un puntero a esta estructura, no a los propios datos. El código guest debe exportar dos funciones para crear y destruir estos búferes. Cuando el tamaño es distinto de cero, el puntero a los datos también debe ser distinto de cero: un búfer que declara un tamaño positivo pero apunta al desplazamiento `0` de la memoria lineal no es un búfer válido, y el código guest no debe producir uno; ClickHouse rechaza dicho búfer y hace que la consulta falle con un `WASM_ERROR`.
 
 Para cada bloque de entrada, ClickHouse:
 
@@ -297,7 +273,9 @@ Para cada bloque de entrada, ClickHouse:
 4. Lee el búfer de resultados: debe contener exactamente una columna con exactamente el mismo número de filas, serializada en el mismo formato. En formatos con campos con nombre, como `JSONEachRow`, la columna de resultados debe llamarse `result`.
 5. Llama a `clickhouse_destroy_buffer` para los identificadores tanto del búfer de entrada (si existe) como del búfer de resultados. El código guest no debe liberar el búfer de resultados por sí mismo ni devolver el identificador de entrada como resultado; de lo contrario, se destruiría dos veces.
 
-La función se invoca una vez por bloque de entrada: una consulta grande se divide en varios bloques mediante el pipeline de consultas (el número máximo de filas por llamada también puede limitarse con la configuración `webassembly_udf_max_input_block_size`), por lo que el número de filas pasado en cada llamada corresponde al tamaño de ese bloque, no al de toda la consulta.
+La función se invoca una vez por bloque de entrada: una consulta grande se divide en varios bloques mediante el pipeline de consultas, por lo que el número de filas pasado en cada llamada corresponde al tamaño de ese bloque, no al de toda la consulta.
+
+Un bloque del pipeline aún puede ser demasiado ancho para la memoria lineal del módulo, por lo que se divide todavía más. De forma predeterminada, `webassembly_udf_input_split_memory_ratio` lo divide dinámicamente: ClickHouse mide las filas serializadas e inicia una nueva llamada antes de que la entrada supere esa fracción de la memoria lineal del guest, por lo que el número de filas varía según los datos. Un valor distinto de cero en `webassembly_udf_max_input_block_size` sustituye este comportamiento por un límite fijo de ese número de filas por llamada, y una proporción de `0` pasa el bloque completo en una sola llamada. Una llamada nunca baja de una fila, por lo que una fila demasiado grande para la memoria del módulo por sí sola seguirá fallando dentro del guest.
 
 <Note>
   Los bytes exactos de los búferes los determina el formato elegido, y el código guest debe decodificarlos y codificarlos por sí mismo. En particular, para valores `String`:
@@ -328,7 +306,7 @@ La función se invoca una vez por bloque de entrada: una consulta grande se divi
 )
 ```
 
-Un ejemplo completo en C autónomo: `str_reverse` invierte los bytes de cada cadena de entrada mediante `serialization_format = 'RowBinary'`. Las instancias del módulo se reutilizan entre bloques, por lo que `clickhouse_destroy_buffer` debe liberar realmente la memoria; aquí el asignador se restablece una vez destruidos todos los búferes.
+Un ejemplo completo en C freestanding: `str_reverse` invierte los bytes de cada cadena de entrada, usando `serialization_format = 'RowBinary'`. Las instancias del módulo se reutilizan entre bloques, por lo que `clickhouse_destroy_buffer` debe liberar la memoria de verdad: aquí el allocator se reinicia una vez que se han destruido todos los búferes.
 
 ```c
 #include <stdint.h>
@@ -440,9 +418,7 @@ SELECT str_reverse(toString(number + 100)) FROM numbers(3);
 201
 ```
 
-<div id="abi-assemblyscript">
-  ### ABI ASSEMBLYSCRIPT
-</div>
+### ABI ASSEMBLYSCRIPT {#abi-assemblyscript}
 
 Se aplica a módulos generados por el compilador [AssemblyScript](https://www.assemblyscript.org). Cada fila desencadena una llamada a la función exportada, asignando los valores de ClickHouse a primitivos de AssemblyScript y objetos `string`.
 
@@ -491,9 +467,7 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
-<div id="note-for-developing-udfs-in-rust">
-  ### Nota para desarrollar UDFs en Rust
-</div>
+### Nota para desarrollar UDFs en Rust {#note-for-developing-udfs-in-rust}
 
 Para los programas en Rust, proporcionamos un crate auxiliar [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf) para simplificar el desarrollo de WebAssembly UDFs para ClickHouse. El crate proporciona funciones para la gestión de memoria, por lo que no necesitas implementar manualmente las funciones `clickhouse_create_buffer` y `clickhouse_destroy_buffer`, sino añadir el crate como dependencia. También incluye macros `#[clickhouse_wasm_udf]` para encapsular tus funciones habituales de Rust en el formato ABI requerido.
 
@@ -512,9 +486,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 Las macros generarán una función de envoltura que acepta y devuelve estructuras de búfer, y gestionarán automáticamente la serialización y deserialización mediante `serde`.
 
-<div id="host-api-available-to-modules">
-  ## API del host disponible para los módulos
-</div>
+## API del host disponible para los módulos {#host-api-available-to-modules}
 
 Las siguientes funciones del host pueden importarse y usarse en los módulos:
 
@@ -524,9 +496,7 @@ Las siguientes funciones del host pueden importarse y usarse en los módulos:
 * `clickhouse_random(ptr: i32, size: i32)` — rellena la memoria con bytes aleatorios.
 * `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — se proporciona para módulos compatibles con AssemblyScript. Al llamarlo (o al activar una trampa del runtime de AssemblyScript que lo invoque), finaliza la UDF con una excepción `WASM_ERROR` que contiene el mensaje decodificado y la ubicación de origen. Los módulos que no importan `env.abort` no se ven afectados.
 
-<div id="settings">
-  ## Configuración
-</div>
+## Configuración {#settings}
 
 Las siguientes configuraciones a nivel de consulta controlan la ejecución de WebAssembly UDF:
 
@@ -534,7 +504,9 @@ Las siguientes configuraciones a nivel de consulta controlan la ejecución de We
 
 * `webassembly_udf_max_memory` — Límite de memoria en bytes por instancia de WebAssembly UDF.
 
-* `webassembly_udf_max_input_block_size` — Número máximo de filas que se pasan a una WebAssembly UDF en un solo bloque. Establézcalo en 0 para procesar todas las filas a la vez.
+* `webassembly_udf_max_input_block_size` — Número máximo de filas que se pasan a una WebAssembly UDF en un solo bloque, para cada ABI. Establézcalo en 0 para que `webassembly_udf_input_split_memory_ratio` dimensione las llamadas de una función `ABI BUFFERED_V1`; los demás ABI reciben entonces el bloque completo del pipeline.
+
+* `webassembly_udf_input_split_memory_ratio` — La fracción de la memoria lineal con la que un módulo declara que se inicia (de su techo de memoria, en el caso de un módulo que se inicia sin pages) que puede ocupar la entrada de una llamada. Se usa para dividir los bloques de una función `ABI BUFFERED_V1` cuando `webassembly_udf_max_input_block_size` es 0; los demás ABI no transportan ningún bloque de entrada serializado y lo ignoran. Valor predeterminado: `0.5`, lo que deja el resto de la memoria al working set propio del guest: un ratio cercano a 1 puede fallar igualmente dentro del allocator del guest. Establézcalo en 0, o establezca `compatibility` en una versión anterior a 26.9, para pasar el bloque completo del pipeline en una sola llamada. Debe ser al menos 0 y como máximo 1.
 
 * `webassembly_udf_max_instances` — Número máximo de instancias de WebAssembly UDF que pueden ejecutarse en paralelo por función.
 
@@ -545,8 +517,6 @@ SET webassembly_udf_max_fuel = 200000;
 SELECT my_wasm_udf(column) FROM table;
 ```
 
-<div id="see-also">
-  ## Véase también
-</div>
+## Véase también {#see-also}
 
 * [Introducción a las UDF de ClickHouse](/es/reference/functions/regular-functions/udf)
