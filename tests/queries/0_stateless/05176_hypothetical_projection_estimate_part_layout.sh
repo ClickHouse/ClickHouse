@@ -118,9 +118,7 @@ for w in "b >= 4000" "b < 2000"; do
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 
-# a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
-
-# the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
+# a lightweight delete leaves the dead rows in the part, and the rebuilt projection drops them
 echo "--- a materialized lightweight delete ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
@@ -137,6 +135,20 @@ $CLICKHOUSE_CLIENT -q "
         WHERE database = currentDatabase() AND table = 't_real_d' AND active;
 "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
+
+# the read limit counts the deleted rows the scan reads, and a part with every row deleted gets no projection part
+echo "--- a part whose rows are mostly, then all deleted ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_z;
+    CREATE TABLE t_est_z (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_est_z SELECT number, number % 100, number FROM numbers(1000);
+    DELETE FROM t_est_z WHERE a >= 100 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_z ON t_est_z (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE a < 100 AND b < 30 SETTINGS ${PIN}, max_rows_to_read = 300;
+    DELETE FROM t_est_z WHERE 1 SETTINGS lightweight_deletes_sync = 2;
+    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
+" | grep -E '^\s+(empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 

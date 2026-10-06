@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/FilterDescription.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -70,6 +71,8 @@ struct ProjectionPartData
     size_t rows = 0;
     /// uncompressed size of the projection part, drives the granularity
     size_t bytes = 0;
+    /// lightweight-deleted rows of the parent, which the projection does not store
+    size_t deleted_rows = 0;
     /// per-row size in read order, empty unless the part needs the adaptive granule walk
     PaddedPODArray<UInt32> row_bytes;
 };
@@ -225,7 +228,12 @@ bool buildProjectionPart(
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
-    Pipe pipe = makeWholePartPipe(part, projection.required_columns, read_step, context);
+    const bool has_lightweight_delete = part->hasLightweightDelete();
+    Names columns_to_read = projection.required_columns;
+    if (has_lightweight_delete)
+        columns_to_read.push_back(RowExistsColumn::name);
+
+    Pipe pipe = makeWholePartPipe(part, columns_to_read, read_step, context);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
@@ -251,6 +259,20 @@ bool buildProjectionPart(
         /// the key expression and the sort need full columns
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
+
+        /// the read limits count the deleted rows, the projection part does not store them
+        if (has_lightweight_delete)
+        {
+            const size_t rows_read = block.rows();
+            FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+            block.erase(RowExistsColumn::name);
+            const size_t rows_kept = row_exists_filter.countBytesInFilter();
+            out.deleted_rows += rows_read - rows_kept;
+            if (rows_kept == 0)
+                continue;
+            for (auto & column : block)
+                column.column = row_exists_filter.filter(*column.column, rows_kept);
+        }
 
         /// the same measure the writer takes of the block it is about to store, before the key
         /// expression adds columns a normal projection recomputes on read instead of storing
@@ -545,6 +567,7 @@ bool tryEstimateProjection(
     UInt64 marks_low = 0;
     UInt64 marks_high = 0;
     UInt64 uneven_width_parts = 0;
+    UInt64 parts_without_projection = 0;
 
     for (const auto & part_with_ranges : baseline_parts)
     {
@@ -580,13 +603,22 @@ bool tryEstimateProjection(
             ++uneven_width_parts;
         /// no key rows out of a part that has rows means the key needs something the scan cannot
         /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
-        if (part_data.rows == 0 && part->rows_count > 0)
+        if (part_data.rows == 0 && part->rows_count > part_data.deleted_rows)
         {
             result.empirical_unsupported_reason = "The projection key could not be built from the columns the projection stores";
             return false;
         }
+        /// every row is deleted, so the writer stores no projection part and the read takes the parent's ranges
         if (part_data.rows == 0)
+        {
+            ++parts_without_projection;
+            const UInt64 parent_marks = part_with_ranges.getMarksCount();
+            projection_marks += parent_marks;
+            projection_rows += part_with_ranges.getRowsCount();
+            marks_low += parent_marks;
+            marks_high += parent_marks;
             continue;
+        }
 
         MergeTreeIndexGranularityPtr granularity;
         UInt64 part_marks_low = 0;
@@ -611,6 +643,12 @@ bool tryEstimateProjection(
         projection_rows += granularity->getRowsCountInRanges(pruned);
         marks_low += part_marks_low;
         marks_high += part_marks_high;
+    }
+
+    if (scanned_parts != 0 && parts_without_projection == scanned_parts)
+    {
+        result.empirical_unsupported_reason = "Every row of the parts read is deleted, so the projection would store no part to read";
+        return false;
     }
 
     result.estimated_marks = projection_marks;

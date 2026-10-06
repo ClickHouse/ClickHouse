@@ -4,7 +4,7 @@
 #include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -727,46 +727,10 @@ Block ProjectionDescription::calculateByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
-    ASTPtr query_ast_copy = nullptr;
-
-    /// A normal projection with no WHERE runs at `QueryProcessingStage::FetchColumns`, which stops
-    /// before the WHERE step, so injecting `_row_exists = 1` into the query is silently ignored and
-    /// lightweight-deleted rows stay in the rebuilt projection (issue #111791). For that path the
-    /// deleted rows are dropped from the input block directly below instead.
-    const bool filter_deleted_rows_in_source
-        = block.has(RowExistsColumn::name) && type == ProjectionDescription::Type::Normal && !where_clause_ast;
-
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
-
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name) && !filter_deleted_rows_in_source)
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
-
-        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
-        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
-        /// Otherwise the projection's own filter would be lost during mutations.
-        auto existing_where = select_row_exists->where();
-        if (existing_where)
-        {
-            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
-        }
-        else
-        {
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
-        }
-
-        source_block.insert(block.getByName(RowExistsColumn::name));
-    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
@@ -793,18 +757,16 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
-    /// Filter every source column (including `_part_offset`, so surviving rows keep their original
-    /// parent offsets) by the deletion mask. `_row_exists` may be const-folded, so materialize it.
-    if (filter_deleted_rows_in_source)
+    /// Drop lightweight-deleted rows, after `_part_offset` is generated so the survivors keep their parent offsets
+    if (block.has(RowExistsColumn::name))
     {
-        auto row_exists = block.getByName(RowExistsColumn::name).column->convertToFullColumnIfConst();
-        const auto & filter = assert_cast<const ColumnUInt8 &>(*row_exists).getData();
-        for (auto & col : source_block)
-            col.column = col.column->filter(filter, /*result_size_hint=*/ -1);
+        FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+        for (auto & column : source_block)
+            column.column = row_exists_filter.filter(*column.column, -1);
     }
 
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{

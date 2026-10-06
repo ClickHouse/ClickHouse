@@ -146,8 +146,8 @@ SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 DROP TABLE t_proj_alias;
 
 -- A mutation must preserve the projection's WHERE while also applying the mutation.
--- During mutation, the projection part is rematerialized with its WHERE combined with the
--- `_row_exists` condition, so after `ALTER TABLE ... DELETE WHERE` the filtered projection must
+-- During mutation, the projection part is rematerialized from the surviving rows with its WHERE
+-- still applied, so after `ALTER TABLE ... DELETE WHERE` the filtered projection must
 -- contain only rows satisfying both the projection predicate and the (negated) delete condition.
 SELECT 'Mutation with filtered projection';
 
@@ -178,7 +178,7 @@ INSERT INTO t_proj_mut VALUES
 ALTER TABLE t_proj_mut MATERIALIZE PROJECTION proj_pageview_mut SETTINGS mutations_sync = 2;
 
 -- Delete one `pageview` row with a heavyweight mutation, which rematerializes the projection part
--- (the projection's WHERE is combined with `_row_exists` during materialization).
+-- (the projection's WHERE is applied to the surviving rows during materialization).
 ALTER TABLE t_proj_mut DELETE WHERE message = 'a' SETTINGS mutations_sync = 2;
 
 -- `force_optimize_projection = 1` proves the rebuilt projection (not the base table) is read,
