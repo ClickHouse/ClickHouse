@@ -17,7 +17,11 @@ SELECT
     number AS k,
     if(number % 14 = 7, 'x\\', ['', 'a', 'ab', 'b\0c', 'Google'][number % 5 + 1]) AS s,
     if(number % 14 = 7, 'garbage', toString(toDate('2020-01-01') + number % 10)) AS d,
-    toFixedString(s, 16) AS f
+    toFixedString(s, 16) AS f,
+    toUInt32(number % 5) AS n,
+    toNullable(s) AS ns,
+    [s] AS a,
+    toString(number % 5000) AS h
 FROM numbers(30000);
 
 -- Row groups of exactly 10000 rows, written in order.
@@ -28,6 +32,9 @@ SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block
 
 SELECT arrayMap(x -> tupleElement(x, 'num_rows'), row_groups) FROM file(currentDatabase() || '_05331_a.parquet', ParquetMetadata);
 SELECT tupleElement(arrayJoin(columns) AS col, 'name'), has(tupleElement(col, 'encodings'), 'RLE_DICTIONARY')
+FROM file(currentDatabase() || '_05331_a.parquet', ParquetMetadata);
+SELECT 'ns null_count', arrayAll(rg -> arrayExists(c -> tupleElement(c, 'name') = 'ns'
+    AND tupleElement(tupleElement(c, 'statistics'), 'null_count') = 0, tupleElement(rg, 'columns')), row_groups)
 FROM file(currentDatabase() || '_05331_a.parquet', ParquetMetadata);
 
 SELECT 'Q1', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)) FROM ref WHERE s != '')
@@ -48,6 +55,15 @@ SELECT 'Q9', count(), sum(cityHash64(upper(s))) = (SELECT sum(cityHash64(upper(s
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE k % 3 = 0 AND upper(s) != 'A';
 SELECT 'F', count(), sum(cityHash64(k, f)) = (SELECT sum(cityHash64(k, f)) FROM ref WHERE f != toFixedString('a', 16))
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE f != toFixedString('a', 16) SETTINGS log_comment = '05331:f';
+-- Not read as dictionary indexes: values of at most 8 bytes, Nullable, Array, a dictionary larger than half the rows.
+SELECT 'N', count(), sum(cityHash64(k, n)) = (SELECT sum(cityHash64(k, n)) FROM ref WHERE n != 1)
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE n != 1 SETTINGS log_comment = '05331:n';
+SELECT 'NS', count(), sum(cityHash64(k, ns)) = (SELECT sum(cityHash64(k, ns)) FROM ref WHERE ns != '')
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE ns != '' SETTINGS log_comment = '05331:ns';
+SELECT 'A', count(), sum(cityHash64(k, a)) = (SELECT sum(cityHash64(k, a)) FROM ref WHERE has(a, 'a'))
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE has(a, 'a') SETTINGS log_comment = '05331:a';
+SELECT 'H', count(), sum(cityHash64(k, h)) = (SELECT sum(cityHash64(k, h)) FROM ref WHERE h != '1')
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE h != '1' SETTINGS log_comment = '05331:h';
 
 -- Throwing values are only in rows that the first step rejects. The references do not evaluate the
 -- throwing expressions: d = '2020-01-01' + k % 10 outside the rows with k % 14 = 7.
