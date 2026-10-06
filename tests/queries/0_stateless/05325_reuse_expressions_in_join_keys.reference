@@ -122,3 +122,14 @@
 1
 857	10186658685546113365
 857	10186658685546113365
+1
+28. not reused: the subquery computes arithmetic with different settings
+2
+2
+2
+2	1
+2	1
+29. not reused: a function that must run once is shared with an ASOF inequality
+1
+1000	5369050530052646273
+1000	5369050530052646273

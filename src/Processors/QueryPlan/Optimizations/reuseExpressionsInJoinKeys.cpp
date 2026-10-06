@@ -471,6 +471,28 @@ void collectMatches(JoinSide & side, const Node * node, std::vector<Match> & mat
         collectMatches(side, child, matches, visited);
 }
 
+/// Whether `copyWithReplacements` rebuilds `node` for these matches. Sets `sensitive` when it rebuilds a function sensitive
+/// to how often it runs: another consumer of the original node, such as an ASOF inequality, would evaluate it once more.
+bool isRebuilt(const Node * node, const std::unordered_set<const Node *> & matches,
+    std::unordered_map<const Node *, bool> & rebuilt, bool & sensitive)
+{
+    if (matches.contains(node))
+        return true;
+    if (node->type == ActionType::ARRAY_JOIN)
+        return false;
+    if (auto it = rebuilt.find(node); it != rebuilt.end())
+        return it->second;
+
+    checkStackSize();
+    bool result = false;
+    for (const auto * child : node->children)
+        result = isRebuilt(child, matches, rebuilt, sensitive) || result;
+    if (result && !allNodeFunctions(*node, isInsensitiveToEvaluationCount))
+        sensitive = true;
+    rebuilt.emplace(node, result);
+    return result;
+}
+
 [[maybe_unused]] bool hasInputsInHeaderOrder(const JoinStepLogical & join_step)
 {
     const auto & inputs = join_step.getActionsDAG().getInputs();
@@ -506,6 +528,15 @@ std::vector<KeyOperand> planKeyOperands(JoinSide & side, const JoinOperator & jo
         std::unordered_set<const Node *> visited;
         collectMatches(side, operand_node, operand.matches, visited);
         if (operand.matches.empty())
+            continue;
+
+        std::unordered_set<const Node *> match_nodes;
+        for (const auto & match : operand.matches)
+            match_nodes.insert(match.node);
+        std::unordered_map<const Node *, bool> rebuilt;
+        bool sensitive = false;
+        isRebuilt(operand_node, match_nodes, rebuilt, sensitive);
+        if (sensitive)
             continue;
 
         auto new_planned = planned;

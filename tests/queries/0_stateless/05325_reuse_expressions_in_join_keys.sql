@@ -27,6 +27,8 @@ DROP TABLE IF EXISTS rg2;
 DROP TABLE IF EXISTS ln;
 DROP TABLE IF EXISTS rn;
 DROP TABLE IF EXISTS lm;
+DROP TABLE IF EXISTS ldt;
+DROP TABLE IF EXISTS rdt;
 
 CREATE TABLE l (id UInt64, k UInt64, s String, d DateTime64(6, 'UTC'), j JSON) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE r (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
@@ -51,6 +53,10 @@ CREATE TABLE rg2 (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO rg2 VALUES (25), (37), (38);
 CREATE TABLE lm (id UInt64, s String) ENGINE = Memory;
 INSERT INTO lm VALUES (1, 'abc'), (2, '5'), (3, '7');
+CREATE TABLE ldt (id UInt64, dd Date) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ldt VALUES (1, '2106-02-07'), (2, '2026-01-01');
+CREATE TABLE rdt (t DateTime) ENGINE = MergeTree ORDER BY t;
+INSERT INTO rdt VALUES (4294967295), ('2026-01-01 23:59:59');
 
 CREATE TABLE ln (id UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ln SELECT number, if(number % 5 = 0, NULL, number % 7) FROM numbers(100);
@@ -366,6 +372,34 @@ SELECT count(), sum(cityHash64(*)) FROM (SELECT l.id, r.id FROM l JOIN r
 SELECT count(), sum(cityHash64(*)) FROM (SELECT l.id, r.id FROM l JOIN r
     ON toString(rand(toString(l.k)) % 1) = r.v AND toString(rand(toString(l.k)) % 1) = toString(r.id) WHERE toString(l.k) != '3')
     SETTINGS query_plan_merge_expressions = 0;
+SELECT countIf(explain ILIKE '%FUNCTION concat(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT l.id, r.id FROM l JOIN r ON concat(toString(l.k), '_') = r.v AND concat(toString(l.k), '_') = toString(r.id)
+    WHERE toString(l.k) != '3');
+
+SELECT '28. not reused: the subquery computes arithmetic with different settings';
+SELECT countIf(explain ILIKE '%FUNCTION multiply(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.y, r.id FROM (SELECT id, k, toDecimal32(k, 0) * 10 AS y FROM l SETTINGS decimal_check_overflow = 0) AS a
+    JOIN r ON toString(toDecimal32(a.k, 0) * 10) = r.v);
+SELECT countIf(explain ILIKE '%FUNCTION sqr(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.y, r.id FROM (SELECT id, k, sqr(toDecimal32(k, 0)) AS y FROM l SETTINGS decimal_check_overflow = 0) AS a
+    JOIN r ON toString(sqr(toDecimal32(a.k, 0))) = r.v);
+SELECT countIf(explain ILIKE '%FUNCTION plus(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.t, rdt.t FROM (SELECT id, dd, dd + toTime('23:59:59') AS t FROM ldt SETTINGS date_time_overflow_behavior = 'saturate') AS a
+    JOIN rdt ON a.dd + toTime('23:59:59') = rdt.t) SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT a.id, a.t = rdt.t FROM (SELECT id, dd, dd + toTime('23:59:59') AS t FROM ldt SETTINGS date_time_overflow_behavior = 'saturate') AS a
+    JOIN rdt ON a.dd + toTime('23:59:59') = rdt.t ORDER BY a.id SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT a.id, a.t = rdt.t FROM (SELECT id, dd, dd + toTime('23:59:59') AS t FROM ldt SETTINGS date_time_overflow_behavior = 'saturate') AS a
+    JOIN rdt ON a.dd + toTime('23:59:59') = rdt.t ORDER BY a.id SETTINGS date_time_overflow_behavior = 'ignore', query_plan_merge_expressions = 0;
+
+SELECT '29. not reused: a function that must run once is shared with an ASOF inequality';
+SELECT countIf(explain ILIKE '%FUNCTION rand(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.ks, r.id FROM (SELECT id, k, toString(k) AS ks FROM l) AS a
+    ASOF JOIN r ON toString(rand(toString(a.k)) % 1) = r.v AND a.id + rand(toString(a.k)) % 1 >= r.id);
+SELECT count(), sum(cityHash64(*)) FROM (SELECT a.id, a.ks, r.id FROM (SELECT id, k, toString(k) AS ks FROM l) AS a
+    ASOF JOIN r ON toString(rand(toString(a.k)) % 1) = r.v AND a.id + rand(toString(a.k)) % 1 >= r.id);
+SELECT count(), sum(cityHash64(*)) FROM (SELECT a.id, a.ks, r.id FROM (SELECT id, k, toString(k) AS ks FROM l) AS a
+    ASOF JOIN r ON toString(rand(toString(a.k)) % 1) = r.v AND a.id + rand(toString(a.k)) % 1 >= r.id)
+    SETTINGS query_plan_merge_expressions = 0;
 
 DROP TABLE l;
 DROP TABLE r;
@@ -375,3 +409,5 @@ DROP TABLE rg2;
 DROP TABLE ln;
 DROP TABLE rn;
 DROP TABLE lm;
+DROP TABLE ldt;
+DROP TABLE rdt;
