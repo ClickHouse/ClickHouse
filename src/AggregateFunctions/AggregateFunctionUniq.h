@@ -645,8 +645,7 @@ public:
     }
 
 private:
-    /// A segment of rows reaching a set larger than L2 is hashed and prefetched in chunks; other segments
-    /// keep the per-row loop, which is faster while the sets stay in the cache.
+    /// Prefetching pays only for sets larger than L2; the per-row loop is faster while the sets stay in the cache.
     template <bool places_can_be_null>
     void addBatchExact(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const
