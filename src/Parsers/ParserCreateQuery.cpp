@@ -24,6 +24,7 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
+#include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Core/UUID.h>
@@ -130,7 +131,21 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserFunction().parse(pos, node, expected);
+    /// Keep the name as written: the function parser can normalize the names of special functions, e.g. `OVERLAY` to `overlay`,
+    /// but it is the name of an engine here, like `Overlay`.
+    ASTPtr name;
+    auto begin = pos;
+    if (!ParserIdentifier().parse(pos, name, expected))
+        return false;
+    pos = begin;
+
+    if (!ParserFunction().parse(pos, node, expected))
+        return false;
+
+    String written_name = getIdentifierName(name);
+    if (auto * function = node->as<ASTFunction>(); function && Poco::toLower(function->name) == Poco::toLower(written_name))
+        function->name = std::move(written_name);
+    return true;
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -3751,6 +3766,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 **Example**
 

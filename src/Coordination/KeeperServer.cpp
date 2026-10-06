@@ -787,6 +787,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     /// digest checking disabled, which orphan removal requires, an entry referencing a removed path
     /// would silently resolve differently instead of failing.
     ///
+    /// A successful check also persists the repaired snapshot, so Raft can only serve the repaired
+    /// tree and a restart no longer needs orphan removal enabled.
     /// This must stay between `setLogStore` above and `launchRaftServer` below: throwing here is a
     /// clean startup failure, whereas failing later inside `KeeperStateMachine::preprocess` would
     /// `abort()` the process.

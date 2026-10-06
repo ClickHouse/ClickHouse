@@ -1,6 +1,5 @@
 SET max_threads = 1;
 SET max_block_size = 1024;
-SET max_memory_usage = 536870912;
 SET max_bytes_before_external_distinct = 33554432;
 SET max_bytes_ratio_before_external_distinct = 0;
 SET prefer_external_sort_block_bytes = 1048576;
@@ -15,7 +14,7 @@ FROM
     SELECT DISTINCT toFixedString(toString(number), 1024) AS k FROM numbers(65536)
     ORDER BY toUInt64(k) DESC LIMIT 1000
 )
-SETTINGS log_comment = '05242_external_distinct_limit_remerge/small_limit';
+SETTINGS log_comment = '05242_external_distinct_limit_remerge/small_limit', max_memory_usage = 536870912;
 
 -- The hint includes the offset and applies after duplicates across spill runs have been removed.
 SELECT count(), min(toUInt64(k)), max(toUInt64(k)),
@@ -25,7 +24,7 @@ FROM
     SELECT DISTINCT toFixedString(toString(number % 65536), 512) AS k FROM numbers(131072)
     ORDER BY toUInt64(k) DESC LIMIT 4096 OFFSET 1024
 )
-SETTINGS log_comment = '05242_external_distinct_limit_remerge/offset';
+SETTINGS log_comment = '05242_external_distinct_limit_remerge/offset', max_memory_usage = 536870912;
 
 -- A limit covering most surviving rows leaves too little reduction for an intermediate remerge.
 SELECT count(), min(toUInt64(k)), max(toUInt64(k)),
@@ -35,7 +34,7 @@ FROM
     SELECT DISTINCT toFixedString(toString(number), 512) AS k FROM numbers(65536)
     ORDER BY toUInt64(k) DESC LIMIT 60000
 )
-SETTINGS log_comment = '05242_external_distinct_limit_remerge/large_limit';
+SETTINGS log_comment = '05242_external_distinct_limit_remerge/large_limit', max_memory_usage = 536870912;
 
 -- Without a limit hint, order restoration keeps every distinct row.
 SELECT count(), min(toUInt64(k)), max(toUInt64(k)),
@@ -45,7 +44,7 @@ FROM
     SELECT DISTINCT toFixedString(toString(number), 512) AS k FROM numbers(65536)
     ORDER BY toUInt64(k) DESC
 )
-SETTINGS log_comment = '05242_external_distinct_limit_remerge/unbounded';
+SETTINGS log_comment = '05242_external_distinct_limit_remerge/unbounded', max_memory_usage = 536870912;
 
 -- Every case must write a temporary run and merge it back into the distinct result.
 SYSTEM FLUSH LOGS query_log;

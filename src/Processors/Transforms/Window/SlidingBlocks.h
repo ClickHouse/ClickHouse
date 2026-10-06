@@ -3,7 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/Window/WindowTransformParams.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 
 #include <deque>
 #include <cstdint>
@@ -20,6 +20,13 @@ struct RowNumber
     auto operator<=>(const RowNumber &) const noexcept = default;
 };
 
+struct RowPoint
+{
+    RowNumber location;
+    int64_t row_index_in_partition = 0;
+    int64_t peer_group_index_in_partition = 0;
+};
+
 struct SlidingBlock
 {
     /// Inputs
@@ -29,6 +36,7 @@ struct SlidingBlock
     /// Helper data
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
+    const SlidingIndex index;
 
     /// Output
     mutable MutableColumns result_columns;
@@ -37,7 +45,7 @@ struct SlidingBlock
 class SlidingBlocks
 {
 public:
-    SlidingBlock & add(Chunk chunk, const WindowTransformParams & params);
+    SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
     const SlidingBlock & blockAt(int64_t block_number) const;
     void pop();
 

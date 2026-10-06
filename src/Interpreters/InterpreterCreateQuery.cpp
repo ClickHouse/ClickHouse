@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
@@ -313,7 +314,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
                 --db_count;
         }
 
@@ -632,7 +633,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -643,14 +644,21 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
-        setVersionToAggregateFunctions(column_type, true);
-    else
+    if (pin_current_state_version)
         /// Spell the state version the column is going to be written with out in the type, so that
         /// it gets into the table metadata and the data stays readable when a newer server changes
         /// the default: an unversioned name in stored metadata denotes the layout from before the
-        /// function became versioned (the ATTACH branch above pins it to 0).
+        /// function became versioned (the branch below pins it to 0).
         pinCurrentStateVersionToAggregateFunctions(column_type);
+    else
+        /// The query replays formatted metadata rather than a user-written definition: an `ATTACH`
+        /// reads the stored `.sql` file, a DDL worker (`ON CLUSTER` / `Replicated` database -
+        /// including the initiator, which re-executes the entry it wrote to the log) replays a
+        /// query normalized on the initiator (so a version the initiator pinned is spelled out in
+        /// the type), and a restore replays the `CREATE` query saved in the backup. In all of these
+        /// an unversioned name denotes the layout from before the function became versioned, and
+        /// the data that goes with it is written in that layout - pin it to version 0.
+        setVersionToAggregateFunctions(column_type, true);
 
     if (col_decl.null_modifier)
     {
@@ -701,6 +709,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
+    /// The current aggregate-function state version is pinned into the type only for a definition
+    /// the user wrote. A normalized query already spells any pinned version out in the type name,
+    /// so in it (and in stored metadata, and in a backup) an unversioned name denotes the layout
+    /// from before the function became versioned and must stay version 0 - see `getColumnType`.
+    bool pin_current_state_version = mode == LoadingStrictnessLevel::CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup;
+
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -712,7 +728,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -978,7 +994,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// A lazily loaded source reports only its columns, so the indices, projections, constraints
+        /// and comment copied below would silently come out empty.
+        StoragePtr as_storage = resolveStorageProxyLoading(
+            DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
         /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
         /// target that describing the target requires.
@@ -1011,7 +1030,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, DeferredTable::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -2617,6 +2636,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
 
+        /// A table engine picks the comment up from the arguments the storage factory passes to it,
+        /// while a table function does not receive it at all, so apply it here: otherwise the comment
+        /// would be stored in the metadata but missing from `system.tables`.
+        if (create.comment)
+            res->setInMemoryMetadataComment(create.comment->as<ASTLiteral &>().value.safeGet<String>());
+
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
@@ -2653,7 +2678,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2665,7 +2690,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -3250,7 +3277,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular, getContext()));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3330,7 +3357,8 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     if (context->hasQueryContext())
         context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
-    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+    auto source = resolveStorageProxyLoading(
+        DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context));
 
     /// The view's SELECT was validated against the source before the view was published, so the source
     /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
@@ -3433,8 +3461,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
         /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
-        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
-        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        /// that here would buy nothing.
         ///
         /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
         /// is already committed and a unilateral drop would diverge this replica - which is why

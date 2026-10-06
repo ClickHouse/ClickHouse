@@ -32,6 +32,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1134,7 +1135,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 
@@ -2733,9 +2734,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     std::optional<UInt64> num_rows;
+    if (processing_stage == QueryProcessingStage::FetchColumns)
+        num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas]);
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas])))
+    if (num_rows)
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;

@@ -46,6 +46,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -555,6 +556,23 @@ public:
             return;
         }
 
+        /// Do not replace the state arguments of an analyzer-built `grouping` specialization:
+        /// `removeGroupingFunctionSpecializations` strips them from the query sent to the remote
+        /// server only while they are constants, and the remote server rebuilds them itself.
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (size_t num_state_arguments = getGroupingFunctionSpecializationStateArgumentsCount(*function_node))
+            {
+                const auto & arguments = function_node->getArguments().getNodes();
+                for (size_t i = arguments.size() - num_state_arguments; i < arguments.size(); ++i)
+                    grouping_state_arguments.insert(arguments[i].get());
+            }
+            return;
+        }
+
+        if (grouping_state_arguments.contains(node.get()))
+            return;
+
         auto * constant_node = node->as<ConstantNode>();
 
         if (!constant_node)
@@ -599,6 +617,7 @@ public:
 private:
     Int64 max_size = 0;
     std::stack<QueryTreeNodePtr> in_second_argument;
+    std::unordered_set<const IQueryTreeNode *> grouping_state_arguments;
 };
 
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
