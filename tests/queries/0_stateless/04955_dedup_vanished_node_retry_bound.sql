@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 -- no-parallel: enables a server-global failpoint on the deduplication-conflict path.
 -- no-shared-merge-tree: StorageSharedMergeTree has its own sink.
 -- no-replicated-database: the table is created with an explicit replica name.
