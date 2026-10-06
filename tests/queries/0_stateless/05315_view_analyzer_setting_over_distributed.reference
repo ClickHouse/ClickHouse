@@ -1,0 +1,16 @@
+view analyzer 1, read analyzer 0
+2
+s1	2.5
+s2	7
+view analyzer 1, read analyzer 0, remote shard
+s1	2.5
+s2	7
+view analyzer 1, read analyzer 1
+s1	2.5
+s2	7
+view analyzer 0, read analyzer 1
+s1	2.5
+s2	7
+view analyzer 0, read analyzer 0
+s1	2.5
+s2	7

@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-old-analyzer
 
 -- The fixed-width key fast path: every encodable key type joined against the cross-join oracle
 -- (comma join with the conditions in WHERE; `cross_to_inner_join_rewrite = 0` keeps it out of

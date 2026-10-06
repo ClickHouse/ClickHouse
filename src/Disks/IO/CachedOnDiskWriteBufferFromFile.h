@@ -82,8 +82,6 @@ private:
 
     size_t expected_write_offset = 0;
 
-    FileCacheReserveAhead reserve_ahead;
-
     bool finalized = false;
 };
 

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
@@ -25,12 +24,10 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
-#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -81,7 +78,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperListRecursive;
-    extern const Event ZooKeeperListWithOptions;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -592,52 +588,43 @@ void ZooKeeper::connect(
     size_t num_tries = args.num_connection_retries + 1;
 
     bool connected = false;
+    bool dns_error = false;
 
-    /// The nodes are resolved before every try, not once: a failed connection attempt below drops the
-    /// host from the DNS cache, so the next try resolves it again and picks up an address it has moved
-    /// to (a restarted container or pod), while the hosts that did not fail are taken from the cache.
-    /// A node that cannot be resolved on a later try keeps the address of the previous one.
-    auto resolve_nodes = [&]
+    size_t resolved_count = 0;
+    for (const auto & node : nodes)
     {
-        bool dns_error = false;
-        for (const auto & node : nodes)
+        try
         {
-            try
-            {
-                /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
-                /// with the rest of the server through the DNS cache.
-                const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
-                LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
-                node.address = host_socket_addr;
-            }
-            catch (const DB::NetException & e)
-            {
-                /// Either DNS is not available now, or there is no such host name
-                dns_error = true;
-                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
-            }
-            catch (const DB::Exception & e)
-            {
-                /// Most likely it's misconfiguration and a malformed host and port was specified
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
-            }
+            const Poco::Net::SocketAddress host_socket_addr{node.host};
+            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
+            node.address = host_socket_addr;
+            ++resolved_count;
         }
+        catch (const Poco::Net::HostNotFoundException & e)
+        {
+            /// Most likely it's misconfiguration and wrong hostname was specified
+            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+        }
+        catch (const Poco::Net::DNSException & e)
+        {
+            /// Most likely DNS is not available now
+            dns_error = true;
+            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+        }
+    }
 
-        if (std::none_of(nodes.begin(), nodes.end(), [](const zkutil::ShuffleHost & node) { return node.address.has_value(); }))
-        {
-            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-            if (dns_error)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-        }
-    };
+    if (resolved_count == 0)
+    {
+        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+        if (dns_error)
+            throw zkutil::KeeperException::fromMessage(
+                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+    }
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        resolve_nodes();
-
         for (const auto & node : nodes)
         {
             try
@@ -713,11 +700,6 @@ void ZooKeeper::connect(
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
                 cancelWriteBuffer();
-
-                /// Remove this possibly stale entry from the DNS cache, so that the next try (and the next
-                /// connection) resolves this host again instead of retrying a dead address.
-                /// `node.host` is well formed here - otherwise `node.address` would not have been set.
-                DB::DNSResolver::instance().removeHostFromCache(DB::DNSResolver::splitHostAndPort(node.host).first);
             }
         }
 
@@ -1341,7 +1323,6 @@ void ZooKeeper::receiveEvent()
                 case OpNum::List:
                 case OpNum::FilteredList:
                 case OpNum::FilteredListWithStatsAndData:
-                case OpNum::ListWithOptions:
                     is_list_request = true;
                     break;
                 default:
@@ -2040,33 +2021,6 @@ void ZooKeeper::listRecursive(
     ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
-void ZooKeeper::listWithOptions(
-    const String & path,
-    const ListOptions & options,
-    ListWithOptionsCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
-{
-    options.validate();
-    if (options.recursive && watch)
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
-    if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions request type cannot be used because it is not supported by the server");
-
-    auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-    request->path = path;
-    request->options_version = requiredListOptionsVersion(options);
-    request->options = options;
-    request->has_watch = static_cast<bool>(watch);
-
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
-    RequestInfo request_info;
-    request_info.request = std::move(request);
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListWithOptionsResponse &>(response)); };
-    request_info.watch = std::move(watch);
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperListWithOptions);
-}
-
 void ZooKeeper::exists(
     const String & path,
     ExistsCallback callback,
@@ -2283,17 +2237,8 @@ void ZooKeeper::multi(
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
         for (const auto & subrequest : request.requests)
-        {
-            if (const auto * list_with_options = dynamic_cast<const ListWithOptionsRequest *>(subrequest.get()))
-            {
-                if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
-                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions in MultiRead is not supported by the server");
-                if (list_with_options->options.recursive && subrequest->watch_callback)
-                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
-            }
             if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
-        }
     }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);
@@ -2352,64 +2297,41 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
-bool ZooKeeper::resolveSystemLogs()
-{
-    while (true)
-    {
-        auto state = system_logs_state.load();
-        if (state == SystemLogsState::Resolved)
-            return true;
-        if (state == SystemLogsState::Unresolved && system_logs_state.compare_exchange_strong(state, SystemLogsState::InProgress))
-            break;
-        system_logs_state.wait(SystemLogsState::InProgress);
-    }
-
-    auto set_state = [&](SystemLogsState state)
-    {
-        system_logs_state = state;
-        system_logs_state.notify_all();
-    };
-
-    try
-    {
-        if (const auto global_context = Context::getGlobalContextInstance())
-        {
-            if (!global_context->hasSystemLogs())
-            {
-                set_state(SystemLogsState::Unresolved);
-                return false;
-            }
-
-            if (!zk_log)
-                zk_log = global_context->getZooKeeperLog();
-            if (!aggregated_zookeeper_log)
-                aggregated_zookeeper_log = global_context->getAggregatedZooKeeperLog();
-        }
-    }
-    catch (...)
-    {
-        set_state(SystemLogsState::Unresolved);
-        throw;
-    }
-
-    set_state(SystemLogsState::Resolved);
-    return true;
-}
-
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
+    {
+        return maybe_zk_log;
+    }
 
-    return zk_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
+        {
+            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
+            return maybe_zk_log;
+        }
+    }
+
+    return nullptr;
 }
-
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
+    {
+        return maybe_aggregated_zookeeper_log;
+    }
 
-    return aggregated_zookeeper_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
+        {
+            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
+            return maybe_aggregated_zookeeper_log;
+        }
+    }
+
+    return nullptr;
 }
 
 #ifdef ZOOKEEPER_LOG

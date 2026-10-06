@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Basic IEJoin scenarios: range conditions with extra inequalities, joins inside CTEs,
 -- range bucketing, and an IEJoin at the end of a chain of joins.
 

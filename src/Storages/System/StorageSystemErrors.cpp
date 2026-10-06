@@ -6,7 +6,6 @@
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
-#include <Common/StackTrace.h>
 #include <Core/Settings.h>
 
 
@@ -27,7 +26,7 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_time",          std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
         { "last_error_message",       std::make_shared<DataTypeString>(), "Message for the last error."},
         { "last_error_format_string", std::make_shared<DataTypeString>(), "Format string for the last error."},
-        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
         { "remote",                   std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
         { "query_id",                 std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
     };
@@ -51,7 +50,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
                 Array trace_array;
                 trace_array.reserve(error.trace.size());
                 for (size_t i = 0; i < error.trace.size(); ++i)
-                    trace_array.emplace_back(StackTrace::resolveAddressForStorage(error.trace[i]));
+                    trace_array.emplace_back(reinterpret_cast<intptr_t>(error.trace[i]));
 
                 res_columns[col_num++]->insert(trace_array);
             }
@@ -60,17 +59,16 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         }
     };
 
-    for (const auto code : ErrorCodes::getCodes())
+    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
-        std::string_view name = ErrorCodes::getName(code);
+        const auto & error = ErrorCodes::values[i].get();
+        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
 
-        /// Custom error codes have no name, and are not shown here.
         if (name.empty())
             continue;
 
-        const auto & error = ErrorCodes::values[code].get();
-        add_row(name, code, error.local, /* remote= */ false);
-        add_row(name, code, error.remote, /* remote= */ true);
+        add_row(name, i, error.local,  /* remote= */ false);
+        add_row(name, i, error.remote, /* remote= */ true);
     }
 }
 

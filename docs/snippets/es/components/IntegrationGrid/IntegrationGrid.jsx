@@ -303,7 +303,7 @@ export const IntegrationGrid = () => {
           }, 8000)
 
           const response = await fetch(
-            "https://cms-new.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
+            "https://staging-cms.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
             {
               signal: controller.signal,
               headers: {
@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("La solicitud al CMS fue cancelada por timeout")
+              console.log("La solicitud al CMS fue cancelada por timeout, usando datos de respaldo")
             } else {
               console.error("Error al cargar las integraciones desde el CMS:", cmsErr.message)
             }
@@ -582,6 +582,7 @@ export const IntegrationGrid = () => {
           -webkit-backdrop-filter: blur(4px);
           border-radius: 0.75rem;
           opacity: 0;
+          transition: opacity 0.2s ease;
           pointer-events: none;
           z-index: 1;
         }
