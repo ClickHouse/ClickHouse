@@ -8,6 +8,7 @@ namespace DB
 class Block;
 class NamesAndTypesList;
 class ColumnsDescription;
+struct NameAndTypePair;
 
 class ActionsDAG;
 
@@ -22,4 +23,8 @@ ActionsDAG addMissingDefaults(
     const Block & header, const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns, ContextPtr context, bool null_as_default = false,
     bool share_nested_offsets = true);
+
+/// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
+/// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
+bool isSubcolumnOfDefaultValue(const NameAndTypePair & column);
 }
