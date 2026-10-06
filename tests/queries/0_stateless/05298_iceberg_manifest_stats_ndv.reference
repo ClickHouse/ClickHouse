@@ -28,12 +28,12 @@ Join: f[100000] ⋈ d[10]
 ResultRows: 10
 --- T8: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8
 as expected
---- T9: rule 4, String: half the rows
+--- T9: rule 4, String: 10% of the rows
 Join: f[100000] ⋈ d[10]
-ResultRows: 20
---- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 30% of the rows
+ResultRows: 100
+--- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 10% of the rows
 Join: t[2000] ⋈ d[10]
-ResultRows: 33
+ResultRows: 100
 --- T11: k Int32, then Int64, then renamed to kk: range 1000
 Join: t[2000] ⋈ d[10]
 ResultRows: 20
