@@ -374,7 +374,7 @@ namespace
 
 String makeRowBlocksPartName(const String & file_part_name)
 {
-    /// A file part name has exactly one NUL (see makeFilePartName), so this can't collide with one.
+    /// Bucket keys of a table never end with this suffix, so the two entries of a file cannot collide.
     String part_name = file_part_name;
     part_name.push_back('\0');
     part_name.append("row_blocks");

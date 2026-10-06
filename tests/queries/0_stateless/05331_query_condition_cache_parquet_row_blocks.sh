@@ -24,16 +24,18 @@ function run()
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM $table WHERE $condition SETTINGS use_query_condition_cache = 0"
 }
 
-# The second run is a cache hit and evaluates PREWHERE on far fewer rows than the first one.
+# Rows [100000 * i, 100000 * i + 100) lie each in one 8192-row block and row 1000000 in the last 577-row one: 10 * 8192 + 577 = 82497.
 function check_second_run()
 {
     local tag=$1
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} --query "
         SELECT
-            maxIf(ProfileEvents['QueryConditionCacheHits'], endsWith(query_id, '_2')) > 0,
-            maxIf(ProfileEvents['ParquetRowsFilterExpression'], endsWith(query_id, '_2')) * 4
-                < maxIf(ProfileEvents['ParquetRowsFilterExpression'], endsWith(query_id, '_1'))
+            maxIf(ProfileEvents['QueryConditionCacheMisses'], endsWith(query_id, '_1')),
+            maxIf(ProfileEvents['QueryConditionCacheHits'], endsWith(query_id, '_1')),
+            maxIf(ProfileEvents['QueryConditionCacheMisses'], endsWith(query_id, '_2')),
+            maxIf(ProfileEvents['QueryConditionCacheHits'], endsWith(query_id, '_2')),
+            maxIf(ProfileEvents['ParquetRowsFilterExpression'], endsWith(query_id, '_2'))
         FROM system.query_log
         WHERE current_database = currentDatabase() AND type = 'QueryFinish'
             AND startsWith(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}_')"
