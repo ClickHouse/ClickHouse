@@ -4,8 +4,8 @@
 
     <fill_query>
         INSERT INTO reuse_join_keys_events SELECT 'e1', number % 50000,
-            concat('{"k1":"v', toString(number % 20), '","k2":"', toString(number % 20000), '"',
-                arrayStringConcat(arrayMap(i -> concat(',"f', toString(i), '":"', repeat('x', 20), toString(number % 97), '"'), range(10))), '}'),
+            concat('{{"k1":"v', toString(number % 20), '","k2":"', toString(number % 20000), '"',
+                arrayStringConcat(arrayMap(i -> concat(',"f', toString(i), '":"', repeat('x', 20), toString(number % 97), '"'), range(10))), '}}'),
             toDateTime64('2026-01-01 00:00:00', 3) + toIntervalSecond(number % 1000000)
         FROM numbers(100000)
     </fill_query>
