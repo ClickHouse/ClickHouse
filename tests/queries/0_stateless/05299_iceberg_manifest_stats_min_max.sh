@@ -58,6 +58,8 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 
+# `ie_join` sweeps on two inequality conditions and checks the rest after the join, and it picks the two most selective
+# by the columns' min/max: the one decision where the manifest min/max visibly change the plan, without reading logs.
 echo '--- T1: ie_join keys chosen by the min/max from the manifests'
 echo 'Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${IE_JOIN} --query "
