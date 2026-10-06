@@ -213,7 +213,7 @@ DROP TABLE t_self_alias_same_name;
 DROP TABLE IF EXISTS t_own_definition;
 CREATE TABLE t_own_definition (a Int64, c2 Int64 DEFAULT (a + 1 AS b)) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_own_definition RENAME COLUMN a TO b;
-INSERT INTO t_own_definition (b) VALUES (5);
+INSERT INTO t_own_definition (b) SELECT 5;
 SELECT 'own definition', c2 FROM t_own_definition;
 SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_own_definition' AND name = 'c2';
 DROP TABLE t_own_definition;
