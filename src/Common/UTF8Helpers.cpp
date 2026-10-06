@@ -135,7 +135,9 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
         /// Quickly skip regular ASCII
         if constexpr (std::endian::native == std::endian::little)
         {
-            if (!is_escape_sequence)
+            /// At a byte that is not printable ASCII, e.g. every byte of a multi-byte character, the blocks
+            /// cannot skip anything, and the mask is expensive to build on ARM, which has no `movemask`.
+            if (!is_escape_sequence && isPrintableASCII(data[i]))
             {
                 /// Advance by whole blocks until one has a byte to stop at, so that the next load does not
                 /// wait for the position of that byte.

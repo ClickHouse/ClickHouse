@@ -202,6 +202,20 @@ public:
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
+                    else if (!constant_node.hasSourceExpression())
+                    {
+                        /** The constant did not come from the query text: a query tree pass built it the
+                          * same way on this server as on the initiator (for example the index mask that
+                          * `GroupingFunctionsResolvePass` adds as a trailing argument of
+                          * `__groupingOrdinary`). There is no initiator naming to simulate, so name it
+                          * exactly as the initiator does, or a header the initiator expects from this shard
+                          * would not match. A constant that does come from the query text is unaffected:
+                          * the initiator writes the ones that need a cast as `_CAST(...)`, which arrive here
+                          * with a source expression, and the rest need no cast, so their name is the same
+                          * either way.
+                          */
+                        result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    }
                     else
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
@@ -1014,6 +1028,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+
+        if (!constant_node.hasSourceExpression())
+        {
+            /** The constant did not come from the query text: a query tree pass built it the same way
+              * on this server as on the initiator (for example the index mask that
+              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
+              * There is no initiator naming to simulate, so name it exactly as the initiator does,
+              * or a header the initiator expects from this shard would not match. A constant that
+              * does come from the query text is unaffected: the initiator writes the ones that need
+              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
+              * need no cast, so their name is the same either way.
+              */
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
@@ -1076,7 +1105,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), CompileExpressions::yes);
+    /// A lambda's `ExpressionActions` is built here, while planning, so its DAG is the very one that
+    /// gets serialized when this plan is shipped to another node. A JIT-compiled node cannot be
+    /// serialized: its `getName` is a dump of the compiled expression, not a name `FunctionFactory`
+    /// knows, and the receiving node fails with `UNKNOWN_FUNCTION and(UInt8, less(UInt64, 1000 :
+    /// UInt16))`. Leave the body uncompiled in a plan that may be shipped - the receiving node compiles
+    /// it itself when it rebuilds the lambda from the serialized plan.
+    auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
+    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);

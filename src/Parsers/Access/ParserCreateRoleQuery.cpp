@@ -8,8 +8,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -175,14 +173,12 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateRoleQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementRole(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROLE",
+    documentation["CREATE ROLE"] =
     {
         .description = R"DOCS_MD(
 Creates new [roles](/concepts/features/security/access-rights#role-management). Role is a set of [privileges](/reference/statements/grant#granting-privilege-syntax). A [user](/reference/statements/create/user) assigned a role gets all the privileges of this role.
@@ -236,9 +232,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 )",
         .parent = "CREATE",
         .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
-    });
+    };
 
-    factory.registerStatement("ALTER ROLE",
+    documentation["ALTER ROLE"] =
     {
         .description = R"DOCS_MD(
 Changes roles.
@@ -270,7 +266,9 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
-    });
+    };
+
+    return documentation;
 }
 
 }

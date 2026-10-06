@@ -18,6 +18,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -416,7 +417,7 @@ void UnityV2Catalog::createTable(
     }
 }
 
-void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
 }
@@ -620,7 +621,7 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
     if (result.isDefaultReadableTable() && result.requiresCredentials())
     {
         const auto storage_type = parseStorageTypeFromLocation(result.getLocation());
-        if (auto credentials = getDeltaCredentials(object->get("table_id"), storage_type))
+        if (auto credentials = getDeltaCredentials(object->get("table_id"), storage_type, "READ"))
             result.setStorageCredentials(credentials);
     }
 
@@ -628,16 +629,15 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
 }
 
 std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
-    const std::string & table_id, StorageType storage_type) const
+    const std::string & table_id, StorageType storage_type, const std::string & operation) const
 {
-    LOG_DEBUG(log, "Getting credentials for table {}", table_id);
+    LOG_DEBUG(log, "Getting {} credentials for table {}", operation, table_id);
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return nullptr;
 
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
-    /// TODO: Change to READ_WRITE. (Be careful to not break any existing users with READ but not READ_WRITE permissions.)
-    request_body.set("operation", "READ");
+    request_body.set("operation", operation);
 
     auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
 
@@ -703,11 +703,28 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid]() -> std::shared_ptr<IStorageCredentials>
-    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
+    return getDeltaCredentialsCallback(*table_uuid, "READ");
+}
 
-        return getDeltaCredentials(unity_table_id, StorageType::S3);
+/// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (table_id.uuid == DB::UUIDHelpers::Nil)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
+            table_id.getNameForLogs());
+
+    return getDeltaCredentialsCallback(DB::toString(table_id.uuid), "READ_WRITE");
+}
+
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
+{
+    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
+
+        return getDeltaCredentials(unity_table_id, StorageType::S3, operation);
     };
 }
 

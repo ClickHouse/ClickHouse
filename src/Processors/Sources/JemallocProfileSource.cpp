@@ -493,6 +493,7 @@ Chunk JemallocProfileSource::generateCollapsed()
         ReadBufferFromFile in(filename);
         std::string line;
         std::vector<UInt64> current_stack;
+        bool has_stack = false;
         UInt64 sampling_interval = 0;
 
         while (!in.eof())
@@ -527,8 +528,9 @@ Chunk JemallocProfileSource::generateCollapsed()
             if (line[0] == '@')
             {
                 current_stack = parseJemallocStackAddresses(line);
+                has_stack = true;
             }
-            else if (!current_stack.empty() && line.contains(':'))
+            else if (has_stack && line.contains(':'))
             {
                 /// Each allocation record follows its `@` stack line in the jemalloc heap profile format:
                 ///
@@ -586,6 +588,9 @@ Chunk JemallocProfileSource::generateCollapsed()
                                 writeString(symbol, out);
                             }
                         }
+                        /// jemalloc writes a bare `@` when it could not unwind the stack.
+                        if (current_stack.empty())
+                            writeString("[unknown]", out);
                         out.finalize();
 
                         /// Aggregate metric for same stack
@@ -594,6 +599,7 @@ Chunk JemallocProfileSource::generateCollapsed()
                 }
 
                 current_stack.clear();
+                has_stack = false;
             }
         }
 

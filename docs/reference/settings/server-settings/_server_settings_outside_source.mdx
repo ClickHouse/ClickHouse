@@ -844,6 +844,7 @@ To write log messages additionally to syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -860,6 +861,7 @@ Keys for `<syslog>`:
 | `hostname` | The name of the host from which logs are send (optional).                                                                                                                                                                                                      |
 | `facility` | The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a "LOG_" prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.                                           |
 | `format`   | Log message format. Possible values: `bsd` and `syslog.`                                                                                                                                                                                                       |
+| `programname` | Program name used in syslog messages: the local syslog ident, or the `APP-NAME` for remote syslog with `format=syslog`. No effect with `format=bsd`. 1 to 48 printable ASCII characters without spaces. Default: the command name for local syslog, unset for remote syslog. |
 
 **Log formats**
 
@@ -1575,7 +1577,7 @@ The default server configuration file `config.xml` contains the following settin
 
 Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-The section is optional. If it is present, at least one of the following settings has to be specified:
+The section is optional. The default server configuration file `config.xml` contains this section with `merge_rotated_tables` enabled, so the `all_...` tables are created automatically on a default server: at the first flush of each log, or on startup if `prepare_system_log_tables_on_startup` is enabled; the `cluster` setting has to be configured explicitly. A table that already exists under one of the `all_...` names and was not created by this feature (for example, a hand-made table with data) is never replaced: it is left intact and a warning is written to the server log, and the union table is created at the next flush of the log once that table is dropped or renamed. The tables created by this feature are recognized by the marker sentence at the end of their comment: `It is safe to drop this table at any time: it will be recreated automatically.` If the section is present, at least one of the following settings has to be specified:
 
 | Setting                | Description                                                                                                                                     |
 |------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -1590,9 +1592,9 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
-<Warning>
-Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
-</Warning>
+<Note>
+A table under one of the `all_...` names is considered to be created by this feature, and may be replaced when its definition differs from the expected one, only if it selects from the `merge` or `clusterAllReplicas` table function and its comment contains the marker sentence above. Do not copy this sentence into the comments of your own tables.
+</Note>
 
 **Example**
 
