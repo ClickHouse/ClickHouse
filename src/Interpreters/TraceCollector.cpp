@@ -54,8 +54,11 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
         DemangleResult demangled;
         if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
         {
-            demangled = tryDemangle(symbol->name);
-            name = demangled ? std::string_view(demangled.get()) : std::string_view(symbol->name);
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+            {
+                demangled = tryDemangle(symbol_name);
+                name = demangled ? std::string_view(demangled.get()) : std::string_view(symbol_name);
+            }
         }
 #endif
 

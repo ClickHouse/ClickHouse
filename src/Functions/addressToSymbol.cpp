@@ -86,7 +86,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertData(symbol->name, strlen(symbol->name));
+            {
+                if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+                    result_column->insertData(symbol_name.data(), symbol_name.size());
+                else
+                    result_column->insertDefault();
+            }
             else
                 result_column->insertDefault();
         }
