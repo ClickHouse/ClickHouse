@@ -159,6 +159,7 @@ public:
     IColumn & getOrderingKeyColumn();
     ExponentialTimeDecayingCanonicalDirectValue getDirectValueAt(size_t n) const;
     ExponentialTimeDecayingCanonicalDirectValue getCanonicalValueAt(size_t n) const;
+    void setDirectMetadataAt(size_t n, const ExponentialTimeDecayingCanonicalDirectValue & direct);
     Float64 getUnitTimestampAt(size_t n) const;
     ExponentialTimeDecayingCanonicalDirectValue getPrintableValueAt(size_t n) const;
     Int8 getSignAt(size_t n) const;
