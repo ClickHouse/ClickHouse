@@ -1,0 +1,53 @@
+constants	1	2
+constants	2	2
+constants	3	2
+no aggregate	1
+no aggregate	2
+no aggregate	3
+nested	1	2
+nested	2	2
+nested	3	2
+non-constant	1	1
+non-constant	1	1
+non-constant	2	1
+non-constant	2	1
+non-constant	3	2
+one set	0	2
+one set	2	2
+one set	3	2
+with column	2	1
+with column	2	1
+with column	5	2
+with column	7	2
+aliases	1	2
+aliases	2	2
+aliases	3	2
+low cardinality	1	2
+low cardinality	2	2
+low cardinality	3	2
+array	1	2
+array	2	2
+array	3	2
+two tables	1	1
+two tables	2	1
+two tables	3	1
+same key	0	2
+same key	0	2
+same key	1	2
+subqueries	1	2
+subqueries	2	2
+subqueries	3	2
+same subquery	0	2
+same subquery	0	2
+same subquery	1	2
+not standard	0	2
+not standard	1	2
+not standard	2	2
+use nulls	1	2
+use nulls	2	2
+use nulls	3	2
+equal to one key	0	2
+equal to one key	1	2
+remote	1	4
+remote	2	4
+remote	3	4
