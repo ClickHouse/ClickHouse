@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # zookeeper: needs ReplicatedMergeTree
 # no-parallel: holds the server wide PAUSEABLE failpoint rmt_mutate_task_pause_in_prepare, which would also
 # pause a concurrent test's replicated mutation
