@@ -13,6 +13,8 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
 #include <Dictionaries/IDictionary.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
@@ -473,7 +475,9 @@ private:
     /// Read the named dictionary once (columns cid, vec), cache the matrix until the dictionary reloads.
     std::shared_ptr<const CentroidMatrix> getDictionaryMatrix(const String & dict_name) const
     {
-        auto dictionary = dict_helper.getDictionary(dict_name);
+        /// The name of a table with an IVF index stands for the dictionary with the centroids of the index.
+        const auto ivf_dictionary_name = tryGetVectorSimilarityIvfCentroidsDictionaryName(dict_name, dict_helper.getContext());
+        auto dictionary = dict_helper.getDictionary(ivf_dictionary_name.value_or(dict_name));
 
         /// The lock is held across the read-and-build, not just the lookup.
         std::lock_guard lock(cache_mutex);
@@ -481,8 +485,17 @@ private:
         if (cached_matrix && cached_dict.lock() == dictionary)
             return cached_matrix;
 
+        /// Centroids written in generations (e.g. by IVF indexes) record the expected size of their generation, which detects
+        /// a generation written only partially, e.g. if training failed midway.
+        const auto & structure = dictionary->getStructure();
+        const bool has_generations = structure.hasAttribute("generation") && structure.hasAttribute("generation_size");
+        Names columns{"cid", "vec"};
+        if (has_generations)
+            columns.insert(columns.end(), {"generation", "generation_size"});
+        MapWithMemoryTracking<UInt64, std::pair<UInt64, UInt64>> generations; /// generation -> (rows, expected rows)
+
         /// Full-read the dictionary (same mechanism the dictionary() table function uses).
-        QueryPipeline pipeline(dictionary->read(Names{"cid", "vec"}, /*max_block_size=*/65536, /*num_streams=*/1));
+        QueryPipeline pipeline(dictionary->read(columns, /*max_block_size=*/65536, /*num_streams=*/1));
         PullingPipelineExecutor executor(pipeline);
 
         VectorWithMemoryTracking<std::pair<UInt64, VectorWithMemoryTracking<Float32>>> centroids;
@@ -518,10 +531,29 @@ private:
                 size_t length = vec_off[row] - start;
                 centroids.emplace_back(cid_col->getUInt(row), VectorWithMemoryTracking<Float32>(&vec_vals[start], &vec_vals[start + length]));
             }
+
+            if (has_generations)
+            {
+                const auto & generation_col = block.getByName("generation").column;
+                const auto & generation_size_col = block.getByName("generation_size").column;
+                for (size_t row = 0; row < generation_col->size(); ++row)
+                {
+                    auto & [rows, expected_rows] = generations[generation_col->getUInt(row)];
+                    ++rows;
+                    expected_rows = generation_size_col->getUInt(row);
+                }
+            }
         }
+
+        for (const auto & [generation, counts] : generations)
+            if (counts.first != counts.second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "assignCentroid: dictionary {} has {} centroids of generation {}, expected {}, the centroids are incomplete",
+                    dict_name, counts.first, generation, counts.second);
 
         if (centroids.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} produced no centroids", dict_name);
+
 
         std::sort(centroids.begin(), centroids.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
 
@@ -564,8 +596,9 @@ REGISTER_FUNCTION(AssignCentroid)
     FunctionDocumentation::Description description =
         "Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant "
         "array of float arrays, where the id is the 0-based position in that array, or as the name of a "
-        "`Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`.";
-    FunctionDocumentation::Syntax syntax = "assignCentroid(vec, centroids | dict_name)";
+        "`Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`, or as the name of a table with an IVF "
+        "vector similarity index, whose centroids are then used.";
+    FunctionDocumentation::Syntax syntax = "assignCentroid(vec, centroids | dict_name | table_name)";
     FunctionDocumentation::Arguments arguments = {
         {"vec", "Vector to assign. Its dimension must match the dimension of the centroids. Widths other than "
                 "`Float32` are converted to `Float32`, which is what the scoring kernel uses.",
@@ -573,8 +606,9 @@ REGISTER_FUNCTION(AssignCentroid)
         {"centroids", "The centroids to score against, which must be constant. Given as an array of equally sized, "
                       "non-empty float arrays, the id then being the 0-based position in that array; or as the name of "
                       "a `Dictionary` with an attribute `cid` of an unsigned integer type that fits `UInt32` and an "
-                      "attribute `vec` of type `Array(Float32)`, the id then being `cid`. The dictionary is read once "
-                      "and cached until it reloads.",
+                      "attribute `vec` of type `Array(Float32)`, the id then being `cid`; or as the name of a table "
+                      "with an IVF vector similarity index, the id then being a cluster of the index. The dictionary is "
+                      "read once and cached until it reloads.",
          {"Array(Array(Float32))", "Array(Array(Float64))", "Array(Array(BFloat16))", "String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id.", {"UInt32"}};

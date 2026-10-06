@@ -11,12 +11,14 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
 
 namespace DB
@@ -37,6 +39,28 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
+
+    /// The table depends on the hidden objects of its IVF index, which also prevents dropping or renaming them on their own.
+    const auto * create = ast->as<ASTCreateQuery>();
+    if (create && create->uuid != UUIDHelpers::Nil && create->columns_list && create->columns_list->indices)
+    {
+        const StorageID table_id(table.database, table.table, create->uuid);
+        for (const auto & child : create->columns_list->indices->children)
+        {
+            const auto * index = child->as<ASTIndexDeclaration>();
+            const auto type = index ? index->getType() : nullptr;
+            if (!type || type->name != "vector_similarity" || !type->arguments || type->arguments->children.empty())
+                continue;
+            const auto * method = type->arguments->children[0]->as<ASTLiteral>();
+            if (!method || method->value != Field("ivf"))
+                continue;
+
+            for (const auto & inner_id : {getVectorSimilarityIvfCentroidsTableID(table_id, index->name),
+                                          getVectorSimilarityIvfCentroidsDictionaryID(table_id, index->name)})
+                data.dependencies.emplace(inner_id.getDatabaseName(), inner_id.getTableName());
+        }
+    }
+
     return data.dependencies;
 }
 

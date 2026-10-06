@@ -129,6 +129,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -1350,6 +1351,43 @@ void MergeTreeData::checkProperties(
     if (new_metadata.secondary_indices.hasType("vector_similarity") && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+
+    /// IVF indexes: the samples table is checked only at CREATE (old and new metadata are the same object then), since on
+    /// ATTACH it may not be loaded yet or may have been dropped later.
+    size_t num_ivf_indexes = 0;
+    for (const auto & index : new_metadata.secondary_indices)
+    {
+        if (!isVectorSimilarityIvfIndex(index))
+            continue;
+
+        /// The table is clustered by the cluster id of its IVF index, so there can be only one.
+        if (++num_ivf_indexes > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A table can have at most one IVF vector similarity index");
+
+        /// The hidden objects are created with the table, and existing rows have no cluster ids.
+        const bool is_create = (&new_metadata == &old_metadata);
+        if (!is_create && !attach && !old_metadata.secondary_indices.has(index.name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "IVF vector similarity index {} can only be declared in CREATE TABLE", backQuoteIfNeed(index.name));
+
+        checkVectorSimilarityIvfIndexForTable(
+            index,
+            new_primary_key,
+            /*check_samples_table=*/ !attach && is_create,
+            getStorageID().getDatabaseName(),
+            local_context ? local_context : getContext());
+    }
+
+    /// Likewise, the index can not be dropped from the table: its hidden objects would be left behind.
+    if (!attach && &new_metadata != &old_metadata)
+    {
+        for (const auto & index : old_metadata.secondary_indices)
+        {
+            if (isVectorSimilarityIvfIndex(index) && !new_metadata.secondary_indices.has(index.name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "IVF vector similarity index {} can not be dropped, drop the table instead", backQuoteIfNeed(index.name));
+        }
+    }
 
     /// TTL on a UNIQUE KEY table cannot be honored: TTL delete / recompression /
     /// GROUP BY are enforced during merges, and merges are disabled on UNIQUE KEY

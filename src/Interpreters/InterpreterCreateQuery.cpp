@@ -69,6 +69,8 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -128,6 +130,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_vector_ivf_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -960,6 +963,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                if (is_fresh_create && isVectorSimilarityIvfIndex(index_desc) && !settings[Setting::allow_experimental_vector_ivf_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The IVF vector similarity index is experimental. Enable the setting 'allow_experimental_vector_ivf_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -2188,6 +2194,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
     }
 
+    if (!create.attach && std::ranges::any_of(properties.indices, isVectorSimilarityIvfIndex))
+    {
+        /// These create the table under a temporary name and rename it, which skips creating the hidden objects of the index.
+        if (create.replace_table || create.isCreateQueryWithImmediateInsertSelect())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE, REPLACE and CREATE ... AS SELECT are not supported for tables with an IVF vector similarity index");
+
+        /// The hidden objects are created by internal DDL, supported in Atomic and Shared (Cloud) databases only.
+        if (create.isTemporary())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IVF vector similarity indexes are not supported for temporary tables");
+        const String database_engine = database ? database->getEngineName() : "";
+        if (database_engine != "Atomic" && database_engine != "Shared")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "IVF vector similarity indexes are only supported in Atomic and Shared databases, not in {}", database_engine);
+        const String table_engine = create.storage && create.storage->engine ? create.storage->engine->name : "";
+        if (table_engine.starts_with("Replicated"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IVF vector similarity indexes are not supported for {} tables", table_engine);
+    }
+
     if (create.replace_table
         || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
     {
@@ -2332,9 +2357,38 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     ddl_guard.reset();
     source_ddl_guard.reset();
 
+    if (!create.attach)
+        createInnerObjectsOfIndexes(create);
+
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
+}
+
+void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & create)
+{
+    if (create.isView() || create.is_dictionary)
+        return;
+
+    auto table = DatabaseCatalog::instance().tryGetTable({create.getDatabase(), create.getTable()}, getContext());
+    if (!dynamic_cast<const MergeTreeData *>(table.get()))
+        return;
+
+    const auto metadata = table->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    const StorageID table_id = table->getStorageID();
+    try
+    {
+        createVectorSimilarityIvfInnerObjects(table_id, table->getName(), *metadata, getContext());
+        scheduleVectorSimilarityIvfTraining(table_id, *metadata, getContext());
+    }
+    catch (...)
+    {
+        /// Fail-close: do not leave a table without the hidden objects of its indexes.
+        dropVectorSimilarityIvfInnerObjects(table_id, *metadata, getContext());
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext()->getGlobalContext(), getContext(), table_id,
+            /*sync=*/ true, /*ignore_sync_setting=*/ false, /*need_ddl_guard=*/ true);
+        throw;
+    }
 }
 
 namespace
