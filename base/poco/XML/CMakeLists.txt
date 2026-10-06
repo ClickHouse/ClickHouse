@@ -49,6 +49,7 @@ target_compile_options (_poco_xml
         -Wno-unreachable-code
         -Wno-unreachable-code-break
         -Wno-unreachable-code-fallthrough
+        -Wno-unreachable-code-return
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
