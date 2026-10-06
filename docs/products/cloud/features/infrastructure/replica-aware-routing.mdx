@@ -12,7 +12,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanF
 <BetaBadge/>
 <EnterprisePlanFeatureBadge feature="Replica-aware routing"/>
 
-Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/connect-to-clickhouse/protocols/http/index#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. The proxy maps each routing value to one replica. The mapping remains stable while the number of replicas remains unchanged; scaling the service can map the value to a different replica.
 
