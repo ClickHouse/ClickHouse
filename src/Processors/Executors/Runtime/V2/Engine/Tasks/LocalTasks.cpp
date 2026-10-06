@@ -130,7 +130,7 @@ UInt32 LocalTasks::grab(std::span<Task> out)
     UInt32 grab_begin = tail;
     UInt32 grab_end = tail + count;
 
-    /// Lower the range end: between the head read above and the claim, pop may have taken slots
+    /// Lower the range end: between the head read above and the claim, pop may have taken slots.
     const UInt32 head_now = head.load();
     if (signedDifference(grab_end, head_now) > 0)
     {
@@ -138,9 +138,11 @@ UInt32 LocalTasks::grab(std::span<Task> out)
         bounds.store(packBounds({grab_begin, grab_end}));
     }
 
+    /// Steal the batch.
     for (UInt32 index = grab_begin; index != grab_end; ++index)
         out[index - grab_begin] = getSlot(buffer, index);
 
+    /// Commit steal by advancing (tail, taken) pair.
     bounds.store(packBounds({grab_end, grab_end}));
     return grab_end - grab_begin;
 }
