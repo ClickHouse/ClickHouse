@@ -161,6 +161,11 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// grouping by them yields contiguous groups.
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
 
+/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
+/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
+/// and `Object` are only known at run time and may hold such a value.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
+
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
   */
