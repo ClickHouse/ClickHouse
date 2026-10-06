@@ -10,6 +10,9 @@ DROP TABLE IF EXISTS fsmj_order_a;
 DROP TABLE IF EXISTS fsmj_order_b;
 DROP TABLE IF EXISTS fsmj_order_c;
 
+-- Disable force_primary_key_reverse_order: the row an `ANY` join picks among duplicate keys follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE fsmj_order_a (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE fsmj_order_b (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE fsmj_order_c (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
