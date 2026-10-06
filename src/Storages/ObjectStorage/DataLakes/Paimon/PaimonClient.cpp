@@ -346,6 +346,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 
 bool PaimonTableClient::hasDeletionVectors(const String & index_manifest_path)
 {
+    Paimon::checkPathIsRelativeToTable(index_manifest_path, "index manifest");
     auto context = getContext();
     RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / index_manifest_path);
     auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
