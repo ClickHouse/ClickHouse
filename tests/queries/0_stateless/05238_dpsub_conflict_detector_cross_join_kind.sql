@@ -1,12 +1,11 @@
--- A join with no condition at all is a cross product: the two sides are joined on nothing, so the
--- query graph they form is disconnected. DPsub is built for connected graphs and cannot stitch the
--- components, so it declines such a query and the next algorithm in the chain plans it. That is
--- what already happened without a conflict detector; with one enabled, a connectivity link used to
--- be seeded for the cross product too, which let DPsub enumerate a graph it is not built for and
--- report the join as `INNER`. The kind is what `applyParallelReplicas` and the join columns of
--- `system.query_log` go by, so the mislabelling was user visible.
+-- A join with no condition at all is a cross product: the two sides are joined on nothing. The query
+-- graph links the two sides of every cross product, as a join of selectivity 1, so a graph that cross
+-- products hold together is connected and DPsub plans it, with or without a conflict detector. The
+-- join it ends up as still has no condition, so it must be reported as `CROSS`, not `INNER`: the kind
+-- is what `applyParallelReplicas` and the join columns of `system.query_log` go by, so a mislabelling
+-- would be user visible.
 -- The transitive case is the contrast: two sides tied only by a column equivalence, with no direct
--- predicate, form a connected graph that DPsub does plan, and it stays `INNER`.
+-- predicate, are a real join, and it stays `INNER`.
 
 DROP TABLE IF EXISTS t_05238_a;
 DROP TABLE IF EXISTS t_05238_b;
@@ -25,26 +24,25 @@ SET query_plan_optimize_join_order_randomize = 0; -- the test asserts on the joi
 -- algorithms do not run at all, so nothing here would exercise the path under test.
 SET query_plan_optimize_join_order_limit = 10;
 
--- DPsub on its own has nothing to plan here and says so, with or without a detector. This is the
--- behaviour the fix restores for the detector cases: before it, `'dpsub'` alone answered `cross`
--- for a graph it should have turned down.
-SELECT '-- dpsub alone declines an unconditioned join';
+-- DPsub on its own plans an unconditioned join, with or without a detector, and keeps it `CROSS`.
+SELECT '-- dpsub alone plans an unconditioned join';
 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
-SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_optimize_join_order_conflict_detector = 'c'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
+SELECT extract(explain, 'Type: [a-z]+') FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c'
+) WHERE explain LIKE '%Type:%';
 
--- A nested cross product: `t_05238_a` is attached to the rest only by the cross join, even though
--- the inner join above it has a predicate. The inner operator's predicate spans `b` and `c` only,
--- so it must not count as a link to `a`, and DPsub still has to decline the graph.
-SELECT '-- dpsub alone declines a nested cross product';
+-- A nested cross product: `t_05238_a` is attached to the rest only by the cross join, even though the
+-- inner join above it has a predicate. The cross product links it, so DPsub plans the query, and the
+-- join that brings in `t_05238_a` stays `CROSS`.
+SELECT '-- dpsub alone plans a nested cross product';
 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_optimize_join_order_conflict_detector = 'a'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
-SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_optimize_join_order_conflict_detector = 'c'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
+SELECT extract(explain, 'Type: [a-z]+') AS kind FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c'
+) WHERE explain LIKE '%Type:%' ORDER BY kind;
 
 SELECT '-- nested cross product keeps its kind, CD-C';
 SELECT extract(explain, 'Type: [a-z]+') FROM (

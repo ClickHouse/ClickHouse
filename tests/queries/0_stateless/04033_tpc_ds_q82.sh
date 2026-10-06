@@ -12,4 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./04033_tpc_ds.lib
 . "$CURDIR"/04033_tpc_ds.lib
 
-{ echo "USE tpcds;"; cat "$CURDIR/../../benchmarks/tpc-ds/queries/query_82.sql"; } | $CLICKHOUSE_CLIENT "${SETTINGS[@]}"
+# These tables carry no statistics, so `dpsub` ranks join orders on unknown cardinalities and puts
+# `inventory` next to `store_sales` innermost -- a pair tied together only through `item` -- which
+# builds billions of rows and runs out of memory. Pin greedy until we can estimate these properly.
+{ echo "USE tpcds;"; cat "$CURDIR/../../benchmarks/tpc-ds/queries/query_82.sql"; } | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --query_plan_optimize_join_order_algorithm greedy

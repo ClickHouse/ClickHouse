@@ -13,6 +13,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 LoggerPtr getJoinOrderOptimizerLogger();
 
+inline constexpr size_t DPSUB_MAX_RELATIONS = 12;
+
 DPJoinEntryPtr solveGreedyJoinOrder(QueryGraph & query_graph);
 
 DPJoinEntryPtr solveDPSubJoinOrder(QueryGraph & query_graph);

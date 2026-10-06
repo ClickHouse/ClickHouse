@@ -31,7 +31,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # before the join would hold the first rows back until enough blocks accumulate,
 # `max_rows_to_group_by` because the CI profile sets it and `make_distributed_plan` rejects
 # an aggregation with a row limit, and the join order because a swap makes the probe table
-# the build side, which also reads all input before the first row.
+# the build side, which also reads all input before the first row. `greedy` for the same
+# reason: `dpsub` puts the sleeping scan on the build side of the top join by reordering
+# rather than by swapping, so `query_plan_join_swap_table` does not hold it back.
 # The two bucket counts are pinned because the expected set of exchange streams below is derived
 # from them.
 COMMON_SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,
@@ -39,6 +41,7 @@ COMMON_SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0, distri
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+    query_plan_optimize_join_order_algorithm = 'greedy',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0,
     max_execution_time = 300"
 

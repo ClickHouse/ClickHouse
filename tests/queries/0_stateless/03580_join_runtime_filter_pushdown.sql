@@ -1,6 +1,7 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_optimize_join_order_limit = 10; -- Pinned for the same reason: a different limit picks a different join order
+SET query_plan_join_swap_table = 'auto'; -- Pinned for the same reason: pinning the sides keeps whichever the join order search reached first
 SET enable_analyzer=1;
 
 SELECT explain
