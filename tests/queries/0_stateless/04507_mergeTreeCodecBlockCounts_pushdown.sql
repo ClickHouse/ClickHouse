@@ -47,10 +47,6 @@ SELECT part_name, column FROM mergeTreeCodecBlockCounts(currentDatabase(), t_pus
 SELECT 'where part_name matches nothing';
 SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_pushdown) WHERE part_name = 'no_such_part';
 
--- `mmap` can reuse mappings warmed by earlier queries without any new `FileOpen` events.
--- Use ordinary `pread` for the `FileOpen`-based pushdown assertions.
-SET local_filesystem_read_method = 'pread', min_bytes_to_use_direct_io = 0;
-
 -- max_threads = 1: with more the opened-file cache makes FileOpen nondeterministic.
 SELECT 'codec sums: baseline, column, mixed, part_name, in, substream, or, unpushed or';
 SELECT sum(length(codec_block_counts)) FROM mergeTreeCodecBlockCounts(currentDatabase(), t_pushdown) SETTINGS max_threads = 1, log_comment = '04507_codec_counts_baseline';
