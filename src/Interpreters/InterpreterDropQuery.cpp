@@ -14,7 +14,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -390,7 +392,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             table->flushAndShutdown(true);
 
-            const auto metadata_snapshot_for_inner_objects = table->getInMemoryMetadataPtr(context_, /*bypass_metadata_cache=*/ false);
+            /// Only MergeTree tables can own hidden objects of indexes. Reading the metadata of other storages may resolve
+            /// other tables (e.g. the target of an alias), so it is not done for them.
+            StorageMetadataHandle metadata_snapshot_for_inner_objects;
+            if (castStorage<MergeTreeData>(table, DeferredTable::Load))
+                metadata_snapshot_for_inner_objects = table->getInMemoryMetadataPtr(context_, /*bypass_metadata_cache=*/ false);
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
@@ -401,7 +407,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// Drop the hidden objects owned by indexes of the table (e.g. the centroids of IVF indexes).
-            dropVectorSimilarityIvfInnerObjects(table_id, *metadata_snapshot_for_inner_objects, context_);
+            if (metadata_snapshot_for_inner_objects)
+                dropVectorSimilarityIvfInnerObjects(table_id, *metadata_snapshot_for_inner_objects, context_);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
