@@ -542,7 +542,7 @@ private:
 
         void insert(const Row & row) override
         {
-            stream.write_values(row);
+            stream.write_row(row);
         }
     };
 
