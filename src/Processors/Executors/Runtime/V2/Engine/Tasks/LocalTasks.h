@@ -14,20 +14,14 @@ namespace DB
 namespace Runtime::V2
 {
 
-/// Lock-Free Batch Workstealing Deque.
-/// Implementation of https://www.tvandijk.nl/pdf/2014lace.pdf
-
+/// Bounded Chase-Lev ring: the owner pushes and pops LIFO at head, thieves grab batches of the oldest tasks.
+/// https://dl.acm.org/doi/epdf/10.1145/1073970.1073974
 class LocalTasks
 {
     struct Slot
     {
         Wyrd::Atomic<PackedTask> packed;
     };
-
-    void setSplit(UInt32 new_split);
-    void growShared();
-    bool shrinkShared();
-    void afterPush(UInt32 first);
 
 public:
     static constexpr UInt32 capacity = Wyrd::enabled() ? 8 : 256;
@@ -36,7 +30,6 @@ public:
     UInt32 pushMany(std::span<const Task> many);
 
     std::optional<Task> pop();
-    UInt32 offload(std::span<Task> out);
     UInt32 grab(std::span<Task> out);
 
     UInt32 size() const;
@@ -44,17 +37,16 @@ public:
 private:
     std::array<Slot, capacity> buffer;
 
-    /// Owner state.
+    /// Model:
+    ///         - - A B C D E F - - - -
+    ///             ^     ^   ^
+    ///            [bounds]  head
+
+    /// Next free buffer slot.
     alignas(128) Wyrd::Atomic<UInt32> head = 0;
-    UInt32 owner_split = 0;
-    bool owner_all_stolen = true;
 
-    /// Shared state.
+    /// Two UInt32 halves (tail, taken) in one word.
     alignas(128) Wyrd::Atomic<UInt64> bounds = 0;
-    Wyrd::Atomic<bool> all_stolen = true;
-
-    /// Stealers state.
-    alignas(128) Wyrd::Atomic<bool> split_request = false;
 };
 
 }
