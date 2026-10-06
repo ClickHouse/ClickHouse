@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS t_name;
 DROP TABLE IF EXISTS t_f;
 DROP TABLE IF EXISTS t_n;
 DROP TABLE IF EXISTS t_dep;
+DROP TABLE IF EXISTS t_b;
+DROP TABLE IF EXISTS t_i;
 DROP TABLE IF EXISTS t_p;
 DROP TABLE IF EXISTS t_v;
 DROP TABLE IF EXISTS t_r;
@@ -73,6 +75,25 @@ ALTER TABLE t_dep MODIFY COLUMN k UInt32 DEFAULT a * 2;
 ALTER TABLE t_dep MODIFY COLUMN x UInt32 DEFAULT 5;
 ALTER TABLE t_dep MODIFY COLUMN a UInt32 DEFAULT x + 2;
 
+-- The sorting key columns before the column can be read too, but no column after it or outside the sorting key.
+CREATE TABLE t_b (a UInt32, x UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_b VALUES (1, 30), (1, 10), (2, 5);
+ALTER TABLE t_b ADD COLUMN b UInt32, MODIFY ORDER BY (a, b);
+INSERT INTO t_b (a, x, b) VALUES (1, 7, 9), (1, 8, 3);
+ALTER TABLE t_b ADD COLUMN k UInt32, MODIFY ORDER BY (a, b, k);
+ALTER TABLE t_b MODIFY COLUMN b UInt32 DEFAULT a;
+ALTER TABLE t_b MODIFY COLUMN k UInt32 DEFAULT b;
+ALTER TABLE t_b MODIFY COLUMN x UInt32 DEFAULT a;
+ALTER TABLE t_b MODIFY COLUMN k UInt32 DEFAULT x; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT groupArray((a, b, k)) FROM (SELECT a, b, k FROM t_b ORDER BY a, b, k);
+OPTIMIZE TABLE t_b FINAL;
+SELECT groupArray((a, b, k)) FROM (SELECT a, b, k FROM t_b ORDER BY a, b, k);
+
+CREATE TABLE t_i (a UInt32, c UInt32) ENGINE = MergeTree ORDER BY (a, c) PRIMARY KEY a;
+INSERT INTO t_i VALUES (1, 1), (1, 2);
+ALTER TABLE t_i ADD COLUMN k Int64, MODIFY ORDER BY (a, k, c);
+ALTER TABLE t_i MODIFY COLUMN k Int64 DEFAULT -c; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
 -- Partition key columns and the engine's version, is_deleted and sign columns exist since CREATE, so every part stores them.
 CREATE TABLE t_p (a UInt32, d Date, x UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (a, d) PRIMARY KEY a;
 ALTER TABLE t_p MODIFY COLUMN d Date DEFAULT toDate(x);
@@ -95,6 +116,8 @@ DROP TABLE t_name;
 DROP TABLE t_f;
 DROP TABLE t_n;
 DROP TABLE t_dep;
+DROP TABLE t_b;
+DROP TABLE t_i;
 DROP TABLE t_p;
 DROP TABLE t_v;
 DROP TABLE t_r;

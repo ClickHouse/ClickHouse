@@ -5609,7 +5609,8 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 }
 
 /// A part written before a column was added to the sorting key does not store it, so its readers compute the
-/// column from its DEFAULT or MATERIALIZED expression, which must therefore be constant over equal primary key values.
+/// column from its DEFAULT or MATERIALIZED expression, which must therefore be constant over equal values of the
+/// sorting key elements before it.
 void checkDefaultsOfSortingKeyColumns(
     const AlterCommands & commands,
     const StorageInMemoryMetadata & old_metadata,
@@ -5654,12 +5655,19 @@ void checkDefaultsOfSortingKeyColumns(
     add_stored_in_every_part(new_metadata.sorting_key.additional_columns.getNames());
     add_stored_in_every_part(engine_columns);
 
-    /// Rows with equal primary key values are adjacent in a part, and for these columns equal means identical.
-    NameSet primary_key_identifiers;
-    if (const auto & primary_key_ast = new_metadata.primary_key.expression_list_ast)
+    /// Rows with equal values of the sorting key elements before a column are adjacent in a part, and for the
+    /// identifiers among those elements collected here equal means identical.
+    std::unordered_map<String, NameSet> identifiers_before;
+    if (const auto & sorting_key_ast = new_metadata.sorting_key.expression_list_ast)
     {
-        for (const auto & element : primary_key_ast->children)
+        NameSet identifiers;
+        for (const auto & element : sorting_key_ast->children)
         {
+            IdentifierNameSet element_names;
+            element->collectIdentifierNames(element_names);
+            for (const auto & name : element_names)
+                identifiers_before.try_emplace(name_in_storage(name), identifiers);
+
             const auto * identifier = element->as<ASTIdentifier>();
             if (!identifier)
                 continue;
@@ -5667,7 +5675,7 @@ void checkDefaultsOfSortingKeyColumns(
             const auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier->name());
             if (column && !comparisonCanMergeDistinctValues(*column->type)
                 && !anyInTypeTree(*column->type, [](const IDataType & type) { return type.isNullable(); }))
-                primary_key_identifiers.insert(identifier->name());
+                identifiers.insert(identifier->name());
         }
     }
 
@@ -5719,17 +5727,17 @@ void checkDefaultsOfSortingKeyColumns(
             through = fmt::format(" through column {}", backQuoteIfNeed(*it));
         }
 
+        const auto & allowed = identifiers_before[column_name];
         const auto sources = analyzeExpressionSources(
             column_default->expression, new_columns, context, /*keep_alias_columns=*/ false, /*check_determinism=*/ true);
-        if (sources.is_deterministic
-            && std::ranges::all_of(sources.columns, [&](const String & name) { return primary_key_identifiers.contains(name); }))
+        if (sources.is_deterministic && std::ranges::all_of(sources.columns, [&](const String & name) { return allowed.contains(name); }))
             continue;
 
         throw Exception(
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Cannot change the {} expression of column {}{}: the column is in the sorting key but not in the primary key, "
             "so parts that do not store it would compute it from the expression {} and would not be sorted. "
-            "Only a deterministic expression that reads nothing but primary key columns (as they are, "
+            "Only a deterministic expression that reads nothing but the sorting key columns before it (as they are, "
             "and not of a Float, Nullable or dynamic type) is allowed",
             toString(column_default->kind), backQuoteIfNeed(column_name), through,
             column_default->expression->formatForErrorMessage());
