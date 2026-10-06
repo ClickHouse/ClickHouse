@@ -172,6 +172,7 @@ ManifestFilesPruner::ManifestFilesPruner(
             if (!name_and_type.has_value())
                 continue;
 
+            min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
         }
 
@@ -459,28 +460,26 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type;
+        DataTypePtr column_type;
         bool has_no_nulls = true;
 
         if (auto lineage_column = row_lineage_columns.find(column_id); lineage_column != row_lineage_columns.end())
         {
-            name_and_type = lineage_column->second;
+            column_type = lineage_column->second.type;
         }
         else
         {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
-
-            if (!name_and_type.has_value())
-            {
+            auto type_it = min_max_column_types.find(column_id);
+            if (type_it == min_max_column_types.end())
                 continue;
-            }
+            column_type = type_it->second;
 
             auto info_it = entry->parsed_entry->columns_infos.find(column_id);
             has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
                 && *info_it->second.nulls_count == 0;
         }
 
-        const DataTypes data_types{name_and_type->type};
+        const DataTypes data_types{column_type};
 
         if (entry->common_partition_specification)
         {
@@ -493,7 +492,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 auto range = rangeOfPartitionValue(
                     partition_field.transform_name,
                     partition_value[partition_field.tuple_index],
-                    *removeNullable(name_and_type->type));
+                    *removeNullable(column_type));
 
                 if (range && !key_condition.mayBeTrueInRange(1, &range->left, &range->right, data_types))
                     return PruningReturnStatus::PARTITION_PRUNED;

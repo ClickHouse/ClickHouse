@@ -31,7 +31,9 @@ struct StoredObject
     uint64_t bytes_size = UnknownSize;
 
     /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
-    /// catching an in-place overwrite mid-read. Empty means no validation.
+    /// catching an in-place overwrite mid-read, and the Azure delete path deletes only that
+    /// generation (`If-Match`), so a move never deletes a generation it did not copy. Empty means
+    /// no validation.
     String etag;
 
     explicit StoredObject(

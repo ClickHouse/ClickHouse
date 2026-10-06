@@ -180,9 +180,6 @@ because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
 
-`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
-slot for was never contacted, so the shard is not treated as unavailable.
-
 Possible values:
 
 - Positive integer.
@@ -881,25 +878,6 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 
-## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join` alone."}]}]}/>
-
-Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the trigger, for
-the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query.
-`join_algorithm = 'grace_hash'` then spills on those two alone and ignores `max_bytes_before_external_join` entirely, zero
-included. `hash` / `parallel_hash` still go to disk on the spill threshold and spill on either one afterwards; their
-in-memory phase keeps treating the two as a hard cap, as it did before.
-
-For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
-
-A server that predates this setting applies the old meaning, and cannot be told otherwise, so with
-`serialize_query_plan = 1` a join whose spilling depends on the new meaning is not sent to such a server at all:
-the query fails instead of quietly running with the other contract. Turning this setting on makes those queries
-work across the two versions, with the old meaning on both sides.
-
 ## limit {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
@@ -961,6 +939,7 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
+- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 

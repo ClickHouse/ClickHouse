@@ -427,10 +427,6 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
-    /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
-    /// `Time64(0)` must not change what `accurateCast` accepts.
-    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-        && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -476,7 +472,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
+            if constexpr (IsDataTypeNumber<LeftDataType>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
@@ -641,7 +637,7 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
 
 FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
 {
-    switch (kind.getKind())
+    switch (kind.kind)
     {
         GENERATE_INTERVAL_CASE(Nanosecond)
         GENERATE_INTERVAL_CASE(Microsecond)
@@ -709,31 +705,6 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                     return true;
                 }
-            }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
-                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
-            {
-                if (cast_type == CastType::accurate)
-                {
-                    AccurateConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else if (cast_type == CastType::accurateOrNull)
-                {
-                    AccurateOrNullConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else
-                {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
-                }
-
-                return true;
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
             {
@@ -2869,12 +2840,6 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
-    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
-    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
-    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
-    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
-        return createNothingWrapper(to_type.get());
-
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
@@ -2987,24 +2952,11 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
     bool source_is_nullable = from_type->isNullable();
     bool result_is_nullable = to_type->isNullable();
 
-    const DataTypePtr from_nested_type = removeNullable(from_type);
-    const DataTypePtr to_nested_type = removeNullable(to_type);
-
-    /// A text conversion asked for a Nullable result reports a value the target cannot represent as a NULL
-    /// indistinguishable from one the source carried; `CastType::accurate` must throw instead.
-    const bool strict_text_conversion = result_is_nullable && cast_type == CastType::accurate
-        && isStringOrFixedString(from_nested_type);
-
-    /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
-    const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
-
-    auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion);
+    auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
-
-        return [wrapper, source_is_nullable, exclude_source_nulls]
+        return [wrapper, source_is_nullable]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             /// Create a temporary columns on which to perform the operation.
@@ -3025,34 +2977,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
                 if (arguments.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of arguments");
                 nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-            }
-
-            if (exclude_source_nulls)
-            {
-                /// The nested column of a NULL row holds a default, not a value to convert.
-                const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
-                const auto & null_map = nullable_column.getNullMapData();
-                const size_t rows_with_nulls = countBytesInFilter(null_map.data(), 0, input_rows_count);
-
-                if (rows_with_nulls == input_rows_count && input_rows_count != 0)
-                    return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
-
-                if (rows_with_nulls != 0)
-                {
-                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
-
-                    IColumn::Filter not_null(input_rows_count);
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        not_null[row] = !null_map[row];
-
-                    for (auto & column : tmp_args)
-                        column.column = column.column->filter(not_null, rows_without_nulls);
-
-                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
-                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
-                    mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
-                }
             }
 
             /// Perform the requested conversion.

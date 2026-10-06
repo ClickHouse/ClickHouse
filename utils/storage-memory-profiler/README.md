@@ -14,6 +14,6 @@ MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
   --path data
 ```
 
-The command writes a tab-separated checkpoint summary to standard output and one jemalloc heap dump for the initial state and after every SQL file. The CI job runs the whole sequence twice per binary and compares each checkpoint transition of the second pass only, so that one-time process initialization is not charged to a scenario. A scenario must therefore leave no object behind after `09_cleanup.sql`; if it does, the second pass fails and the profiler exits non-zero. It reuses the parser-memory check's batch symbolization, stable stack canonicalization, cross-version diff, and flamegraph report helpers, but publishes a separate storage-scenario report.
+The command writes a tab-separated checkpoint summary to standard output and one jemalloc heap dump for the initial state and after every SQL file. The CI job compares each checkpoint transition between master and the pull request. It reuses the parser-memory check's batch symbolization, stable stack canonicalization, cross-version diff, and flamegraph report helpers, but publishes a separate storage-scenario report.
 
 The scenarios are ordered by their numeric filename prefix and intentionally share state. They cover table creation, inserts, indexes, projections, dictionaries, multiple tables, many parts, system metadata, and cleanup.

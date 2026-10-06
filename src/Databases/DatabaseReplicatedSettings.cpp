@@ -84,9 +84,4 @@ String DatabaseReplicatedSettings::toString() const
 {
     return impl->toString();
 }
-
-bool DatabaseReplicatedSettings::hasBuiltin(std::string_view name)
-{
-    return DatabaseReplicatedSettingsImpl::hasBuiltin(name);
-}
 }

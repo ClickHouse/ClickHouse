@@ -100,6 +100,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -626,7 +627,7 @@ private:
     {
         /// We create a table with the same name as original table and the same alias columns,
         ///  but it will contain single block (that is INSERT-ed into main table).
-        /// The interpreter will do processing of alias columns.
+        /// InterpreterSelectQuery will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
         local_context->addViewSource(std::make_shared<StorageValues>(
@@ -635,9 +636,19 @@ private:
             std::move(data_block),
             source_metadata->virtuals));
 
-        InterpreterSelectQueryAnalyzer interpreter(
-            select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-        QueryPipelineBuilder pipeline = interpreter.buildQueryPipeline();
+        QueryPipelineBuilder pipeline;
+
+        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+            pipeline = interpreter.buildQueryPipeline();
+        }
+        else
+        {
+            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
+            pipeline = interpreter.buildQueryPipeline();
+        }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 

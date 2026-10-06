@@ -1,0 +1,12 @@
+EXPLAIN, empty outer table
+1
+EXPLAIN, outer subquery
+1
+subquery in FROM
+1
+scalar subquery inside a subquery in FROM
+2
+IN subquery
+1
+view
+1

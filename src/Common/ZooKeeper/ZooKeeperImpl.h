@@ -414,10 +414,6 @@ private:
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
-    bool resolveSystemLogs();
-    enum class SystemLogsState { Unresolved, InProgress, Resolved };
-    std::atomic<SystemLogsState> system_logs_state{SystemLogsState::Unresolved};
-
     std::atomic<int64_t> last_zxid_seen;
 
     /// Timestamp of the last data received from the server (any kind: response,

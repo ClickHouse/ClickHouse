@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -133,7 +134,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
-    result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
+    result.use_query_condition_cache = settings[Setting::use_query_condition_cache]
+        && settings[Setting::allow_experimental_analyzer]
+        && settings[Setting::apply_deleted_mask];
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
@@ -144,6 +147,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.merge_tree_coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity];
     result.merge_tree_generic_exclusion_search_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
+    result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;

@@ -91,8 +91,6 @@ FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
-SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-
 DROP TABLE events;
 DROP TABLE payloads;
 

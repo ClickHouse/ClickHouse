@@ -116,7 +116,6 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
-        DISABLE_ALL_FAILPOINTS,
         ALLOCATE_MEMORY,
         FREE_MEMORY,
         WAIT_FAILPOINT,

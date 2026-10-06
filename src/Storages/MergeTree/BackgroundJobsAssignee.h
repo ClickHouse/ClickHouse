@@ -85,8 +85,7 @@ public:
 
 private:
     IBackgroundOperation & data;
-    StorageID storage_id TSA_GUARDED_BY(storage_id_mutex);
-    mutable std::mutex storage_id_mutex;
+    StorageID storage_id;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
@@ -109,7 +108,5 @@ private:
     void threadFunc();
 
     BackgroundTaskSchedulingSettings getSettings() const;
-
-    StorageID getStorageID() const;
 };
 }

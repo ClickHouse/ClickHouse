@@ -143,19 +143,6 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-The query endpoints also accept the parameters in a form body. Without `--get`, curl sends the parameters as `application/x-www-form-urlencoded` over `POST`:
-
-```bash
-curl --user default:<password> \
-  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
-  --data-urlencode "query=rate(http_requests_total[5m])" \
-  --data-urlencode "start=2026-08-15T12:00:00Z" \
-  --data-urlencode "end=2026-08-15T13:00:00Z" \
-  --data-urlencode "step=60s" \
-  --data-urlencode "database=prometheus" \
-  --data-urlencode "table=metrics"
-```
-
 Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
 
 ```bash
@@ -182,15 +169,13 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: POST
+      httpMethod: GET
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
-
-With `httpMethod: POST`, Grafana sends the query parameters in the request body. ClickHouse reads the request body and the URL query string, so `customQueryParameters` still applies. Use `POST` for long PromQL expressions, because a URL has a length limit.
 
 <Note>
 Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.

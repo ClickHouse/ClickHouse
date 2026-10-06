@@ -8,6 +8,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -26,9 +27,12 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -60,10 +64,13 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
@@ -86,6 +93,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -99,6 +107,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
@@ -331,6 +340,238 @@ namespace
             }
         }
     };
+
+    /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
+    void hideWholeNode(ASTPtr & node)
+    {
+        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        hidden->setAlias(node->tryGetAlias());
+        node = std::move(hidden);
+    }
+
+    /// Replace every literal inside a node with `'[HIDDEN]'`, keeping the expression structure. Only
+    /// for the secret arguments of `encrypt` / `HMAC`, where the shape is not a secret (a key built as
+    /// `leftPad('...', 16, '*')` stays readable as such); every other secret slot is hidden whole.
+    void hideLiteralsInSubtree(ASTPtr & node)
+    {
+        if (node->as<ASTLiteral>())
+        {
+            hideWholeNode(node);
+            return;
+        }
+        for (auto & child : node->children)
+            hideLiteralsInSubtree(child);
+    }
+
+    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
+    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    {
+        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
+            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+    }
+
+    bool isKeyValueArgument(const IAST & node)
+    {
+        const auto * function = node.as<ASTFunction>();
+        return function && function->name == "equals" && function->arguments && function->arguments->children.size() == 2;
+    }
+
+    /// The secret value of a `key = value` argument is its second child; anything else carries the
+    /// secret in the node itself.
+    ASTPtr & secretValueSlot(ASTPtr & node)
+    {
+        if (isKeyValueArgument(*node))
+            return node->as<ASTFunction>()->arguments->children[1];
+        return node;
+    }
+
+    /// Replace an argument with the partially masked SQL the formatter prints for it: a URL with its
+    /// credentials removed, or the masked locator of a `Backup` database. The original node must not
+    /// stay in the tree, so text that does not parse, or parses into a node that cannot take the
+    /// argument's place (a `COLUMNS(...)` matcher has no alias), hides the argument whole.
+    void replaceWithMaskedText(ASTPtr & node, const String & text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        String error;
+        ASTPtr parsed = tryParseQuery(
+            parser,
+            pos,
+            text.data() + text.size(),
+            error,
+            /* hilite= */ false,
+            "masked secret argument",
+            /* allow_multi_statements= */ false,
+            /* max_query_size= */ 0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /* skip_insignificant= */ true);
+        if (!parsed || !dynamic_cast<ASTWithAlias *>(parsed.get()))
+        {
+            hideWholeNode(node);
+            return;
+        }
+        parsed->setAlias(node->tryGetAlias());
+        node = std::move(parsed);
+    }
+
+    /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead. As in the
+    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal. That includes the slots the finder could
+    /// not inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
+    /// part of the secret and must not be dumped node by node. Only the `encrypt` / `HMAC` span keeps its
+    /// structure (see `hideLiteralsInSubtree`). All values of a nested map (`headers(...)`,
+    /// `extra_credentials(...)`) are hidden; the formatter keeps the non-secret `extra_credentials`
+    /// values, so the dump is stricter.
+    struct HideSecretArgumentsMatcher
+    {
+        struct Data
+        {
+        };
+
+        static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
+        {
+            auto * function = ast->as<ASTFunction>();
+            if (!function || !function->arguments)
+                return;
+
+            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            if (!secret_arguments.hasSecrets())
+                return;
+
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (auto * map = arguments[i]->as<ASTFunction>();
+                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                {
+                    for (auto & entry : map->arguments->children)
+                        hideWholeNode(secretValueSlot(entry));
+                    continue;
+                }
+
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    replaceWithMaskedText(arguments[i], replaced->second);
+                    continue;
+                }
+
+                /// An individually masked argument: only the named `key = value` form keeps its key.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    hideWholeNode(masked->second ? secretValueSlot(arguments[i]) : arguments[i]);
+                    continue;
+                }
+
+                if (!(secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count))
+                    continue;
+
+                if (!secret_arguments.replacement.empty())
+                {
+                    const auto text
+                        = secret_arguments.quote_replacement ? quoteString(secret_arguments.replacement) : secret_arguments.replacement;
+                    replaceWithMaskedText(secret_arguments.are_named ? secretValueSlot(arguments[i]) : arguments[i], text);
+                    continue;
+                }
+
+                if (secret_arguments.are_named)
+                {
+                    hideWholeNode(secretValueSlot(arguments[i]));
+                    continue;
+                }
+
+                /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
+                /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
+                /// `key = value` in the span: it is a positional secret written as a comparison.
+                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                    hideLiteralsInSubtree(arguments[i]);
+                else
+                    hideWholeNode(arguments[i]);
+            }
+        }
+    };
+
+    using HideSecretArgumentsVisitor = InDepthNodeVisitor<HideSecretArgumentsMatcher, true>;
+
+    bool hasSecretsInActionsDAG(const ActionsDAG & dag)
+    {
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.is_masked_secret)
+                return true;
+            if (node.type == ActionsDAG::ActionType::FUNCTION
+                && FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets())
+                return true;
+        }
+        return false;
+    }
+
+    bool hasSecretsInStep(const IQueryPlanStep & step)
+    {
+        if (const auto * expression_step = dynamic_cast<const ExpressionStep *>(&step))
+            return hasSecretsInActionsDAG(expression_step->getExpression());
+        if (const auto * filter_step = dynamic_cast<const FilterStep *>(&step))
+            return hasSecretsInActionsDAG(filter_step->getExpression());
+        if (const auto * object_filter_step = dynamic_cast<const ObjectFilterStep *>(&step))
+            return hasSecretsInActionsDAG(object_filter_step->getExpression());
+        if (const auto * totals_having_step = dynamic_cast<const TotalsHavingStep *>(&step))
+            return totals_having_step->getActions() && hasSecretsInActionsDAG(*totals_having_step->getActions());
+        if (const auto * array_join_step = dynamic_cast<const ArrayJoinStep *>(&step))
+            return array_join_step->getElementFilter() && hasSecretsInActionsDAG(*array_join_step->getElementFilter());
+        if (const auto * filling_step = dynamic_cast<const FillingStep *>(&step))
+            return filling_step->getInterpolateDescription()
+                && hasSecretsInActionsDAG(filling_step->getInterpolateDescription()->actions);
+        if (const auto * join_step = dynamic_cast<const JoinStepLogical *>(&step))
+            return hasSecretsInActionsDAG(join_step->getActionsDAG());
+        if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+        {
+            if (source_step->getFilterActionsDAG() && hasSecretsInActionsDAG(*source_step->getFilterActionsDAG()))
+                return true;
+            if (const auto prewhere_info = source_step->getPrewhereInfo();
+                prewhere_info && hasSecretsInActionsDAG(prewhere_info->prewhere_actions))
+                return true;
+            if (const auto row_level_filter = source_step->getRowLevelFilter();
+                row_level_filter && hasSecretsInActionsDAG(row_level_filter->actions))
+                return true;
+            return false;
+        }
+        return false;
+    }
+
+    /// The old analyzer builds the `ActionsDAG` without masking secret constants (the node names come
+    /// from `IAST::getColumnName`, which embeds literal values), so a plan dump cannot hide them.
+    /// Fail closed: refuse to dump a plan that carries secrets.
+    void throwIfPlanHasSecrets(const QueryPlan & plan)
+    {
+        if (!plan.isInitialized())
+            return;
+
+        std::vector<const QueryPlan::Node *> stack = {plan.getRootNode()};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            if (node->step)
+            {
+                if (hasSecretsInStep(*node->step))
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Not enough privileges to execute EXPLAIN of a query with an old analyzer."
+                        "SET enable_analyzer = 1 or get privileges to display secrets for select queries "
+                        "and set setting format_display_secrets_in_show_and_select = 1.");
+
+                for (const auto * child_plan : node->step->getChildPlans())
+                    if (child_plan && child_plan->isInitialized())
+                        stack.push_back(child_plan->getRootNode());
+            }
+
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+    }
 
 }
 
@@ -832,6 +1073,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 
     Stopwatch watch;
+    if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
         /// A query that falls back to local execution is analyzable, and the
@@ -844,6 +1086,19 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
         result->plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        interpreter.buildQueryPlan(result->plan);
+        result->context = interpreter.getContext();
+        /// Match execution, a query that falls back to local execution needs
+        /// to have make_distributed_plan=0
+        QueryPlanOptimizationSettings probe_settings(planning_context);
+        if (result->plan.applyDistributedPlanFallbackToLocal(probe_settings))
+            planning_context->setSetting("make_distributed_plan", false);
+        result->ignore_quota = interpreter.ignoreQuota();
+        result->ignore_limits = interpreter.ignoreLimits();
     }
 
     result->planning_ns = watch.elapsed();
@@ -909,6 +1164,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
+            /// `optimize = 1` inlines views the user may read but whose secrets they may not see.
+            /// Hide them under the same gate as `SHOW CREATE`.
+            if (!canDisplaySecrets(query_context))
+            {
+                HideSecretArgumentsVisitor::Data data;
+                HideSecretArgumentsVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -926,19 +1189,24 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
             ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-            bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
-                .run_passes = settings.run_query_tree_passes,
-                .dump_tree = false,
-                .dump_passes = false,
-                .dump_ast = true,
-                .passes = settings.query_tree_passes,
-                .ast_one_line = settings.oneline,
-            }, buf, /*format_ast_as_syntax=*/ true);
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
+                    .run_passes = settings.run_query_tree_passes,
+                    .dump_tree = false,
+                    .dump_passes = false,
+                    .dump_ast = true,
+                    .passes = settings.query_tree_passes,
+                    .ast_one_line = settings.oneline,
+                }, buf, /*format_ast_as_syntax=*/ true);
 
-            if (explain_ok)
-                break;
+                if (explain_ok)
+                    break;
+                auto query_context_mutable = Context::createCopy(query_context);
+                query_context_mutable->setSetting("allow_experimental_analyzer", false);
+                query_context = std::move(query_context_mutable);
+            }
 
-            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
@@ -952,6 +1220,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN QUERY TREE is only supported with the analyzer. SET enable_analyzer = 1.");
+
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
@@ -985,6 +1257,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 /// Decide the distributed-to-local fallback the same way execution does, so the
@@ -995,6 +1268,20 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
+            else
+            {
+                /// A mutable copy to include fallback decision for make_distribut
+                auto old_analyzer_context = Context::createCopy(query_context);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), old_analyzer_context, options);
+                interpreter.buildQueryPlan(plan);
+                if (settings.optimize)
+                {
+                    QueryPlanOptimizationSettings probe_settings(old_analyzer_context);
+                    if (plan.applyDistributedPlanFallbackToLocal(probe_settings))
+                        old_analyzer_context->setSetting("make_distributed_plan", false);
+                }
+                context = old_analyzer_context;
+            }
 
             if (settings.optimize)
             {
@@ -1004,6 +1291,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
             }
+
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+                && !canDisplaySecrets(query_context))
+                throwIfPlanHasSecrets(plan);
 
             if (settings.json)
             {
@@ -1038,6 +1329,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
+                if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                     /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
@@ -1045,6 +1337,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     interpreter.applyDistributedPlanFallbackIfNeeded();
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                    interpreter.buildQueryPlan(plan);
+                    context = interpreter.getContext();
+
+                    /// Without `header = 1` the pipeline dump shows no column names, so nothing can leak.
+                    if (settings.query_pipeline_options.header && !canDisplaySecrets(query_context))
+                        throwIfPlanHasSecrets(plan);
                 }
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
@@ -1100,6 +1402,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = query_context;
 
+            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
                 /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
@@ -1107,6 +1410,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                context = interpreter.getContext();
+                interpreter.buildQueryPlan(plan);
             }
 
             // Collect the selected marks, rows, parts during build query pipeline.
@@ -1198,6 +1507,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             watch.restart();
             plan.optimize(optimization_settings);
             planning_ns += watch.elapsed();
+
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+                && !canDisplaySecrets(query_context))
+                throwIfPlanHasSecrets(plan);
 
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.

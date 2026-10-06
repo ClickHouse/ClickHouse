@@ -274,15 +274,25 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    /// For a data-lake function with `SETTINGS disk = '...'` this returns the table's private copy of the
-    /// disk's object storage (see `DataLakeConfiguration::fromDisk`), never the disk's own storage: the
-    /// settings update in `lazyInitializeIfNeeded` must not touch the disk.
-    ///
+    std::string disk_name;
+    if constexpr (is_data_lake)
+    {
+        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
+            ? (*settings)[DataLakeStorageSetting::disk].value
+            : "";
+    }
+
+    ObjectStoragePtr current_object_storage;
+    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
+        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
+    else
+        current_object_storage = getObjectStorage(context, !is_insert_query);
+
     /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
     /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !is_insert_query),
+        current_object_storage,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -1503,7 +1513,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial: deletion vector reads are supported; manifest compaction isn't supported.
+ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1581,7 +1591,8 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
 
-ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3). This support is read-only: ClickHouse does not write, update, or compact deletion vectors, and `ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
+The following deletion method is **not supported**:
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
 
@@ -2287,7 +2298,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 
 | Paimon Data Type | ClickHouse Data Type
 |-------|--------|
-|BOOLEAN     |Bool      |
+|BOOLEAN     |Int8      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |

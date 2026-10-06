@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -437,7 +437,9 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -2431,8 +2433,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 

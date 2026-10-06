@@ -5745,8 +5745,6 @@ Returns the year component (AD) of a `Date` or `DateTime` value.
 toYear(datetime)
 ```
 
-**Aliases**: `YEAR`
-
 **Arguments**
 
 - `datetime` — Date or date with time to get the year from. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
@@ -5897,6 +5895,59 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+Introduced in: v26.9.0
+
+Returns the year component of a `Date` or `DateTime` value.
+
+When called without arguments, returns the current year at the moment of query analysis.
+    
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+year([datetime])
+```
+
+**Arguments**
+
+- `datetime` — Optional. Date or date with time to get the year from. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Returns the year of the given (or current) Date or DateTime [`UInt16`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Year of a value**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**Current year**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

@@ -175,7 +175,11 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     if (!headers_from_ast.empty())
-        s3_settings->auth_settings.headers.append(headers_from_ast);
+    {
+        s3_settings->auth_settings.headers.insert(
+            s3_settings->auth_settings.headers.end(),
+            headers_from_ast.begin(), headers_from_ast.end());
+    }
 
     auto client = getClient(
         url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,

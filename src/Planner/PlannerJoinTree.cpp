@@ -23,6 +23,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -39,7 +40,6 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -520,6 +520,31 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
+/// Returns the effective row policy filter for the table, or nullptr if the
+/// table has no row policies for the current user or the combined filter is
+/// always-true. Mirrors the effective-filter check used by
+/// buildRowPolicyFilterIfNeeded.
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
+{
+    auto storage_id = storage->getStorageID();
+    if (!storage_id.hasDatabase())
+        return nullptr;
+    auto row_policy_filter = query_context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        const auto target_storage_id = alias->getTargetTable()->getStorageID();
+        auto target_row_policy_filter = query_context->getRowPolicyFilter(
+            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
+    }
+
+    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+        return nullptr;
+    return row_policy_filter;
+}
+
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -544,7 +569,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(*storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -671,7 +696,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(*storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -754,6 +779,21 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/** Check the SELECT privilege for the columns that the planner resolved "away": `indexHint` arguments and ALIAS
+  * columns inlined into PREWHERE. Checked separately from the selected columns on purpose: a trivial query such as
+  * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
+  */
+void checkAccessRightsForColumnsResolvedAway(
+    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+{
+    const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(
+        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -776,6 +816,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }
     else if (table_function_node)
     {
@@ -835,7 +877,6 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
-            table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
         }
     }
 
@@ -920,7 +961,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -1272,7 +1313,7 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(*storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1723,7 +1764,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(*storage, query_context);
+                || !!getEffectiveRowPolicyFilter(storage, query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
@@ -2113,8 +2154,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// enforces the view policy in the right namespace and handles the Distributed
                         /// policy (not propagated to shards — see issue #28334) and used_row_policies
                         /// bookkeeping correctly, so we fall back to it whenever any policy is present.
-                        const bool has_row_policy = getEffectiveRowPolicyFilter(*storage, query_context)
-                            || getEffectiveRowPolicyFilter(*underlying_dist, query_context);
+                        const auto & view_id = storage->getStorageID();
+                        const auto & dist_id = underlying_dist->getStorageID();
+                        auto view_row_policy = query_context->getRowPolicyFilter(
+                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        auto dist_row_policy = query_context->getRowPolicyFilter(
+                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
+                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
