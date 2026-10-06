@@ -1,6 +1,8 @@
 SELECT THROWS
 COUNT THROWS
 DISABLED THROWS
+1	new
+2	two
 id	Nullable(Int32)					
 val	Nullable(String)					
 TARGETED THROWS

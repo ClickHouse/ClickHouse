@@ -1,0 +1,24 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "id",
+    "type" : "INT"
+  }, {
+    "id" : 1,
+    "name" : "val",
+    "type" : "STRING"
+  } ],
+  "highestFieldId" : 1,
+  "partitionKeys" : [ ],
+  "primaryKeys" : [ ],
+  "options" : {
+    "bucket" : "1",
+    "owner" : "ubuntu",
+    "bucket-key" : "id",
+    "file.format" : "parquet",
+    "deletion-vectors.enabled" : "true"
+  },
+  "timeMillis" : 1791308592064
+}

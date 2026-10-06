@@ -17,6 +17,7 @@ rm -rf "${DATA_DIR}"
 mkdir -p "${DATA_DIR}"
 cp -r "${CUR_DIR}/data_minio/paimon_append_deletion_vectors/" "${DATA_DIR}/"
 cp -r "${CUR_DIR}/data_minio/paimon_append_deletion_vectors_disabled/" "${DATA_DIR}/"
+cp -r "${CUR_DIR}/data_minio/paimon_append_deletion_vectors_compacted/" "${DATA_DIR}/"
 cp -r "${CUR_DIR}/data_minio/paimon_no_partition/" "${DATA_DIR}/"
 
 DV_TABLE="${DATA_DIR}/paimon_append_deletion_vectors"
@@ -38,6 +39,9 @@ out=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM paimonLocal('${DATA_DIR}/paimon_app
 echo "$out" | grep -q 'deletion vectors are not applied' \
     && echo "$out" | grep -q 'NOT_IMPLEMENTED' \
     && echo "DISABLED THROWS"
+
+# A full compaction applied the deletion vector and left an empty deletion vectors index file, so the table is read.
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM paimonLocal('${DATA_DIR}/paimon_append_deletion_vectors_compacted') ORDER BY id, val;"
 
 ${CLICKHOUSE_CLIENT} -q "DESCRIBE paimonLocal('${DV_TABLE}');"
 

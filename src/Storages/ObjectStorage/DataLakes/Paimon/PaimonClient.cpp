@@ -353,8 +353,10 @@ bool PaimonTableClient::hasDeletionVectors(const String & index_manifest_path)
 
     for (size_t i = 0; i < index_manifest_deserializer.rows(); ++i)
     {
+        /// When compaction removes the last deletion vector of a bucket, Paimon writes an empty index file for it.
         if (index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE, TypeIndex::String).safeGet<String>()
-            == PAIMON_DELETION_VECTORS_INDEX)
+                == PAIMON_DELETION_VECTORS_INDEX
+            && index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_ROW_COUNT, TypeIndex::Int64).safeGet<Int64>() > 0)
             return true;
     }
     return false;
