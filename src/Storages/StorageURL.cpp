@@ -2249,6 +2249,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
 {
     ASTs::iterator headers_it = url_function_args.end();
+    ASTs::iterator first_key_value_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
@@ -2298,7 +2299,11 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         }
 
         if (headers_ast_function && headers_ast_function->name == "equals")
+        {
+            if (first_key_value_it == url_function_args.end())
+                first_key_value_it = arg_it;
             continue;
+        }
 
         if (evaluate_arguments)
             (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
@@ -2307,7 +2312,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     if (headers_it == url_function_args.end())
         return url_function_args.size();
 
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+    /// Callers index the positional arguments and require the key-value arguments to stay the tail of the list, so the
+    /// headers node belongs at the end of the positional block. It may sit on either side of the first key-value
+    /// argument, so both rotation directions are needed.
+    if (first_key_value_it < headers_it)
+        std::rotate(first_key_value_it, headers_it, std::next(headers_it));
+    else
+        std::rotate(headers_it, std::next(headers_it), first_key_value_it);
+
     return url_function_args.size() - 1;
 }
 
@@ -2791,11 +2803,16 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
 StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
 {
     StorageURL::Configuration configuration;
+    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
+
+        /// Resolving the stored `url` against `url_base` replaces it, which could send the stored credentials to another host.
+        if (resolveURLBase(configuration.url, url_base) != configuration.url)
+            checkNamedCollectionOverride(*named_collection, "url", local_context);
     }
     else
     {
@@ -2815,7 +2832,6 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
     /// For the URL engine, the resolved URL is later materialized into the engine args
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
-    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
     configuration.url = resolveURLBase(configuration.url, url_base);
 
     if (configuration.format == "auto")
