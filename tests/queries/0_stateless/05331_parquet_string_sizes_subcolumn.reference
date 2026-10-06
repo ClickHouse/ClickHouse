@@ -80,6 +80,12 @@ abc	7
 5
 -- a table function whose schema changed, with a column named s.size
 3	21
+-- a table function whose file gained a column named s.size
+12	3
+12	3
+-- the same, and s changed type
+12	3
+12	3
 -- lazy materialization
 1
 19999	29

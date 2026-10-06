@@ -41,6 +41,9 @@ namespace DB
         /// The requested `x.size` columns that are the sizes of the String column `x` of the file,
         /// read by the format itself (see `filterTupleColumnsToRead`). Any other column is read by its name.
         NameSet string_sizes_columns;
+        /// The serialization version of the step serializing this struct (`ReadFromObjectStorage`) from which
+        /// `string_sizes_columns` is written. The step registers it.
+        static constexpr UInt64 STEP_VERSION_WITH_STRING_SIZES_COLUMNS = 1;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);

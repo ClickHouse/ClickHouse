@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -424,11 +425,20 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     if (prewhere_info != nullptr)
         prewhere_info->serialize(ctx);
 
-    Names sorted_string_sizes_columns(string_sizes_columns.begin(), string_sizes_columns.end());
-    std::ranges::sort(sorted_string_sizes_columns);
-    writeVarUInt(sorted_string_sizes_columns.size(), ctx.out);
-    for (const auto & name : sorted_string_sizes_columns)
-        writeStringBinary(name, ctx.out);
+    /// Cache key bytes are only hashed in this process.
+    if (ctx.step_version >= STEP_VERSION_WITH_STRING_SIZES_COLUMNS || ctx.for_cache_key)
+    {
+        Names sorted_string_sizes_columns(string_sizes_columns.begin(), string_sizes_columns.end());
+        std::ranges::sort(sorted_string_sizes_columns);
+        writeVarUInt(sorted_string_sizes_columns.size(), ctx.out);
+        for (const auto & name : sorted_string_sizes_columns)
+            writeStringBinary(name, ctx.out);
+    }
+    else if (!string_sizes_columns.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Reading the sizes of String columns from the format requires serialization version {} of the reading step, "
+            "but it is serialized at version {}; all nodes must be upgraded",
+            STEP_VERSION_WITH_STRING_SIZES_COLUMNS, ctx.step_version);
 
     ctx.out << "\n";
 }
@@ -470,13 +480,16 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
-    size_t num_string_sizes_columns = 0;
-    readVarUInt(num_string_sizes_columns, ctx.in);
-    for (size_t i = 0; i < num_string_sizes_columns; ++i)
+    if (ctx.step_version >= STEP_VERSION_WITH_STRING_SIZES_COLUMNS)
     {
-        String name;
-        readStringBinary(name, ctx.in);
-        result.string_sizes_columns.insert(std::move(name));
+        size_t num_string_sizes_columns = 0;
+        readVarUInt(num_string_sizes_columns, ctx.in);
+        for (size_t i = 0; i < num_string_sizes_columns; ++i)
+        {
+            String name;
+            readStringBinary(name, ctx.in);
+            result.string_sizes_columns.insert(std::move(name));
+        }
     }
 
     ctx.in >> "\n";
