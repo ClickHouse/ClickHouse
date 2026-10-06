@@ -116,9 +116,9 @@ void runTest(std::function<void()> body, TestParams params)
     std::thread watchdog(
         [&]
         {
-            if (!finished.try_acquire_for(params.watchdog_timeout))
+            if (!finished.try_acquire_for(params.adversary.watchdog_timeout))
             {
-                fmt::print(stderr, "Wyrd: the test body did not finish within {} seconds, aborting\n", params.watchdog_timeout.count());
+                fmt::print(stderr, "Wyrd: the test body did not finish within {} seconds, aborting\n", params.adversary.watchdog_timeout.count());
                 std::abort();
             }
         });

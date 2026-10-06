@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 
 namespace DB::Runtime::Wyrd
@@ -13,6 +14,7 @@ struct AdversaryParams
     size_t max_suspended_threads = 2;
     size_t resume_one_in = 5;
     bool pin_to_single_core = true;
+    std::chrono::seconds watchdog_timeout{60};
 };
 
 }
