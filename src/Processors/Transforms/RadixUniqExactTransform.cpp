@@ -262,11 +262,12 @@ public:
     void finishStream(size_t stream_index) override
     {
         auto & stream = streams[stream_index];
-        if (stream.mode == Mode::Radix)
-            return;
-
         /// The local set holds distinct keys, so no chain needs a deduplication while it is moved.
-        switchToRadixMode(stream);
+        if (stream.mode != Mode::Radix)
+            switchToRadixMode(stream);
+
+        /// The build reads only the chains, so the set must not hold memory while the partition sets are built.
+        stream.local_set = {};
     }
 
     size_t buildPartition(size_t partition) override
