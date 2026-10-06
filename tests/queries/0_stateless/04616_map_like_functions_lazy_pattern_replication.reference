@@ -11,5 +11,20 @@
 1	1	{'k0':'v0'}	{'k0':'v0'}
 0	0	{}	{}
 0	0	{}	{}
+-- correctness with non-constant key and value needles
+0	0
+0	0
+0	0
+1	1
+0	0
+0	0
+0	0
+0	0
+0	0
+1	1
+0	0
+0	0
 -- large non-constant pattern is copied one time fewer at peak
+-- large non-constant key and value needles are copied fewer times at peak
+1
 1
