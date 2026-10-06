@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 # A separate module from test_different_versions.py on purpose: the assertions below make a host
@@ -34,10 +34,15 @@ new_node = cluster.add_instance(
     with_zookeeper=True,
 )
 
+# Pinned to a release known to predate `fsync_backup_files` rather than following
+# `CLICKHOUSE_CI_MIN_TESTED_VERSION`: once that floor advances past the release that introduced the
+# setting, `old_node` would accept it and the refusal path probed below would not be tested anymore.
+OLD_VERSION_WITHOUT_FSYNC_BACKUP_FILES = "25.3"
+
 old_node = cluster.add_instance(
     "old_node",
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag=OLD_VERSION_WITHOUT_FSYNC_BACKUP_FILES,
     with_installed_binary=True,
     main_configs=main_configs,
     user_configs=user_configs,
