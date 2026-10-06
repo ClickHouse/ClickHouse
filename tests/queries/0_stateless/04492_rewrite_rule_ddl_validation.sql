@@ -33,6 +33,6 @@ SELECT count() FROM system.query_rules WHERE name = 'rule_valid';
 DROP RULE rule_valid;
 
 -- All supported placeholder types are accepted at DDL time.
-CREATE RULE rule_types AS (SELECT {s:String}, {i:Int}, {e:Expression}, {l:ExpressionList} FROM (SELECT 1) WHERE 1 IN {q:Subquery}) REWRITE TO (SELECT {s:String});
+CREATE RULE rule_types AS (SELECT {s:String}, {i:Int}, {e:Expression}, tuple({l:ExpressionList}) FROM (SELECT 1) WHERE 1 IN {q:Subquery}) REWRITE TO (SELECT {s:String});
 SELECT count() FROM system.query_rules WHERE name = 'rule_types';
 DROP RULE rule_types;

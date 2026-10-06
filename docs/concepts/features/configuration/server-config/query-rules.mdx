@@ -25,10 +25,12 @@ A `{name:Type}` placeholder uses the query parameter syntax, but here `Type` is 
 | `String` | a string literal |
 | `Int` | an integer literal (not a decimal or floating-point one) |
 | `Expression` | an expression |
-| `ExpressionList` | a list of expressions |
+| `ExpressionList` | a whole list of expressions, such as all the arguments of a function or the whole `SELECT` list |
 | `Subquery` | a subquery |
 
 A placeholder with any other type (for example `{x:UInt64}` or `{d:Date}`) is rejected at `CREATE RULE` / `ALTER RULE` time, because it would be stored but never match any query.
+
+An `ExpressionList` placeholder in the source template must stand for the whole list: one next to other items of the same list, as in `SELECT 0, {l:ExpressionList}` or `f(1, {l:ExpressionList})`, is rejected at `CREATE RULE` / `ALTER RULE` time, because the matcher cannot capture a part of a list. The result template may put a captured list next to other items, as in `SELECT {l:ExpressionList}, 3`.
 
 Every `{name:Type}` placeholder referenced by a rule's result template must also appear in its source template, and a placeholder must not be repeated within the source template. A placeholder reused in the result template must declare the same `Type` as in the source template. Such rules are rejected at `CREATE RULE` / `ALTER RULE` time.
 

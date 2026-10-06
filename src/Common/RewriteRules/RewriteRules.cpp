@@ -127,6 +127,32 @@ namespace
             collectQueryParameters(child, names, duplicates);
     }
 
+    /// Returns the name of the first `{name:ExpressionList}` placeholder in `ast` that shares its
+    /// `ASTExpressionList` with other items, as in `SELECT 0, {l:ExpressionList}` or
+    /// `f(1, {l:ExpressionList})`. The matcher captures a list only when the placeholder stands
+    /// for the whole list; it cannot capture a segment of a mixed list, so such a source template
+    /// would be stored but never match.
+    std::optional<String> findExpressionListParameterInMixedList(const ASTPtr & ast)
+    {
+        if (!ast)
+            return {};
+        const bool is_mixed_list = ast->as<ASTExpressionList>() && ast->children.size() > 1;
+        for (const auto & child : ast->children)
+        {
+            if (const auto * query_parameter = child ? child->as<ASTQueryParameter>() : nullptr)
+            {
+                String type = query_parameter->type;
+                trimLeft(type);
+                trimRight(type);
+                if (is_mixed_list && type == "ExpressionList")
+                    return query_parameter->name;
+            }
+            if (auto found = findExpressionListParameterInMixedList(child))
+                return found;
+        }
+        return {};
+    }
+
     /// Returns the first placeholder in `ast` whose type is not understood by the
     /// matcher, as a `{name, type}` pair, or `std::nullopt` if all are supported.
     std::optional<std::pair<String, String>> findUnsupportedQueryParameter(const ASTPtr & ast)
@@ -617,6 +643,15 @@ namespace
                 "Rewrite rule `{}` uses query parameter `{}` with unsupported type `{}` in its source template. "
                 "Supported placeholder types are: String, Int, Expression, ExpressionList, Subquery",
                 query.rule_name, unsupported->first, unsupported->second);
+
+        /// The result template may splice a captured list into a mixed list, but the source
+        /// template cannot capture one from it.
+        if (auto mixed = findExpressionListParameterInMixedList(query.source_query))
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                "Rewrite rule `{}` uses query parameter `{}` of type `ExpressionList` next to other items "
+                "of a list in its source template; an `ExpressionList` placeholder must stand for the whole list",
+                query.rule_name, *mixed);
 
         if (!query.rewrite())
             return;
