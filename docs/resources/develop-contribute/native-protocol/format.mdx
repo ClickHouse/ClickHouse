@@ -1112,9 +1112,9 @@ The type has two storage modes:
   `ExponentialTimeDecaying64` and 16 bytes for `ExponentialTimeDecaying128`.
 - `direct` stores the same authoritative key plus two interface-only `Float64` values,
   `value` and `timestamp`. Those values are retained only as printable metadata and do not
-  participate in equality, ordering, hashing, grouping, or index semantics. Operations that retain
-  only the key for identity, such as hash-table-backed `GROUP BY` or `DISTINCT`, may materialize
-  any metadata representative for an equal-key group; the metadata is not part of the result identity.
+  participate in equality, ordering, hashing, grouping, or index semantics. Hash-table-backed
+  `GROUP BY` and `DISTINCT` keep an arbitrary source row's metadata for each equal-key group
+  (equivalent to `any` semantics); they must not synthesize canonical compact metadata.
 
 The Native row layouts are:
 
