@@ -116,12 +116,12 @@ $CLICKHOUSE_CLIENT --query "
 
 # A live rename is not stopped: its part was merged after the rename and only an older patch of it holds the old name.
 $CLICKHOUSE_CLIENT --query "
+    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     CREATE TABLE t_live (x UInt32, v UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_live', '1') ORDER BY tuple()
     SETTINGS $COMPACT, enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0,
         merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
     INSERT INTO t_live SETTINGS insert_keeper_fault_injection_probability = 0 VALUES (1, 1);
     UPDATE t_live SET v = 5 WHERE 1 SETTINGS enable_lightweight_update = 1, insert_keeper_fault_injection_probability = 0;
-    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     ALTER TABLE t_live RENAME COLUMN v TO w SETTINGS alter_sync = 0, mutations_sync = 0;
     SYSTEM SYNC REPLICA t_live;
     OPTIMIZE TABLE t_live FINAL SETTINGS optimize_throw_if_noop = 1;
