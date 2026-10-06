@@ -24,6 +24,8 @@ SELECT CAST('01-02-2020 20:00:00Z' AS DateTime); -- { serverError CANNOT_PARSE_T
 -- The value is also rejected when the rest of the input keeps the whole broken-down date and time
 -- length visible in the read buffer (the optimistic parsing path).
 SELECT d FROM format(TSV, 'd DateTime, s String', '2018\tpadding padding padding'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT d FROM format(TSV, 'd DateTime, s String', '+2018\tpadding padding padding'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT d FROM format(TSV, 'd DateTime, s String', '-2018\tpadding padding padding'); -- { serverError CANNOT_PARSE_DATETIME }
 
 -- DateTime64 accepts short and fractional unix timestamps: that is the point of the fix.
 SELECT toDateTime64('2018', 3, 'UTC');
