@@ -748,16 +748,21 @@ TEST_F(ReadBufferFromS3Test, CappedResponsesEndingOnAFillBoundaryAreReassembled)
 
 TEST_F(ReadBufferFromS3Test, ResponsesThatStopBeforeTheRightBoundAreAnError)
 {
-    const auto client = std::make_shared<ClientFake>();
-    client->setGetObjectRanges(makeObject(40));
+    /// With a buffer of 64 the end of the response is seen with its last fill, with 20 only by the next read.
+    for (const size_t buffer_size : {64, 20})
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(makeObject(40));
 
-    const auto errors_before = readErrors();
-    const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64);
+        const auto errors_before = readErrors();
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, buffer_size);
 
-    ASSERT_TRUE(result.error_code.has_value());
-    EXPECT_EQ(*result.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
-    EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0, 40, 40, 40}));
-    EXPECT_GT(readErrors(), errors_before);
+        ASSERT_TRUE(result.error_code.has_value()) << buffer_size;
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE) << buffer_size;
+        /// The request that continues the read gets the whole `max_single_read_retries` budget of 4 attempts.
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0, 40, 40, 40, 40})) << buffer_size;
+        EXPECT_GT(readErrors(), errors_before) << buffer_size;
+    }
 }
 
 TEST_F(ReadBufferFromS3Test, ExactResponseAndUnboundedReadAreNotReopened)

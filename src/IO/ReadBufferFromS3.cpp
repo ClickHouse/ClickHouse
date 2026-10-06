@@ -260,6 +260,8 @@ bool ReadBufferFromS3::nextImpl()
                     offset.load(), read_until_position.load());
                 resetWorkingBuffer();
                 impl.reset();
+                /// The new request continues the read rather than retrying it, so it is the first attempt.
+                attempt = 0;
                 continue;
             }
 
