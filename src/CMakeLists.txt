@@ -1043,7 +1043,7 @@ if (ENABLE_TESTS)
     # below, each on its own runtime flavour.
     set(wyrd_dir Processors/Executors/Runtime/Wyrd)
     add_headers_and_sources(wyrd_helpers ${wyrd_dir}/Testing)
-    file(GLOB wyrd_tests CONFIGURE_DEPENDS ${wyrd_dir}/tests/gtest*.cpp)
+    file(GLOB wyrd_tests CONFIGURE_DEPENDS ${wyrd_dir}/tests/gtest*.cpp Processors/Executors/Runtime/V2/tests/gtest*.cpp)
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
@@ -1077,17 +1077,25 @@ if (ENABLE_TESTS)
         # propagates transitively in full-library builds, so declare the dependency explicitly.
         ch_contrib::lz4)
 
-    clickhouse_add_executable(executor_adversary_tests ${wyrd_helpers_sources} ${wyrd_tests})
-    set_target_properties(executor_adversary_tests PROPERTIES CLICKHOUSE_RUNTIME clickhouse_runtime_adversary)
-    target_compile_definitions(executor_adversary_tests PRIVATE WYRD_ADVERSARY=1)
-    target_compile_options(executor_adversary_tests PRIVATE -Wno-sign-compare)
-    target_link_libraries(executor_adversary_tests PRIVATE ch_contrib::gmock_all ch_contrib::gtest dbms)
-
-    clickhouse_add_executable(executor_simulation_tests ${wyrd_helpers_sources} ${wyrd_tests})
-    set_target_properties(executor_simulation_tests PROPERTIES CLICKHOUSE_RUNTIME clickhouse_runtime_simulation)
-    target_compile_definitions(executor_simulation_tests PRIVATE WYRD_SIMULATION=1)
-    target_compile_options(executor_simulation_tests PRIVATE -Wno-sign-compare)
-    target_link_libraries(executor_simulation_tests PRIVATE ch_contrib::gmock_all ch_contrib::gtest dbms)
+    foreach (flavour adversary simulation)
+        set(executor_tests executor_${flavour}_tests)
+        string(TOUPPER ${flavour} flavour_flag)
+        clickhouse_add_executable(${executor_tests} ${wyrd_helpers_sources} ${wyrd_tests})
+        set_target_properties(${executor_tests} PROPERTIES CLICKHOUSE_RUNTIME clickhouse_runtime_${flavour})
+        target_compile_definitions(${executor_tests} PRIVATE WYRD_${flavour_flag}=1)
+        target_compile_options(${executor_tests} PRIVATE -Wno-sign-compare)
+        target_link_libraries(${executor_tests} PRIVATE
+            ch_contrib::gmock_all
+            ch_contrib::gtest
+            clickhouse_functions
+            clickhouse_aggregate_functions
+            clickhouse_parsers
+            clickhouse_storages_system
+            dbms
+            clickhouse_common_zookeeper_base
+            clickhouse_common_config
+            clickhouse_common_zookeeper)
+    endforeach ()
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)

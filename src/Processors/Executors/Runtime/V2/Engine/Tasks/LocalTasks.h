@@ -2,6 +2,7 @@
 
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 
 #include <array>
 #include <optional>
@@ -29,11 +30,7 @@ class LocalTasks
     void afterPush(UInt32 first);
 
 public:
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
-    static constexpr UInt32 capacity = 8;
-#else
-    static constexpr UInt32 capacity = 256;
-#endif
+    static constexpr UInt32 capacity = Wyrd::enabled() ? 8 : 256;
 
     bool push(const Task & task);
     UInt32 pushMany(std::span<const Task> many);
