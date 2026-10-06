@@ -47,7 +47,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
@@ -2508,12 +2507,9 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 namespace
 {
 
-/// A column is not followed into its `ALIAS` definition.
+/// Also walks the definitions of `ALIAS` columns, which are children of their `ColumnNode`.
 std::optional<String> findNonDeterministicFunction(const QueryTreeNodePtr & node)
 {
-    if (node->as<ColumnNode>())
-        return {};
-
     if (const auto * constant = node->as<ConstantNode>())
     {
         if (constant->isDeterministic() || !constant->hasSourceExpression())

@@ -28,7 +28,7 @@ WHERE database = currentDatabase() AND table = 't_prune' ORDER BY mutation_id;
 
 SELECT 'rejected on a replicated table';
 SET allow_nondeterministic_mutations = 0;
-CREATE TABLE t_guard (d Date, k UInt64, v UInt64 DEFAULT 0)
+CREATE TABLE t_guard (d Date, k UInt64, v UInt64 DEFAULT 0, r Date ALIAS today)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_guard', 'r1') PARTITION BY d ORDER BY k;
 INSERT INTO t_guard (d, k) VALUES ('2000-01-01', 1), ('2100-01-01', 2);
 SYSTEM STOP REPLICATION QUEUES t_guard;
@@ -44,12 +44,16 @@ ALTER TABLE t_guard DELETE WHERE arrayExists(x -> (x AS today) > '2000-01-01', [
 ALTER TABLE t_guard DELETE WHERE d < (today AS today); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_guard UPDATE v = toUnixTimestamp(CURRENT_TIMESTAMP) WHERE 1; -- { serverError BAD_ARGUMENTS }
 DELETE FROM t_guard WHERE d < today SETTINGS lightweight_deletes_sync = 0; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_nested (d Date, k UInt64, today Nested(a UInt8), `now.x` UInt8)
+CREATE TABLE t_nested (d Date, k UInt64, today Nested(a UInt8), `now.x` UInt8, k1 UInt64 ALIAS k + 1)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_nested', 'r1') ORDER BY k;
 SYSTEM STOP REPLICATION QUEUES t_nested;
 -- A Nested column binds its name, a column whose name only starts with it does not.
 ALTER TABLE t_nested DELETE WHERE toDateTime(d) < now; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_nested DELETE WHERE notEmpty(today);
+-- The definition of an `ALIAS` column is checked too.
+ALTER TABLE t_guard DELETE WHERE d < r; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_guard UPDATE v = toUInt64(r) WHERE 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_nested DELETE WHERE k1 = 0;
 
 SELECT 'replaced with the value on the initiator when written with parentheses';
 SET mutations_execute_nondeterministic_on_initiator = 1;
