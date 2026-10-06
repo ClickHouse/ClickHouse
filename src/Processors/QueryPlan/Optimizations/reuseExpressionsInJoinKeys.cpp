@@ -341,6 +341,9 @@ private:
             return false;
 
         const bool name_insensitive = lhs_node.function_base->isNameInsensitive() && rhs_node.function_base->isNameInsensitive();
+        /// Steps may be built with different settings, and only name-insensitive functions hash all the state they capture
+        if (!name_insensitive && lhs_node.function_base != rhs_node.function_base)
+            return false;
         for (size_t i = 0; i < lhs_node.children.size(); ++i)
         {
             const auto * lhs_child = lhs_node.children[i];

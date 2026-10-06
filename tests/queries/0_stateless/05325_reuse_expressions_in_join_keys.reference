@@ -123,6 +123,8 @@
 857	10186658685546113365
 857	10186658685546113365
 1
+2
+3
 28. not reused: the subquery computes arithmetic with different settings
 2
 2
@@ -142,3 +144,5 @@
 1	-0	0
 2	0	0
 3	1.5	1.5
+31. not reused: a function that does not hash a setting it captured, computed with a different setting
+2

@@ -381,6 +381,12 @@ SELECT count(), sum(cityHash64(*)) FROM (SELECT l.id, r.id FROM l JOIN r
 SELECT countIf(explain ILIKE '%FUNCTION concat(%') FROM (EXPLAIN actions = 1, compact = 0
     SELECT l.id, r.id FROM l JOIN r ON concat(toString(l.k), '_') = r.v AND concat(toString(l.k), '_') = toString(r.id)
     WHERE toString(l.k) != '3');
+SELECT countIf(explain ILIKE '%FUNCTION toString(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT l.id, r.id FROM l JOIN r ON concat(toString(l.k), '_') = r.v AND concat(toString(l.k), '_') = toString(r.id)
+    WHERE toString(l.k) != '3');
+SELECT countIf(explain ILIKE '%FUNCTION toString(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT l.id, r.id FROM l JOIN r ON concat(toString(l.k), '_') = r.v AND concat(toString(l.k), '_') = toString(r.id)
+    WHERE toString(l.k) != '3' SETTINGS query_plan_merge_expressions = 0);
 
 SELECT '28. not reused: the subquery computes arithmetic with different settings';
 SELECT countIf(explain ILIKE '%FUNCTION multiply(%') FROM (EXPLAIN actions = 1, compact = 0
@@ -416,6 +422,16 @@ SELECT a.id, toString(a.y), rz.v FROM (SELECT id, x, x + -0. AS y FROM lz) AS a 
     ORDER BY a.id;
 SELECT a.id, toString(a.y), rz.v FROM (SELECT id, x, x + -0. AS y FROM lz) AS a JOIN rz ON toString(a.x + 0.) = rz.v
     ORDER BY a.id SETTINGS query_plan_merge_expressions = 0;
+
+SELECT '31. not reused: a function that does not hash a setting it captured, computed with a different setting';
+SELECT countIf(explain ILIKE '%FUNCTION IPv4StringToNum(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.y, r.v FROM (SELECT 1 AS id, IPv4StringToNum(materialize('bad')) AS y SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 1) AS a
+    JOIN (SELECT '1_0' AS v) AS r ON concat(toString(a.id), '_', toString(IPv4StringToNum(materialize('bad')))) = r.v);
+SELECT a.id, a.y, r.v FROM (SELECT 1 AS id, IPv4StringToNum(materialize('bad')) AS y SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 1) AS a
+    JOIN (SELECT '1_0' AS v) AS r ON concat(toString(a.id), '_', toString(IPv4StringToNum(materialize('bad')))) = r.v; -- { serverError CANNOT_PARSE_IPV4 }
+SELECT a.id, a.y, r.v FROM (SELECT 1 AS id, IPv4StringToNum(materialize('bad')) AS y SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 1) AS a
+    JOIN (SELECT '1_0' AS v) AS r ON concat(toString(a.id), '_', toString(IPv4StringToNum(materialize('bad')))) = r.v
+    SETTINGS query_plan_merge_expressions = 0; -- { serverError CANNOT_PARSE_IPV4 }
 
 DROP TABLE l;
 DROP TABLE r;
