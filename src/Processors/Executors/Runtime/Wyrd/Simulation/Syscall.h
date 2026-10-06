@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <source_location>
+#include <string>
 
 namespace DB::Runtime::Wyrd
 {
@@ -14,5 +15,6 @@ void spawn(std::function<void()> body, std::source_location location = std::sour
 void enterLockFreeScope(std::source_location location = std::source_location::current());
 void leaveLockFreeScope(std::source_location location = std::source_location::current());
 void progressHint(std::source_location location = std::source_location::current());
+void trace(std::string message, std::source_location location = std::source_location::current());
 
 }

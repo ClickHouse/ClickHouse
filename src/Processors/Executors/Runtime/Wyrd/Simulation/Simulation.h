@@ -59,12 +59,13 @@ public:
     void enterLockFreeScope(std::source_location location);
     void leaveLockFreeScope(std::source_location location);
     void progressHint(std::source_location location);
+    void trace(std::string message, std::source_location location);
 
 private:
     const SimulationParams params;
     Scheduler scheduler;
 
-    std::vector<TraceRecord> trace;
+    std::vector<TraceRecord> timeline;
 
     FutexTable futexes;
     std::vector<std::unique_ptr<SimulatedThread>> threads;

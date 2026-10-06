@@ -52,4 +52,10 @@ void progressHint(std::source_location location)
         simulation->progressHint(location);
 }
 
+void trace(std::string message, std::source_location location)
+{
+    if (auto * simulation = Simulation::current())
+        simulation->trace(std::move(message), location);
+}
+
 }

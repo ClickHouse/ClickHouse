@@ -23,17 +23,17 @@ namespace
 
 Simulation * current_simulation = nullptr;
 
-std::string formatTimeline(const std::vector<TraceRecord> & trace)
+std::string formatTimeline(const std::vector<TraceRecord> & timeline)
 {
     std::string out;
-    for (size_t i = 0; i < trace.size(); ++i)
+    for (size_t i = 0; i < timeline.size(); ++i)
         out += fmt::format(
             "#{} thread {}: {} at {}:{}\n",
             i + 1,
-            trace[i].thread_id,
-            trace[i].event,
-            trace[i].location.file_name(),
-            trace[i].location.line());
+            timeline[i].thread_id,
+            timeline[i].event,
+            timeline[i].location.file_name(),
+            timeline[i].location.line());
     return out;
 }
 
@@ -61,7 +61,7 @@ SimulationResult Simulation::run(std::function<void()> main)
         .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
         .total_steps = steps,
         .digest = digest.get64(),
-        .timeline = formatTimeline(trace),
+        .timeline = formatTimeline(timeline),
     };
 }
 
@@ -98,7 +98,7 @@ void Simulation::traceEvent(std::string event, std::source_location location)
 {
     digest.update(running_thread->id);
     digest.update(location.line());
-    trace.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(event), .location = location});
+    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(event), .location = location});
 }
 
 void Simulation::createThread(std::function<void()> user_body)
@@ -202,6 +202,11 @@ void Simulation::progressHint(std::source_location location)
 {
     traceEvent("progressHint", location);
     scheduler.onProgress();
+}
+
+void Simulation::trace(std::string message, std::source_location location)
+{
+    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = location});
 }
 
 }
