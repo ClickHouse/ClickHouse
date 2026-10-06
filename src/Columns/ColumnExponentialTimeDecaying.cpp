@@ -171,6 +171,16 @@ ExponentialTimeDecayingCanonicalDirectValue ColumnExponentialTimeDecaying::getDi
     return getCanonicalValueAt(n);
 }
 
+void ColumnExponentialTimeDecaying::setDirectMetadataAt(
+    size_t n,
+    const ExponentialTimeDecayingCanonicalDirectValue & direct)
+{
+    chassert(mode == ExponentialTimeDecayingMode::Direct);
+    auto & tuple = assert_cast<ColumnTuple &>(*storage);
+    assert_cast<ColumnFloat64 &>(tuple.getColumn(1)).getData()[n] = direct.value_at_anchor;
+    assert_cast<ColumnFloat64 &>(tuple.getColumn(2)).getData()[n] = direct.anchor_time;
+}
+
 Float64 ColumnExponentialTimeDecaying::getUnitTimestampAt(size_t n) const
 {
     const auto canonical = getCanonicalValueAt(n);
