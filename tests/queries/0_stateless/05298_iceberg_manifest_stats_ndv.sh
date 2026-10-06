@@ -49,81 +49,88 @@ labels()
 }
 
 # `uniq` gives the dimensions an exact count and an NDV equal to their distinct values.
-# `mx` gets a Parquet file with `column_sizes` and an Avro file without; `pr` writes its first file with `k Int32`.
+# `ice_mixed_formats` gets a Parquet file with `column_sizes` and an Avro file without; `ice_promoted` writes its first
+# file with `int_key Int32`.
 ${CLICKHOUSE_CLIENT} ${PINS} --query "
-    CREATE TABLE f (dense Int64, sparse Int64, dc Decimal(18, 2), s String) ENGINE = IcebergLocal('${LAKE}/f');
-    INSERT INTO f SELECT number % 2500, (number % 2500) * 1000003, number % 2500, toString(number % 2500)
+    CREATE TABLE ice_keys (dense_int Int64, sparse_int Int64, decimal_key Decimal(18, 2), string_key String)
+        ENGINE = IcebergLocal('${LAKE}/ice_keys');
+    INSERT INTO ice_keys SELECT number % 2500, (number % 2500) * 1000003, number % 2500, toString(number % 2500)
         FROM numbers(100000);
-    CREATE TABLE fp (r Int32, v Int64) ENGINE = IcebergLocal('${LAKE}/fp') PARTITION BY (r);
-    INSERT INTO fp SELECT [0, 1000, 2000, 3000, 1000000][number % 5 + 1], number FROM numbers(100000);
-    CREATE TABLE fd (d Decimal(9, 2), v Int64) ENGINE = IcebergLocal('${LAKE}/fd') PARTITION BY (d);
-    INSERT INTO fd SELECT [1.50, 2.25, 3.00][number % 3 + 1], number FROM numbers(30000);
-    CREATE TABLE mx (k Int64, f Float64) ENGINE = IcebergLocal('${LAKE}/mx');
-    INSERT INTO mx SELECT number, number FROM numbers(1000);
-    INSERT INTO FUNCTION icebergLocal('${LAKE}/mx', 'Avro') SELECT toInt64(number + 1000) AS k, toFloat64(number) AS f
-        FROM numbers(1000);
-    CREATE TABLE pr (k Int32) ENGINE = IcebergLocal('${LAKE}/pr');
-    INSERT INTO pr SELECT number % 500 FROM numbers(1000);
-    ALTER TABLE pr MODIFY COLUMN k Int64;
-    INSERT INTO pr SELECT number % 500 + 500 FROM numbers(1000);
-    ALTER TABLE pr RENAME COLUMN k TO kk;
-    CREATE TABLE dim10 (k Int64, kd Decimal(18, 2), ks String, kf Float64) ENGINE = MergeTree ORDER BY k
-        SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
+    CREATE TABLE ice_partitioned (part_key Int32, value Int64) ENGINE = IcebergLocal('${LAKE}/ice_partitioned')
+        PARTITION BY (part_key);
+    INSERT INTO ice_partitioned SELECT [0, 1000, 2000, 3000, 1000000][number % 5 + 1], number FROM numbers(100000);
+    CREATE TABLE ice_decimal_partitioned (part_key Decimal(9, 2), value Int64)
+        ENGINE = IcebergLocal('${LAKE}/ice_decimal_partitioned') PARTITION BY (part_key);
+    INSERT INTO ice_decimal_partitioned SELECT [1.50, 2.25, 3.00][number % 3 + 1], number FROM numbers(30000);
+    CREATE TABLE ice_mixed_formats (id Int64, float_key Float64) ENGINE = IcebergLocal('${LAKE}/ice_mixed_formats');
+    INSERT INTO ice_mixed_formats SELECT number, number FROM numbers(1000);
+    INSERT INTO FUNCTION icebergLocal('${LAKE}/ice_mixed_formats', 'Avro')
+        SELECT toInt64(number + 1000) AS id, toFloat64(number) AS float_key FROM numbers(1000);
+    CREATE TABLE ice_promoted (int_key Int32) ENGINE = IcebergLocal('${LAKE}/ice_promoted');
+    INSERT INTO ice_promoted SELECT number % 500 FROM numbers(1000);
+    ALTER TABLE ice_promoted MODIFY COLUMN int_key Int64;
+    INSERT INTO ice_promoted SELECT number % 500 + 500 FROM numbers(1000);
+    ALTER TABLE ice_promoted RENAME COLUMN int_key TO renamed_key;
+    CREATE TABLE dim10 (int_key Int64, decimal_key Decimal(18, 2), string_key String, float_key Float64)
+        ENGINE = MergeTree ORDER BY int_key SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO dim10 SELECT number, number, toString(number), number FROM numbers(10);
-    CREATE TABLE dim1 (k Int32, kd Decimal(9, 2)) ENGINE = MergeTree ORDER BY k
+    CREATE TABLE dim1 (int_key Int32, decimal_key Decimal(9, 2)) ENGINE = MergeTree ORDER BY int_key
         SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO dim1 SELECT 0, 2.25;
 "
 
-echo '--- fixture: data files and rows per Iceberg table; format and column_sizes of f in the files of mx'
+echo '--- fixture: data files and rows per Iceberg table; format and float_key column_sizes of ice_mixed_formats'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT arraySort(groupArray((upper(file_format), mapContains(column_sizes, 2)))) FROM system.iceberg_files
-    WHERE database = currentDatabase() AND table = 'mx'"
+    WHERE database = currentDatabase() AND table = 'ice_mixed_formats'"
 
-# Expect 20000: 100000 rows over 5 partition values, so 20000 rows have r = 0, the one key of dim1.
 echo '--- T1: rule 1, identity partition: 5 values'
-labels "SELECT count() FROM fp JOIN dim1 AS d ON fp.r = d.k" ${ON}
-# Expect ~~20000: the 2 remaining partitions hold 40000 rows, so 40000 * 1 / 2; a filter makes it imprecise.
+echo 'Expect 20000: 100000 rows over 5 partition values, so 20000 rows have part_key = 0, the one key of dim1.'
+labels "SELECT count() FROM ice_partitioned JOIN dim1 ON ice_partitioned.part_key = dim1.int_key" ${ON}
 echo '--- T2: rule 1 after partition pruning: 2 values in the remaining files'
-labels "SELECT count() FROM fp JOIN dim1 AS d ON fp.r = d.k WHERE fp.r IN (0, 1000)" ${ON}
-# Expect 10000: 30000 rows over 3 partition values, so 10000 rows have d = 2.25, the one key of dim1.
+echo 'Expect ~~20000: 2 remaining partitions hold 40000 rows, so 40000 * 1 / max(2, 1); a filter makes it imprecise.'
+labels "SELECT count() FROM ice_partitioned JOIN dim1 ON ice_partitioned.part_key = dim1.int_key
+    WHERE ice_partitioned.part_key IN (0, 1000)" ${ON}
 echo '--- T3: rule 1, decimal partition: 3 values'
-labels "SELECT count() FROM fd JOIN dim1 AS d ON fd.d = d.kd" ${ON}
+echo 'Expect 10000: 30000 rows over 3 partition values, so 10000 rows have part_key = 2.25, the one key of dim1.'
+labels "SELECT count() FROM ice_decimal_partitioned
+    JOIN dim1 ON ice_decimal_partitioned.part_key = dim1.decimal_key" ${ON}
 
-T4="SELECT count() FROM f JOIN dim10 AS d ON f.dense = d.k"
-# Expect 400: dense is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.
+T4="SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.dense_int = dim10.int_key"
 echo '--- T4: rule 2, dense integer: range 2500'
+echo 'Expect 400: dense_int is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.'
 labels "${T4}" ${ON}
-# Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.
 echo '--- T5: use_iceberg_manifest_column_statistics = 0'
+echo 'Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.'
 labels "${T4}" ${NO_COLUMN_STATS}
-# Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.
 echo '--- T6: use_statistics = 0'
+echo 'Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.'
 labels "${T4}" ${NO_STATS}
 
-# Expect 10: the range is far above the rows, so the NDV is the 100000 rows (2500 true): 100000 * 10 / 100000.
 echo '--- T7: rule 2, sparse integer: range clamped to the rows'
-labels "SELECT count() FROM f JOIN dim10 AS d ON f.sparse = d.k" ${ON}
+echo 'Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).'
+labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.sparse_int = dim10.int_key" ${ON}
 
-# Expect 100000 * 10 / (column_sizes of dc / 8); the size depends on the Parquet encoder, so it is read from the table.
 echo '--- T8: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8'
+echo 'Expect 100000 * 10 / (column_sizes of decimal_key / 8); the size depends on the Parquet encoder, so it is read.'
 EXPECTED=$(${CLICKHOUSE_CLIENT} --query "
     SELECT toUInt64(1 / greatest(least(intDiv(sum(column_sizes[3]), 8), 100000), 10) * 100000 * 10)
-    FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'f'")
-ACTUAL=$(labels "SELECT count() FROM f JOIN dim10 AS d ON f.dc = d.kd" ${ON} | grep 'ResultRows')
+    FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'ice_keys'")
+ACTUAL=$(labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.decimal_key = dim10.decimal_key" ${ON} \
+    | grep 'ResultRows')
 if [ "${ACTUAL}" = "ResultRows: ${EXPECTED}" ]; then echo "as expected"; else echo "${ACTUAL}, expected ${EXPECTED}"; fi
 
-# Expect 100: the guess is 10% of the 100000 rows (2500 true), as for MergeTree without `uniq`: 100000 * 10 / 10000.
 echo '--- T9: rule 4, String: 10% of the rows'
-labels "SELECT count() FROM f JOIN dim10 AS d ON f.s = d.ks" ${ON}
-# Expect 100: the Avro file has no column_sizes and Float64 no bounds, so 10% of 2000 rows: 2000 * 10 / 200.
-echo '--- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 10% of the rows'
-labels "SELECT count() FROM mx AS t JOIN dim10 AS d ON t.f = d.kf" ${ON}
-# Expect 20: k is 0..499 written as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if bounds were lost).
-echo '--- T11: k Int32, then Int64, then renamed to kk: range 1000'
-labels "SELECT count() FROM pr AS t JOIN dim10 AS d ON t.kk = d.k" ${ON}
+echo 'Expect 100: 10% of the 100000 rows, as MergeTree without `uniq`: 100000 * 10 / 10000 (true NDV 2500, result 400).'
+labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.string_key = dim10.string_key" ${ON}
+echo '--- T10: Float64: no bounds written, not countable, no column_sizes in the Avro file: rule 4, 10% of rows'
+echo 'Expect 100: rule 2 skips floats, rule 3 needs column_sizes in every file: 10% of 2000 rows, 2000 * 10 / 200.'
+labels "SELECT count() FROM ice_mixed_formats JOIN dim10 ON ice_mixed_formats.float_key = dim10.float_key" ${ON}
+echo '--- T11: int_key Int32, then Int64, then renamed to renamed_key: range 1000'
+echo 'Expect 20: int_key is 0..499 as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if the bounds were lost).'
+labels "SELECT count() FROM ice_promoted JOIN dim10 ON ice_promoted.renamed_key = dim10.int_key" ${ON}
 
 rm -rf "${LAKE}"
