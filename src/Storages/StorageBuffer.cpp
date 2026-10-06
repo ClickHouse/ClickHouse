@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -538,9 +539,13 @@ void StorageBuffer::read(
                     local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), fill_support_names);
                 }
 
+                /// Like `count()`, reading only the row count needs `SELECT` on at least one column of the destination.
                 if (columns_intersection.empty())
+                {
+                    checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
                     columns_intersection.push_back(
                         ExpressionActions::getSmallestColumn(destination_metadata_snapshot->getColumns().getAllPhysical()).name);
+                }
             }
 
             if (columns_intersection.empty())

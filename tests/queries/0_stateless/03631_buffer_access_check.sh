@@ -43,4 +43,17 @@ ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT s FROM
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(secret) ON $db.test_table_2 TO $user"
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_2"
 
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_3 (s String) ENGINE = MergeTree ORDER BY s;
+INSERT INTO $db.test_table_3 VALUES ('foo');
+CREATE TABLE $db.test_buffer_3 (s String, x UInt8 DEFAULT 0)
+    ENGINE = Buffer($db, test_table_3, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_3 TO $user;
+GRANT SELECT(x) ON $db.test_table_3 TO $user;
+EOF
+# Only `x` is read and the destination lacks it, so the row count comes from a destination column the user may not read.
+(( $(${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_3" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(s) ON $db.test_table_3 TO $user"
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_3"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
