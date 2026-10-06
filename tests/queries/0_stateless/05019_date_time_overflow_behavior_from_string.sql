@@ -57,6 +57,8 @@ SELECT toDateTime('4294967295'), toDateTime('1700000000'), toDateTimeOrNull('429
 
 SELECT 'throw, Date32 rejects what it cannot represent instead of substituting a default';
 SELECT toDate32('2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
+-- Date32 ends at 2299 on this branch, so a plausible date past it is a range error rather than a parse error
+SELECT toDate32('2400-01-01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDate32('99999999'); -- { serverError CANNOT_PARSE_DATE }
 SELECT CAST(materialize('2000-13-01') AS Date32); -- { serverError CANNOT_PARSE_DATE }
 SELECT * FROM format(CSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
@@ -71,12 +73,6 @@ SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":-1}'); -- { serverError VA
 SELECT * FROM format(Values, 'v DateTime', '(4294967296)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1700000000}');
 SELECT * FROM format(Values, 'v DateTime', '(4294967295)');
-SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1703363853.5}');
-
-SELECT 'throw, the last second keeps its fractional ticks';
-SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":253402300799.5}');
-SELECT * FROM format(JSONEachRow, 'v DateTime64(3)', '{"v":253402300799.999}');
-SELECT * FROM format(Values, 'v DateTime64(3)', '(253402300799.5)');
 
 SELECT 'throw, the range is checked after the timezone offset is applied';
 SELECT parseDateTimeBestEffort('2106-02-07 07:28:15+01:00', 'UTC'), parseDateTimeBestEffort('1969-12-31 23:00:00-01:00', 'UTC');

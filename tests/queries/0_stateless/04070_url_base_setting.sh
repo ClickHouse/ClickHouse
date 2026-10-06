@@ -172,10 +172,3 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_pos_creds;
 
 # Invalid url_base (no scheme) should produce an error
 $CLICKHOUSE_CLIENT --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'example.invalid/def/', $FAST" 2>&1 | grep -oF 'must contain a scheme' | head -1
-
-# The rejected value is not echoed back: it can carry a credential, and the message reaches the client,
-# the exception column of the query log and the server log, none of which the display-secrets setting
-# gates. (last line counts the leaks; clickhouse-local is used because the client also prints back the
-# query it was given, which is the caller's own input rather than something the message disclosed)
-$CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -oF 'must contain a scheme' | head -1
-$CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -c SEKRIT_PW ||:

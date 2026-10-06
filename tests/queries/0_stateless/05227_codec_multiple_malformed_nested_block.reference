@@ -1,4 +1,0 @@
-Wrong compression methods list: header claims 127 codecs but compressed data is only 3 bytes
-Compressed data is too short to contain a block header: 4 bytes
-Wrong final decompressed size in codec Multiple, got 16, expected 10
-Ok.

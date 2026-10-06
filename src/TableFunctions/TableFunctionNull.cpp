@@ -101,7 +101,7 @@ null('structure')
 
 - `structure` — A list of columns and column types. [String](/reference/data-types/string).
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A temporary `Null`-engine table with the specified structure.
 

@@ -11,17 +11,18 @@ doc_type: 'guide'
 如果你不需要在生产环境中安装 ClickHouse，可以使用 curl 运行安装脚本。该脚本会自动为你的操作系统选择合适的可执行文件。
 
 <Steps>
-  <Step title="使用 curl 安装 ClickHouse" id="install-clickhouse-using-curl">
+  <Step>
+    ## 使用 curl 安装 ClickHouse
+
     运行以下命令，下载适用于你的操作系统的单个可执行文件。
 
     ```bash
     curl https://clickhouse.com/ | sh
     ```
 
-    在 Linux 和 macOS 上，这还会将 ClickHouse 命令行客户端 [`clickhousectl`](/zh/get-started/setup/self-managed/clickhousectl)
-    安装到 `~/.local/bin` (并创建一个 `chctl` 别名)。`clickhousectl`
-    可帮助你安装和管理多个本地 ClickHouse 版本、在后台运行服务器，
-    以及管理 ClickHouse Cloud。有关基于命令行客户端的工作流程，请参阅 [clickhousectl 安装页面](/zh/get-started/setup/self-managed/clickhousectl)。
+    在 Linux 和 macOS 上，这还会将 [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+    安装到 `~/.local/bin` (并创建一个 `chctl` 符号链接) ，这样你就可以管理本地的 ClickHouse
+    版本和服务器。
 
     如果只想安装 `clickhouse` 可执行文件而不安装 `clickhousectl`，请设置
     `CLICKHOUSE_ONLY=1`：
@@ -35,7 +36,9 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step title="启动 clickhouse-local" id="start-clickhouse-local">
+  <Step>
+    ## 启动 clickhouse-local
+
     `clickhouse-local` 允许你使用 ClickHouse 强大的 SQL 语法处理本地和远程文件，
     且无需任何配置。表数据存储在临时位置，这意味着在 `clickhouse-local`
     重启后，之前创建的表将不再可用。
@@ -47,16 +50,20 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="启动 clickhouse-server" id="start-clickhouse-server">
+  <Step>
+    ## 启动 clickhouse-server
+
     如果你希望持久化数据，就需要运行 `clickhouse-server`。你可以
-    使用以下命令启动 ClickHouse server：
+    使用以下命令启动 ClickHouse 服务器：
 
     ```bash
     ./clickhouse server
     ```
   </Step>
 
-  <Step title="启动 clickhouse-client" id="start-clickhouse-client">
+  <Step>
+    ## 启动 clickhouse-client
+
     在服务器启动后，打开一个新的终端窗口并运行以下命令，
     启动 `clickhouse-client`：
 
@@ -75,7 +82,7 @@ doc_type: 'guide'
     local-host :)
     ```
 
-    表数据存储在当前目录中，并且在 ClickHouse server 重启后
+    表数据存储在当前目录中，并且在 ClickHouse 服务器重启后
     仍然可用。如有需要，你可以将
     `-C config.xml` 作为附加命令行参数传递给 `./clickhouse server`，
     并在配置文件中提供更多配置。所有可用的配置项都记录在[这里](/zh/reference/settings/server-settings/settings)以及

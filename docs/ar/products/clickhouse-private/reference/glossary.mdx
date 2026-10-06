@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "مسرد"
+description: "تعريفات مكونات ClickHouse Private والمفاهيم والمصطلحات."
+---
+
+<div id="clickhouse-components">
+  ## مكوّنات ClickHouse
+</div>
+
+**ClickHouse Server**
+العملية الرئيسية لقاعدة بيانات ClickHouse. في ClickHouse Private، تعمل كل نسخة متماثلة من الخادم كجراب تديره StatefulSet خاصة به. راجع [الوثائق الأصلية](https://clickhouse.com/docs/operations/server-configuration-parameters/settings).
+
+**ClickHouse Keeper**
+خدمة تنسيق موزعة لبيانات النسخ المتماثل الوصفية. تتطلب حدًا أدنى من 3 مثيلات لتحقيق التوافر العالي. راجع [الوثائق الأصلية](https://clickhouse.com/docs/operations/clickhouse-keeper).
+
+**ClickHouse Operator**
+مُشغِّل Kubernetes يدير دورة حياة الموارد المخصصة من نوع ClickHouseCluster، بما في ذلك التزويد، والتوسعة، والنسخ الاحتياطية، والمطابقة بين الحالة الفعلية والمطلوبة.
+
+**ClickHouseCluster (CR)**
+المورد المخصص في Kubernetes الذي يحدّد الحالة المطلوبة لعنقود ClickHouse — النسخ المتماثلة، والتخزين، والشبكات، والتهيئة. يُنشأ عبر مخطط Helm ‏`onprem-clickhouse-cluster`.
+
+**Airgap Management API**
+مكوّن REST API اختياري لإدارة عناقيد ClickHouse Private. يوفّر نقاط نهاية للنسخ الاحتياطية، والتوسعة الرأسية، وإعادة تعيين كلمات المرور، ومراقبة الحالة.
+
+<div id="architecture-concepts">
+  ## مفاهيم البنية المعمارية
+</div>
+
+**MultiStatefulSet (MultiSTS)**
+نموذج `StatefulSet` الخاص بالمُشغِّل، حيث تكون كل نسخة متماثلة من خادم ClickHouse تابعةً لـ `StatefulSet` مستقل بها (‏1 STS = جراب واحد). يتيح ذلك تحديثات تدريجية أكثر أمانًا وإدارةً مستقلةً للنسخ المتماثلة. وقد حلّ MultiSTS محل نموذج SingleSTS القديم، الذي لم يعد يُنصح باستخدامه.
+
+**ReplicaStateMap**
+بنية بيانات داخلية ضمن حالة ClickHouseCluster CR تتتبّع حالة كل نسخة متماثلة في وضع MultiSTS. تشمل الحالات **Pending** و**Ready** و**Stopped** و**Condemned** و**Dropped** و**VolumeRestoring** و**VolumeRestored**. وهذا مخصّص للاستخدام الداخلي للمُشغِّل فقط، ويجب ألا تعتمد عليه الأنظمة الخارجية.
+
+**Condemned Replica**
+نسخة متماثلة مُعلَّمة للحذف أثناء عمليات scale-in. ينقلها المُشغِّل من **Ready** إلى **Condemned** في ReplicaStateMap، ثم يزيلها بأمان بعد مزامنة البيانات.
+
+**Hydra (Compute Separation)**
+ميزة تُمكِّن من وجود عدة ملفات تعريف حوسبة (مجموعات عُقد) داخل عنقود ClickHouse واحد. يمكن أن يكون لكل ملف تعريف تخصيصات موارد مختلفة ونقاط نهاية منفصلة، مع مشاركة مثيل Keeper واحد وبيانات S3 نفسها. ويمكن أن تكون المثيلات الفرعية للقراءة فقط أو للقراءة والكتابة.
+
+**Backup Pod**
+في وضع MultiSTS، تُخصَّص إحدى النسخ المتماثلة لتكون backup pod (`isBackupPod: true` في ReplicaStateMap). تُنفَّذ النسخ الاحتياطية دائمًا على هذا الجراب، ولا يُعلَّم أبدًا بأنه Condemned أثناء scale-in.
+
+<div id="infrastructure-terms">
+  ## مصطلحات البنية التحتية
+</div>
+
+**IRSA (أدوار IAM لحسابات الخدمة)**
+آلية من AWS تتيح لحسابات خدمة Kubernetes تولّي أدوار IAM. تُستخدم لمنح وحدات Pod الخاصة بـ ClickHouse إمكانية الوصول إلى S3 من دون بيانات اعتماد ثابتة.
+
+**Workload Identity**
+المكافئ لـ IRSA في GCP. يربط حساب خدمة Kubernetes بحساب خدمة في GCP للوصول إلى GCS وخدمات GCP الأخرى.
+
+**FIPS 140-2**
+معيار حكومي أمريكي للوحدات التشفيرية. يدعم ClickHouse Private عمليات نشر متوافقة مع FIPS باستخدام صور خادم مُنشأة خصيصًا وتوليد شهادات TLS معتمدة وفق FIPS.
+
+**NVMe Cache**
+وحدة تخزين SSD محلية من نوع NVMe متصلة بعُقد الخادم، وتُستخدم كذاكرة تخزين مؤقت على القرص للبيانات المخزنة في S3/GCS. تُحسّن أداء الاستعلامات عبر التخزين المؤقت للبيانات كثيرة الاستخدام محليًا. تُضبط عبر `bytesPerGiRAM` أو `cacheDiskSize` في مخطط Helm.
+
+**S3 Key Prefix**
+معرّف فريد (يكون عادةً UUID) يخصّص مساحة أسماء لبيانات العنقود داخل حاوية S3. يمكن لعدة عناقيد مشاركة حاوية واحدة باستخدام بادئات مفاتيح مختلفة.
+
+<div id="operational-terms">
+  ## المصطلحات التشغيلية
+</div>
+
+**المطابقة**
+هي عملية المشغّل لمقارنة الحالة المطلوبة (`CR spec`) بالحالة الفعلية (الجرابات قيد التشغيل، وStatefulSets) وإجراء التصحيحات اللازمة. تُراقَب عبر المقياس `last_cluster_reconcile`.
+
+**تعليمة تخطي المطابقة**
+التعليمة `clickhouse.com/skip-reconcile` على ClickHouseCluster CR. عند وجودها، لن يجري المشغّل المطابقة لذلك العنقود. تُستخدم أثناء العمليات اليدوية مثل إزالة نسخة متماثلة.
+
+**فحوصات التحقق المسبقة**
+أداة تحقّق (مبنية على Troubleshoot.sh) تتحقق من المتطلبات المسبقة للعنقود قبل نشر ClickHouse — مثل تسميات العُقد، وفئات التخزين، وCRDs، وغير ذلك.
+
+**PDB (PodDisruptionBudget)**
+مورد في Kubernetes يحدّ من عدد الجرابات التي يمكن أن تكون غير متاحة في الوقت نفسه. يراعي المشغّل PDBs أثناء التحديثات المتدرجة للحفاظ على التوافر.

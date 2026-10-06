@@ -6,15 +6,27 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logs', 'intégration', 'supervision des applications']
 ---
 
-import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+Ce guide prend en charge :
 
-<ClickStackIntegrates signals={['traces']} />
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✖️ Logs</td>
+      <td className="pe-2">✖️ ️️Métriques</td>
+      <td className="pe-2">✅ Traces</td>
+    </tr>
+  </tbody>
+</table>
 
 *Pour envoyer des logs à ClickStack, utilisez le [collecteur OpenTelemetry](/fr/clickstack/ingesting-data/collector).*
 
-## Prise en main {#getting-started}
+<div id="getting-started">
+  ## Prise en main
+</div>
 
-### Installer les paquets OpenTelemetry {#install-otel-packages}
+<div id="install-otel-packages">
+  ### Installer les paquets OpenTelemetry
+</div>
 
 Installez le paquet OpenTelemetry à l’aide de la commande suivante.
 
@@ -22,7 +34,9 @@ Installez le paquet OpenTelemetry à l’aide de la commande suivante.
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### Configurer OpenTelemetry + le formateur du logger {#configure-otel-logger-formatter}
+<div id="configure-otel-logger-formatter">
+  ### Configurer OpenTelemetry + le formateur du logger
+</div>
 
 Ensuite, vous devrez initialiser l’instrumentation de tracing OpenTelemetry
 et configurer le formateur des messages du logger Rails afin que les logs puissent être
@@ -63,30 +77,32 @@ Rails.application.configure do
 end
 ```
 
-### Configurer les variables d’environnement {#configure-environment-variables}
+<div id="configure-environment-variables">
+  ### Configurer les variables d’environnement
+</div>
 
-Ensuite, vous devez configurer les variables d’environnement suivantes dans votre shell pour acheminer la télémétrie vers ClickStack via le collecteur OpenTelemetry :
+Ensuite, vous devez configurer les variables d’environnement suivantes dans votre shell pour acheminer la télémétrie vers ClickStack via le collecteur OpenTelemetry :
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>
 </Tabs>
 
 *La variable d’environnement `OTEL_SERVICE_NAME` sert à identifier votre service
-dans l’application HyperDX ; vous pouvez lui donner le nom de votre choix.*
+dans l’application HyperDX ; vous pouvez lui donner le nom de votre choix.*
 
 La variable d’environnement `OTEL_EXPORTER_OTLP_HEADERS` contient la clé d’API disponible dans l’application HyperDX, sous `Team Settings → API Keys`.

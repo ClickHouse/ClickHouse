@@ -46,7 +46,8 @@ webhook rejects a cluster that enables TLS without it, and rejects `required: tr
 unless `enabled: true`.
 </Note>
 
-## Step 1 — Bootstrap a CA with cert-manager {#step-1-ca}
+<Steps>
+<Step title="Bootstrap a CA with cert-manager" id="step-1-ca">
 
 The most reproducible setup is a self-signed CA that then signs the server
 certificate. This gives you a stable `ca.crt` that clients can trust.
@@ -93,7 +94,8 @@ In production, replace the self-signed bootstrap with your real issuer (a
 corporate CA, Vault, ACME, etc.). Only Step 2 changes — the cluster wiring is
 identical.
 
-## Step 2 — Issue the server certificate {#step-2-cert}
+</Step>
+<Step title="Issue the server certificate" id="step-2-cert">
 
 Request a leaf certificate from the CA issuer. The `dnsNames` must cover how
 clients address the pods. The operator creates a single **headless** Service named
@@ -134,7 +136,8 @@ kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'ke
 # ["ca.crt","tls.crt","tls.key"]
 ```
 
-## Step 3 — Enable TLS on the cluster {#step-3-enable}
+</Step>
+<Step title="Enable TLS on the cluster" id="step-3-enable">
 
 Point the cluster at the Secret:
 
@@ -178,7 +181,8 @@ even when TLS is off, so toggling `tls.enabled` later never collides with a
 [Configuration → `additionalPorts`](/products/kubernetes-operator/guides/configuration#additional-ports).
 </Note>
 
-## Step 4 — Connect over TLS {#step-4-connect}
+</Step>
+<Step title="Connect over TLS" id="step-4-connect">
 
 With `required: true`, clients must use the secure ports and trust the CA. Address
 a specific replica pod through the headless Service (or your own `ClusterIP`
@@ -207,6 +211,9 @@ Pull `ca.crt` straight from the Secret for local testing:
 kubectl -n <namespace> get secret clickhouse-cert \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 ```
+
+</Step>
+</Steps>
 
 ## Encrypting Keeper traffic {#keeper-tls}
 

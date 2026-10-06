@@ -72,8 +72,7 @@ PR=<pr-number>
 SHA=<candidate-sha>
 ARCH=arm        # arm or amd
 JOB="build_${ARCH}_release"
-# The S3 layout inserts the normalized workflow name after <sha> (PR builds: "pr").
-REPORT="https://clickhouse-builds.s3.amazonaws.com/PRs/${PR}/${SHA}/pr/${JOB}/artifact_report_${JOB}.json"
+REPORT="https://clickhouse-builds.s3.amazonaws.com/PRs/${PR}/${SHA}/${JOB}/artifact_report_${JOB}.json"
 
 curl -fsS "$REPORT" | jq -r '.build_urls[] | select(endswith("/clickhouse"))'
 ```
@@ -84,8 +83,7 @@ For an exact master/reference build:
 SHA=<reference-sha>
 ARCH=arm        # arm or amd
 JOB="build_${ARCH}_release"
-# master/reference builds live under the "masterci" workflow segment.
-URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${SHA}/masterci/${JOB}/clickhouse"
+URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${SHA}/${JOB}/clickhouse"
 
 curl -sfI "$URL"
 ```
@@ -98,7 +96,7 @@ curl -fL "$URL" -o "tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
 chmod +x "tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
 ```
 
-For PR artifacts, prefer the URL returned by `artifact_report_${JOB}.json`; for master/reference artifacts, verify the exact `REFs/<branch>/<sha>/masterci/<job>/clickhouse` URL with `curl -sfI`. Avoid non-exact `master/amd64/clickhouse` or `master/aarch64/clickhouse` fallbacks for validation unless the user explicitly accepts that they are not SHA-pinned.
+For PR artifacts, prefer the URL returned by `artifact_report_${JOB}.json`; for master/reference artifacts, verify the exact `REFs/<branch>/<sha>/<job>/clickhouse` URL with `curl -sfI`. Avoid non-exact `master/amd64/clickhouse` or `master/aarch64/clickhouse` fallbacks for validation unless the user explicitly accepts that they are not SHA-pinned.
 
 ## Starting servers
 

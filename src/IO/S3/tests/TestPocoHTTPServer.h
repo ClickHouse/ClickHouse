@@ -18,18 +18,6 @@
 #include <Poco/SharedPtr.h>
 #include <fmt/format.h>
 
-/// Keep-alive is disabled so a handler thread exits right after sending the response: it does
-/// not park on the connection until the keep-alive timeout (starving the shared default
-/// `Poco::ThreadPool`, capacity 16 for the whole test binary), and teardown does not need
-/// `stopAll(/* abortCurrent */ true)`, whose socket shutdown races with the handler thread
-/// closing the same socket at the end of `HTTPServerConnection::run` (reported by TSan).
-inline Poco::AutoPtr<Poco::Net::HTTPServerParams> makeMockServerParams()
-{
-    Poco::AutoPtr<Poco::Net::HTTPServerParams> params(new Poco::Net::HTTPServerParams());
-    params->setKeepAlive(false);
-    return params;
-}
-
 class MockRequestHandler : public Poco::Net::HTTPRequestHandler
 {
     Poco::Net::MessageHeader & last_request_header;
@@ -80,15 +68,10 @@ public:
     TestPocoHTTPServer():
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new HTTPRequestHandlerFactory(last_request_header)),
-        server_params(makeMockServerParams()),
+        server_params(new Poco::Net::HTTPServerParams()),
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
-    }
-
-    ~TestPocoHTTPServer()
-    {
-        server->stop();
     }
 
     std::string getUrl()
@@ -183,15 +166,10 @@ public:
     TestPocoHTTPStsServer(std::string role_access_key, std::string role_secret_key):
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, std::move(role_access_key), std::move(role_secret_key))),
-        server_params(makeMockServerParams()),
+        server_params(new Poco::Net::HTTPServerParams()),
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
-    }
-
-    ~TestPocoHTTPStsServer()
-    {
-        server->stop();
     }
 
     std::string getUrl()

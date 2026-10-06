@@ -9,13 +9,13 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP', 'Okta', '
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="SAML SSO"/>
 
 ClickHouse Cloud supports single-sign on (SSO) via security assertion markup language (SAML). This enables you to sign in securely to your ClickHouse Cloud organization by authenticating with your identity provider (IdP).
 
-We support service provider-initiated SSO, multiple organizations using separate connections, and just-in-time provisioning. We also support SCIM provisioning with [Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) and [Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra). We don't yet support attribute mapping.
+We support service provider-initiated SSO, multiple organizations using separate connections, and just-in-time provisioning. We also support [SCIM provisioning](/products/cloud/guides/security/cloud-access-management/scim-setup) in private preview, with support for Okta. We don't yet support attribute mapping.
 
 Customers enabling SAML integrations can also designate the default role that will be assigned to new users and adjust session timeout settings.
 
@@ -335,13 +335,7 @@ No — only service-provider-initiated flows. Users navigate to `https://console
 
 <Accordion title="How do I use SAML SSO with multiple organizations?">
 
-ClickHouse Cloud supports multi-organization SSO with a separate connection per organization.
-
-Your first login to each organization must use its direct link (`https://console.clickhouse.cloud/?connection={organizationId}`). This first login provisions your account in that organization. If your organization has SCIM enabled, you can skip this step because your account will already be provisioned.
-
-For subsequent sign-ins, log in to any of your SAML organizations. Your other SAML organizations are available in the organization switcher in the console sidebar, and selecting one signs you into that organization through its SSO.
-
-If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
+ClickHouse Cloud supports multi-organization SSO with a separate connection per organization. Use the direct link (`https://console.clickhouse.cloud/?connection={organizationid}`) to log in to each one, and log out of one organization before logging into another. If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
 
 </Accordion>
 
@@ -356,5 +350,5 @@ ClickHouse Cloud doesn't automatically link SSO and non-SSO accounts, so a user 
 ## Next steps {#next-steps}
 
 - [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — manage permissions and restrict access to SAML connections only.
-- SCIM provisioning — automate user and group provisioning with [Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) or [Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
+- [SCIM provisioning](/products/cloud/guides/security/cloud-access-management/scim-setup) — automate user and group provisioning (private preview).
 - [Console roles and permissions](/products/cloud/reference/security/console-roles) — the roles you can assign as the default SAML role.

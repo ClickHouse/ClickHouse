@@ -1,7 +1,6 @@
 #pragma once
 #include <base/types.h>
 #include <Common/PODArray.h>
-#include <Storages/MergeTree/IPostingListCodec.h>
 #include <cstdint>
 #include <memory>
 
@@ -26,10 +25,8 @@ struct PostingListSegment
     UInt32 first_row_id = 0;
     /// Total packed blocks, including the (possibly shorter) tail block.
     size_t block_count = 0;
-    /// Element count of the tail block (< `IPostingListBlockCodec::BLOCK_SIZE`), 0 if the segment is block-aligned.
+    /// Element count of the tail block (< BLOCK_SIZE), 0 if the segment is block-aligned.
     size_t tail_size = 0;
-    /// Block codec used to compress this segment's packed blocks.
-    IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 
     size_t bytesAllocated() const
     {

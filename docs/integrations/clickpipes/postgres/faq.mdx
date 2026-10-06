@@ -64,7 +64,20 @@ Yes, partitioned tables are supported out of the box, as long as they have a PRI
 
 ### Can I connect Postgres databases that don't have a public IP or are in private networks? {#can-i-connect-postgres-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
-Yes. See [ClickPipes networking](/integrations/clickpipes/networking) for the ways ClickPipes can reach a data source that isn't exposed to the public internet.
+Yes! ClickPipes for Postgres offers two ways to connect to databases in private networks:
+
+1. **SSH Tunneling**
+   - Works well for most use cases
+   - See the setup instructions [here](/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
+   - Works across all regions
+
+2. **AWS PrivateLink**
+   - Available in three AWS regions:
+     - us-east-1
+     - us-east-2
+     - eu-central-1
+   - For detailed setup instructions, see our [PrivateLink documentation](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+   - For regions where PrivateLink isn't available, please use SSH tunneling
 
 ### How do you handle UPDATEs and DELETEs? {#how-do-you-handle-updates-and-deletes}
 

@@ -88,8 +88,7 @@ bool NATSSource::checkTimeLimit() const
     {
         auto elapsed_ns = total_stopwatch.elapsed();
 
-        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
-        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
             return false;
     }
 

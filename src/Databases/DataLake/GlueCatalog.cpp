@@ -68,6 +68,7 @@ namespace DB::FailPoints
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
@@ -162,6 +163,7 @@ GlueCatalog::GlueCatalog(
 
 
     Aws::Glue::GlueClientConfiguration client_configuration;
+    client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
@@ -473,8 +475,7 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(
-    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
 {
     /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
     /// web-identity, etc.) refreshes its cached credentials internally before
@@ -724,7 +725,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);

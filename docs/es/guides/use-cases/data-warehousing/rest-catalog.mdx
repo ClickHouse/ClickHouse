@@ -9,22 +9,22 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 <Note>
-  La integración con el catálogo REST funciona solo con tablas Iceberg.
+  La integración con el REST Catalog funciona solo con tablas Iceberg.
   Esta integración es compatible tanto con AWS S3 como con otros proveedores de almacenamiento en la nube.
 </Note>
 
-ClickHouse admite la integración con múltiples catálogos (Unity, Glue, REST, Polaris, etc.). En esta guía se explica cómo consultar sus datos con ClickHouse y la especificación [catálogo REST](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml/).
+ClickHouse admite la integración con múltiples catálogos (Unity, Glue, REST, Polaris, etc.). En esta guía se explica cómo consultar sus datos con ClickHouse y la especificación [REST Catalog](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml/).
 
-El catálogo REST es una especificación de API estandarizada para catálogos Iceberg, compatible con varias plataformas, entre ellas:
+El REST Catalog es una especificación de API estandarizada para catálogos Iceberg, compatible con varias plataformas, entre ellas:
 
 * **Entornos de desarrollo local** (con configuraciones de docker-compose)
 * **Servicios gestionados** como Tabular.io
-* **Implementaciones self-hosted** de catálogo REST
+* **Implementaciones self-hosted** de REST Catalog
 
 <Note>
   Como esta funcionalidad está en beta, deberá habilitarla con:

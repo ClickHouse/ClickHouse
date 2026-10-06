@@ -9,7 +9,7 @@ from helpers.test_tools import TSV
 from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
-URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_url_wildcard_from_index_pages=1"
+URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_experimental_url_wildcard_from_index_pages=1"
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/conf.xml", "configs/named_collections.xml", "configs/query_log.xml"],
@@ -183,7 +183,7 @@ def test_url_wildcard_engine_checks_headers_before_reading():
         "'http://resolver:8087/data/**/part*.tsv', "
         "'TSV', "
         "headers('X-Forbidden-Url-Wildcard'='1'))",
-        settings={"allow_url_wildcard_from_index_pages": 1},
+        settings={"allow_experimental_url_wildcard_from_index_pages": 1},
     )
     assert "HTTP header" in error
     assert "X-Forbidden-Url-Wildcard" in error
@@ -682,7 +682,7 @@ def test_url_engine_wildcard_preserves_failover_options():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/source_query/**/part*.tsv?token={bad|abc}', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
         result = node1.query(f"SELECT sum(x) FROM {table_name}")
         assert result.strip() == "13"
@@ -697,12 +697,12 @@ def test_url_engine_wildcard_limit_uses_query_setting():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/deep/**/part*.tsv', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
 
         error = node1.query_and_get_error(
             f"SELECT count() FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, url_wildcard_max_directories_to_read=3"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, url_wildcard_max_directories_to_read=3"
         )
         assert "Too many directories while expanding URL wildcard" in error
         assert "url_wildcard_max_directories_to_read" in error
@@ -757,18 +757,18 @@ def test_url_engine_wildcard_redirect_uses_query_setting():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/redirect/part*.tsv', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
 
         error = node1.query_and_get_error(
             f"SELECT sum(x) FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, max_http_get_redirects=0"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=0"
         )
         assert "Too many redirects while trying to access" in error
 
         result = node1.query(
             f"SELECT sum(x) FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, max_http_get_redirects=1"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=1"
         )
         assert result.strip() == "19"
     finally:
@@ -779,7 +779,7 @@ def test_url_wildcard_is_experimental():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
     )
-    assert "allow_url_wildcard_from_index_pages" in error
+    assert "allow_experimental_url_wildcard_from_index_pages" in error
 
 
 def test_table_function_url_access_rights():

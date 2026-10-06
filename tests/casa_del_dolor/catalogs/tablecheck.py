@@ -26,7 +26,7 @@ try:
 except ImportError:
     _TEMPORAL_NTZ_TYPES = ()
 
-from .laketables import SparkTable, LakeFormat, LakeCatalogs
+from .laketables import SparkTable, LakeFormat
 from integration.helpers.client import Client
 
 # Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
@@ -100,66 +100,13 @@ class SparkAndClickHouseCheck:
             return True, engine
         return engine.startswith(expected), engine
 
-    def _log_time_travel_context(self, client, spark, table: SparkTable, next_time):
-        """Dump both engines' snapshot history after a time-travel mismatch.
-
-        Without this a mismatch reports only the instant, and the table is usually gone by the
-        time anyone looks, so there is no way to tell whether the two engines resolved that
-        instant to the same snapshot. Diagnostic only: never fail the check from here.
-        """
-        if table.lake_format != LakeFormat.Iceberg or next_time is None:
-            return
-        try:
-            rows = spark.sql(
-                f"SELECT made_current_at, snapshot_id, is_current_ancestor "
-                f"FROM {table.get_table_full_path()}.history ORDER BY made_current_at;"
-            ).collect()
-            self.logger.error(
-                f"Spark history for {table.get_clickhouse_path()}: "
-                + ", ".join(
-                    f"{r.made_current_at}={r.snapshot_id}"
-                    f"{'' if r.is_current_ancestor else ' (not ancestor)'}"
-                    for r in rows
-                )
-            )
-        except Exception as e:
-            self.logger.error(f"Could not read Spark history: {e}")
-        try:
-            # `system.iceberg_history.table` holds the unquoted identifier, so build it from the
-            # table's own fields: `get_clickhouse_path()` is SQL text and backticks the namespace
-            # path for catalog-backed tables, which would never match.
-            name = (
-                table.table_name
-                if table.catalog == LakeCatalogs.NoCatalog
-                else table.get_namespace_path()
-            )
-            ch_history = client.query(
-                f"SELECT made_current_at, snapshot_id, is_current_ancestor "
-                f"FROM system.iceberg_history "
-                f"WHERE database = '{table.database_name}' AND table = '{name}' "
-                f"ORDER BY made_current_at FORMAT TSV;"
-            )
-            self.logger.error(
-                f"ClickHouse history for {table.get_clickhouse_path()}: "
-                f"{ch_history.strip() if isinstance(ch_history, str) else ch_history}"
-            )
-        except Exception as e:
-            self.logger.error(f"Could not read ClickHouse iceberg_history: {e}")
-
-    def check_table(
-        self,
-        cluster,
-        spark: SparkSession,
-        table: SparkTable,
-        extra_ch_settings: str = "",
-    ) -> bool:
+    def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
             clickhouse_predicate = ""
             spark_predicate = ""
             extra_predicate = ""
             snapshots = []
             timestamps = []
-            next_time = None
 
             client = Client(
                 host=(
@@ -181,16 +128,10 @@ class SparkAndClickHouseCheck:
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
                 result = spark.sql(
-                    f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
+                    f"SELECT snapshot_id, committed_at FROM {table.get_table_full_path()}.snapshots;"
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
-                # Sample the time-travel instant from `history`, not `snapshots`: both
-                # `TIMESTAMP AS OF` and `iceberg_timestamp_ms` resolve through the snapshot log, so
-                # after a rollback a `committed_at` can name a time that snapshot was never current.
-                result = spark.sql(
-                    f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
-                ).collect()
-                timestamps = [r.made_current_at for r in result]
+                timestamps = [r.committed_at for r in result]
             elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
@@ -210,16 +151,6 @@ class SparkAndClickHouseCheck:
                 spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
                 extra_predicate = f" on timestamp {next_time}"
 
-            # Fold in caller-supplied ClickHouse settings (e.g. the File-table reader's
-            # engine_file_skip_empty_files / missing-column pins) so the count and hash queries
-            # below run under the same settings as the caller's probe, not the randomized defaults
-            if extra_ch_settings:
-                clickhouse_predicate += (
-                    f", {extra_ch_settings}"
-                    if clickhouse_predicate
-                    else f" SETTINGS {extra_ch_settings}"
-                )
-
             # Start by checking counts
             spark_query = spark.sql(
                 f"SELECT count(*) c FROM {table.get_table_full_path()}{spark_predicate};"
@@ -238,7 +169,6 @@ class SparkAndClickHouseCheck:
                 self.logger.error(
                     f"The row count for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark: {spark_count} and ClickHouse: {ch_count}"
                 )
-                self._log_time_travel_context(client, spark, table, next_time)
                 return False
 
             # Big-int CH types (UInt64/128/256, Int128/256) map to Spark Long or an under-precision
@@ -281,26 +211,15 @@ class SparkAndClickHouseCheck:
             # `CAST(decimal AS STRING)` can emit scientific notation for a zero read from a lake
             # file (e.g. "0E-11"), which ClickHouse never does; `format_number` always yields plain
             # fixed-point (strip its grouping commas) and preserves full 38-digit precision.
-            # The same applies inside Array(Decimal) columns, so their elements are formatted
-            # one by one instead of relying on `CAST(array AS STRING)`.
-            def spark_decimal_str(expr: str, scale: int) -> str:
-                plain = f"regexp_replace(format_number({expr}, {scale}), ',', '')"
-                return (
-                    f"CASE WHEN {plain} LIKE '%.%' "
-                    f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
-                )
-
             def spark_col_expr(col) -> str:
                 if isinstance(col.spark_type, DecimalType):
-                    s = spark_decimal_str(col.column_name, col.spark_type.scale)
-                elif isinstance(col.spark_type, ArrayType) and isinstance(
-                    col.spark_type.elementType, DecimalType
-                ):
-                    # `array_join` drops NULL elements unless a replacement is given, which would
-                    # make `[1, NULL, 2]` and `[1, 2]` hash the same. Render them as `null`, the
-                    # same text `CAST(array AS STRING)` produces for every other element type.
-                    elem = spark_decimal_str("x", col.spark_type.elementType.scale)
-                    s = f"'[' || array_join(transform({col.column_name}, x -> {elem}), ', ', 'null') || ']'"
+                    plain = (
+                        f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
+                    )
+                    s = (
+                        f"CASE WHEN {plain} LIKE '%.%' "
+                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
+                    )
                 else:
                     s = f"CAST({col.column_name} AS STRING)"
                 return f"COALESCE({s}, '{_NULL_SENTINEL}')"
@@ -327,12 +246,9 @@ class SparkAndClickHouseCheck:
             # ClickHouse arrays as strings don't have a space after the comma, add it
             # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
             # and compared rather than dropped by groupArray.
-            # `toString` of a NULL element is NULL, and `arrayStringConcat` skips those, so a NULL
-            # element would vanish and `[1, NULL, 2]` would hash like `[1, 2]`. Spell it as `null`
-            # to match what Spark renders for the same array.
             clickhouse_strings = {
                 col.column_name: (
-                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> coalesce(toString(x), 'null'), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
                     if isinstance(col.spark_type, (ArrayType))
                     else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
                 )
@@ -358,7 +274,6 @@ class SparkAndClickHouseCheck:
                 self.logger.error(
                     f"The hash for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark and ClickHouse"
                 )
-                self._log_time_travel_context(client, spark, table, next_time)
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it

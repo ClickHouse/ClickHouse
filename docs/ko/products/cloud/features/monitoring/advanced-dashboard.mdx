@@ -39,13 +39,11 @@ Cloud에서 Advanced dashboard를 사용하는 방법을 설명합니다.
   * `Monitoring` → `Advanced dashboard`
   * `You can still access the native advanced dashboard.`를 클릭합니다
 
-그러면 네이티브 고급 대시보드가 새 탭에서 열립니다. 대시보드에 액세스하려면
-인증해야 합니다.
+그러면 네이티브 고급 대시보드가 새 탭에서 열립니다. 대시보드에 액세스하려면 인증해야 합니다.
 
 <Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="고급 대시보드" />
 
-각 시각화는 해당 내용을 채우는 SQL 쿼리와 연결되어 있습니다. 펜 아이콘을 클릭하면
-이 쿼리를 편집할 수 있습니다.
+각 시각화는 해당 내용을 채우는 SQL 쿼리와 연결되어 있습니다. 펜 아이콘을 클릭하면 이 쿼리를 편집할 수 있습니다.
 
 <Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="고급 대시보드" />
 
@@ -128,16 +126,16 @@ ClickHouse 서비스 상태를 실시간으로 파악하면 비즈니스에 영�
 수집 중 생성되는 파트 수가 줄어들어, 디스크 쓰기 효율이 높아지고 머지
 작업도 감소합니다.
 
-최적화가 충분하지 않은 삽입을 파악할 때 확인해야 할 핵심 메트릭은 **초당 삽입된 행 수**와
-**파티션별 최대 파트 수**입니다.
+최적화가 충분하지 않은 삽입을 파악할 때 확인해야 할 핵심 메트릭은 **Inserted Rows/sec**와
+**Max Parts for Partition**입니다.
 
 <Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="배치되지 않은 삽입" />
 
-위 예시에서는 13시와 14시 사이에 **초당 삽입된 행 수**와 **파티션별 최대 파트 수**에서
+위 예시에서는 13시와 14시 사이에 **Inserted Rows/sec**와 **Max Parts for Partition**에서
 두 번의 급증이 나타납니다. 이는 데이터가 적절한 속도로 수집되고 있음을 의미합니다.
 
-그런 다음 16시 이후에는 **파티션별 최대 파트 수**에서 또 한 번 큰 급증이 보이지만,
-**초당 삽입된 행 수**는 매우 낮습니다. 생성되는 데이터 양은 매우 적은데도
+그런 다음 16시 이후에는 **Max Parts for Partition**에서 또 한 번 큰 급증이 보이지만,
+**Inserted Rows/sec**는 매우 낮습니다. 생성되는 데이터 양은 매우 적은데도
 많은 파트가 만들어지고 있으므로, 이는 파트 크기가
 최적이 아님을 나타냅니다.
 
