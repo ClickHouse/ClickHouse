@@ -1,0 +1,19 @@
+100	2460400835682523501
+100
+i64_neg: has a negative value count or size
+arr_neg: has a negative value count or size
+str_bytes_neg: has a negative value count or size
+str_size_neg: has a negative value count or size
+nul_neg: has a negative value count or size
+i64_huge: same as i64
+str_bytes_huge: same as str
+arr_huge: same as arr
+strdict_huge: same as strdict
+i64_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as i64
+str_bytes_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as str
+arr_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as arr
+strdict_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as strdict
+wide_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as wide
+wide_huge --input_format_parquet_memory_low_watermark=18446744073709551615: same as wide
+arr_2e59 --input_format_parquet_memory_low_watermark=9223372036854775808: same as arr
+arr_4g --input_format_parquet_memory_low_watermark=8589934592: same as arr

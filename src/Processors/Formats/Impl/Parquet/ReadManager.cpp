@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+#include <limits>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -832,7 +833,11 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 }
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
+                double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
+                /// Keeps this batch's signed sum representable whatever the estimate.
+                ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
+                size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
+                size_t column_memory = estimate < static_cast<double>(max_charge) ? static_cast<size_t>(estimate) : max_charge;
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }
