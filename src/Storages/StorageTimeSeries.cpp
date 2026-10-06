@@ -1147,6 +1147,9 @@ The _tags_ table must have columns:
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
+| `sample_kinds` | [ ] | `UInt8` | `UInt8` or `SimpleAggregateFunction(groupBitOr, UInt8)` | The kinds of samples of time series with that `id`, a bitmask: 1 - float samples, 2 - [histogram](#histograms-table) samples. Every row has the kinds of the samples written together with it (aggregated like `min_time` and `max_time`), and [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) reads only the target tables of the kinds present. The column is required in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later if [store_min_time_and_max_time](#settings) is `true`. It has no default: the `TimeSeries` table writes it with every row, and rows written to the tags table another way must have the right kinds, otherwise their samples may be missed. The engine of the tags table must keep the kinds when it merges rows: a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the type `SimpleAggregateFunction(groupBitOr, UInt8)`. A customized `MergeTree` engine of the inner tags table is checked when the table is created. An external tags table, and an inner one passing its rows to other tables (e.g. `Distributed`), are the responsibility of their owner. See [Adding the `sample_kinds` column to an external tags table](#sample-kinds-external-tags-table) |
 
 New inner tags tables of [version](#schema-versioning) 5 and later with a `MergeTree` family engine have an inverted text index on `tags`:
 `INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. It accelerates exact label matches such as
@@ -1155,6 +1158,21 @@ match missing labels and do not use this index.
 
 Explicit indexes declared in `TAGS INNER COLUMNS` replace the default index. Existing tables and external
 tags tables keep their indexes; add and materialize the index on their tags target table to enable it.
+
+#### Adding the `sample_kinds` column to an external tags table {#sample-kinds-external-tags-table}
+
+A `TimeSeries` table of version )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( or later requires the `sample_kinds` column in an external tags table. The rows written by a table of an earlier version
+have float samples only, so a `DEFAULT 1` fills the column for them, including the rows the old table writes until it's replaced:
+
+```sql
+ALTER TABLE ext_tags ADD COLUMN sample_kinds SimpleAggregateFunction(groupBitOr, UInt8) DEFAULT 1;
+CREATE TABLE new_time_series_table ENGINE = TimeSeries SAMPLES ext_samples TAGS ext_tags;
+```
+
+Once only the new table writes the tags table, the default can be removed:
+`ALTER TABLE ext_tags MATERIALIZE COLUMN sample_kinds` followed by `ALTER TABLE ext_tags MODIFY COLUMN sample_kinds REMOVE DEFAULT`.
 
 ### Metric families table {#metric-families-table}
 
@@ -1292,6 +1310,7 @@ TAGS INNER COLUMNS
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8),
     INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
@@ -1371,6 +1390,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8),
     INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
@@ -1682,7 +1702,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 7 | The deduplication caches of the [metric families](#metric-families-table) and [tags](#tags-table) tables were introduced together with their settings (see [`metric_families_deduplication_cache_expiration_seconds`](#settings) and [`tags_deduplication_cache_expiration_seconds`](#settings)). Tables of earlier versions don't use the caches. The stored data didn't change |
 | )DOCS_MD"
         + histograms_version
-        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a fifth target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table |
+        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a fifth target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table. The [tags](#tags-table) table got the column `sample_kinds` |
 
 # Functions {#functions}
 

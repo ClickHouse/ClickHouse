@@ -37,6 +37,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesSampleKinds.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -607,6 +608,11 @@ namespace
             remove_column(TimeSeriesColumnNames::MaxTime);
         }
 
+        /// The column "sample_kinds" is not stored. Checked against the old settings: a table without the column may have a tag
+        /// column with this name.
+        if (TimeSeriesSampleKinds::isStored(old_settings) && !TimeSeriesSampleKinds::isStored(new_settings))
+            remove_column(TimeSeriesColumnNames::SampleKinds);
+
         /// The ephemeral column "all_tags" was used in version 0 for calculating identifiers: it contained all the tags,
         /// while the "tags" column contained only the tags without dedicated columns.
         if (old_settings[TimeSeriesSetting::version] == 0)
@@ -739,6 +745,13 @@ namespace
 
                 if (has_default)
                     return false;
+
+                if ((name == TimeSeriesColumnNames::SampleKinds) && TimeSeriesSampleKinds::isStored(settings))
+                {
+                    bool aggregated = false;
+                    return TimeSeriesSampleKinds::isValidDataType(*type, aggregated)
+                        && aggregated == settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                }
 
                 if (name == TimeSeriesColumnNames::MetricName)
                     return type_name == "LowCardinality(String)";
@@ -989,12 +1002,23 @@ namespace
                 bool primary_key_is_generated = !inner_engine.primary_key
                     || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
 
-                /// The generated sorting key contains `min_time` and `max_time` if they are stored but not aggregated.
+                /// The generated sorting key contains `min_time` and `max_time` (and `sample_kinds` if the table has it)
+                /// if they are stored but not aggregated.
                 /// Version 0 tables were also generated with the short key regardless of these settings.
                 bool min_time_and_max_time_in_sorting_key = settings[TimeSeriesSetting::store_min_time_and_max_time]
                     && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
-                bool sorting_key_is_generated = sorting_key_equals(
-                    min_time_and_max_time_in_sorting_key ? "metric_name, id, min_time, max_time" : "metric_name, id");
+
+                String generated_sorting_key = "metric_name, id";
+                if (min_time_and_max_time_in_sorting_key)
+                {
+                    generated_sorting_key += ", min_time, max_time";
+
+                    /// `sample_kinds` is in the generated sorting key only when it isn't aggregated, like `min_time` and `max_time`.
+                    if (TimeSeriesSampleKinds::isStored(settings))
+                        generated_sorting_key += ", sample_kinds";
+                }
+
+                bool sorting_key_is_generated = sorting_key_equals(generated_sorting_key);
                 if (!sorting_key_is_generated && is_version_0)
                     sorting_key_is_generated = sorting_key_equals("metric_name, id");
 
@@ -1224,6 +1248,13 @@ namespace
                         add_column_if_missing(TimeSeriesColumnNames::MaxTime,
                             dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
                     }
+                }
+
+                /// Column "sample_kinds", next to "min_time" and "max_time" and aggregated the same way.
+                if (TimeSeriesSampleKinds::isStored(time_series_settings))
+                {
+                    const bool aggregated = time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                    add_column_if_missing(TimeSeriesColumnNames::SampleKinds, dataTypeToAST(TimeSeriesSampleKinds::getDataType(aggregated)));
                 }
 
                 break;
@@ -1724,6 +1755,10 @@ namespace
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
 
+                        /// Not aggregated either, so the rows with other kinds of samples aren't replaced.
+                        if (TimeSeriesSampleKinds::isStored(settings))
+                            key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::SampleKinds));
+
                         /// These columns are nullable, so the sorting key needs `allow_nullable_key`.
                         set_engine_setting("allow_nullable_key", 1);
                     }
@@ -1790,14 +1825,82 @@ namespace
         return true;
     }
 
+    /// Checks the type of the column `sample_kinds` of a tags table (see TimeSeriesSampleKinds). It must be `UInt8` or
+    /// `SimpleAggregateFunction(groupBitOr, UInt8)`, and the engine of an inner tags table must keep it when it merges rows:
+    /// a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the aggregated type.
+    /// Other engines don't merge rows themselves (e.g. `Memory`), or pass them to tables of the user (e.g. `Distributed`),
+    /// whose engines are the responsibility of the user like the engine of an external tags table (`inner_engine` is null then).
+    void checkSampleKindsColumn(const IDataType & type, const ASTStorage * inner_engine, ViewTarget::Kind target_kind, const StorageID & table_id)
+    {
+        const auto & valid_plain_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
+        const auto & valid_aggregated_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ true);
+
+        bool aggregated = false;
+        if (!TimeSeriesSampleKinds::isValidDataType(type, aggregated))
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} table has type {}, but expected {} or {}",
+                table_id.getNameForLogs(),
+                TimeSeriesColumnNames::SampleKinds,
+                target_kind,
+                type.getName(),
+                valid_plain_type->getName(),
+                valid_aggregated_type->getName());
+
+        if (!inner_engine)
+            return;
+
+        chassert(inner_engine->engine);
+
+        std::string_view engine_name = inner_engine->engine->name;
+        if (!engine_name.ends_with("MergeTree"))
+            return;
+        if (engine_name.starts_with("Replicated"))
+            engine_name.remove_prefix(strlen("Replicated"));
+        else if (engine_name.starts_with("Shared"))
+            engine_name.remove_prefix(strlen("Shared"));
+        if (engine_name == "MergeTree")
+            return;
+
+        /// Merged rows have equal sorting keys, and key columns aren't aggregated, so a key column keeps its value. Its type is
+        /// `UInt8` then: a `SimpleAggregateFunction` column isn't allowed in a sorting key.
+        if (inner_engine->order_by)
+        {
+            const auto * function = inner_engine->order_by->as<ASTFunction>();
+            const ASTs key_elements = (function && (function->name == "tuple") && function->arguments)
+                ? function->arguments->children
+                : ASTs{inner_engine->order_by};
+            for (const auto & element : key_elements)
+            {
+                const auto * identifier = element->as<ASTIdentifier>();
+                if (identifier && (identifier->name() == TimeSeriesColumnNames::SampleKinds))
+                    return;
+            }
+        }
+
+        if ((engine_name == "AggregatingMergeTree") && aggregated)
+            return;
+
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "{}: The engine {} of the inner {} table could lose the kinds of samples of time series when it merges rows. "
+            "Add the column {} to the sorting key, or use MergeTree, or AggregatingMergeTree with the column of type {}",
+            table_id.getNameForLogs(),
+            inner_engine->engine->name,
+            target_kind,
+            TimeSeriesColumnNames::SampleKinds,
+            valid_aggregated_type->getName());
+    }
+
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
+    /// `inner_engine` is the engine of an inner target table, null for an external one.
     void checkTargetTable(
         const ColumnsDescription & target_table_columns,
         ViewTarget::Kind target_kind,
         const TimeSeriesSettings & time_series_settings,
         const ResolvedTimeSeriesTypes & resolved_types,
-        const StorageID & table_id)
+        const StorageID & table_id,
+        const ASTStorage * inner_engine)
     {
         auto check_column = [&](std::string_view column_name)
         {
@@ -1913,6 +2016,16 @@ namespace
             check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
         };
 
+        const auto check_sample_kinds_column = [&]()
+        {
+            if (!TimeSeriesSampleKinds::isStored(time_series_settings))
+                return;
+
+            check_column(TimeSeriesColumnNames::SampleKinds);
+            const auto * sample_kinds_column = target_table_columns.tryGet(TimeSeriesColumnNames::SampleKinds);
+            checkSampleKindsColumn(*sample_kinds_column->type, inner_engine, target_kind, table_id);
+        };
+
         switch (target_kind)
         {
             case ViewTarget::Samples:
@@ -1944,6 +2057,8 @@ namespace
                     check_column_min_max_time(TimeSeriesColumnNames::MinTime);
                     check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
                 }
+
+                check_sample_kinds_column();
                 break;
             }
 
@@ -2353,7 +2468,13 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             if (hasTargetTableID(create_query, kind))
             {
                 /// An external target table is specified - check it has all the required columns.
-                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind));
+                checkTargetTable(
+                    get_external_target_columns(kind),
+                    kind,
+                    settings,
+                    resolved_types,
+                    create_query.getTargetTableID(kind),
+                    /* inner_engine = */ nullptr);
             }
             else
             {
@@ -2364,14 +2485,21 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id))
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
-                /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id);
-
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
                     : make_intrusive<ASTStorage>();
                 if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *params.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
+
+                /// Validate the user-provided types of the inner columns the same way external targets are validated, and
+                /// together with the engine where the requirements depend on it.
+                checkTargetTable(
+                    getInnerColumnsDescription(*inner_columns, kind, table_id),
+                    kind,
+                    settings,
+                    resolved_types,
+                    table_id,
+                    inner_engine.get());
 
                 if (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TAGS_TEXT_INDEX
                     && normalizeInnerIndices(*inner_columns, *inner_engine, kind))

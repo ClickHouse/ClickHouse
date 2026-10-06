@@ -24,6 +24,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesSampleKinds.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -166,6 +167,33 @@ namespace
 
             out_min_time_column.insert(min_max->first);
             out_max_time_column.insert(min_max->second);
+        }
+    }
+
+    /// Fills column sample_kinds for the "tags" table with the kinds of samples of every row with `filter[i]` set,
+    /// see TimeSeriesSampleKinds. `histograms_offsets` is null if no histograms are inserted.
+    void fillSampleKindsColumn(
+        const PaddedPODArray<UInt8> & filter,
+        const ColumnArray::Offsets & samples_offsets,
+        const ColumnArray::Offsets * histograms_offsets,
+        IColumn & out_sample_kinds_column)
+    {
+        const auto has_elements = [](const ColumnArray::Offsets & offsets, size_t row)
+        {
+            return offsets[row] != offsets[row - 1];
+        };
+
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            if (!filter[i])
+                continue;
+
+            UInt8 sample_kinds = 0;
+            if (has_elements(samples_offsets, i))
+                sample_kinds |= TimeSeriesSampleKinds::Floats;
+            if (histograms_offsets && has_elements(*histograms_offsets, i))
+                sample_kinds |= TimeSeriesSampleKinds::Histograms;
+            out_sample_kinds_column.insert(sample_kinds);
         }
     }
 
@@ -607,6 +635,12 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MaxTime});
     }
 
+    if (TimeSeriesSampleKinds::isStored(settings))
+    {
+        const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
+        tags_header_before_id.insert(ColumnWithTypeAndName{sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
+    }
+
     /// Precompute ExpressionActions for calculating the "id" column.
     ColumnDescription id_column_description{TimeSeriesColumnNames::ID, id_type};
     id_column_description.default_desc.kind = ColumnDefaultKind::Default;
@@ -819,6 +853,14 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         fillMinMaxTimeColumns(filter, timestamps_arrays, *min_time_column, *max_time_column);
     }
 
+    MutableColumnPtr sample_kinds_column;
+    if (tags_header_before_id.has(TimeSeriesColumnNames::SampleKinds))
+    {
+        sample_kinds_column = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false)->createColumn();
+        sample_kinds_column->reserve(num_time_series);
+        fillSampleKindsColumn(filter, ts_offsets, histograms_offsets, *sample_kinds_column);
+    }
+
     /// Step 3. Assemble the tags block.
     Block tags_block;
     for (auto & [column_name, column, type] : columns_by_tag_name_holder)
@@ -841,6 +883,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     {
         tags_block.insert(ColumnWithTypeAndName{std::move(min_time_column), min_max_time_type, TimeSeriesColumnNames::MinTime});
         tags_block.insert(ColumnWithTypeAndName{std::move(max_time_column), min_max_time_type, TimeSeriesColumnNames::MaxTime});
+    }
+
+    if (sample_kinds_column)
+    {
+        const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
+        tags_block.insert(ColumnWithTypeAndName{std::move(sample_kinds_column), sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
     }
 
     /// Calculate IDs using precomputed ExpressionActions.

@@ -187,6 +187,10 @@ namespace
     const String default_id_generator = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
     const String default_timestamp_type = "DateTime64(3)";
 
+    /// The generated `sample_kinds` column of the tags table, with `min_time` and `max_time` aggregated or not.
+    const String aggregated_sample_kinds_column = ", `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)";
+    const String plain_sample_kinds_column = ", `sample_kinds` UInt8";
+
     /// The `version` setting as written in a normalized definition.
     String versionSetting(UInt64 version)
     {
@@ -253,7 +257,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), "
         "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
+        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + aggregated_sample_kinds_column + default_tags_index);
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
         "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
     EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns(default_id_type, default_timestamp_type));
@@ -375,7 +379,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTagsTableRecordsIdTypeAndIdGen
             makeColumn("metric_name", "LowCardinality(String)"),
             makeColumn("tags", "Map(LowCardinality(String), String)"),
             makeColumn("min_time", "Nullable(DateTime64(3))"),
-            makeColumn("max_time", "Nullable(DateTime64(3))")});
+            makeColumn("max_time", "Nullable(DateTime64(3))"),
+            makeColumn("sample_kinds", "UInt8")});
     };
 
     NormalizeTimeSeriesDefinitionParams params;
@@ -423,7 +428,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
             makeColumn("metric_name", "LowCardinality(String)"),
             makeColumn("tags", "Map(LowCardinality(String), String)"),
             makeColumn("min_time", "Nullable(DateTime64(6))"),
-            makeColumn("max_time", "Nullable(DateTime64(6))")});
+            makeColumn("max_time", "Nullable(DateTime64(6))"),
+            makeColumn("sample_kinds", "UInt8")});
     };
 
     NormalizeTimeSeriesDefinitionParams params;
@@ -777,7 +783,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
         makeColumn("metric_name", "LowCardinality(String)"),
         makeColumn("tags", "Map(LowCardinality(String), String)"),
         makeColumn("min_time", "Nullable(DateTime64(3))"),
-        makeColumn("max_time", "Nullable(DateTime64(3))")});
+        makeColumn("max_time", "Nullable(DateTime64(3))"),
+        makeColumn("sample_kinds", "UInt8")});
 
     const std::vector<std::pair<String, NormalizeTimeSeriesDefinitionParams>> definitions =
     {
@@ -825,7 +832,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), `instance` String, `region` String, "
         "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
+        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + aggregated_sample_kinds_column + default_tags_index);
 
     /// The source customizes the codec of `timestamp` and adds an extra column in the samples table, sets the `id` type,
     /// and adds settings to the tags engine; everything else is generated.
@@ -840,9 +847,9 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, ZSTD(1)), `value` Float64 CODEC(ALP, ZSTD(3)), `extra` UInt8");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
-        "`min_time` Nullable(DateTime64(6)), `max_time` Nullable(DateTime64(6))" + default_tags_index);
+        "`min_time` Nullable(DateTime64(6)), `max_time` Nullable(DateTime64(6))" + plain_sample_kinds_column + default_tags_index);
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
-        "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time) "
+        "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time, sample_kinds) "
         "SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0, allow_nullable_key = 1");
 
     /// A type declared in the query wins over the type of the other table, the other types are inherited: `value` is
@@ -852,7 +859,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
-        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))" + default_tags_index);
+        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))" + aggregated_sample_kinds_column + default_tags_index);
 
     /// The inner columns of the other table are not copied for a target replaced with an external table, the types come
     /// from the external table: `timestamp` is DateTime64(3) in the source and DateTime64(6) in the external table.
@@ -887,14 +894,14 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsMergesSettings)
     definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 1, tags_index_granularity = 4096", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
-        tags_without_min_max + ", `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
+        tags_without_min_max + ", `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + aggregated_sample_kinds_column + default_tags_index);
     EXPECT_TRUE(extractInnerEngine(definition, "TAGS").contains("index_granularity = 4096")) << definition;
 
     /// A setting written as `name = DEFAULT` is a mention of that setting too, so the value of the other table is not
     /// copied for it: the setting gets its default value and `min_time`/`max_time` appear, while `tags_to_columns` is still copied.
     definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS aggregate_min_time_and_max_time = 0, store_min_time_and_max_time = DEFAULT", src);
-    EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_without_min_max + ", `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))" + default_tags_index);
+    EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_without_min_max + ", `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))" + plain_sample_kinds_column + default_tags_index);
 
     /// A written value wins over a reset of the same setting, so there is no `min_time`/`max_time`.
     definition = normalizeNewTableAs(
@@ -924,7 +931,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithExternalTargetTables)
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3)), `extra` UInt8");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` UInt64, `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
-        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6))), `extra` UInt8" + default_tags_index);
+        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))"
+        + aggregated_sample_kinds_column + ", `extra` UInt8" + default_tags_index);
     EXPECT_FALSE(definition.contains("ext_")) << definition;
 
     /// The external target tables of the other table are not copied, the new table must declare its own targets.

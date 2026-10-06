@@ -24,7 +24,8 @@ CREATE TABLE ts_tags
     metric_name LowCardinality(String),
     tags Map(LowCardinality(String), String),
     min_time DateTime64(3),
-    max_time DateTime64(3)
+    max_time DateTime64(3),
+    sample_kinds UInt8
 ) ENGINE = MergeTree() ORDER BY id;
 
 CREATE TABLE ts_samples
@@ -39,10 +40,10 @@ CREATE TABLE ts ENGINE = TimeSeries SAMPLES ts_samples TAGS ts_tags;
 -- Series 201 ('bar') must not match the 'foo' selector, and it has a sample inside the requested
 -- time range - so if the `id IN <tags subquery>` condition is ever lost from the generated query,
 -- that sample leaks into the result and the test fails.
-INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
-    (101, 'foo', map('env', 'prod'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (102, 'foo', map('env', 'dev'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (201, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time, sample_kinds) VALUES
+    (101, 'foo', map('env', 'prod'), toDateTime64(0, 3), toDateTime64(1000, 3), 1),
+    (102, 'foo', map('env', 'dev'), toDateTime64(0, 3), toDateTime64(1000, 3), 1),
+    (201, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3), 1);
 
 INSERT INTO ts_samples (id, timestamp, value) VALUES
     (101, toDateTime64(100, 3), 1.), (101, toDateTime64(200, 3), 2.), (101, toDateTime64(300, 3), 3.),

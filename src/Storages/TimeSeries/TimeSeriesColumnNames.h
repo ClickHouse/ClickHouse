@@ -29,6 +29,9 @@ struct TimeSeriesColumnNames
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
+    /// Contains the kinds of samples of a time series, see class TimeSeriesSampleKinds.
+    static constexpr const char * SampleKinds = "sample_kinds";
+
     /// The "metric families" table contains general information (metadata) about metric families:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";

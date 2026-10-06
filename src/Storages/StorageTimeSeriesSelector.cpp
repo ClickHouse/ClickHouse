@@ -3,7 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -36,11 +38,13 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesSampleKinds.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <base/insertAtEnd.h>
 
 #include <fmt/format.h>
 
@@ -54,6 +58,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -417,11 +422,11 @@ namespace
         return wrapIntoSelectWithUnionQuery(select_query);
     }
 
-    /// Makes the arguments of `timeSeriesStoreTags`: `id, tags, '__name__', metric_name, tag_name1, tag_column1, ...`.
-    ASTs makeStoreTagsArguments(const std::unordered_map<String, String> & column_name_by_tag_name)
+    /// Makes the expressions for the names and the values of the tags of a series, in the form of the arguments of
+    /// `timeSeriesStoreTags` after `id`: `tags, '__name__', metric_name, tag_name1, tag_column1, ...`.
+    ASTs makeTagNamesAndValuesArguments(const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         ASTs args;
-        args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
         args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
         args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
@@ -438,7 +443,9 @@ namespace
     /// Makes `timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)`.
     ASTPtr makeStoreTagsFunction(const std::unordered_map<String, String> & column_name_by_tag_name)
     {
-        return makeASTFunction("timeSeriesStoreTags", makeStoreTagsArguments(column_name_by_tag_name));
+        ASTs args{make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)};
+        insertAtEnd(args, makeTagNamesAndValuesArguments(column_name_by_tag_name));
+        return makeASTFunction("timeSeriesStoreTags", std::move(args));
     }
 
     /// Makes `SELECT <select_list> FROM tags_table WHERE <matchers and time conditions>`.
@@ -732,12 +739,14 @@ namespace
 
     /// The ids of the series selected by the tags lookup: the name under which the temporary table with the single column `id`
     /// holding them is registered in the context (see `lookUpTags`), their number, their type (the type of the tags table's
-    /// `id` without `LowCardinality`) and, if the lookup tracked it, their range.
+    /// `id` without `LowCardinality`), the kinds of their samples (see TimeSeriesSampleKinds) and, if the lookup tracked it,
+    /// their range.
     struct LookedUpIDs
     {
         String registered_table_name;
         size_t count = 0;
         DataTypePtr type;
+        UInt8 sample_kinds = TimeSeriesSampleKinds::All;
         std::optional<IDRange> range;
     };
 
@@ -960,7 +969,7 @@ namespace
 
     /// Selects the series matching the matchers from the tags table, stores their tags into the tags collector of the query
     /// context and stores selected ids in a temporary table registered in `context`. Tracks the range of the ids if
-    /// `track_range` is set.
+    /// `track_range` is set. Reads the kinds of samples of the series if `read_sample_kinds` is set, otherwise any kind may be present.
     LookedUpIDs lookUpTags(
         const StorageID & tags_table_id,
         const DataTypePtr & tags_table_id_type,
@@ -970,24 +979,26 @@ namespace
         const DataTypePtr & table_timestamp_type,
         const StorageLimitsList & storage_limits,
         const bool track_range,
+        const bool read_sample_kinds,
         const ContextMutablePtr & context)
     {
-        /// SELECT _CAST(id, '<id type without LowCardinality>') AS id, tags, '__name__', metric_name, 'tag_name1', tag_column1, ...
+        /// SELECT _CAST(id, '<id type without LowCardinality>') AS id, [sample_kinds,] tags, '__name__', metric_name, 'tag_name1', tag_column1, ...
         /// FROM tags_table WHERE <matchers and time conditions>
-        ASTs select_list = makeStoreTagsArguments(column_name_by_tag_name);
-        const auto id_it = std::ranges::find_if(select_list, [](const ASTPtr & ast)
-        {
-            const auto * identifier = ast->as<ASTIdentifier>();
-            return identifier && (identifier->name() == TimeSeriesColumnNames::ID);
-        });
-        if (id_it == select_list.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The arguments of timeSeriesStoreTags don't contain the column {}", TimeSeriesColumnNames::ID);
-
-        *id_it = makeASTFunction(
+        ASTs select_list;
+        auto tag_names_and_values = makeTagNamesAndValuesArguments(column_name_by_tag_name);
+        select_list.reserve(1 + tag_names_and_values.size() + (read_sample_kinds ? 1 : 0));
+        select_list.push_back(makeASTFunction(
             "_CAST",
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
-            make_intrusive<ASTLiteral>(recursiveRemoveLowCardinality(tags_table_id_type)->getName()));
-        (*id_it)->setAlias(TimeSeriesColumnNames::ID);
+            make_intrusive<ASTLiteral>(recursiveRemoveLowCardinality(tags_table_id_type)->getName())));
+        select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+
+        const auto sample_kinds_index = select_list.size();
+        if (read_sample_kinds)
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::SampleKinds));
+
+        const size_t tags_start_index = select_list.size();
+        insertAtEnd(select_list, std::move(tag_names_and_values));
 
         const ASTPtr select_query = makeSelectQueryFromTagsTable(
             tags_table_id, std::move(select_list), matchers, column_name_by_tag_name,
@@ -1004,7 +1015,7 @@ namespace
         try
         {
             TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(function_name, header_columns, 0);
-            TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(function_name, header_columns, 1);
+            TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(function_name, header_columns, tags_start_index);
         }
         catch (Exception & e)
         {
@@ -1012,6 +1023,15 @@ namespace
 
             throw;
         }
+        /// The type is checked when the TimeSeries table is created, but an external tags table could be altered since then.
+        bool aggregated = false;
+        if (read_sample_kinds && !TimeSeriesSampleKinds::isValidDataType(*header_columns[sample_kinds_index].type, aggregated))
+            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Column {} of the tags table {} has type {}, expected {} or {}",
+                            TimeSeriesColumnNames::SampleKinds,
+                            tags_table_id.getNameForLogs(),
+                            header_columns[sample_kinds_index].type->getName(),
+                            TimeSeriesSampleKinds::getDataType(/* aggregated = */ false)->getName(),
+                            TimeSeriesSampleKinds::getDataType(/* aggregated = */ true)->getName());
 
         /// `TemporaryTableHolder` keeps a weak pointer to its context and needs it to drop the table. The holder lives as long
         /// as `context`, which the query plan keeps, so it gets the query context, which outlives the plan.
@@ -1039,6 +1059,7 @@ namespace
             .registered_table_name = fmt::format("_time_series_selector_ids_{}_{}", lookup_hash.low64, lookup_hash.high64),
             .count = 0,
             .type = id_column.type,
+            .sample_kinds = read_sample_kinds ? UInt8{0} : TimeSeriesSampleKinds::All,
             .range = {}};
         ColumnPtr min_id;
         ColumnPtr max_id;
@@ -1055,7 +1076,7 @@ namespace
             const auto & ids = columns.front();
             try
             {
-                tags_collector->storeTags(ids.column, TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(function_name, columns, 1));
+                tags_collector->storeTags(ids.column, TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(function_name, columns, tags_start_index));
             }
             catch (Exception & e)
             {
@@ -1067,6 +1088,13 @@ namespace
             if (track_range)
                 updateMinMax(*ids.column->convertToFullColumnIfConst(), min_id, max_id);
             res.count += block.rows();
+
+            if (read_sample_kinds)
+            {
+                const auto sample_kinds_column = columns[1].column->convertToFullIfWrapped();
+                for (const UInt8 sample_kinds : assert_cast<const ColumnUInt8 &>(*sample_kinds_column).getData())
+                    res.sample_kinds |= sample_kinds;
+            }
 
             insert_executor.push(Block{{ids.column, ids.type, TimeSeriesColumnNames::ID}});
         }
@@ -1202,13 +1230,20 @@ void StorageTimeSeriesSelector::readImpl(
         config.table_timestamp_type,
         *query_info.storage_limits,
         /* track_range = */ id_range_candidate.has_value(),
+        /* read_sample_kinds = */ histograms_table_id && TimeSeriesSampleKinds::isStored(*time_series_settings),
         modified_context);
 
-    LOG_DEBUG(log, "Collected the tags of {} series for selector {}", ids.count, quoteString(config.selector.toString()));
+    /// Only the data tables with the kinds of samples of the selected series are read.
+    const bool read_samples_table = (ids.sample_kinds & TimeSeriesSampleKinds::Floats) != 0;
+    const bool read_histograms_table = histograms_table_id && ((ids.sample_kinds & TimeSeriesSampleKinds::Histograms) != 0);
 
-    if (ids.count == 0)
+    LOG_DEBUG(log, "Collected the tags of {} series for selector {}, reading the samples table: {}, reading the histograms table: {}",
+              ids.count, quoteString(config.selector.toString()), read_samples_table, read_histograms_table);
+
+    if ((ids.count == 0) || (!read_samples_table && !read_histograms_table))
     {
-        /// No series match the selector. Nothing is read - an uninitialized query plan reads from an empty source.
+        /// No series match the selector, or they have no samples. Nothing is read - an uninitialized query plan reads from
+        /// an empty source.
         return;
     }
 
@@ -1253,19 +1288,23 @@ void StorageTimeSeriesSelector::readImpl(
     /// The casts of the final query produce exactly the columns of this storage.
     const auto columns = storage_snapshot->metadata->getColumns().getAllPhysical();
 
-    ASTPtr select_query;
-    if (histograms_table_id)
+    /// The float samples and the histogram samples are read by a UNION ALL of two selects if both are present. With one kind
+    /// the column of the other kind is a constant: an empty `histogram` for the float samples, a zero `value` for the histograms.
+    ASTs selects;
+    selects.reserve((read_samples_table ? 1 : 0) + (read_histograms_table ? 1 : 0));
+    if (read_samples_table)
     {
-        /// The float samples and the histogram samples are read by a UNION ALL of two selects.
-        ASTs selects;
         selects.push_back(makeSelectQueryFromDataTable(
             samples_table_id,
-            makeSamplesProjection(/* with_histograms = */ true),
+            makeSamplesProjection(/* with_histograms = */ histograms_table_id.has_value()),
             ids_tmp_table_name,
             table_min_time,
             table_max_time,
             config.table_timestamp_type,
             make_id_range_conditions(samples_table_id)));
+    }
+    if (read_histograms_table)
+    {
         selects.push_back(makeSelectQueryFromDataTable(
             *histograms_table_id,
             makeHistogramsProjection(config.table_value_type),
@@ -1274,22 +1313,8 @@ void StorageTimeSeriesSelector::readImpl(
             table_max_time,
             config.table_timestamp_type,
             make_id_range_conditions(*histograms_table_id)));
-
-        select_query = makeSelectQuery(makeSelectWithUnionQuery(std::move(selects)), columns);
     }
-    else
-    {
-        ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
-            samples_table_id,
-            makeSamplesProjection(/* with_histograms = */ false),
-            ids_tmp_table_name,
-            table_min_time,
-            table_max_time,
-            config.table_timestamp_type,
-            make_id_range_conditions(samples_table_id));
-
-        select_query = makeSelectQuery(makeSelectWithUnionQuery({std::move(select_query_from_data_table)}), columns);
-    }
+    const ASTPtr select_query = makeSelectQuery(makeSelectWithUnionQuery(std::move(selects)), columns);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());

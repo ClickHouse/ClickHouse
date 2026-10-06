@@ -28,7 +28,8 @@ def start_cluster():
             "CREATE TABLE prometheus_tags (id UUID, metric_name LowCardinality(String),"
             " tags Map(LowCardinality(String), String),"
             " min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),"
-            " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))"
+            " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))),"
+            " sample_kinds SimpleAggregateFunction(groupBitOr, UInt8))"
             " ENGINE = AggregatingMergeTree ORDER BY (metric_name, id)"
             " SETTINGS allow_dimensions_outside_sorting_key = 1"
         )
@@ -42,7 +43,7 @@ def start_cluster():
         )
         node.query(
             "INSERT INTO prometheus_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up',"
-            " {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'))"
+            " {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'), 1)"
         )
         node.query(
             "INSERT INTO prometheus_data VALUES"

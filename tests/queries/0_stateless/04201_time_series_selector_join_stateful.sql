@@ -21,7 +21,8 @@ CREATE TABLE tags_table
     metric_name LowCardinality(String),
     tags Map(LowCardinality(String), String),
     min_time DateTime64(3),
-    max_time DateTime64(3)
+    max_time DateTime64(3),
+    sample_kinds UInt8
 ) ENGINE = MergeTree() ORDER BY id;
 
 CREATE TABLE samples_table
@@ -35,10 +36,10 @@ CREATE TABLE prometheus ENGINE = TimeSeries
 SAMPLES samples_table TAGS tags_table;
 
 -- Three metrics: `foo`, `bar`, `baz`.
-INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
-    (1583154, 'foo', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
+INSERT INTO tags_table (id, metric_name, tags, min_time, max_time, sample_kinds) VALUES
+    (1583154, 'foo', map(), toDateTime64(0, 3), toDateTime64(1000, 3), 1),
+    (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3), 1),
+    (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3), 1);
 
 INSERT INTO samples_table (id, timestamp, value) VALUES
     (1583154, toDateTime64(100, 3), 10.),

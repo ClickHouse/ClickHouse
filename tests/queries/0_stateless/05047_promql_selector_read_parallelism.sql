@@ -14,7 +14,8 @@ CREATE TABLE tags_table
     metric_name LowCardinality(String),
     tags Map(LowCardinality(String), String),
     min_time DateTime64(3),
-    max_time DateTime64(3)
+    max_time DateTime64(3),
+    sample_kinds UInt8
 ) ENGINE = MergeTree() ORDER BY id;
 
 CREATE TABLE samples_table
