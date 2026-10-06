@@ -885,6 +885,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {"''", "'Persisted'", "'Streaming'"},
          false)},
     {"distributed_plan_force_shuffle_aggregation", trueOrFalseSetting},
+    {"distributed_plan_partial_aggregation_before_shuffle", trueOrFalseSetting},
     {"distributed_plan_optimize_exchanges", trueOrFalseSetting},
     {"distributed_plan_prefer_replicas_over_workers", trueOrFalseSettingNoOracle},
     {"distributed_plan_read_in_order", trueOrFalseSettingNoOracle},

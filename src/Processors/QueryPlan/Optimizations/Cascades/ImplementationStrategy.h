@@ -70,6 +70,22 @@ struct PartialAggregationStrategy final : IAggregationStrategy
     Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
+/// --- Merge of partial aggregation states ---
+/// No cost functions: `MergingAggregatedStep` is priced by its own formula, divided by the
+/// parallelism of its distribution.
+
+/// All partial states are gathered to one node and merged there.
+struct LocalMergeStrategy final : IImplementationStrategy
+{
+    String getName() const override { return "LocalMerge"; }
+};
+
+/// The partial states arrive shuffled by the group keys, and each node merges the states of its own keys.
+struct ShuffleMergeStrategy final : IImplementationStrategy
+{
+    String getName() const override { return "ShuffleMerge"; }
+};
+
 /// --- Replicated subplan ---
 
 /// A step run identically on every node over replicated inputs.  Satisfies
