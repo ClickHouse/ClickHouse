@@ -70,8 +70,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             summary.get("operation") == "append"
         ), f"fixture requires append snapshots, got {summary.get('operation')!r}"
-        # `checkIfIcebergHistorySupported` rejects an append with 0 added files, so only
-        # the two fields from the bug report are removed.
+        # Only the two spec-optional metrics named in the docstring are stripped; every other summary field stays.
         assert "added-data-files" in summary, "added-data-files must be kept"
         for field in ("added-files-size", "changed-partition-count"):
             if field in summary:
