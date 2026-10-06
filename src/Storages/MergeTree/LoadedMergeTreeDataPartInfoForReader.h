@@ -100,6 +100,8 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override;
 
+    SerializationPtr tryGetSerialization(const NameAndTypePair & column) const override { return data_part->tryGetSerialization(column.name); }
+
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
     UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
