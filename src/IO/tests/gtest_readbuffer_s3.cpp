@@ -935,6 +935,48 @@ TEST_F(ReadBufferFromS3Test, ContentRangeHeaderIsParsed)
     EXPECT_EQ(*malformed.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
 }
 
+TEST_F(ReadBufferFromS3Test, PositionedReadOfEmptyResponsesIsAnError)
+{
+    const auto data = makeObject(100);
+    auto read_at = [&](size_t max_response_size) -> std::pair<BoundedReadResult, std::vector<size_t>>
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, max_response_size);
+        /// Stops a reader that would not stop on its own.
+        auto serve = *client->getObjectImpl;
+        client->getObjectImpl = [serve, fake = client.get()](const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+        {
+            if (fake->getObjectOffsets().size() >= 10)
+                return Aws::S3::Model::GetObjectOutcome(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                    Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "Too many requests", false));
+            return serve(request);
+        };
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), /*range_begin=*/40, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return {result, client->getObjectOffsets()};
+    };
+
+    const auto [empty, empty_offsets] = read_at(/*max_response_size=*/0);
+    ASSERT_TRUE(empty.error_code.has_value());
+    EXPECT_EQ(*empty.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    EXPECT_EQ(empty_offsets, (std::vector<size_t>{40, 40, 40, 40}));
+
+    const auto [capped, capped_offsets] = read_at(/*max_response_size=*/8);
+    ASSERT_FALSE(capped.error_code.has_value()) << *capped.error_code;
+    EXPECT_EQ(capped.data, data.substr(40, 16));
+    EXPECT_EQ(capped_offsets, (std::vector<size_t>{40, 48}));
+}
+
 TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembledThroughFilesystemCache)
 {
     DB::ServerUUID::setRandomForUnitTests();

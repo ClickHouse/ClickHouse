@@ -378,6 +378,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
                 return initial_n - n + bytes_copied;
             }
 
+            if (bytes_copied == 0)
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                    "Premature end of the response from S3 at offset {} while reading until position {}. Bucket: {}, Key: {}",
+                    range_begin, range_begin + n, bucket, key);
+
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
         }
