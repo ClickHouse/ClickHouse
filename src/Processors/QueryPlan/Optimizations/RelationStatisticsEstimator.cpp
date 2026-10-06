@@ -299,7 +299,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
 
         /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files)
+        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
             return unknown;
 
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
