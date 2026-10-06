@@ -106,8 +106,6 @@ void MergePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    /// Holds only a merge that applies patch parts, whose result data version comes from those
-    /// patches and is therefore on no part while the merge is held; visible in `system.merges`.
     if (!future_part->patch_parts.empty())
         FailPointInjection::pauseFailPoint(FailPoints::mt_merge_task_pause_in_prepare_with_patches);
 

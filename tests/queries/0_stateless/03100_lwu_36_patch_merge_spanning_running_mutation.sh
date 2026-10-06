@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-shared-merge-tree, no-fasttest
 # no-parallel: waits on mt_mutate_task_pause_in_prepare, which is PAUSEABLE_ONCE and server wide,
 # so a concurrent test's mutation would consume the pause this test waits for
 # no-shared-merge-tree: the ENGINE = MergeTree DDL is rewritten to SharedMergeTree, whose merge

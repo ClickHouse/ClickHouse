@@ -24,7 +24,7 @@ private:
     std::unique_lock<std::mutex> & merge_mutate_lock;
     PatchInfosByPartition patches_by_partition;
     /// Data versions a merge of patch parts must not span: those of the regular parts, plus the future
-    /// versions of the merges and mutations already in flight. Filled only if there are patch parts.
+    /// versions of the in-flight mutations and merges of regular parts. Filled only if there are patch parts.
     DataVersionsByPartition data_versions_by_partition;
     CommittingBlocksSet committing_blocks;
     std::optional<Int64> min_update_block;

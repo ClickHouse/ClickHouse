@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-shared-merge-tree, no-fasttest
 # no-parallel: enables mt_merge_task_pause_in_prepare_with_patches, which is server wide, so while
 # this test runs it would also hold a concurrent test's merge of patch parts
 # no-shared-merge-tree: the ENGINE = MergeTree DDL is rewritten to SharedMergeTree, which uses
