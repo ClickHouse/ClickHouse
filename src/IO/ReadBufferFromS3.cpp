@@ -214,7 +214,6 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     bool next_result = false;
-    bool reopen = false;
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
@@ -227,7 +226,7 @@ bool ReadBufferFromS3::nextImpl()
             const bool new_request = !impl;
             if (!impl)
             {
-                impl = initialize(attempt, reopen);
+                impl = initialize(attempt);
 
                 if (use_external_buffer)
                 {
@@ -249,12 +248,13 @@ bool ReadBufferFromS3::nextImpl()
             /// ends before it is continued at once, and a new request that delivers nothing is a failed attempt.
             if (!next_result && read_until_position && offset < read_until_position)
             {
-                reopen = true;
                 if (new_request)
                     throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
                         "Premature end of the response from S3 at offset {} while reading until position {}. Bucket: {}, Key: {}",
                         offset.load(), read_until_position.load(), bucket, key);
 
+                LOG_TRACE(log, "Premature end of the response at offset {} while reading until position {}, continuing with a new request",
+                    offset.load(), read_until_position.load());
                 resetWorkingBuffer();
                 impl.reset();
                 continue;
@@ -586,7 +586,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     return false;
 }
 
-std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt, bool reopen)
+std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
     stop_reason = "";
     release_reason = "";
@@ -627,7 +627,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
 
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
-    if (reopen)
+    if (read_until_position)
         checkReturnedRangeStart(read_result, offset, bucket, key);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;

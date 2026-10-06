@@ -636,10 +636,8 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     /// Configure the fake GET stub before createReadBuffer: for a small object it issues the
     /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
     /// servable when that background read runs.
-    auto session = std::make_shared<CountedSession>();
-    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);
     auto storage_client = object_storage->getS3StorageClient();
-    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, stream_buf.get());
+    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectRanges(data);
 
     auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
 
@@ -685,13 +683,15 @@ struct BoundedReadResult
 };
 
 /// Reads the whole buffer and keeps the bytes handed out before an exception, if there is one.
-BoundedReadResult readWithRightBound(const std::shared_ptr<ClientFake> & client, size_t read_until_position, size_t buffer_size)
+BoundedReadResult readWithRightBound(const std::shared_ptr<ClientFake> & client, size_t read_until_position, size_t buffer_size, size_t offset = 0)
 {
     DB::ReadSettings read_settings;
     read_settings.remote_fs_settings.buffer_size = buffer_size;
     DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), read_settings);
     if (read_until_position)
         buf.setReadUntilPosition(read_until_position);
+    if (offset)
+        buf.seek(offset, SEEK_SET);
 
     BoundedReadResult result;
     try
@@ -796,6 +796,30 @@ TEST_F(ReadBufferFromS3Test, RangeIgnoringEndpointIsRejectedOnReopen)
     EXPECT_EQ(result.data, data.substr(0, 50));
 }
 
+TEST_F(ReadBufferFromS3Test, RangeIgnoringEndpointIsRejectedAtANonzeroOffset)
+{
+    const auto data = makeObject(100);
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), /*ignore_range=*/true);
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_TRUE(result.error_code.has_value());
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+        EXPECT_TRUE(result.data.empty());
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40, 40, 40, 40}));
+    }
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, /*max_response_size=*/40);
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data.substr(40));
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40, 80}));
+    }
+}
+
 TEST_F(ReadBufferFromS3Test, LongerResponseIsCutAtTheRightBound)
 {
     const auto data = makeObject(100);
@@ -848,6 +872,9 @@ TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembledThroughFilesystemCache
     object_metadata.etag = "tag1";
     DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
     auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, getLogger("test"));
+    auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
+    ASSERT_TRUE(async_buf);
+    ASSERT_TRUE(dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get()));
 
     std::string read_data;
     DB::readStringUntilEOF(read_data, *buf);

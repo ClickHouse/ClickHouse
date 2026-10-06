@@ -110,7 +110,7 @@ public:
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
 private:
-    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt, bool reopen);
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
