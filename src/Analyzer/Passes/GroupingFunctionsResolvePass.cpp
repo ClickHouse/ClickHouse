@@ -73,8 +73,7 @@ enum class GroupByKind : uint8_t
     GROUPING_SETS
 };
 
-/// The expression with every folded constant replaced by its source expression, so that different
-/// expressions folded to the same value are different keys. Used only as a lookup key.
+/// Replaces every folded constant by its source expression. The result is only a lookup key.
 QueryTreeNodePtr unfoldConstants(const QueryTreeNodePtr & node)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
@@ -135,7 +134,6 @@ public:
                 continue;
             }
 
-            /// An argument that is none of the GROUPING SETS keys names the key it is equal to, if there is only one.
             ColumnNumbers equal_keys_indexes;
             for (size_t i = 0; i < grouping_sets_key_nodes.size(); ++i)
                 if (compareGroupByKeys(argument, grouping_sets_key_nodes[i]))
@@ -264,7 +262,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     size_t aggregation_node_index = 0;
     AggredationKeyNodeMap<size_t> aggregation_key_to_index;
 
-    /// For GROUPING SETS, `aggregation_key_to_index` is keyed by `unfoldConstants` of the key, and this keeps the key itself.
+    /// GROUPING SETS keys as written; aggregation_key_to_index is keyed by their unfolded expressions.
     QueryTreeNodes grouping_sets_key_nodes;
     std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
 
