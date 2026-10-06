@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: enables a global failpoint
 
 # Regression for the '.lock' verification read of a backup writer being served from a read cache.
