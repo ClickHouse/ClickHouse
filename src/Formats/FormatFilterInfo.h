@@ -30,8 +30,6 @@ struct FormatTopKFilterInfo
     /// Name of the first ORDER BY column in the format's output block.
     String column_name;
     TopKThresholdTrackerPtr threshold_tracker;
-    /// The first `ORDER BY` column is the only one: a row equal to the threshold cannot enter the top-K,
-    /// because the heap already holds enough rows that sort no later than it.
     bool single_sort_column = false;
 };
 

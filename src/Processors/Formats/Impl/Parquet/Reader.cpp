@@ -494,8 +494,8 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     /// For ascending order, a row group whose minimum is already beyond the threshold cannot
     /// contain a row that improves the top-K heap; for descending, symmetrically the maximum.
     /// With several sort columns the comparison is non-strict on the other side (a value equal to the
-    /// threshold may still tie-break into the heap on the remaining columns), matching `__topKFilter`;
-    /// with a single sort column such a value cannot improve the heap.
+    /// threshold may still tie-break into the heap on the remaining columns), matching `__topKFilter`.
+    /// With one sort column it is strict: the heap already holds enough rows that sort no later than the threshold.
     const Range & range = *row_group.top_k_sort_column_range;
     const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
     /// `getTopKSortColumnRange` only hands out a range whose both bounds decoded into the output
