@@ -509,7 +509,7 @@ void executeInternalQuery(const String & query, ContextPtr context)
 
 StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, const String & index_name)
 {
-    return StorageID(table_id.getDatabaseName(), getInnerObjectName("ivf_centroids", table_id, index_name));
+    return StorageID(table_id.getDatabaseName(), getInnerObjectName("ivf_quantizer", table_id, index_name));
 }
 
 StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id, const String & index_name)

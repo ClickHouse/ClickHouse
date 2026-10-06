@@ -944,7 +944,7 @@ Until the centroids are trained, queries read all rows.
 
 #### Internal objects {#ivf-internal-objects}
 
-Each IVF table owns a centroids table and a dictionary, named `_ivf_centroids_<index>_<uuid>` and `_ivf_centroids_dict_<index>_<uuid>` after the index and the table UUID.
+Each IVF table owns a quantizer table, which holds the centroids, and a dictionary, named `_ivf_quantizer_<index>_<uuid>` and `_ivf_centroids_dict_<index>_<uuid>` after the index and the table UUID.
 They are dropped together with the table and cannot be dropped or renamed on their own.
 
 #### Limitations {#ivf-limitations}

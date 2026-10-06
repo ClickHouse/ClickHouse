@@ -1,6 +1,6 @@
 Hidden objects
 _ivf_centroids_dict_idx_<uuid>	Dictionary		
-_ivf_centroids_idx_<uuid>	MergeTree	level	level, parent, cid
+_ivf_quantizer_idx_<uuid>	MergeTree	level	level, parent, cid
 Centroids table
 level	UInt8
 cid	UInt32
