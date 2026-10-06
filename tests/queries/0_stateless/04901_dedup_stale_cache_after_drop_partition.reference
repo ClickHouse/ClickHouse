@@ -2,6 +2,7 @@ after drop	0
 after reinsert r2	1
 after reinsert r1	1
 cache hit observed	1
+retry skipped the cache	1
 after drop part	0
 after reinsert drop part	1
 after detach part	0

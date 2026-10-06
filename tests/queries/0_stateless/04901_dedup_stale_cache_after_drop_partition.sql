@@ -42,6 +42,21 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_04901_r2')
   AND event_type = 'NewPart' AND error = 0;
 
+-- The retry after the vanished conflict must ask Keeper, not the cache: a cache read there waits for
+-- an update nothing triggers, and can see a snapshot an in-flight update listed before the drop.
+SYSTEM FLUSH LOGS text_log;
+SELECT 'retry skipped the cache', count() = 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND message_format_string = 'Read cache with a old version {}'
+  AND query_id IN (
+    SELECT query_id FROM system.part_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND database = currentDatabase() AND table = 't_04901_r2'
+      AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_04901_r2')
+      AND event_type = 'NewPart' AND error = 0 AND ProfileEvents['AsyncInsertCacheHits'] > 0)
+SETTINGS max_rows_to_read = 0;
+
 DROP TABLE t_04901_r1 SYNC;
 DROP TABLE t_04901_r2 SYNC;
 

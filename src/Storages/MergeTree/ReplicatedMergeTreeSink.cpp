@@ -709,6 +709,7 @@ struct CommitRetryContext
 
     String actual_part_name;
     std::vector<DeduplicationHash> conflict_deduplication_hashes;
+    bool skip_cache_prefilter = false;
 };
 
 
@@ -783,8 +784,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
         if (retry_context.conflict_deduplication_hashes.empty())
         {
-            /// Drop the stale snapshot, otherwise the retried prefilter reports the same vanished hash.
+            /// truncate() spares later inserts the vanished hash, but an in-flight cache update can still
+            /// republish it, so this retry skips the cache and asks Keeper.
             storage.deduplication_hashes_cache.truncate();
+            retry_context.skip_cache_prefilter = true;
             return CommitRetryContext::LOCK_AND_COMMIT;
         }
 
@@ -915,7 +918,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             }
         }
 
-        if (is_async_insert)
+        if (is_async_insert && !retry_context.skip_cache_prefilter)
         {
             /// prefilter by cache
             auto conflicts = detectConflictsInCache(deduplication_hashes);
