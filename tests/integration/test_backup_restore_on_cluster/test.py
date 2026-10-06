@@ -1306,16 +1306,19 @@ def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
         "1",
     )
 
-    node2.restart_clickhouse(kill=False)
+    node2.stop_clickhouse(stop_wait_sec=60)
+    try:
+        # Checked while node2 is down, so its part cannot have been re-run after a restart.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'CREATING_BACKUP'",
+            "",
+            retry_count=100,
+        )
+        status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
+    finally:
+        node2.start_clickhouse()
 
-    assert_eq_with_retry(
-        node1,
-        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'CREATING_BACKUP'",
-        "",
-        retry_count=100,
-    )
-
-    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
     assert status == "BACKUP_CREATED"
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
@@ -1353,16 +1356,19 @@ def test_shutdown_waits_for_restore_that_arrives_during_shutdown():
         "1",
     )
 
-    node2.restart_clickhouse(kill=False)
+    node2.stop_clickhouse(stop_wait_sec=60)
+    try:
+        # Checked while node2 is down, so its part cannot have been re-run after a restart.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'RESTORING'",
+            "",
+            retry_count=100,
+        )
+        status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
+    finally:
+        node2.start_clickhouse()
 
-    assert_eq_with_retry(
-        node1,
-        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'RESTORING'",
-        "",
-        retry_count=100,
-    )
-
-    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
     assert status == "RESTORED"
 
     node2.query("SYSTEM SYNC REPLICA tbl")
