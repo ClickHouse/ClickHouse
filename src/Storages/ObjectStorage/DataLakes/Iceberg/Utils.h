@@ -71,9 +71,6 @@ struct TransformAndArgument
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
 
-/// Maps a `PARTITION BY` alias of an Iceberg date transform (e.g. `toRelativeDayNum`) to its `iceberg*` function.
-String normalizeIcebergTransformFunctionName(const String & function_name);
-
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
@@ -98,9 +95,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
-/// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
-/// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
-/// is spelled in still counts, and a listing these callers cannot order unambiguously is refused.
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const String & table_path,
@@ -111,9 +105,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata = true,
-    bool ignore_metadata_pointer_overrides = false);
-
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+    bool ignore_explicit_metadata_file_path = false);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
@@ -126,7 +118,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_metadata_pointer_overrides = true);
+    bool ignore_explicit_metadata_file_path = true);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);

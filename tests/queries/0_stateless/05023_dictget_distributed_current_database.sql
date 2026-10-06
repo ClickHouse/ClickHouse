@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 -- The old analyzer qualifies the dictionary name only in the query it sends to the shards, while the
 -- header it computes on the initiator keeps the unqualified column name, so these queries fail there
 -- with NOT_FOUND_COLUMN_IN_BLOCK. Only the analyzer resolves the name consistently on both sides.

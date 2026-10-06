@@ -4,7 +4,6 @@
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
 
-#include <atomic>
 #include <memory>
 #include <boost/noncopyable.hpp>
 
@@ -454,27 +453,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
-
-    /// The table was rebuilt to the frozen set of kept keys of the trivial `GROUP BY ... LIMIT`
-    /// cutoff (see `ManyAggregatedData::SharedKeptKeys`), so it admits no other key. Only such a
-    /// table may be flushed to a temporary file while the cutoff holds: everything it contains is
-    /// a kept key, and `Aggregator` re-seeds it with the kept keys after the flush so the
-    /// remaining rows of those keys keep being aggregated.
-    bool restricted_to_kept_keys = false;
-
-    /// The kept keys of the cutoff with empty aggregate states, in the mergeable block layout.
-    /// Set together with `restricted_to_kept_keys`; the `Aggregator` re-seeds the table from it
-    /// after an external-aggregation spill has emptied it. With the shared cutoff this is the
-    /// frozen set shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`); on the
-    /// branches that cap every stream on its own it is the stream's own kept key set.
-    ConstBlockPtr kept_keys_seed;
-
-    /// The table is being rebuilt around the kept keys, or re-seeded with them after a flush.
-    /// Those merges only re-insert data the table already held, so an external-aggregation spill
-    /// in the middle of them must be skipped: it would empty the table while the rest of the
-    /// rebuild is merged into it under `no_more_keys`, dropping everything accumulated so far.
-    bool kept_keys_rebuild_in_progress = false;
-
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
@@ -506,12 +484,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// bucket's drained and merged states free early. States adopted from the producers'
     /// mixed arenas stay in `aggregates_pools` and live until the variants die.
     Arenas adaptive_merge_bucket_arenas;
-
-    /// Keys consumed and produced by the two-level bucket merges that have completed
-    /// (`Aggregator::mergeBucketImpl`). The buckets are uniform hash samples of one key set,
-    /// so the measured result/input ratio predicts the merged size of the remaining buckets.
-    std::atomic<UInt64> merged_buckets_input_keys{0};
-    std::atomic<UInt64> merged_buckets_result_keys{0};
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;

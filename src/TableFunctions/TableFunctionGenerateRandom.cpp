@@ -1,13 +1,11 @@
 #include <Common/Exception.h>
 
-#include <Storages/GenerateRandomSettings.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -22,13 +20,6 @@
 
 namespace DB
 {
-
-namespace GenerateRandomSetting
-{
-    extern const GenerateRandomSettingsFloat null_ratio;
-    extern const GenerateRandomSettingsUInt64 max_json_depth;
-    extern const GenerateRandomSettingsUInt64 max_json_keys_per_object;
-}
 
 namespace ErrorCodes
 {
@@ -61,7 +52,8 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String structure = "auto";
-    GenerateRandomOptions options;
+    UInt64 max_string_length = 10;
+    UInt64 max_array_length = 10;
     std::optional<UInt64> random_seed;
     ColumnsDescription structure_hint;
 };
@@ -75,26 +67,6 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     ASTs & args = args_func.at(0)->children;
 
-    /// `SETTINGS k = v` is accepted as the last argument of a table function call, also as the only
-    /// one. It is taken out of the argument list before anything else looks at the positions, so
-    /// that `generateRandom(SETTINGS null_ratio = 0.2)` still means "no structure given".
-    for (auto it = args.begin(); it != args.end(); ++it)
-    {
-        if (const auto * set_query = (*it)->as<ASTSetQuery>())
-        {
-            GenerateRandomSettings settings;
-            settings.applyChanges(set_query->changes);
-            settings.sanityCheck();
-
-            options.null_ratio = settings[GenerateRandomSetting::null_ratio];
-            options.max_json_depth = settings[GenerateRandomSetting::max_json_depth];
-            options.max_json_keys_per_object = settings[GenerateRandomSetting::max_json_keys_per_object];
-
-            args.erase(it);
-            break;
-        }
-    }
-
     if (args.empty())
         return;
 
@@ -106,7 +78,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     if (args.size() > max_args)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Table function '{}' requires at most four (or three if structure is missing) arguments: "
-                        "[structure, random_seed, max_string_length, max_array_length].", getName());
+                        " [structure, random_seed, max_string_length, max_array_length].", getName());
 
     if (first_argument_is_structure)
     {
@@ -152,13 +124,13 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     if (args.size() >= arg_index + 1)
     {
-        options.max_string_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
+        max_string_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
         ++arg_index;
     }
 
     if (args.size() == arg_index + 1)
     {
-        options.max_array_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_array_length");
+        max_array_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
         ++arg_index;
     }
 }
@@ -183,7 +155,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
 {
     ColumnsDescription columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageGenerateRandom>(
-        StorageID(getDatabaseName(), table_name), columns, String{}, options, random_seed);
+        StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;
 }
@@ -195,13 +167,12 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionGenerateRandom>({.description = R"DOCS_MD(
 Generates random data with a given schema.
 Allows populating test tables with that data.
-All data types that can be stored in a table are supported, including `JSON`, `Dynamic`, `Variant`, `BFloat16`, `Time` and `Time64`.
-The types `AggregateFunction`, `Interval`, `Nothing` and `QBit` are not supported.
+Not all types are supported.
 
 ## Syntax {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
 ## Arguments {#arguments}
@@ -213,32 +184,6 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `random_seed`       | Specify random seed manually to produce stable results. If `NULL` — seed is randomly generated. |
 | `max_string_length` | Maximum string length for all generated strings. Defaults to `10`.                              |
 | `max_array_length`  | Maximum elements for all generated arrays or maps. Defaults to `10`.                            |
-
-## Settings {#settings}
-
-`SETTINGS` is the last argument of the call and controls how `Nullable`, `Variant`, `Dynamic` and `JSON` values are generated.
-
-| Setting                    | Type     | Default  | Description                                                                                                                                                                  |
-|----------------------------|----------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `null_ratio`               | `Float`  | `0.0625` | Probability that a `Nullable`, `Variant` or `Dynamic` value is `NULL`, and the base probability that a `JSON` key is absent from a row - a minority of sparse keys are absent several times more often. Must be in `[0, 1]`.                                        |
-| `max_json_depth`           | `UInt64` | `3`      | Maximum nesting depth of generated `JSON` objects: `1` means flat objects, objects inside arrays count as a level. Must be in `[1, 32]`.                                      |
-| `max_json_keys_per_object` | `UInt64` | `8`      | Maximum number of generated keys on one level of a `JSON` object; the root object gets at least half of it. `0` means that only typed paths are generated. At most `1000`.    |
-
-```sql
-SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
-```
-
-```text
-{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
-{"x":{"cursor":"","id":[7037090064212902336]}}
-{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
-```
-
-`SETTINGS` can also be the only argument, which keeps the structure of the insertion table:
-
-```sql
-INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
-```
 
 ## Returned value {#returned-value}
 
@@ -316,40 +261,6 @@ SELECT * FROM generateRandom(11) LIMIT 3;
 <Note>
 `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` with a large enough `max_array_length` can generate a really huge output due to possible big nesting depth (up to 16) of complex types (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
-
-## Generating JSON {#generating-json}
-
-A generated `JSON` column reads like a stream of documents of one schema: the set of keys and the type
-of every key are derived from the random seed and stay the same for the whole column, while the values,
-the absent keys and the array lengths change from row to row. The depth of the objects is bounded by
-`max_json_depth`, the number of keys on one level by `max_json_keys_per_object`, and a key is absent
-from a row with probability `null_ratio`. The leaves take the types the JSON parser infers for real
-documents: `Int64`, `UInt64`, `Float64`, `Bool`, `String`, `Date`, `DateTime`, arrays of those, arrays
-of objects and mixed arrays; a few keys carry a different type in a small fraction of the rows, as they
-do in data collected from an application.
-
-The type declaration shapes the generated schema: typed paths are always present with their declared
-type, paths excluded by `SKIP` and `SKIP REGEXP` are never generated, and both `max_dynamic_paths` and
-`max_dynamic_types` are respected, so the paths beyond `max_dynamic_paths` end up in the shared data of
-the column.
-
-```sql
-SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
-```
-
-```text
-{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
-{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
-{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
-```
-
-The structure can also be left to the insertion table, which is convenient for filling a table with
-`JSON`, `Dynamic` or `Variant` columns:
-
-```sql
-CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
-```
 
 ## Related content {#related-content}
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

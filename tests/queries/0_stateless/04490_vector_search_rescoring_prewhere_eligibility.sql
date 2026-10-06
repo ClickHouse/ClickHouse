@@ -36,7 +36,8 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 1
     SETTINGS vector_search_with_rescoring = 1,
-             optimize_move_to_prewhere = 1
+             optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -51,7 +52,8 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 1,
-             optimize_move_to_prewhere = 1
+             optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -66,7 +68,8 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0,
-             optimize_move_to_prewhere = 1
+             optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -81,7 +84,8 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0,
-             optimize_move_to_prewhere = 0
+             optimize_move_to_prewhere = 1,
+             query_plan_optimize_prewhere = 0
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 

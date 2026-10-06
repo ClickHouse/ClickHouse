@@ -1,4 +1,0 @@
-the timed out schema-inference query failed
-the time limit interrupted the retry backoff
-the query stopped with a timeout error
-no retry request was started after the timeout
