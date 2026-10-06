@@ -43,6 +43,26 @@ struct PostingsApplyWindow
     }
 };
 
+/// Counters of the lazy posting-list operations, accumulated locally and added to the profile events in the
+/// destructor, to avoid an atomic `ProfileEvents::increment` per block, advance or granule on the hot path.
+struct LazyPostingsStats
+{
+    LazyPostingsStats() = default;
+    LazyPostingsStats(const LazyPostingsStats &) = delete;
+    LazyPostingsStats & operator=(const LazyPostingsStats &) = delete;
+    ~LazyPostingsStats();
+
+    size_t blocks_decoded = 0;
+    size_t advance_count = 0;
+    size_t segments_prepared = 0;
+    size_t segments_skipped_dense = 0;
+    size_t segments_skipped_resolved = 0;
+    size_t blocks_skipped_resolved = 0;
+    size_t brute_force_intersections = 0;
+    size_t brute_force_early_exits = 0;
+    size_t leapfrog_intersections = 0;
+};
+
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
 /// Storage layout (two-level hierarchy):
@@ -73,9 +93,6 @@ public:
     /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
     explicit PostingListCursor(FlatPostingsPtr shared_values_);
-
-    /// Flushes batched ProfileEvents counters to the global counters.
-    ~PostingListCursor();
 
     /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     /// Returns the range of rows for which bytes were set.
@@ -175,43 +192,37 @@ private:
     size_t current_segment_idx = 0;
     bool is_valid = true;
 
-    /// ProfileEvents are batched into these local counters and flushed in the destructor
-    /// to avoid per-block / per-advance atomic ops on the hot path.
-    struct EventsCounters
-    {
-        size_t blocks_decoded = 0;
-        size_t advance_count = 0;
-        size_t segments_prepared = 0;
-        size_t segments_skipped_dense = 0;
-        size_t segments_skipped_resolved = 0;
-        size_t blocks_skipped_resolved = 0;
-    };
-
-    EventsCounters counters;
+    LazyPostingsStats stats;
 };
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
 
-/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
-/// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
-void requireRowOffsetRepresentable(size_t row_offset);
+/// Sorts the cursors for `lazyUnionPostingLists` by descending density, so the densest cursor fills the output first.
+void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors);
+
+/// Sorts the cursors for `lazyIntersectPostingLists` by ascending cardinality,
+/// so the sparsest cursor goes first and leads the leapfrog, giving the brute force the earliest exit.
+void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors);
+
+/// Returns `BruteForce` or `Leapfrog` for these cursors.
+/// `Auto` picks leapfrog only if it can skip whole blocks of the densest list.
+TextIndexPostingsIntersectionAlgorithm chooseIntersectionAlgorithm(const std::vector<PostingListCursor *> & cursors, TextIndexPostingsIntersectionAlgorithm algorithm);
 
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
-/// The caller is responsible for preparing the cursor vector (resolving search tokens
-/// to cursors and deduplicating if necessary).
+/// `cursors` must be deduplicated and sorted with `sortCursorsForUnion`.
 /// Returns false only if no row of the window is set, so the caller may skip scanning the column.
 /// True means that some rows may be set.
 bool lazyUnionPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows);
 
 /// Intersection (AND) of posting lists: set output[row] = 1 only if the row appears in ALL posting lists.
-/// The caller is responsible for preparing the cursor vector (resolving search tokens
-/// to cursors and deduplicating if necessary).
+/// `cursors` must be deduplicated and sorted with `sortCursorsForIntersection`.
+/// `algorithm` must be the resolved with `chooseIntersectionAlgorithm`.
 ///
 /// The two algorithms, selected by `algorithm`.
 ///   - Brute-force bitmap counting — the sparsest cursor sets bits,
@@ -222,10 +233,11 @@ bool lazyUnionPostingLists(
 /// True means that some rows may be set: brute-force intersection may return true when no row survives.
 bool lazyIntersectPostingLists(
     IColumn & column,
-    const std::vector<PostingListCursorPtr> & cursors,
+    const std::vector<PostingListCursor *> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    TextIndexPostingsIntersectionAlgorithm algorithm);
+    TextIndexPostingsIntersectionAlgorithm algorithm,
+    LazyPostingsStats & stats);
 
 }

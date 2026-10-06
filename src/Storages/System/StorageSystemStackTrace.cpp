@@ -68,9 +68,6 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-#ifdef OS_LINUX
-    extern const int FILE_DOESNT_EXIST;
-#endif
     extern const int LOGICAL_ERROR;
 }
 
@@ -270,10 +267,10 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
             readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
-        catch (const Exception & e)
+        catch (const ErrnoException & e)
         {
             /// Ignore TOCTOU error
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            if (e.getErrno() == ENOENT || e.getErrno() == ESRCH)
                 continue;
             throw;
         }
@@ -338,10 +335,10 @@ bool isSignalBlocked(UInt64 tid, int signal)
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
-    catch (const Exception & e)
+    catch (const ErrnoException & e)
     {
         /// Ignore TOCTOU error
-        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+        if (e.getErrno() != ENOENT && e.getErrno() != ESRCH)
             throw;
     }
 
