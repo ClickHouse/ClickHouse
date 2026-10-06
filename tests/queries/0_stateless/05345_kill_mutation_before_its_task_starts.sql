@@ -33,6 +33,13 @@ SYSTEM ENABLE FAILPOINT mt_mutate_task_pause_before_merge_list;
 SYSTEM START MERGES t_kill_squashed;
 SYSTEM WAIT FAILPOINT mt_mutate_task_pause_before_merge_list PAUSE;
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_kill_squashed' AND command LIKE '%DELETE%' FORMAT Null;
+
+-- Pause the retry of the UPDATE: the killed task has reported its result by then.
+SYSTEM ENABLE FAILPOINT mt_mutate_task_pause_before_merge_list;
+SYSTEM NOTIFY FAILPOINT mt_mutate_task_pause_before_merge_list;
+SYSTEM WAIT FAILPOINT mt_mutate_task_pause_before_merge_list PAUSE;
+-- A `mutations_sync` client waiting for the UPDATE fails while it has a fail reason.
+SELECT command, is_done, latest_fail_reason = '' FROM system.mutations WHERE database = currentDatabase() AND table = 't_kill_squashed';
 SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_before_merge_list;
 
 ALTER TABLE t_kill_squashed UPDATE x = x + 1000 WHERE 1 SETTINGS mutations_sync = 1;

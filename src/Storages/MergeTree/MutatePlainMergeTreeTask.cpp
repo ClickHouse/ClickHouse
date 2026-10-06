@@ -187,7 +187,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
 
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
+                /// If `KILL MUTATION` removed one of the mutations, the others are retried without it: this is not their failure.
+                if (storage.areMutationsRegistered(merge_mutate_entry->mutation_ids))
+                    storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }
