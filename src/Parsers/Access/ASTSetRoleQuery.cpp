@@ -50,6 +50,10 @@ void ASTSetRoleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_alias
     hash_state.update(static_cast<bool>(to_users));
     if (to_users)
         to_users->updateTreeHash(hash_state, ignore_aliases);
+
+    /// `formatOnCluster` emits `ON CLUSTER` for `SET DEFAULT ROLE` only.
+    hash_state.update(cluster.size());
+    hash_state.update(cluster);
 }
 
 

@@ -384,9 +384,12 @@ void ASTCreateUserQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     hash_state.update(storage_name);
     hash_state.update(cluster);
 
+    /// Fold `new_name` the way `formatRenameTo` emits it: a plain name is written as a string
+    /// literal, so `RENAME TO u` (an identifier) is parsed back as `RENAME TO 'u'` (a literal), and
+    /// hashing the subtree would break the format -> parse round-trip for the same name.
     hash_state.update(static_cast<bool>(new_name));
     if (new_name)
-        new_name->updateTreeHash(hash_state, ignore_aliases);
+        new_name->updateTreeHashOfFormattedName(hash_state, ignore_aliases);
 
     /// `authentication_methods` and `global_valid_until` are kept in `children` and are already
     /// hashed by the base `IAST::updateTreeHashImpl`, but the deadline expression alone cannot

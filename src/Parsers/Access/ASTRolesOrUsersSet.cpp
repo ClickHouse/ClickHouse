@@ -31,12 +31,23 @@ void ASTRolesOrUsersSet::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     hash_state.update(all);
     hash_state.update(current_user);
     hash_state.update(except_current_user);
-    hash_state.update(static_cast<bool>(names));
-    if (names)
-        names->updateTreeHash(hash_state, ignore_aliases);
-    hash_state.update(static_cast<bool>(except_names));
-    if (except_names)
-        except_names->updateTreeHash(hash_state, ignore_aliases);
+    /// `id_mode` switches the names between bare names and `ID('uuid')`. The parser takes it from
+    /// the statement it parses, so it is the same after the round-trip.
+    hash_state.update(id_mode);
+
+    /// `formatNameOrID` writes a plain name with `backQuoteIfNeed`, so `'u'` (a string literal) is
+    /// parsed back as `u` (an identifier): fold the names as they are formatted, not their subtrees.
+    auto update_hash_with_names = [&](const ASTUserNamesWithHostPtr & list)
+    {
+        hash_state.update(static_cast<bool>(list));
+        if (!list)
+            return;
+        hash_state.update(list->size());
+        for (const auto & name : *list)
+            name->as<const ASTUserNameWithHost &>().updateTreeHashOfFormattedName(hash_state, ignore_aliases);
+    };
+    update_hash_with_names(names);
+    update_hash_with_names(except_names);
 }
 
 void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
