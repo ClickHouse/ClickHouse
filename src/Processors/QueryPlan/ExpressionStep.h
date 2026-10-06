@@ -19,6 +19,7 @@ public:
         : ITransformingStep(other)
         , actions_dag(other.actions_dag.clone())
         , prevent_input_removal(other.prevent_input_removal)
+        , parallelize_single_stream(other.parallelize_single_stream)
     {}
 
     String getName() const override { return "Expression"; }
@@ -54,11 +55,17 @@ public:
     void setPreventInputRemoval() { prevent_input_removal = true; }
     bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
+    /// `transformPipeline` decides on its own whether the parallel evaluation is also safe,
+    /// so this may be set on any expression.
+    void setParallelizeSingleStream() { parallelize_single_stream = true; }
+    bool isSingleStreamParallelized() const { return parallelize_single_stream; }
+
 private:
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     bool prevent_input_removal = false;
+    bool parallelize_single_stream = false;
 };
 
 }
