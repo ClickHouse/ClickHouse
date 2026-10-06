@@ -551,6 +551,32 @@ TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
     check_map(dst2);
 }
 
+TEST(HashTable, StringHashMapShortKeyNearPageEnd)
+{
+    /// `dispatchOnKeyClass` reads a 1..8-byte key from its start, or from its end when the key starts
+    /// in the last 7 bytes of a 4 KiB page. Both reads must give the same key wherever it sits in memory.
+    alignas(4096) char buf[2 * 4096];
+    memset(buf, 'X', sizeof(buf));
+
+    for (size_t sz = 1; sz <= 8; ++sz)
+    {
+        StringHashMap<UInt64> map;
+        for (size_t offset = 4080; offset < 4096; ++offset)
+        {
+            memcpy(buf + offset, "abcdefgh", sz);
+            ++map[std::string_view(buf + offset, sz)];
+        }
+        ASSERT_EQ(map.size(), 1) << "sz=" << sz;
+
+        /// Both reads could agree on a wrong key, so check the stored key itself.
+        map.forEachValue([&](std::string_view key, UInt64 & count)
+        {
+            EXPECT_EQ(key, std::string_view("abcdefgh", sz)) << "sz=" << sz;
+            EXPECT_EQ(count, 16) << "sz=" << sz;
+        });
+    }
+}
+
 namespace
 {
 
