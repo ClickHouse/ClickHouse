@@ -657,6 +657,17 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
         data.getStorageID().getFullTableName()};
 
+    /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
+    /// The coordinator cannot report them in this case: it receives the initiator's announcement
+    /// before the progress callback is set by remote sources.
+    size_t total_rows = 0;
+    if (isParallelReplicasLocalPlanForInitiator())
+    {
+        total_rows = parts_with_range.getRowsCountAllParts();
+        if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+            total_rows = query_info.trivial_limit;
+    }
+
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         extension,
         std::move(parts_with_range),
@@ -702,6 +713,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+
+        if (i == 0 && total_rows)
+            source->addTotalRowsApprox(total_rows);
+
         pipes.emplace_back(std::move(source));
     }
 

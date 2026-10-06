@@ -1502,7 +1502,8 @@ void LocalServer::processConfig()
     {
         getClientConfiguration().setString("logger", "logger");
         getClientConfiguration().setString("logger.level", logging ? level : "fatal");
-        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        /// Crash reports must reach stderr, which the configured channels may not write to.
+        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local", {fatal_log_name});
     }
 
     shared_context = Context::createShared();

@@ -25,6 +25,7 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Utils.h>
@@ -527,6 +528,15 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     }
 
     return {};
+}
+
+/// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
+/// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
+bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
+{
+    const auto & type = column.getTypeInStorage();
+    return !type->getCustomSerialization()
+        || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
 }
 
 }
@@ -1688,7 +1698,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
             /// A subcolumn of a missing column is the subcolumn of the column's default: `x.null` of a NULL is 1.
             Field default_value = merge_column->type->getDefault();
-            if (merge_column->isSubcolumn())
+            if (merge_column->isSubcolumn() && isSubcolumnOfDefaultValue(*merge_column))
             {
                 const auto & type_in_storage = merge_column->getTypeInStorage();
                 auto subcolumn = type_in_storage->getSubcolumn(
@@ -2464,7 +2474,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
             if (!current_header.has(column.name) && !merge_columns.has(column.name))
             {
                 auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
-                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage()))
+                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage())
+                    && isSubcolumnOfDefaultValue(*merge_column))
                 {
                     column_to_fill = NameAndTypePair(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
                     has_subcolumns_of_missing_columns = true;
