@@ -82,7 +82,7 @@ WYRD_TEST(LocalTasks, FullRingRefusesPushUntilGrab)
     EXPECT_EQ(ring.size(), LocalTasks::capacity / 2 + 1);
 }
 
-WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 1 })
 {
     constexpr UInt32 total = 64;
     constexpr UInt32 thieves = 3;
@@ -135,7 +135,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
         {
             Wyrd::LockFreeScope scope;
             std::array<Task, batch> grabbed{};
-            while (true)
+            while (!owner_done.load())
             {
                 const UInt32 count = ring.grab(grabbed);
                 for (UInt32 offset = 0; offset < count; ++offset)
@@ -143,9 +143,6 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
                 if (count > 0)
                     successful_grabs.fetch_add(1);
                 Wyrd::progress();
-
-                if (count == 0 && owner_done.load())
-                    return;
             }
         });
     race.run();

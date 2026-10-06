@@ -77,60 +77,77 @@ std::optional<Task> LocalTasks::pop()
     const UInt32 new_head = head.load() - 1;
     head.store(new_head);
 
+    Wyrd::SpinWait spin_wait;
     UInt64 word = bounds.load();
-    const auto [tail, taken] = unpackBounds(word);
-    const Int32 available = signedDifference(new_head, taken);
-    if (available < 0)
+    while (true)
     {
-        /// No tasks left.
-        head.store(new_head + 1);
-        return std::nullopt;
-    }
-    else if (available > 0)
-    {
-        /// Pop was committed with store.
-        return getSlot(buffer, new_head);
-    }
-    else
-    {
-        /// Some thief is working with a smaller segment.
-        if (tail != taken)
-            return getSlot(buffer, new_head);
-
-        /// Need to synchronize with the thief - it may started the stealing overlapping with new_head.
-        if (bounds.compare_exchange_strong(word, packBounds({taken + 1, taken + 1})))
+        const auto [tail, taken] = unpackBounds(word);
+        const Int32 available = signedDifference(new_head, taken);
+        if (available < 0)
         {
+            /// The thief inside may still hand slots back in its trim; after its release the word is final.
+            if (tail != taken)
+            {
+                spin_wait.spin();
+                word = bounds.load();
+                continue;
+            }
+
+            /// No tasks left.
             head.store(new_head + 1);
+            return std::nullopt;
+        }
+        else if (available > 0)
+        {
+            /// Pop was committed with store.
             return getSlot(buffer, new_head);
         }
+        else
+        {
+            /// Some thief is working with a smaller segment.
+            if (tail != taken)
+                return getSlot(buffer, new_head);
 
-        /// Thief locked last task.
-        head.store(new_head + 1);
-        return std::nullopt;
+            /// Need to synchronize with the thief - it may started the stealing overlapping with new_head.
+            if (bounds.compare_exchange_weak(word, packBounds({taken + 1, taken + 1})))
+            {
+                head.store(new_head + 1);
+                return getSlot(buffer, new_head);
+            }
+
+            /// Lost to a thief's steal start
+            spin_wait.spin();
+        }
     }
 }
 
 UInt32 LocalTasks::grab(std::span<Task> out)
 {
-    UInt64 word = bounds.load();
-
     /// Try lock steal range.
-    const auto [tail, taken] = unpackBounds(word);
-    if (tail != taken)
-        return 0;
+    Wyrd::SpinWait spin_wait;
+    UInt64 word = bounds.load();
+    UInt32 grab_begin = 0;
+    UInt32 grab_end = 0;
+    while (true)
+    {
+        const auto [tail, taken] = unpackBounds(word);
+        if (tail != taken)
+            return 0;
 
-    const Int32 available = signedDifference(head.load(), tail);
-    if (available <= 0)
-        return 0;
+        const Int32 available = signedDifference(head.load(), tail);
+        if (available <= 0)
+            return 0;
 
-    const UInt32 count = std::min<UInt32>(static_cast<UInt32>(out.size()), available - available / 2);
-    if (!bounds.compare_exchange_strong(word, packBounds({tail, tail + count})))
-        return 0;
+        const UInt32 count = std::min<UInt32>(static_cast<UInt32>(out.size()), available - available / 2);
+        grab_begin = tail;
+        grab_end = tail + count;
+        if (bounds.compare_exchange_weak(word, packBounds({grab_begin, grab_end})))
+            break;
 
-    UInt32 grab_begin = tail;
-    UInt32 grab_end = tail + count;
+        spin_wait.spin();
+    }
 
-    /// Lower the range end: between the head read above and the claim, pop may have taken slots.
+    /// Lower the range end: between the head read above and the steal start, pop may have taken slots.
     const UInt32 head_now = head.load();
     if (signedDifference(grab_end, head_now) > 0)
     {
@@ -151,7 +168,7 @@ UInt32 LocalTasks::size() const
 {
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());
-    return std::max<Int32>(signedDifference(current_head, taken), 0);
+    return std::max<Int32>(signedDifference(current_head, tail), 0);
 }
 
 }
