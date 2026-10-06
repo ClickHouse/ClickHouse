@@ -315,7 +315,8 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
             /// apply_mutations_on_fly = 0 query.
             if (!current_task.appliesMutationsBeforePrewhere()
-                && !current_task.readersEvaluatedNonDeterministicDefaults(/*prewhere_readers_only=*/ false))
+                && !current_task.readersEvaluatedNonDeterministicDefaults(
+                    /*prewhere_readers_only=*/ false, reader_settings.query_condition_cache_where_columns.get()))
             {
                 String part_name
                     = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();

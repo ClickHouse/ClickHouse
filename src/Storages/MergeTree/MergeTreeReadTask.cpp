@@ -582,13 +582,13 @@ bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
     return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
-bool MergeTreeReadTask::readersEvaluatedNonDeterministicDefaults(bool prewhere_readers_only) const
+bool MergeTreeReadTask::readersEvaluatedNonDeterministicDefaults(bool prewhere_readers_only, const NameSet * main_reader_columns) const
 {
     for (const auto & reader : readers.prewhere)
         if (reader && reader->hasEvaluatedNonDeterministicDefaults())
             return true;
 
-    return !prewhere_readers_only && readers.main && readers.main->hasEvaluatedNonDeterministicDefaults();
+    return !prewhere_readers_only && readers.main && readers.main->hasEvaluatedNonDeterministicDefaults(main_reader_columns);
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const

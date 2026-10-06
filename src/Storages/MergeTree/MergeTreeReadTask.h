@@ -234,8 +234,9 @@ public:
     /// the PREWHERE or WHERE predicate in the QueryConditionCache.
     bool appliesMutationsBeforePrewhere() const;
 
-    /// True if a PREWHERE reader (or any reader, unless `prewhere_readers_only`) evaluated a non-deterministic default.
-    bool readersEvaluatedNonDeterministicDefaults(bool prewhere_readers_only) const;
+    /// True if a PREWHERE reader evaluated a non-deterministic default, or, unless `prewhere_readers_only`,
+    /// the main reader did for one of `main_reader_columns` (for any column if null).
+    bool readersEvaluatedNonDeterministicDefaults(bool prewhere_readers_only, const NameSet * main_reader_columns = nullptr) const;
 
     Readers releaseReaders() { return std::move(readers); }
 

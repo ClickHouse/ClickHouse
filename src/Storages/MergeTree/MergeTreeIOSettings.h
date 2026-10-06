@@ -5,6 +5,7 @@
 #include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Names.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -73,6 +74,8 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     /// Folded into every query condition cache key: settings salt plus schema hash (an `ALTER` changes what a part returns, not its name).
     UInt64 query_condition_cache_salt = 0;
+    /// Inputs of the WHERE condition the query condition cache key is built from; null if unknown.
+    std::shared_ptr<const NameSet> query_condition_cache_where_columns;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
     /// Identity of the schema the read runs with: a hash of the column list of the metadata

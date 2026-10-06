@@ -5220,6 +5220,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_query_condition_cache = false;
 
+    /// Not for a TopK read: the granules it drops depend on the sort column too, which may be outside the WHERE condition.
+    if (reader_settings.use_query_condition_cache && query_info.filter_actions_dag && !top_k_filter_info)
+    {
+        auto where_columns = query_info.filter_actions_dag->getRequiredColumnsNames();
+        reader_settings.query_condition_cache_where_columns = std::make_shared<const NameSet>(where_columns.begin(), where_columns.end());
+    }
+
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
     /// recorded in the query condition cache under a key salted with the TopK plan parameters,
     /// part set, and a deterministic post-PREWHERE filter that determines the running threshold (see

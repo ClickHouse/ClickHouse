@@ -159,6 +159,14 @@ INSERT INTO t_now_prewhere SELECT number, number, now64(3) + 5 FROM numbers(1000
 ALTER TABLE t_now_prewhere ADD COLUMN ts DateTime64(3) DEFAULT now64(3);
 SELECT count() FROM t_now_prewhere PREWHERE ts >= thr FORMAT Null;
 
+-- The same default in a tuple, filtered by a subcolumn.
+CREATE TABLE t_now_tuple (k UInt64, thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+SYSTEM STOP MERGES t_now_tuple;
+INSERT INTO t_now_tuple SELECT number, now64(3) + 5 FROM numbers(1000000);
+ALTER TABLE t_now_tuple ADD COLUMN tup Tuple(a DateTime64(3), b UInt8) DEFAULT (now64(3), 1);
+SELECT count() FROM t_now_tuple WHERE tup.a >= thr FORMAT Null;
+
 -- A non-deterministic default that replaces NULLs while a change to a non-Nullable type is pending.
 CREATE TABLE t_now_nullable (k UInt64, v Nullable(DateTime64(3)), thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
     SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
@@ -180,12 +188,16 @@ SELECT 'DEFAULT now64, WHERE', count() FROM t_now WHERE ts >= thr;
 SELECT 'DEFAULT now64, WHERE', count() FROM t_now WHERE ts >= thr SETTINGS use_query_condition_cache = 0;
 SELECT 'DEFAULT now64, PREWHERE', count() FROM t_now_prewhere PREWHERE ts >= thr;
 SELECT 'DEFAULT now64, PREWHERE', count() FROM t_now_prewhere PREWHERE ts >= thr SETTINGS use_query_condition_cache = 0;
+SELECT 'DEFAULT now64, subcolumn', count() FROM t_now_tuple WHERE tup.a >= thr;
+SELECT 'DEFAULT now64, subcolumn', count() FROM t_now_tuple WHERE tup.a >= thr SETTINGS use_query_condition_cache = 0;
 SELECT 'DEFAULT now64 for NULL, WHERE', count() FROM t_now_nullable WHERE v >= thr;
 SELECT 'DEFAULT now64 for NULL, WHERE', count() FROM t_now_nullable WHERE v >= thr SETTINGS use_query_condition_cache = 0;
 SELECT 'DEFAULT now64 for NULL, PREWHERE', count() FROM t_now_nullable_prewhere PREWHERE v >= thr;
 SELECT 'DEFAULT now64 for NULL, PREWHERE', count() FROM t_now_nullable_prewhere PREWHERE v >= thr SETTINGS use_query_condition_cache = 0;
 
--- A PREWHERE condition on stored columns is still cached when the query also reads such a default.
+-- A condition on stored columns is still cached when the query also reads such a default.
+SELECT ts FROM t_now WHERE v < 100000 FORMAT Null;
+SELECT ts FROM t_now WHERE v < 100000 SETTINGS log_comment = '05325_now_where_hit' FORMAT Null;
 SELECT ts FROM t_now_prewhere PREWHERE v < 100000 FORMAT Null;
 SELECT ts FROM t_now_prewhere PREWHERE v < 100000 SETTINGS log_comment = '05325_now_prewhere_hit' FORMAT Null;
 
@@ -193,5 +205,5 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05325_where_hit', '05325_prewhere_hit', '05325_now_prewhere_hit')
+    AND log_comment IN ('05325_where_hit', '05325_prewhere_hit', '05325_now_where_hit', '05325_now_prewhere_hit')
 ORDER BY log_comment;
