@@ -110,6 +110,17 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
+    remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
+
+    /// Orphaned-nodes cleanup is implemented only by the in-memory nodes storage
+    /// (`KeeperMemNodesStorage`). Refuse the combination instead of silently accepting a recovery
+    /// setting that would never run.
+    if (remove_orphaned_nodes_on_startup && getCoordinationSettings()[CoordinationSetting::use_lsmt_storage])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'keeper_server.remove_orphaned_nodes_on_startup' is not supported with 'use_lsmt_storage'. "
+            "Set 'keeper_server.coordination_settings.use_lsmt_storage' to false to run the orphaned-nodes recovery, "
+            "then re-enable it after a successful startup");
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -292,6 +303,16 @@ bool KeeperContext::digestEnabled() const
 bool KeeperContext::digestEnabledOnCommit() const
 {
     return digest_enabled_on_commit;
+}
+
+bool KeeperContext::removeOrphanedNodesOnStartup() const
+{
+    return remove_orphaned_nodes_on_startup;
+}
+
+void KeeperContext::setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_)
+{
+    remove_orphaned_nodes_on_startup = remove_orphaned_nodes_on_startup_;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -699,10 +720,13 @@ bool KeeperContext::localLogsPreprocessed() const
     return local_logs_preprocessed;
 }
 
-void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
+bool KeeperContext::waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms)
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
+    local_logs_preprocessed_cv.wait_for(
+        lock, saturatedWaitMilliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
+    /// The wait also ends on shutdown, which is not the same thing as the logs being preprocessed.
+    return local_logs_preprocessed;
 }
 
 const CoordinationSettings & KeeperContext::getFixedCoordinationSettings() const

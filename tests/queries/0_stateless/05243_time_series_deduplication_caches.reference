@@ -19,6 +19,13 @@ e1	1
 e2	2
 e3	1
 e4	1
+--- a description changed when the pending rows are full is written, its key is forgotten by the cache, and the previous description is written again after it ---
+3
+--- when a block overflows the pending rows, the keys of its last written rows are forgotten, a duplicate at its end does not count ---
+k1	1
+k2	1
+k3	1
+k4	2
 --- an entry expires after the expiration period ---
 2
 --- the cache is disabled by setting its size to 0 ---

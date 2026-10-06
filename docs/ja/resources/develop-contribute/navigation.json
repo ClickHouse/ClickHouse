@@ -23,10 +23,8 @@
     {
       "group": "ネイティブプロトコル",
       "pages": [
-        "ja/resources/develop-contribute/native-protocol/basics",
-        "ja/resources/develop-contribute/native-protocol/client",
-        "ja/resources/develop-contribute/native-protocol/server",
-        "ja/resources/develop-contribute/native-protocol/columns",
+        "ja/resources/develop-contribute/native-protocol/protocol",
+        "ja/resources/develop-contribute/native-protocol/format",
         "ja/resources/develop-contribute/native-protocol/hash"
       ]
     },

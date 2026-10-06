@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # The failpoint applies to background jobs assignees of all tables.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -629,6 +630,29 @@ NameSet checkAccessRights(
     return {};
 }
 
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+{
+    NameSet column_names;
+    traverseQueryTree(
+        node,
+        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+        {
+            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+            const auto * column_node = parent->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                return true;
+            const auto & column_source = column_node->getColumnSourceOrNull();
+            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
+        },
+        [&](const QueryTreeNodePtr & current)
+        {
+            const auto * column_node = current->as<ColumnNode>();
+            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
+                column_names.insert(column_node->getColumnName());
+        });
+    return column_names;
+}
+
 static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & query_context)
@@ -659,24 +683,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
         return;
     }
 
-    NameSet column_names;
-    traverseQueryTree(
-        filter_query_tree,
-        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
-        {
-            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
-            const auto * column_node = parent->as<ColumnNode>();
-            if (!column_node || !column_node->hasExpression())
-                return true;
-            const auto & column_source = column_node->getColumnSourceOrNull();
-            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
-        },
-        [&](const QueryTreeNodePtr & node)
-        {
-            const auto * column_node = node->as<ColumnNode>();
-            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
-                column_names.insert(column_node->getColumnName());
-        });
+    NameSet column_names = collectReferencedColumnNames(filter_query_tree, table_expression);
     if (column_names.empty())
         return;
 
@@ -705,6 +712,19 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
+
+    /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
+    /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
+    /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
+    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
+    /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
+    /// against their own tables.
+    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
+            "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
+            matcher->formatForErrorMessage(),
+            filter_expression->formatForErrorMessage());
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
