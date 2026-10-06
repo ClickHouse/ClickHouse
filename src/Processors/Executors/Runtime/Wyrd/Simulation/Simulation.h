@@ -59,7 +59,7 @@ public:
     void enterLockFreeScope(std::source_location location);
     void leaveLockFreeScope(std::source_location location);
     void progressHint(std::source_location location);
-    void trace(std::string message, std::source_location location);
+    void trace(std::string message);
 
 private:
     const SimulationParams params;

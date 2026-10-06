@@ -1,11 +1,19 @@
 #pragma once
 
-#include <source_location>
+#include <fmt/format.h>
+
 #include <string>
+#include <string_view>
 
 namespace DB::Runtime::Wyrd
 {
 
-void log(std::string message, std::source_location location = std::source_location::current());
+void logMessage(std::string message);
+
+template <class... Args>
+void log(std::string_view format_string, Args &&... args)
+{
+    logMessage(fmt::vformat(format_string, fmt::make_format_args(args...)));
+}
 
 }

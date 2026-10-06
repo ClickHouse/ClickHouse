@@ -5,6 +5,7 @@
 
 #include <fmt/format.h>
 
+#include <optional>
 #include <stdexcept>
 
 namespace DB::Runtime::Wyrd
@@ -14,7 +15,7 @@ struct TraceRecord
 {
     UInt32 thread_id;
     std::string event;
-    std::source_location location;
+    std::optional<std::source_location> location;
 };
 
 
@@ -27,13 +28,12 @@ std::string formatTimeline(const std::vector<TraceRecord> & timeline)
 {
     std::string out;
     for (size_t i = 0; i < timeline.size(); ++i)
-        out += fmt::format(
-            "#{} thread {}: {} at {}:{}\n",
-            i + 1,
-            timeline[i].thread_id,
-            timeline[i].event,
-            timeline[i].location.file_name(),
-            timeline[i].location.line());
+    {
+        out += fmt::format("#{} thread {}: {}", i + 1, timeline[i].thread_id, timeline[i].event);
+        if (timeline[i].location)
+            out += fmt::format(" at {}:{}", timeline[i].location->file_name(), timeline[i].location->line());
+        out += '\n';
+    }
     return out;
 }
 
@@ -204,9 +204,9 @@ void Simulation::progressHint(std::source_location location)
     scheduler.onProgress();
 }
 
-void Simulation::trace(std::string message, std::source_location location)
+void Simulation::trace(std::string message)
 {
-    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = location});
+    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = std::nullopt});
 }
 
 }
