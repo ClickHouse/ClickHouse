@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE logs_04827 (\`_time\` DateTime, \`_msg\` String) ENGINE = MergeTree ORDER BY _time"
 
-LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&allow_experimental_logsql_dialect=1&logsql_table=logs_04827&max_query_size=50"
+LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&enable_logsql_dialect=1&logsql_table=logs_04827&max_query_size=50"
 
 # A query within the limit works, also with a leading-whitespace prefix that still fits.
 ${CLICKHOUSE_CURL} -sS "$LOGSQL_URL" --data-binary "error | count()"
@@ -29,10 +29,10 @@ error | count()" |& grep -om1 "Max query size exceeded"
 ${CLICKHOUSE_CURL} -sS "$LOGSQL_URL" --data-binary "$(printf ' %.0s' {1..60})error" |& grep -om1 "Max query size exceeded"
 
 # The client enforces the same accounting when it parses the dialect itself.
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
     -q "-- padding padding padding padding padding
 error | count()" |& grep -om1 "Max query size exceeded"
-$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
+$CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
     -q "$(printf ' %.0s' {1..60})error" |& grep -om1 "Max query size exceeded"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE logs_04827"
