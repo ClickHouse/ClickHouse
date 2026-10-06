@@ -13,14 +13,18 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동으로 생성됩니다.
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
+<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
+  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-`DateTime64` 값의 소수부 끝에 있는 0을 동적으로 제거하고, 모든 유효 자릿수를 유지하는 다음 3의 배수인
-[0, 3, 6, 9]로 출력 scale을 올림합니다. 소수부가 모두 0이면 제거합니다.
+datetime64 값의 소수부 끝에 있는 불필요한 0을 동적으로 제거하여 출력 scale을 [0, 3, 6]에 맞게 조정합니다.
+각각 &#39;seconds&#39;, &#39;milliseconds&#39;, &#39;microseconds&#39;에 해당합니다.
 
-## date_time_input_format {#date_time_input_format}
+<div id="date_time_input_format">
+  ## date_time_input_format
+</div>
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -47,7 +51,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
 * [날짜 및 시간을 처리하는 함수.](/ko/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format {#date_time_output_format}
+<div id="date_time_output_format">
+  ## date_time_output_format
+</div>
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -72,11 +78,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
 * [날짜 및 시간을 처리하는 함수.](/ko/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior {#date_time_overflow_behavior}
+<div id="date_time_overflow_behavior">
+  ## date_time_overflow_behavior
+</div>
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64) 또는 정수를 Date, Date32, DateTime 또는 DateTime64로 변환할 때, 해당 값을 결과 타입으로 표현할 수 없는 경우의 동작을 정의합니다. 입력 형식을 통한 경우를 포함해 `Date` 또는 `DateTime`을 텍스트에서 파싱할 때에도 적용됩니다.
+[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64) 또는 정수를 Date, Date32, DateTime 또는 DateTime64로 변환할 때, 해당 값을 결과 타입으로 표현할 수 없는 경우의 동작을 정의합니다.
 
 가능한 값:
 

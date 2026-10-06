@@ -25,7 +25,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/VirtualColumnUtils.h>
 
 
@@ -229,7 +228,7 @@ protected:
             if (!lock)
                 return false;
 
-            auto object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip);
+            auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get());
             if (!object_storage_table || !object_storage_table->isIcebergStorage())
                 return false;
 

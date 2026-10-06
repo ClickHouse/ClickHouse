@@ -2,16 +2,12 @@
 
 #include <Common/HashTable/FixedHashTable.h>
 
-template <
-    typename Key,
-    typename Allocator = HashTableAllocator,
-    size_t size_bits = sizeof(Key) * 8,
-    typename Size = FixedHashTableStoredSize<FixedHashTableCell<Key>>>
-class FixedHashSet : public FixedHashTable<Key, FixedHashTableCell<Key>, Size, Allocator, size_bits>
+template <typename Key, typename Allocator = HashTableAllocator, size_t size_bits = sizeof(Key) * 8>
+class FixedHashSet : public FixedHashTable<Key, FixedHashTableCell<Key>, FixedHashTableStoredSize<FixedHashTableCell<Key>>, Allocator, size_bits>
 {
 public:
     using Cell = FixedHashTableCell<Key>;
-    using Base = FixedHashTable<Key, Cell, Size, Allocator, size_bits>;
+    using Base = FixedHashTable<Key, Cell, FixedHashTableStoredSize<Cell>, Allocator, size_bits>;
     using Self = FixedHashSet;
 
     void merge(const Self & rhs)
@@ -26,8 +22,3 @@ public:
 /// caller, and the cell only records presence.
 template <typename Key, size_t size_bits>
 using FixedHashSetWithSizeBits = FixedHashSet<Key, HashTableAllocator, size_bits>;
-
-/// Set counterpart of `FixedHashMapWithSizeBitsAndCalculatedSize`: no element counter.
-template <typename Key, size_t size_bits>
-using FixedHashSetWithSizeBitsAndCalculatedSize
-    = FixedHashSet<Key, HashTableAllocator, size_bits, FixedHashTableCalculatedSize<FixedHashTableCell<Key>>>;

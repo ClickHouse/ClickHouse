@@ -1,17 +1,8 @@
 -- clickhouse-local, both names
 1
 1
--- declaring a secondary query
-1
-1
+-- clickhouse-local declaring a secondary query
 1
 1
 -- clickhouse-client
-1
-1
--- nested SETTINGS clause
-1
-1
-1
--- HTTP
-1
+SETTING_CONSTRAINT_VIOLATION

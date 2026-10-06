@@ -5,8 +5,6 @@
 #include <base/types.h>
 #include <base/unit.h>
 
-#include <string_view>
-
 namespace DB
 {
 
@@ -58,9 +56,6 @@ struct FormatSettings
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
-
-    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
-    UInt64 freeform_max_search_steps = 4096;
 
     bool allow_special_serialization_kinds = false;
 
@@ -175,22 +170,6 @@ struct FormatSettings
         ZSTD
     };
 
-    /// What to do with a column whose type has no first-class Arrow mapping.
-    enum class ArrowUnsupportedTypes : uint8_t
-    {
-        /// Reject the query.
-        THROW,
-        /// Write the text representation of each value (`serializeText`) as an Arrow `Utf8` column.
-        TEXT,
-        /// Write the binary representation of each value (`serializeBinary`) as an Arrow `Binary` column.
-        BINARY
-    };
-
-    /// The Arrow extension name both Arrow writers put on a column written as an opaque `Utf8`/`Binary`
-    /// column by `TEXT`/`BINARY` above, with the original ClickHouse type name in the extension metadata,
-    /// so that a consumer can tell it apart from a genuine string or binary column.
-    static constexpr std::string_view ARROW_OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
-
     struct
     {
         UInt64 max_binary_string_size = 1_GiB;
@@ -221,7 +200,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
+        bool output_unsupported_types_as_binary = true;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
     } arrow{};
@@ -396,7 +375,6 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
-        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -468,7 +446,6 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
-        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 
@@ -644,12 +621,6 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert{};
-
-    struct
-    {
-        String input_table_name;
-        String output_table_name = "table";
-    } sqlite{};
 
     struct
     {

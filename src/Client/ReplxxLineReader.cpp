@@ -505,8 +505,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
                 {
                     context_size = static_cast<int>(slash_commands.prefix_length);
-                    /// Deliberately not truncated to `HINTS_MAX_ROWS`: the list is static and small,
-                    /// and a bare `/` promises to show all the commands.
+                    slash_commands.commands.resize(std::min(slash_commands.commands.size(), HINTS_MAX_ROWS));
                     return show(replxx::Replxx::hints_t(slash_commands.commands.begin(), slash_commands.commands.end()), context_size);
                 }
             }
@@ -542,9 +541,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         };
         rx.set_hint_callback(hint_callback);
         rx.set_hint_delay(0); /// Show hints immediately, without a delay.
-        /// The suggestion hints are already truncated to `HINTS_MAX_ROWS` above; the row cap only
-        /// needs to be wide enough for the untruncated `/`-command list.
-        rx.set_max_hint_rows(static_cast<int>(std::max(HINTS_MAX_ROWS, clientSlashCommands().size())));
+        rx.set_max_hint_rows(static_cast<int>(HINTS_MAX_ROWS));
 
         /// replxx drops its internal hint selection on every action that regenerates the line — any
         /// cursor movement, edit, etc. (see `handle_hints` on `HINT_ACTION::REGENERATE`) — but it

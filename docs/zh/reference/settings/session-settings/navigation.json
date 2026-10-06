@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "会话设置",
+  "group": "Session Settings",
   "pages": [
     "zh/reference/settings/session-settings/additional",
     "zh/reference/settings/session-settings/aggregate",

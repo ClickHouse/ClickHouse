@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/TokenSearchArgumentTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -88,6 +87,48 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
             ++pos;
     }
     return search_tokens;
+}
+
+/// Function input accepts string, fixed string, array of string or array of fixed strings.
+bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
+{
+    const IDataType * nested_type = &type;
+
+    /// Unwrap an optional top-level Nullable.
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
+        nested_type = nullable->getNestedType().get();
+
+    if (isStringOrFixedString(*nested_type))
+        return true;
+
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
+    {
+        const IDataType * element_type = array_type->getNestedType().get();
+
+        /// Array elements may also be Nullable(String) or Nullable(FixedString).
+        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
+            element_type = nullable_elem->getNestedType().get();
+
+        return isStringOrFixedString(*element_type);
+    }
+
+    return false;
+}
+
+/// Functions accept needles string (will be tokenized) or array of string needles/tokens (used as-is)
+/// Also accepts Array(Nothing) which is the type of Array([])
+bool isStringOrArrayOfStringType(const IDataType & type)
+{
+    if (isString(type))
+        return true;
+
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(&type); array_type)
+    {
+        const DataTypePtr & nested_type = array_type->getNestedType();
+        return isString(nested_type) || isNothing(nested_type);
+    }
+
+    return false;
 }
 }
 
@@ -350,9 +391,6 @@ void executeStringOrArray(
             executeArray<HasTokensTraits>(col_input_array, *input_string, null_map, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
             executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, null_map, col_result, tokenizer, tokens);
-        else
-            /// `Array(Nothing)`, the type of `[]`: rows without tokens.
-            col_result.assign(input_rows_count, UInt8(0));
     }
 }
 

@@ -98,11 +98,9 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override;
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
-
-    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
 
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
