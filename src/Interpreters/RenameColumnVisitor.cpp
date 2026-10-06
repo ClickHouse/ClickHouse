@@ -32,7 +32,6 @@ const ASTFunction * asLambda(const ASTPtr & ast)
     return nullptr;
 }
 
-/// A malformed parameter list yields no names.
 Names getLambdaParameters(const ASTFunction & lambda)
 {
     Names names;
