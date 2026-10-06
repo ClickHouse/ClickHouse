@@ -371,6 +371,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
                     result.deduplication_info->getCount(),
                     result.deduplication_info->debug());
 
+                if (apply_ttl_delete
+                    && metadata_snapshot->hasRowsTTL()
+                    && result.filtered_block
+                    && result.filtered_block->rows())
+                    MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block);
+
                 current_block.block = result.filtered_block;
                 current_deduplication_info = result.deduplication_info;
             }
@@ -534,6 +540,13 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                         result.deduplication_info->getCount(),
                         duplication_elapsed.elapsed() / 1000,
                         result.deduplication_info->debug());
+
+                    if ((*storage.getSettings())[MergeTreeSetting::apply_ttl_delete_on_insert]
+                        && storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary
+                        && metadata_snapshot->hasRowsTTL()
+                        && result.filtered_block
+                        && result.filtered_block->rows())
+                        MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block);
 
                     partition.block_with_partition.block = result.filtered_block;
                     partition.deduplication_info = std::move(result.deduplication_info);
