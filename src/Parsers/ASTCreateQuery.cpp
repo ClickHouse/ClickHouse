@@ -142,7 +142,16 @@ void ASTStorage::writeJSON(WriteBuffer & out) const
 
 void ASTStorage::readJSON(const Poco::JSON::Object & json)
 {
-    JSONObjectReader r(json);
+    /// The engine's kind comes from its position, as in `ParserStorage`: `TABLE_ENGINE` here, re-marked `DATABASE_ENGINE` by
+    /// `ASTCreateQuery::readJSON`. The payload's kind is dropped first: a rejected statement is logged as raw text with its secrets.
+    Poco::JSON::Object storage_json(json);
+    if (const auto engine_json = json.getObject("engine"))
+    {
+        Poco::JSON::Object::Ptr engine_without_kind = new Poco::JSON::Object(*engine_json);
+        engine_without_kind->remove("kind");
+        storage_json.set("engine", engine_without_kind);
+    }
+    JSONObjectReader r(storage_json);
 
     /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
     /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
@@ -150,8 +159,6 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
     {
-        /// The masking rule depends on the kind. `ParserStorage` marks every engine `TABLE_ENGINE`; a database's is re-marked
-        /// by `ASTCreateQuery::readJSON`.
         child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
         set(engine, child);
     }

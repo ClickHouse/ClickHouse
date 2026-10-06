@@ -228,8 +228,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     else if (!nulls_action_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'nulls_action' value '{}' during AST JSON deserialization", nulls_action_str);
 
-    /// Secret masking dispatches on the kind, so the kinds the parser derives from the position or the name are not taken from
-    /// the client: `ASTStorage::readJSON` assigns the engine kinds, and `CODEC` / `STATISTICS` belong to the function of that name.
+    /// Secret masking dispatches on the kind. The engine kinds come from the position (`ASTStorage::readJSON`), `CODEC` /
+    /// `STATISTICS` belong only to the function of that name, and `BACKUP_NAME` on any other function hides every argument.
     String kind_str = r.getString("kind");
     if (kind_str == "WINDOW_FUNCTION")
         setKind(Kind::WINDOW_FUNCTION);
