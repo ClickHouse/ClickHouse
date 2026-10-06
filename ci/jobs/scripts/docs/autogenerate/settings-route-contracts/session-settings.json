@@ -224,6 +224,7 @@
     {"prefix":"insert","mode":"token","target":"/reference/settings/session-settings/insert"},
     {"prefix":"joined","mode":"token","target":"/reference/settings/session-settings/joined"},
     {"prefix":"keeper","mode":"token","target":"/reference/settings/session-settings/keeper"},
+    {"prefix":"logsql","mode":"token","target":"/reference/settings/session-settings/logsql"},
     {"prefix":"memory","mode":"token","target":"/reference/settings/session-settings/memory"},
     {"prefix":"prefer","mode":"token","target":"/reference/settings/session-settings/prefer"},
     {"prefix":"promql","mode":"token","target":"/reference/settings/session-settings/promql"},

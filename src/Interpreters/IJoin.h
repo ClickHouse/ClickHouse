@@ -8,7 +8,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
 
 namespace DB

@@ -16,7 +16,7 @@ class MergeTreeData;
 struct ProjectionDescription;
 struct WhatIfSettings;
 
-/// the stored definition re-checked against the current table, empty with reason set when it no longer fits
+/// re-validate a stored definition, empty with a reason if it no longer fits
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ProjectionDescription & stored,
     const MergeTreeData & data,
@@ -24,7 +24,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ContextPtr & context,
     String & reason);
 
-/// mirrors evaluateIndex, an unusable candidate becomes not_applicable with a reason
+/// like evaluateIndex, for a hypothetical projection
 WhatIfCandidateResult evaluateProjection(
     const ProjectionDescription & stored_projection,
     ReadFromMergeTree * read_step,

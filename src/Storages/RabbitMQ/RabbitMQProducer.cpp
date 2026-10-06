@@ -268,10 +268,12 @@ void RabbitMQProducer::startProducingTaskLoop()
         }
     }
 
-    int res = 0;
     size_t try_num = 0;
-    while (++try_num <= FINISH_PRODUCER_NUM_TRIES && (res = iterateEventLoop()))
+    while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
     {
+        int res = iterateEventLoop();
+        if (!res)
+            break;
         LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
     }
 
