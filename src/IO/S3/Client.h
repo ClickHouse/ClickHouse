@@ -291,13 +291,20 @@ private:
 
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
+    enum class RequestCancellationPolicy
+    {
+        Regular,
+        Cleanup,
+    };
+
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType &>
-    doRequest(RequestType & request, RequestFn request_fn) const;
+    doRequest(RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy = RequestCancellationPolicy::Regular) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType &>
-    doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
+    doRequestWithRetryNetworkErrors(
+        RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy = RequestCancellationPolicy::Regular) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
@@ -323,7 +330,7 @@ private:
     RequestResult processRequestResult(RequestResult && outcome) const;
 
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
-    void slowDownAfterRetryableError(const std::function<void()> & cancellation_hook) const;
+    void slowDownAfterRetryableError() const;
 
     void logConfiguration() const;
     String initial_endpoint;

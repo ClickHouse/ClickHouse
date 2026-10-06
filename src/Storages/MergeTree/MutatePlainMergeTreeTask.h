@@ -43,6 +43,7 @@ public:
     void cancel() noexcept override;
 
     void onCompleted() override;
+    ~MutatePlainMergeTreeTask() override;
     StorageID getStorageID() const override;
     Priority getPriority() const override { return priority; }
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }

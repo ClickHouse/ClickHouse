@@ -103,7 +103,7 @@ size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) cons
 std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
 {
     if (looksLikePackedSkipIndexFile(file_name))
-        if (auto reader = getSkipIndicesPackedReader({}); reader && reader->exists(file_name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
             return reader->getFileUncompressedSize(file_name);
     return {};
 }
@@ -157,13 +157,11 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings,
-    std::function<void()> cancellation_hook)
+    const WriteSettings & settings)
 {
-    auto buffer = transaction ? transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, cancellation_hook)
-                              : volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
-    buffer->setCancellationHook(std::move(cancellation_hook));
-    return buffer;
+    if (transaction)
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)
@@ -216,11 +214,7 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     });
 }
 
-void DataPartStorageOnDiskFull::copyFileFrom(
-    const IDataPartStorage & source,
-    const std::string & from,
-    const std::string & to,
-    const std::function<void()> & cancellation_hook)
+void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
 {
     const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
     if (!source_on_disk)
@@ -235,9 +229,7 @@ void DataPartStorageOnDiskFull::copyFileFrom(
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
         fs::path(root_path) / part_dir / to,
-        getReadSettings(),
-        {},
-        cancellation_hook);
+        getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

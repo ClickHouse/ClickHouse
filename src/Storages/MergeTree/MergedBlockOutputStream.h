@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-
-#include <functional>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -30,8 +28,7 @@ public:
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
-        bool try_adaptive_codec,
-        std::function<void()> cancellation_hook = {});
+        bool try_adaptive_codec);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

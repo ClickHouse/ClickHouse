@@ -265,27 +265,6 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool restrict_seek) const
 {
-    return readObjectImpl(object, read_settings, use_external_buffer, restrict_seek, {});
-}
-
-std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectForCopy(
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    const std::function<void()> & cancellation_hook,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool restrict_seek) const
-{
-    return readObjectImpl(object, read_settings, use_external_buffer, restrict_seek, cancellation_hook);
-}
-
-std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectImpl(
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    bool use_external_buffer,
-    bool restrict_seek,
-    const std::function<void()> & cancellation_hook) const
-{
     auto settings_ptr = s3_settings.get();
 
     /// A query can override request settings (from its SETTINGS clause or profile). Apply them to a
@@ -326,8 +305,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectImpl(
         (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
         std::move(blob_storage_log),
-        object.etag,
-        cancellation_hook);
+        object.etag);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -681,8 +659,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
-    std::optional<ObjectAttributes> object_to_attributes,
-    const std::function<void()> & cancellation_hook)
+    std::optional<ObjectAttributes> object_to_attributes)
 {
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
@@ -691,9 +668,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto settings_ptr = s3_settings.get();
         const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
         const auto [dest_bucket, dest_key] = dest_s3->splitBucketAndKey(object_to.remote_path);
-        /// Size probe is metadata-only and intentionally outside MergeTree copy cancellation scope.
-        /// The operation hook starts at the data movement itself below.
-        auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {}, {});
+        auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
         auto blob_storage_log = BlobStorageLogWriter::create(dest_s3->disk_name);
@@ -714,13 +689,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 read_settings_to_use,
                 blob_storage_log,
                 scheduler,
-                [&, this]
-                {
-                    return readObjectForCopy(
-                        object_from, read_settings_to_use, cancellation_hook, /* read_hint */ {}, /* use_external_buffer */ false, /* restrict_seek */ false);
-                },
-                object_to_attributes,
-                cancellation_hook);
+                [&, this]{ return readObject(object_from, read_settings_to_use);},
+                object_to_attributes);
             return;
         }
         catch (S3Exception & exc)
@@ -749,8 +719,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         }
     }
 
-    IObjectStorage::copyObjectToAnotherObjectStorage(
-        object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes, cancellation_hook);
+    IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void S3ObjectStorage::copyObject( // NOLINT

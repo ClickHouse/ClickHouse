@@ -955,6 +955,161 @@ def assert_s3_cancelled(node, table, request):
     assert "ABORTED" in request.get_error()
 
 
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree('/cancel_teardown', 'r1')"])
+def test_cancelled_merge_teardown_bounds_failed_multipart_abort(s3_cancellation, broken_s3, engine):
+    node, table = s3_cancellation
+    failpoint = "merge_task_pause_after_write"
+    optimize_query_id = "cleanup_cancel_" + uuid.uuid4().hex
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) ENGINE={engine} ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries_always_multi_part', "
+        "enable_vertical_merge_algorithm=0, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0, "
+        "index_granularity_bytes=0, merge_max_block_size_bytes=0"
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for offset in (0, 8192):
+        node.query(
+            f"INSERT INTO {table} SELECT number + {offset}, randomString(8192) FROM numbers(8192)"
+        )
+    try:
+        broken_s3.reset()
+        broken_s3.setup_fake_multpartuploads()
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        # Plain `OPTIMIZE` executes synchronously; replicated `OPTIMIZE` schedules the background executor.
+        request = node.get_query_request(
+            f"OPTIMIZE TABLE {table} FINAL", query_id=optimize_query_id, timeout=30
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        wait_for_s3_request(broken_s3, "part_upload")
+        uploads = broken_s3.get_request_counts()["create_multipart_upload"]
+        assert uploads > 0
+        broken_s3.setup_action("at_abort_multipart_upload", action="internal_error", count=10000)
+        node.query(f"SYSTEM STOP MERGES {table}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
+            "0",
+            retry_count=20,
+            sleep_time=0.1,
+        )
+        if engine == "MergeTree":
+            assert "ABORTED" in request.get_error()
+        assert broken_s3.get_request_counts()["abort_multipart_upload"] == uploads
+    finally:
+        # A replicated `OPTIMIZE` waits for queue completion even after its current merge was cancelled.
+        node.query(f"KILL QUERY WHERE query_id='{optimize_query_id}' SYNC")
+        broken_s3.reset()
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+
+def test_local_projection_observes_parent_partition_cancellation(s3_cancellation):
+    node, table = s3_cancellation
+    source = table + "_projection_source"
+    projection_pause = "merge_task_projection_stage_pause"
+    write_pause = "merge_task_pause_after_write"
+    node.query(
+        f"CREATE TABLE {table} (partition UInt32, key UInt32, value UInt32, "
+        "PROJECTION p (SELECT * ORDER BY value)) ENGINE=MergeTree "
+        "PARTITION BY partition ORDER BY key SETTINGS enable_vertical_merge_algorithm=0"
+    )
+    node.query(f"CREATE TABLE {source} AS {table}")
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for offset in (0, 10000):
+        node.query(f"INSERT INTO {table} SELECT 7, number + {offset}, number FROM numbers(10000)")
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {projection_pause}")
+        node.query(f"SYSTEM START MERGES {table}")
+        request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+        node.query(f"SYSTEM WAIT FAILPOINT {projection_pause} PAUSE", timeout=30)
+        # Base-part writes are done. A cancelled child must never reach its first write.
+        node.query(f"SYSTEM ENABLE FAILPOINT {write_pause}")
+        replacement_query_id = "projection_cancel_" + uuid.uuid4().hex
+        replacement = node.get_query_request(
+            f"ALTER TABLE {table} REPLACE PARTITION 7 FROM {source} "
+            "SETTINGS allow_replace_partition_from_empty_source=1",
+            timeout=10,
+            query_id=replacement_query_id,
+        )
+        node.wait_for_log_line(
+            f"{replacement_query_id}.*StorageMergeTree::stopMergesAndWaitForPartition Waiting",
+            timeout=10,
+        )
+        node.query(f"SYSTEM DISABLE FAILPOINT {projection_pause}")
+        replacement.get_answer()
+        assert "ABORTED" in request.get_error()
+        assert node.query(f"SELECT count() FROM {table}").strip() == "0"
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {projection_pause}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {write_pause}")
+        node.query(f"DROP TABLE {source} SYNC")
+
+
+def test_partition_cancellation_is_isolated(s3_cancellation, broken_s3):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (partition UInt32, key UInt32, value UInt32, unchanged String) "
+        "ENGINE=MergeTree PARTITION BY partition ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number % 2, number, number, toString(number) FROM numbers(1000)"
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    # Clone untouched parts so both partitions perform independent S3 copies.
+    node.query(f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 1000 SETTINGS mutations_sync=0")
+    source = table + "_empty_source"
+    node.query(f"CREATE TABLE {source} AS {table}")
+    try:
+        broken_s3.reset()
+        # Fail mutation copies only: replacing the partition must still write its metadata.
+        broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+        node.query(f"SYSTEM START MERGES {table}")
+        wait_for_s3_request(broken_s3, "object_copy", count=2)
+        merges = (
+            "SELECT arrayStringConcat(arraySort(groupArray(partition_id)), ',') "
+            f"FROM system.merges WHERE database=currentDatabase() AND table='{table}'"
+        )
+        assert_eq_with_retry(node, merges, "0,1")
+
+        # `REPLACE PARTITION` uses the partition blocker; `DROP PARTITION` stops all merges.
+        node.query(
+            f"ALTER TABLE {table} REPLACE PARTITION 0 FROM {source} "
+            "SETTINGS allow_replace_partition_from_empty_source=1",
+            timeout=30,
+        )
+        assert_eq_with_retry(node, merges, "1")
+        broken_s3.reset()
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.mutations WHERE database=currentDatabase() "
+            f"AND table='{table}' AND NOT is_done",
+            "0",
+        )
+        assert node.query(
+            f"SELECT count(), countIf(partition != 1 OR value != key) FROM {table}"
+        ).strip() == "500\t0"
+    except Exception:
+        logging.error(
+            "Partition cancellation failure before resetting S3:\n%s",
+            node.query(
+                "SELECT thread_name, query_id, "
+                "arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\\n') AS stack "
+                "FROM system.stack_trace WHERE query_id LIKE '%::%' FORMAT Vertical",
+                settings={"allow_introspection_functions": 1},
+                timeout=15,
+            ),
+        )
+        raise
+    finally:
+        broken_s3.reset()
+        node.query(f"DROP TABLE {source} SYNC")
+
+
 def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
     s3_cancellation, broken_s3
 ):
@@ -1264,7 +1419,12 @@ def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3)
         f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
         timeout=30,
     )
-    wait_for_s3_request(broken_s3, "object_copy_injected", count=2)
+    wait_condition(
+        lambda: (broken_s3.get_request_counts(), broken_s3.get_copy_sources()),
+        lambda observed: observed[0]["object_copy_injected"] >= 2
+        and bool(set(projection_copy_sources).intersection(observed[1])),
+        max_attempts=100,
+    )
     assert_s3_cancelled(node, table, request)
 
 

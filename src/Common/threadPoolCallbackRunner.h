@@ -206,6 +206,7 @@ private:
 
     PoolT & pool;
     ThreadName thread_name{};
+    const bool check_cancellation;
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -265,9 +266,11 @@ private:
     }
 
 public:
-    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_)
+    /// Cancellation applies to unbounded admission waits, not destructor draining or explicit scheduling timeouts.
+    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_, bool check_cancellation_ = false)
         : pool(pool_)
         , thread_name(thread_name_)
+        , check_cancellation(check_cancellation_)
     {
     }
 
@@ -326,7 +329,7 @@ public:
             if (wait_microseconds)
                 pool.scheduleOrThrow(std::move(task_func), priority, *wait_microseconds);
             else
-                pool.scheduleOrThrowOnError(std::move(task_func), priority);
+                pool.scheduleOrThrowOnError(std::move(task_func), priority, check_cancellation);
         }
         catch (...)
         {

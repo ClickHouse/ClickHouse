@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <IO/RemoteIOCleanup.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -1138,6 +1139,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 void IMergeTreeDataPart::removeIfNeeded()
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
+    RemoteIOCleanupScope cleanup;
 
     if (is_removed)
         return;

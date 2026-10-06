@@ -133,7 +133,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         index_file_stream = getDataPartStorage().writeFile(
-            index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings, settings.cancellation_hook);
+            index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
@@ -164,7 +164,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     if (settings.external_packed_skip_indices_writer)
         skip_indices_packed_writer_borrowed = settings.external_packed_skip_indices_writer;
     else if (packing_enabled)
-        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>(settings.query_write_settings, settings.cancellation_hook);
+        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>(settings.query_write_settings);
 
     if (skip_indices.empty())
         return;
@@ -224,7 +224,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
-                settings.cancellation_hook,
                 packing);
 
             index_streams[index_substream.type] = stream.get();
@@ -497,7 +496,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
     {
         const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
         skip_indices_packed_file = getDataPartStorage().writeFile(
-            packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings, settings.cancellation_hook);
+            packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         HashingWriteBuffer packed_hashing(*skip_indices_packed_file);
 
         auto [packed_index, _] = skip_indices_packed_writer->finalize(packed_hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
@@ -532,10 +531,10 @@ void MergeTreeDataPartWriterOnDisk::preloadPackedSkipIndicesArchive(
     /// fillSkipIndicesChecksums emits skp_idx.packed iff this writer has any modified files,
     /// so a writer holding only preserved entries still produces the archive.
     if (!skip_indices_packed_writer)
-        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>(settings.query_write_settings, settings.cancellation_hook);
+        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>(settings.query_write_settings);
 
     source.copyPackedSkipIndicesFilesInto(
-        files, *skip_indices_packed_writer, ReadSettings{}, settings.cancellation_hook);
+        files, *skip_indices_packed_writer, ReadSettings{});
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)

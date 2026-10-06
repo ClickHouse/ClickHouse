@@ -25,7 +25,9 @@ namespace ErrorCodes
 
 const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
 
-MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
+MergeListElement::MergeListElement(
+    const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context,
+    std::function<bool()> operation_is_canceled_)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -36,6 +38,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
     , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
+    , operation_is_canceled(std::move(operation_is_canceled_))
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (result_part_name != result_part_info.getPartNameV1())
@@ -76,7 +79,22 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForMergeMutate(context);
+    thread_group = ThreadGroup::createForMergeMutate(context, getCancellationPredicate());
+}
+
+std::function<bool()> MergeListElement::getCancellationPredicate() const
+{
+    return [canceled = is_cancelled, predicate = operation_is_canceled]
+    {
+        if (canceled->load(std::memory_order_relaxed))
+            return true;
+        if (predicate && predicate())
+        {
+            canceled->store(true, std::memory_order_relaxed);
+            return true;
+        }
+        return canceled->load(std::memory_order_relaxed);
+    };
 }
 
 MergeInfo MergeListElement::getInfo() const

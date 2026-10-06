@@ -140,7 +140,9 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// Bind before attaching any threads: they snapshot SharedData on attachment.
+    /// The predicate must be thread-safe and own (or safely reference) its cancellation state.
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context, QueryIsCanceledPredicate operation_is_canceled = {});
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);

@@ -7,12 +7,18 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -165,22 +171,6 @@ FileCachePtr createTestFileCache(const String & name)
     return cache;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> createCachedCancellationReader(
-    const FileCachePtr & cache, std::function<void()> cancellation_hook = {})
-{
-    ReadSettings settings;
-    settings.remote_fs_settings.buffer_size = 4;
-    settings.local_fs_settings.buffer_size = 4;
-    ReadPipeline pipeline(cancellation_hook);
-    pipeline.setSource(
-        [cancellation_hook](const StoredObject &, const ReadSettings &, bool, bool)
-        {
-            return std::make_unique<TestReadBuffer>("abcdefghijkl", nullptr, 4, cancellation_hook);
-        },
-        StoredObjects{testObject(12)}, settings);
-    pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
-    return pipeline.build();
-}
 
 }
 
@@ -550,71 +540,80 @@ catch (...)
 }
 
 
-TEST(ReadPipeline, FilesystemCacheDoesNotShareCancelledCopySource)
-try
-{
-    const String cache_name = "read_pipeline_cancelled_source";
-    auto cache = createTestFileCache(cache_name);
-    SCOPE_EXIT({
-        FileCacheFactory::instance().clear();
-        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
-    });
+/// The source checks the executing thread, without capturing either operation. The pipeline
+/// has no cancellation hook, so this exercises the normal shared FileSegment reader path.
+class ThreadContextCacheHandoff : public ::testing::TestWithParam<bool> {};
 
-    bool cancelled = false;
-    auto copy = createCachedCancellationReader(cache, [&]
+TEST_P(ThreadContextCacheHandoff, SharedSourceUsesCurrentOperation)
+{
+    const bool cancel_original_operation = GetParam();
+    std::async(std::launch::async, [cancel_original_operation]
     {
-        if (cancelled)
-            throw std::runtime_error("copy cancelled");
-    });
-    String prefix(4, '\0');
-    copy->readStrict(prefix.data(), prefix.size());
-    ASSERT_EQ(prefix, "abcd");
-    const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
-    ASSERT_EQ(segments.size(), 1u);
-    ASSERT_EQ(segments.front().downloaded_size, 4u);
-    cancelled = true;
+        ThreadStatus status;
+        const String cache_name = cancel_original_operation ? "context_cache_canceled_owner" : "context_cache_canceled_consumer";
+        auto cache = createTestFileCache(cache_name);
+        SCOPE_EXIT({
+            FileCacheFactory::instance().clear();
+            fs::remove_all(fs::current_path() / (cache_name + "_cache"));
+        });
 
-    /// Keep the first reader alive while another reader continues its partially cached segment.
-    auto ordinary = createCachedCancellationReader(cache);
-    String result;
-    readStringUntilEOF(result, *ordinary);
-    EXPECT_EQ(result, "abcdefghijkl");
+        auto original_canceled = std::make_shared<std::atomic_bool>(false);
+        auto next_canceled = std::make_shared<std::atomic_bool>(false);
+        auto original_group = ThreadGroup::createForMergeMutate(
+            getContext().context, [original_canceled] { return original_canceled->load(); });
+        auto next_group = ThreadGroup::createForMergeMutate(
+            getContext().context, [next_canceled] { return next_canceled->load(); });
+
+        size_t sources_created = 0;
+        auto create_reader = [&]
+        {
+            ReadSettings settings;
+            settings.remote_fs_settings.buffer_size = 4;
+            settings.local_fs_settings.buffer_size = 4;
+            ReadPipeline pipeline;
+            pipeline.setSource([&sources_created](const StoredObject &, const ReadSettings &, bool, bool)
+            {
+                ++sources_created;
+                return std::make_unique<TestReadBuffer>("abcdefghijkl", nullptr, 4, [] { CurrentThread::checkIfNotCancelled(); });
+            }, StoredObjects{testObject(12)}, settings);
+            pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
+            return pipeline.build();
+        };
+
+        std::unique_ptr<ReadBufferFromFileBase> original;
+        String prefix(4, '\0');
+        {
+            ThreadGroupSwitcher scope(original_group, ThreadName::MERGE_MUTATE);
+            original = create_reader();
+            original->readStrict(prefix.data(), prefix.size());
+            ASSERT_EQ(prefix, "abcd");
+        }
+        const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
+        ASSERT_EQ(segments.size(), 1u);
+        ASSERT_EQ(segments.front().downloaded_size, 4u);
+        ASSERT_EQ(sources_created, 1u);
+
+        original_canceled->store(cancel_original_operation);
+        next_canceled->store(!cancel_original_operation);
+        ThreadGroupSwitcher scope(next_group, ThreadName::MERGE_MUTATE);
+        auto next = create_reader();
+        next->readStrict(prefix.data(), prefix.size());
+        ASSERT_EQ(prefix, "abcd");
+        if (cancel_original_operation)
+        {
+            String tail;
+            readStringUntilEOF(tail, *next);
+            EXPECT_EQ(tail, "efghijkl");
+        }
+        else
+        {
+            EXPECT_THROW(next->next(), Exception);
+        }
+        EXPECT_EQ(sources_created, 1u) << "Must actually reuse the shared source, not create a private replacement";
+    }).get();
 }
-catch (...)
-{
-    FAIL() << getCurrentExceptionMessage(true);
-}
 
-
-TEST(ReadPipeline, FilesystemCacheCopyDoesNotInheritUncancellableSource)
-try
-{
-    const String cache_name = "read_pipeline_inherited_source";
-    auto cache = createTestFileCache(cache_name);
-    SCOPE_EXIT({
-        FileCacheFactory::instance().clear();
-        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
-    });
-
-    auto ordinary = createCachedCancellationReader(cache);
-    String prefix(4, '\0');
-    ordinary->readStrict(prefix.data(), prefix.size());
-    ASSERT_EQ(prefix, "abcd");
-    const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
-    ASSERT_EQ(segments.size(), 1u);
-    ASSERT_EQ(segments.front().downloaded_size, 4u);
-
-    auto copy = createCachedCancellationReader(cache, [] { throw std::runtime_error("copy cancelled"); });
-    /// Already cached bytes remain readable; the first source miss must check this copy's hook.
-    copy->readStrict(prefix.data(), prefix.size());
-    ASSERT_EQ(prefix, "abcd");
-    EXPECT_THROW(copy->next(), std::runtime_error);
-}
-catch (...)
-{
-    FAIL() << getCurrentExceptionMessage(true);
-}
-
+INSTANTIATE_TEST_SUITE_P(OperationCancellation, ThreadContextCacheHandoff, ::testing::Bool());
 
 TEST(ReadPipeline, MemoryCacheSkipsUnknownSizeObject)
 try

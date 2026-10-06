@@ -26,7 +26,7 @@ static std::shared_ptr<DataPartStorageOnDiskPacked> createPackedPart(const DiskP
     storage->createDirectories();
     for (const auto * name : {"a", "b"})
     {
-        auto out = storage->writeFile(name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{}, {});
+        auto out = storage->writeFile(name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{});
         writeString(name, *out);
         out->finalize();
     }
@@ -61,21 +61,21 @@ TEST(PackedPartStorage, ExplicitWriteSettingsAfterMetadataChange)
     storage->beginTransaction();
     storage->removeFile("a");
 
-    size_t callback_calls = 0;
+
     WriteSettings settings;
     settings.local_throttler = std::make_shared<Throttler>(0, nullptr, ProfileEvents::LocalWriteThrottlerBytes);
-    auto out = storage->writeFile("c", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings, [&] { ++callback_calls; });
+    auto out = storage->writeFile("c", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     writeString("new", *out);
     out->finalize();
 
-    /// A later member's defaults must not replace the first member's settings or callback.
-    auto second_out = storage->writeFile("d", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{}, {});
+    /// A later member's defaults must not replace the first member's settings.
+    auto second_out = storage->writeFile("d", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{});
     writeString("later", *second_out);
     second_out->finalize();
 
     const ProfileEvents::Count bytes_before = ProfileEvents::global_counters[ProfileEvents::LocalWriteThrottlerBytes];
     storage->commitTransaction();
-    EXPECT_GT(callback_calls, 0);
+
     EXPECT_EQ(
         ProfileEvents::global_counters[ProfileEvents::LocalWriteThrottlerBytes] - bytes_before,
         disk->getFileSize("part/data.packed"));

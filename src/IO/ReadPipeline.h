@@ -97,10 +97,6 @@ public:
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     ReadPipeline() = default;
-    explicit ReadPipeline(std::function<void()> cancellation_hook_)
-        : cancellation_hook(std::move(cancellation_hook_))
-    {
-    }
     ReadPipeline(const ReadPipeline &) = default;
     ReadPipeline & operator=(const ReadPipeline &) = default;
     ReadPipeline(ReadPipeline &&) = default;
@@ -190,7 +186,6 @@ public:
 
     bool hasSource() const { return source.has_value(); }
     const StoredObjects & getStoredObjects() const;
-    const std::function<void()> & getCancellationHook() const { return cancellation_hook; }
 
 private:
     struct SourceStage
@@ -237,7 +232,6 @@ private:
         bool include_credentials_in_cache_key = false;
     };
 
-    std::function<void()> cancellation_hook;
     std::optional<SourceStage> source;
     bool gather = false;
     std::shared_ptr<LongConnectionLimit> long_connection_limit;

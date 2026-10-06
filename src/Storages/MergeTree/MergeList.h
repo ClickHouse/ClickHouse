@@ -15,6 +15,7 @@
 #include <mutex>
 #include <atomic>
 #include <utility>
+#include <functional>
 
 
 namespace CurrentMetrics
@@ -95,7 +96,7 @@ struct MergeListElement : boost::noncopyable
 
     Stopwatch watch;
     std::atomic<Float64> progress{};
-    std::atomic<bool> is_cancelled{};
+    const std::shared_ptr<std::atomic_bool> is_cancelled = std::make_shared<std::atomic_bool>(false);
 
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
@@ -140,7 +141,10 @@ struct MergeListElement : boost::noncopyable
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        std::function<bool()> operation_is_canceled_ = {});
+
+    std::function<bool()> getCancellationPredicate() const;
 
     MergeInfo getInfo() const;
 
@@ -151,6 +155,9 @@ struct MergeListElement : boost::noncopyable
     MergeListElement & ref() { return *this; }
 
     ~MergeListElement();
+
+private:
+    const std::function<bool()> operation_is_canceled;
 };
 
 /** Maintains a list of currently running merges.
@@ -177,7 +184,7 @@ public:
                 && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
                 && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                merge_element.is_cancelled = true;
+                *merge_element.is_cancelled = true;
         }
     }
 
@@ -197,7 +204,7 @@ public:
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
+            *merge_element.is_cancelled = true;
     }
 
     template <typename... Args>
@@ -205,7 +212,7 @@ public:
     {
         auto entry = Parent::insert(std::forward<Args>(args)...);
         if (all_cancelled)
-            (*entry)->is_cancelled = true;
+            *(*entry)->is_cancelled = true;
         return entry;
     }
 
@@ -217,7 +224,7 @@ public:
             if (merge_element.table_id == table_id
                 && merge_element.partition_id == partition_id
                 && merge_element.result_part_info.min_block < delimiting_block_number)
-                merge_element.is_cancelled = true;
+                *merge_element.is_cancelled = true;
         }
     }
 

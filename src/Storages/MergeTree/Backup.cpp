@@ -31,8 +31,7 @@ void BackupImpl(
     size_t level,
     std::optional<size_t> max_level,
     bool copy_instead_of_hardlinks,
-    const NameSet & files_to_copy_instead_of_hardlinks,
-    const std::function<void()> & cancellation_hook)
+    const NameSet & files_to_copy_instead_of_hardlinks)
 {
     if (max_level && level > *max_level)
         return;
@@ -62,9 +61,9 @@ void BackupImpl(
             if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
             {
                 if (transaction)
-                    transaction->copyFile(source, destination, read_settings, write_settings, cancellation_hook);
+                    transaction->copyFile(source, destination, read_settings, write_settings);
                 else
-                    src_disk->copyFile(source, *dst_disk, destination, read_settings, write_settings, cancellation_hook);
+                    src_disk->copyFile(source, *dst_disk, destination, read_settings, write_settings);
             }
             else
             {
@@ -88,8 +87,7 @@ void BackupImpl(
                 level + 1,
                 max_level,
                 copy_instead_of_hardlinks,
-                files_to_copy_instead_of_hardlinks,
-                cancellation_hook);
+                files_to_copy_instead_of_hardlinks);
         }
     }
 }
@@ -143,8 +141,7 @@ void Backup(
     std::optional<size_t> max_level,
     bool copy_instead_of_hardlinks,
     const NameSet & files_to_copy_intead_of_hardlinks,
-    DiskTransactionPtr disk_transaction,
-    const std::function<void()> & cancellation_hook)
+    DiskTransactionPtr disk_transaction)
 {
     if (dst_disk->existsFileOrDirectory(destination_path) && !dst_disk->isDirectoryEmpty(destination_path))
     {
@@ -177,13 +174,13 @@ void Backup(
                     /* level= */ 0,
                     max_level,
                     copy_instead_of_hardlinks,
-                    files_to_copy_intead_of_hardlinks,
-                    cancellation_hook);
+                    files_to_copy_intead_of_hardlinks
+                    );
             }
             else if (copy_instead_of_hardlinks)
             {
                 CleanupOnFail cleanup([dst_disk, destination_path]() { dst_disk->removeRecursive(destination_path); });
-                src_disk->copyDirectoryContent(source_path, dst_disk, destination_path, read_settings, write_settings, cancellation_hook);
+                src_disk->copyDirectoryContent(source_path, dst_disk, destination_path, read_settings, write_settings, /*cancellation_hook=*/{});
                 cleanup.success();
             }
             else
@@ -209,8 +206,7 @@ void Backup(
                     /* level= */ 0,
                     max_level,
                     /* copy_instead_of_hardlinks= */ false,
-                    files_to_copy_intead_of_hardlinks,
-                    cancellation_hook);
+                    files_to_copy_intead_of_hardlinks);
                 cleanup.success();
             }
         }

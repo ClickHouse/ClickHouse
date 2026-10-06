@@ -89,8 +89,7 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_,
-            bool use_upload_checksum_algorithm_,
-            std::function<void()> cancellation_hook_)
+            bool use_upload_checksum_algorithm_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -99,7 +98,6 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
-            , cancellation_hook(std::move(cancellation_hook_))
             /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
             /// and rejects `SigV4`-signed requests that carry them with `SignatureDoesNotMatch`, so never enable them for
             /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
@@ -123,7 +121,6 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        const std::function<void()> cancellation_hook;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
         /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
         const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
@@ -173,7 +170,6 @@ namespace
         {
             S3::CreateMultipartUploadRequest request;
             fillCreateMultipartRequest(request);
-            S3::setRequestCancellationHook(request, cancellation_hook);
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
             if (client_ptr->isClientForDisk())
@@ -227,7 +223,6 @@ namespace
             }
 
             request.SetMultipartUpload(multipart_upload);
-            S3::setRequestCancellationHook(request, cancellation_hook);
 
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -275,8 +270,6 @@ namespace
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
-            /// Cleanup must get one attempt even after cancellation; subsequent retries remain cancellable.
-            S3::setRequestCancellationHookForCleanup(abort_request, cancellation_hook);
 
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
@@ -292,7 +285,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload", cancellation_hook);
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -440,7 +433,6 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                S3::setRequestCancellationHook(*request, cancellation_hook);
                 auto checksum = prepareChecksums(*request);
                 auto tag = processUploadPartRequest(*request, task.part_size);
 
@@ -486,19 +478,17 @@ namespace
             const S3::S3RequestSettings & request_settings_,
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> cancellation_hook_)
+            BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(
-                  client_ptr_,
-                  dest_bucket_,
-                  dest_key_,
-                  request_settings_,
-                  object_metadata_,
-                  schedule_,
-                  blob_storage_log_,
-                  getLogger("copyDataToS3File"),
-                  /* use_upload_checksum_algorithm =*/ true,
-                  std::move(cancellation_hook_))
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                blob_storage_log_,
+                getLogger("copyDataToS3File"),
+                /* use_upload_checksum_algorithm =*/ true)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -527,7 +517,6 @@ namespace
             {
                 S3::PutObjectRequest request;
                 fillPutRequest(request);
-                S3::setRequestCancellationHook(request, cancellation_hook);
                 fallback_to_multipart = processPutRequest(request);
             }
             /// request (and its in-memory body) is destroyed before the multipart fallback starts,
@@ -696,19 +685,17 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
-            bool is_ranged_copy_,
-            std::function<void()> cancellation_hook_)
+            bool is_ranged_copy_)
             : UploadHelper(
-                  client_ptr_,
-                  dest_bucket_,
-                  dest_key_,
-                  request_settings_,
-                  object_metadata_,
-                  schedule_,
-                  blob_storage_log_,
-                  getLogger("copyS3File"),
-                  /* use_upload_checksum_algorithm =*/ false,
-                  std::move(cancellation_hook_))
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                blob_storage_log_,
+                getLogger("copyS3File"),
+                /* use_upload_checksum_algorithm =*/ false)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -772,7 +759,6 @@ namespace
         {
             S3::CopyObjectRequest request;
             fillCopyRequest(request);
-            S3::setRequestCancellationHook(request, cancellation_hook);
             processCopyRequest(request);
         }
 
@@ -970,8 +956,7 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata,
-    const std::function<void()> & cancellation_hook)
+    const std::optional<ObjectAttributes> & object_metadata)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -983,8 +968,7 @@ void copyDataToS3File(
         settings,
         object_metadata,
         schedule,
-        blob_storage_log,
-        cancellation_hook};
+        blob_storage_log};
     helper.performCopy();
 }
 
@@ -993,70 +977,67 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-void copyS3FileImpl(
-    std::shared_ptr<const S3::Client> src_s3_client,
-    const String & src_bucket,
-    const String & src_key,
-    size_t src_offset,
-    size_t src_size,
-    size_t src_object_size,
-    std::shared_ptr<const S3::Client> dest_s3_client,
-    const String & dest_bucket,
-    const String & dest_key,
-    const S3::S3RequestSettings & settings,
-    const ReadSettings & read_settings,
-    BlobStorageLogWriterPtr blob_storage_log,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata,
-    const std::function<void()> & cancellation_hook,
-    bool is_ranged_copy)
-{
-    if (!dest_s3_client)
-        dest_s3_client = src_s3_client;
-
-    std::function<void()> fallback_method = [&] mutable
+    void copyS3FileImpl(
+        std::shared_ptr<const S3::Client> src_s3_client,
+        const String & src_bucket,
+        const String & src_key,
+        size_t src_offset,
+        size_t src_size,
+        size_t src_object_size,
+        std::shared_ptr<const S3::Client> dest_s3_client,
+        const String & dest_bucket,
+        const String & dest_key,
+        const S3::S3RequestSettings & settings,
+        const ReadSettings & read_settings,
+        BlobStorageLogWriterPtr blob_storage_log,
+        ThreadPoolCallbackRunnerUnsafe<void> schedule,
+        const CreateReadBuffer & fallback_file_reader,
+        const std::optional<ObjectAttributes> & object_metadata,
+        bool is_ranged_copy)
     {
-        copyDataToS3File(
-            fallback_file_reader,
+        if (!dest_s3_client)
+            dest_s3_client = src_s3_client;
+
+        std::function<void()> fallback_method = [&] mutable
+        {
+            copyDataToS3File(
+                fallback_file_reader,
+                src_offset,
+                src_size,
+                dest_s3_client,
+                dest_bucket,
+                dest_key,
+                settings,
+                blob_storage_log,
+                schedule,
+                object_metadata);
+        };
+
+        if (!settings[S3RequestSetting::allow_native_copy])
+        {
+            LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+            fallback_method();
+            return;
+        }
+
+        CopyFileHelper helper{
+            src_s3_client,
+            src_bucket,
+            src_key,
             src_offset,
             src_size,
-            dest_s3_client,
+            src_object_size,
             dest_bucket,
             dest_key,
             settings,
-            blob_storage_log,
-            schedule,
+            read_settings,
             object_metadata,
-            cancellation_hook);
-    };
-
-    if (!settings[S3RequestSetting::allow_native_copy])
-    {
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-        fallback_method();
-        return;
+            schedule,
+            blob_storage_log,
+            std::move(fallback_method),
+            is_ranged_copy};
+        helper.performCopy();
     }
-
-    CopyFileHelper helper{
-        src_s3_client,
-        src_bucket,
-        src_key,
-        src_offset,
-        src_size,
-        src_object_size,
-        dest_bucket,
-        dest_key,
-        settings,
-        read_settings,
-        object_metadata,
-        schedule,
-        blob_storage_log,
-        std::move(fallback_method),
-        is_ranged_copy,
-        cancellation_hook};
-    helper.performCopy();
-}
 }
 
 void copyS3File(
@@ -1072,8 +1053,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata,
-    const std::function<void()> & cancellation_hook)
+    const std::optional<ObjectAttributes> & object_metadata)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1091,7 +1071,6 @@ void copyS3File(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        cancellation_hook,
         /* is_ranged_copy= */ false);
 }
 
@@ -1128,7 +1107,6 @@ void copyS3FileRange(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* cancellation_hook= */ {},
         /* is_ranged_copy= */ true);
 }
 

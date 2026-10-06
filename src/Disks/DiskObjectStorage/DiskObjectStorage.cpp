@@ -335,7 +335,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
         auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
         try
         {
-            transaction->copyFile(from_file_path, to_file_path, read_settings, write_settings, cancellation_hook);
+            transaction->copyFile(from_file_path, to_file_path, read_settings, write_settings);
             transaction->commit();
         }
         catch (...)

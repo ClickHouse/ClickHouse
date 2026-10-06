@@ -137,6 +137,13 @@ class MockControl:
         )
         return json.loads(response)
 
+    def get_copy_sources(self):
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            ["curl", "-s", f"http://localhost:{self._port}/mock_settings/copy_sources"],
+        )
+        return json.loads(response)
+
     def setup_slow_get_answers(self, timeout=None, count=None):
         url = f"http://localhost:{self._port}/mock_settings/slow_get?nothing=1"
 
@@ -526,10 +533,12 @@ class _ServerRuntime:
         self.at_object_head = None
         self.at_object_read = None
         self.at_object_copy = None
+        self.copy_sources = set()
         self.request_counts = {
             "object_upload": 0,
             "part_upload": 0,
             "abort_multipart_upload": 0,
+            "create_multipart_upload": 0,
             "object_head": 0,
             "object_read": 0,
             "object_copy": 0,
@@ -542,6 +551,7 @@ class _ServerRuntime:
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
         self.at_complete_multi_part_upload = None
+        self.at_abort_multipart_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -560,10 +570,12 @@ class _ServerRuntime:
             self.at_object_head = None
             self.at_object_read = None
             self.at_object_copy = None
+            self.copy_sources = set()
             self.request_counts = {
                 "object_upload": 0,
                 "part_upload": 0,
                 "abort_multipart_upload": 0,
+                "create_multipart_upload": 0,
                 "object_head": 0,
                 "object_read": 0,
                 "object_copy": 0,
@@ -576,6 +588,7 @@ class _ServerRuntime:
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
             self.at_complete_multi_part_upload = None
+            self.at_abort_multipart_upload = None
             self.at_listing = None
 
 
@@ -702,9 +715,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if len(path) < 2:
             return self.write_error(400, "_mock_settings: wrong command")
 
-        if path[1] == "request_counts":
+        if path[1] in ("request_counts", "copy_sources"):
             with _runtime.lock:
-                data = json.dumps(_runtime.request_counts)
+                data = json.dumps(
+                    _runtime.request_counts
+                    if path[1] == "request_counts"
+                    else sorted(_runtime.copy_sources)
+                )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
@@ -792,6 +809,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
+        if path[1] == "at_abort_multipart_upload":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_abort_multipart_upload = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
+            return self._ok()
+
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
@@ -844,6 +868,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             copy_source = self.headers["x-amz-copy-source"]
             with _runtime.lock:
                 _runtime.request_counts["object_copy"] += 1
+                _runtime.copy_sources.add(urllib.parse.unquote(copy_source).lstrip("/"))
             if (
                 _runtime.at_object_copy is not None
                 and _runtime.at_object_copy.matches_copy_source(copy_source)
@@ -913,6 +938,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
         uploads = params.get("uploads", [None])[0]
         if uploads is not None:
+            with _runtime.lock:
+                _runtime.request_counts["create_multipart_upload"] += 1
             if _runtime.at_create_multi_part_upload is not None:
                 if _runtime.at_create_multi_part_upload.has_effect():
                     return _runtime.at_create_multi_part_upload.inject_error(self)
@@ -951,6 +978,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if params.get("uploadId", [None])[0] is not None:
             with _runtime.lock:
                 _runtime.request_counts["abort_multipart_upload"] += 1
+            if _runtime.at_abort_multipart_upload is not None and _runtime.at_abort_multipart_upload.has_effect():
+                return _runtime.at_abort_multipart_upload.inject_error(self)
         self.redirect()
 
 

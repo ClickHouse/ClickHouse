@@ -21,10 +21,9 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+    const WriteSettings & write_settings)
 {
-    PackedFilesWriter packed_writer(write_settings, cancellation_hook);
+    PackedFilesWriter packed_writer(write_settings);
 
     for (const auto & [column_name, stat] : statistics)
     {
@@ -38,7 +37,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     }
 
     String statistics_filename = String(ColumnsStatistics::FILENAME);
-    auto out_packed = data_part_storage.writeFile(statistics_filename, 4096, write_settings, cancellation_hook);
+    auto out_packed = data_part_storage.writeFile(statistics_filename, 4096, write_settings);
     HashingWriteBuffer out_hashing_packed(*out_packed);
 
     packed_writer.finalize(out_hashing_packed, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
@@ -56,8 +55,7 @@ WrittenFiles serializeStatisticsWide(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+    const WriteSettings & write_settings)
 {
     WrittenFiles written_files;
 
@@ -66,7 +64,7 @@ WrittenFiles serializeStatisticsWide(
         String filename = getStatisticsFilename(column_name);
 
         /// Buffer chain: plain_file <- plain_hashing <- compressor <- compressed_hashing
-        auto plain_file = data_part_storage.writeFile(filename, 4096, write_settings, cancellation_hook);
+        auto plain_file = data_part_storage.writeFile(filename, 4096, write_settings);
         HashingWriteBuffer plain_hashing(*plain_file);
         CompressedWriteBuffer compressor(plain_hashing, compression_codec, 1024 * 1024);
         HashingWriteBuffer compressed_hashing(compressor);

@@ -83,12 +83,6 @@ public:
     void decrementBlobRefCount(const std::string & blob) override;
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
-    void copyFile(
-        const std::string & from_file_path,
-        const std::string & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
 
     /// writeFile is a difficult function for transactions.
     /// Now it's almost noop because metadata added to transaction in finalize method
@@ -99,12 +93,6 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) override;
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings,
-        std::function<void()> cancellation_hook) override;
     std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
         size_t buf_size,
@@ -141,8 +129,7 @@ protected:
         const std::string & from_file_path,
         const std::string & to_file_path,
         const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook = {});
+        const WriteSettings & write_settings);
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
@@ -150,8 +137,7 @@ private:
         const std::string & path,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings,
-        std::function<void()> cancellation_hook = {});
+        const WriteSettings & settings);
 };
 
 /// Only needed for S3 server side object copy
@@ -171,12 +157,6 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         std::shared_ptr<ThreadPool> copy_object_pool_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
-    void copyFile(
-        const std::string & from_file_path,
-        const std::string & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
 };
 
 using DiskObjectStorageTransactionPtr = std::shared_ptr<DiskObjectStorageTransaction>;

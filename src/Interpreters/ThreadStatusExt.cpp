@@ -81,6 +81,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
 }
@@ -265,12 +266,44 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context, QueryIsCanceledPredicate operation_is_canceled)
 {
     const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
     auto group = create(storage_context, os_threads_nice_value);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
+    if (operation_is_canceled)
+    {
+        /// Keep cancellation observable after a temporary merge blocker is released.
+        /// Both predicates share the latch, including copies already installed on worker threads.
+        auto is_canceled = [predicate = std::move(operation_is_canceled), canceled = std::make_shared<std::atomic_bool>(false)]
+        {
+            if (canceled->load(std::memory_order_relaxed))
+                return true;
+            if (predicate())
+            {
+                canceled->store(true, std::memory_order_relaxed);
+                return true;
+            }
+            return canceled->load(std::memory_order_relaxed);
+        };
+
+        std::lock_guard lock(group->mutex);
+        group->shared_data.query_is_canceled_predicate
+            = [query_is_canceled = std::move(group->shared_data.query_is_canceled_predicate), is_canceled]
+        {
+            return is_canceled() || (query_is_canceled && query_is_canceled());
+        };
+        group->shared_data.throw_if_query_canceled_predicate
+            = [throw_if_query_canceled = std::move(group->shared_data.throw_if_query_canceled_predicate), is_canceled]
+        {
+            /// Preserve a query's original cancellation exception when available.
+            if (throw_if_query_canceled)
+                throw_if_query_canceled();
+            if (is_canceled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled merging or mutating parts");
+        };
+    }
     return group;
 }
 

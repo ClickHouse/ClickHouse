@@ -19,8 +19,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     const WriteSettings & write_settings,
-    PackedFilesWriter * external_packed_skip_indices_writer,
-    std::function<void()> cancellation_hook)
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -38,7 +37,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
-        std::move(cancellation_hook),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,

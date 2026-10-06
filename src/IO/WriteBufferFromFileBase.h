@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 
 #include <IO/WriteBuffer.h>
@@ -16,9 +15,6 @@ public:
 
     void sync() override = 0;
     virtual std::string getFileName() const = 0;
-
-    /// Installs an operation-local cancellation check before the first write.
-    virtual void setCancellationHook(std::function<void()> /* cancellation_hook */) { }
 };
 
 }

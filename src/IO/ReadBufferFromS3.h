@@ -35,7 +35,6 @@ private:
     /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
     String expected_etag;
     const S3::S3RequestSettings request_settings;
-    const std::function<void()> cancellation_hook;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -71,8 +70,7 @@ public:
         std::optional<size_t> file_size = std::nullopt,
         const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        const String & expected_etag_ = {},
-        std::function<void()> cancellation_hook_ = {}
+        const String & expected_etag_ = {}
         );
 
     ~ReadBufferFromS3() override = default;

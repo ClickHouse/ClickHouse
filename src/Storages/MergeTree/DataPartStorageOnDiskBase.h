@@ -89,8 +89,7 @@ public:
     void copyPackedSkipIndicesFilesInto(
         const NameSet & file_names,
         PackedFilesWriter & target,
-        const ReadSettings & read_settings,
-        const std::function<void()> & cancellation_hook) const;
+        const ReadSettings & read_settings) const;
 
     /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any
     /// virtual file whose name is in @dropped_skip_index_archive_file_names (exact match). Callers must
@@ -104,7 +103,6 @@ public:
         const NameSet & dropped_skip_index_archive_file_names,
         IDataPartStorage & new_storage,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook,
         const ReadSettings & read_settings,
         MergeTreeDataPartChecksums & checksums,
         bool sync) const;
@@ -196,8 +194,7 @@ protected:
     /// Virtual so packed part storage can route the probe through its outer data.packed reader:
     /// there skp_idx.packed is a virtual member of data.packed rather than a standalone disk file,
     /// so the disk-probe default always misses.
-    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader(
-        const std::function<void()> & cancellation_hook) const;
+    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
     /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
     /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
@@ -208,8 +205,7 @@ protected:
     /// Virtual so packed part storage can disable the base file-read overlay by returning nullptr:
     /// its skp_idx.packed lives inside data.packed, so the overlay's standalone-archive read
     /// composition is invalid there. Packed serves index substreams through its *Impl hooks instead.
-    virtual std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(
-        const std::string & name, const std::function<void()> & cancellation_hook) const;
+    virtual std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
 
     /// Copy a single archive member into @target, reading it through this storage's readFile
     /// overlay. Shared by copyPackedSkipIndicesFilesInto and filterPackedSkipIndicesArchiveTo.
@@ -217,8 +213,7 @@ protected:
         const PackedFilesReader & source_archive,
         const String & file_name,
         PackedFilesWriter & target,
-        const ReadSettings & read_settings,
-        const std::function<void()> & cancellation_hook) const;
+        const ReadSettings & read_settings) const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the

@@ -1,4 +1,5 @@
 #include <IO/S3/Client.h>
+#include <IO/RemoteIOCleanup.h>
 
 #if USE_AWS_S3
 
@@ -420,16 +421,16 @@ template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
-    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
-    /// as a cancellation instead of the stale S3/network outcome.
+    /// Check after every outcome, including a successful verification request whose operation
+    /// was cancelled while the request was in flight.
     auto outcome = headObjectInternal(request);
-    if (!outcome.IsSuccess())
-        CurrentThread::checkIfNotCancelled();
+    CurrentThread::checkIfNotCancelled();
     return outcome;
 }
 
 Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
+    CurrentThread::checkIfNotCancelled();
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
@@ -453,12 +454,14 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
     if (result.IsSuccess())
         return result;
 
+    CurrentThread::checkIfNotCancelled();
     const auto & error = result.GetError();
 
     std::string new_region;
     if (checkIfWrongRegionDefined(bucket, error, new_region))
     {
         request.overrideRegion(new_region);
+        CurrentThread::checkIfNotCancelled();
         return Aws::S3::S3Client::HeadObject(request);
     }
 
@@ -505,6 +508,7 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
     }
 
     request.overrideURI(std::move(*bucket_uri));
+    CurrentThread::checkIfNotCancelled();
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
@@ -542,7 +546,7 @@ Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
+        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); }, RequestCancellationPolicy::Cleanup);
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
@@ -693,13 +697,15 @@ Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & requ
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
+        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); },
+        RemoteIOCleanupScope::isActive() ? RequestCancellationPolicy::Cleanup : RequestCancellationPolicy::Regular);
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
+        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); },
+        RemoteIOCleanupScope::isActive() ? RequestCancellationPolicy::Cleanup : RequestCancellationPolicy::Regular);
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
@@ -734,8 +740,10 @@ Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & reques
 
 template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
-Client::doRequest(RequestType & request, RequestFn request_fn) const
+Client::doRequest(RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy) const
 {
+    if (cancellation_policy == RequestCancellationPolicy::Regular)
+        CurrentThread::checkIfNotCancelled();
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -768,6 +776,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
     for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
     {
+        if (cancellation_policy == RequestCancellationPolicy::Regular || attempt > 0)
+            CurrentThread::checkIfNotCancelled();
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
@@ -832,7 +842,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
-Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
+Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy) const
 {
     /// S3 does retries network errors actually.
     /// But it does matter when errors occur.
@@ -846,22 +856,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
 
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
-    auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
+    auto with_retries = [this, request_fn_ = std::move(request_fn), cancellation_policy] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
 
         Int64 attempt_no = 1;
         std::invoke_result_t<RequestFn, RequestType &> outcome;
-
-        std::function<void()> cancellation_hook;
-        if (request_.GetRequestRetryHandler())
-        {
-            cancellation_hook = [&request_]
-            {
-                request_.GetRequestRetryHandler()(request_);
-            };
-        }
 
         auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
@@ -884,8 +885,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
         for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
         {
-            if (cancellation_hook)
-                cancellation_hook();
+            const bool initial_cleanup_attempt = cancellation_policy == RequestCancellationPolicy::Cleanup && attempt_no == 1;
+            if (!initial_cleanup_attempt)
+                CurrentThread::checkIfNotCancelled();
 
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
@@ -907,7 +909,11 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
-            slowDownAfterRetryableError(cancellation_hook);
+            if (!initial_cleanup_attempt)
+            {
+                slowDownAfterRetryableError();
+                CurrentThread::checkIfNotCancelled();
+            }
 
             try
             {
@@ -939,7 +945,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         return outcome;
     };
 
-    return doRequest(request, with_retries);
+    return doRequest(request, with_retries, cancellation_policy);
 }
 
 template <typename RequestResult>
@@ -983,7 +989,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     }
 }
 
-void Client::slowDownAfterRetryableError(const std::function<void()> & cancellation_hook) const
+void Client::slowDownAfterRetryableError() const
 {
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
@@ -1009,7 +1015,7 @@ void Client::slowDownAfterRetryableError(const std::function<void()> & cancellat
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
 
-        sleepForMilliseconds(sleep_ms, cancellation_hook);
+        sleepForMilliseconds(sleep_ms, [] { CurrentThread::checkIfNotCancelled(); });
     }
 }
 

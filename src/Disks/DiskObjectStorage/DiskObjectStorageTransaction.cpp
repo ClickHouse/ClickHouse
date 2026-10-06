@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
+#include <IO/RemoteIOCleanup.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ForkWriteBuffer.h>
@@ -273,19 +274,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     return writeFileImpl(/*autocommit=*/false, path, buf_size, mode, settings);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile(
-    const std::string & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, std::function<void()> cancellation_hook)
-{
-    return writeFileImpl(/*autocommit=*/false, path, buf_size, mode, settings, std::move(cancellation_hook));
-}
-
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFileImpl(
     bool autocommit,
     const std::string & path,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings,
-    std::function<void()> cancellation_hook)
+    const WriteSettings & settings)
 {
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "write file {} mode {} autocommit {}", path, mode, autocommit);
 
@@ -301,13 +295,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const bool create_blob_if_empty = !metadata_storage->supportsEmptyFilesWithoutBlobs();
 
     /// Builds the blob write stack; deferred so a fully inline write never touches the object storage.
-    auto create_blob_buffer = [disk_tx = shared_from_this(),
-                               path,
-                               object,
-                               buf_size,
-                               write_settings = settings,
-                               write_cancellation_hook = std::move(cancellation_hook),
-                               enabled_locations]() mutable -> std::unique_ptr<WriteBuffer>
+    auto create_blob_buffer = [disk_tx = shared_from_this(), path, object, buf_size, write_settings = settings, enabled_locations]() mutable -> std::unique_ptr<WriteBuffer>
     {
         ForkWriteBuffer::WriteBufferPtrs writers;
         for (const auto & location : enabled_locations)
@@ -331,8 +319,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     buf_size,
                     write_settings);
 
-                writer->setCancellationHook(write_cancellation_hook);
-
                 #if ENABLE_DISTRIBUTED_CACHE
                     if (use_distributed_cache)
                         writer = DistributedCache::writeWithDistributedCache(path, object, write_settings, *object_storage, std::move(writer));
@@ -347,7 +333,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /*attributes=*/std::nullopt,
                     buf_size,
                     write_settings);
-                writer->setCancellationHook(write_cancellation_hook);
             }
 
             writers.push_back(std::move(writer));
@@ -532,8 +517,7 @@ void DiskObjectStorageTransaction::copyFileImpl(
     const std::string & from_file_path,
     const std::string & to_file_path,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+    const WriteSettings & write_settings)
 {
     /// An inlined source file has no blobs to copy: route the content through writeFile, which
     /// re-inlines it when the destination supports that and uploads a blob otherwise.
@@ -547,7 +531,7 @@ void DiskObjectStorageTransaction::copyFileImpl(
 
             WriteSettings inline_write_settings = write_settings;
             inline_write_settings.inline_file_max_bytes = metadata_storage->supportsInlineData() ? inline_data.size() : 0;
-            auto buf = writeFile(to_file_path, inline_data.size(), WriteMode::Rewrite, inline_write_settings, cancellation_hook);
+            auto buf = writeFile(to_file_path, inline_data.size(), WriteMode::Rewrite, inline_write_settings);
             buf->write(inline_data.data(), inline_data.size());
             buf->finalize();
             return;
@@ -578,32 +562,17 @@ void DiskObjectStorageTransaction::copyFileImpl(
     /// itself submits onto that pool via `writeObject`, which would risk pool self-deadlock.
     /// `ThreadPoolCallbackRunnerLocal` drains tasks in its destructor, so on exception unwinding
     /// the captured state stays alive until in-flight workers complete.
-    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
+    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY, /* check_cancellation */ true);
 
     for (const auto & location : locations_for_writing)
     {
         for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
         {
             runner.enqueueAndKeepTrack(
-                [this,
-                 src_object_storages,
-                 src_blob,
-                 dst_blob,
-                 location,
-                 src_local_location,
-                 shared_read_settings,
-                 shared_write_settings,
-                 cancellation_hook]
+                [this, src_object_storages, src_blob, dst_blob, location, src_local_location, shared_read_settings, shared_write_settings]
                 {
-                    src_object_storages->takePointingTo(src_local_location)
-                        ->copyObjectToAnotherObjectStorage(
-                            src_blob,
-                            dst_blob,
-                            *shared_read_settings,
-                            *shared_write_settings,
-                            *object_storages->takePointingTo(location),
-                            /*object_to_attributes=*/{},
-                            cancellation_hook);
+                    src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
+                        src_blob, dst_blob, *shared_read_settings, *shared_write_settings, *object_storages->takePointingTo(location));
                 });
         }
     }
@@ -612,7 +581,7 @@ void DiskObjectStorageTransaction::copyFileImpl(
 
     if (blobs_to_create.empty() && !metadata_storage->supportsEmptyFilesWithoutBlobs())
     {
-        writeFile(to_file_path, 0, WriteMode::Rewrite, write_settings, cancellation_hook)->finalize();
+        writeFile(to_file_path, 0, WriteMode::Rewrite, write_settings)->finalize();
         return;
     }
 
@@ -630,38 +599,9 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
     copyFileImpl(metadata_storage, cluster, object_storages, from_file_path, to_file_path, read_settings, write_settings);
 }
 
-void DiskObjectStorageTransaction::copyFile(
-    const std::string & from_file_path,
-    const std::string & to_file_path,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
-{
-    copyFileImpl(
-        metadata_storage, cluster, object_storages, from_file_path, to_file_path, read_settings, write_settings, cancellation_hook);
-}
-
 void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     copyFileImpl(source_metadata_storage, source_cluster, source_object_storages, from_file_path, to_file_path, read_settings, write_settings);
-}
-
-void MultipleDisksObjectStorageTransaction::copyFile(
-    const std::string & from_file_path,
-    const std::string & to_file_path,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
-{
-    copyFileImpl(
-        source_metadata_storage,
-        source_cluster,
-        source_object_storages,
-        from_file_path,
-        to_file_path,
-        read_settings,
-        write_settings,
-        cancellation_hook);
 }
 
 void DiskObjectStorageTransaction::commit()
@@ -788,6 +728,9 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    /// Rollback may delete already-written blobs once even when its operation is cancelled.
+    /// This does not permit regular reads/writes or cancelled cleanup retries.
+    RemoteIOCleanupScope cleanup;
     for (const auto & [location, blobs] : written_blobs)
     {
         try

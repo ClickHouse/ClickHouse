@@ -106,8 +106,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     std::optional<size_t> file_size_,
     const S3CredentialsRefreshCallback & credentials_refresh_callback_,
     BlobStorageLogWriterPtr blob_storage_log_,
-    const String & expected_etag_,
-    std::function<void()> cancellation_hook_)
+    const String & expected_etag_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -115,7 +114,6 @@ ReadBufferFromS3::ReadBufferFromS3(
     , version_id(version_id_)
     , expected_etag(expected_etag_)
     , request_settings(request_settings_)
-    , cancellation_hook(std::move(cancellation_hook_))
     , offset(offset_)
     , read_until_position(read_until_position_)
     , read_settings(settings_)
@@ -129,8 +127,7 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    if (cancellation_hook)
-        cancellation_hook();
+    CurrentThread::checkIfNotCancelled();
 
     if (read_until_position)
     {
@@ -204,8 +201,7 @@ bool ReadBufferFromS3::nextImpl()
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
-        if (cancellation_hook)
-            cancellation_hook();
+        CurrentThread::checkIfNotCancelled();
 
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
 
@@ -246,7 +242,11 @@ bool ReadBufferFromS3::nextImpl()
             impl.reset();
 
             /// Pause before next attempt.
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, cancellation_hook);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, []
+            {
+                CurrentThread::checkIfNotCancelled();
+            });
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
         }
     }
@@ -310,8 +310,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; n > 0; ++attempt)
     {
-        if (cancellation_hook)
-            cancellation_hook();
+        CurrentThread::checkIfNotCancelled();
 
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
@@ -362,7 +361,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             /// would only keep it away from the other readers of the same group.
             result.reset();
 
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, cancellation_hook);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, []
+            {
+                CurrentThread::checkIfNotCancelled();
+            });
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
         }
 
@@ -379,8 +382,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
     /// Do not retry an operation that was cancelled while its request was in flight.
-    if (cancellation_hook)
-        cancellation_hook();
+    CurrentThread::checkIfNotCancelled();
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
@@ -502,13 +504,12 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
 
 size_t ReadBufferFromS3::getObjectSizeFromS3() const
 {
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id, cancellation_hook);
+    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
 std::optional<RemoteFileMetadata> ReadBufferFromS3::getRemoteFileMetadata() const
 {
-    const auto object_info = S3::getObjectInfo(
-        *client_ptr, bucket, key, version_id, /*with_metadata=*/ false, /*with_tags=*/ false, cancellation_hook);
+    const auto object_info = S3::getObjectInfo(*client_ptr, bucket, key, version_id);
     return RemoteFileMetadata{.size = object_info.size, .last_modification_time = object_info.last_modification_time};
 }
 
@@ -613,7 +614,6 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
 Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
 {
     S3::GetObjectRequest req;
-    S3::setRequestCancellationHook(req, cancellation_hook);
     req.SetBucket(bucket);
     req.SetKey(key);
     if (!version_id.empty())

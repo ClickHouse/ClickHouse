@@ -1,6 +1,5 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
-#include <IO/S3/Requests.h>
 #include <IO/Expect404ResponseScope.h>
 
 #if USE_AWS_S3
@@ -23,8 +22,7 @@ namespace
         const S3::Client & client,
         const String & bucket,
         const String & key,
-        const String & version_id,
-        const std::function<void()> & cancellation_hook)
+        const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (client.isClientForDisk())
@@ -37,11 +35,7 @@ namespace
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        S3::setRequestCancellationHook(req, cancellation_hook);
-        auto outcome = client.HeadObject(req);
-        if (cancellation_hook)
-            cancellation_hook();
-        return outcome;
+        return client.HeadObject(req);
     }
 
     Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
@@ -70,10 +64,9 @@ namespace
         const String & key,
         const String & version_id,
         bool with_metadata,
-        bool with_tags,
-        const std::function<void()> & cancellation_hook = {})
+        bool with_tags)
     {
-        auto outcome = headObject(client, bucket, key, version_id, cancellation_hook);
+        auto outcome = headObject(client, bucket, key, version_id);
         if (!outcome.IsSuccess())
             return {std::nullopt, outcome.GetError()};
 
@@ -170,12 +163,11 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id,
     bool with_metadata,
-    bool with_tags,
-    const std::function<void()> & cancellation_hook)
+    bool with_tags)
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags, cancellation_hook);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
 
     if (object_info)
         return *object_info;
@@ -192,10 +184,9 @@ size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id,
-    const std::function<void()> & cancellation_hook)
+    const String & version_id)
 {
-    return getObjectInfo(client, bucket, key, version_id, /*with_metadata=*/ false, /*with_tags=*/ false, cancellation_hook).size;
+    return getObjectInfo(client, bucket, key, version_id, /*with_metadata=*/ false, /*with_tags=*/ false).size;
 }
 
 bool objectExists(
@@ -225,10 +216,9 @@ void checkObjectExists(
     const String & bucket,
     const String & key,
     const String & version_id,
-    std::string_view description,
-    const std::function<void()> & cancellation_hook)
+    std::string_view description)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {}, cancellation_hook);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {});
     if (object_info)
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",

@@ -217,15 +217,14 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
     const String & file_path,
     size_t buf_size,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook,
     size_t packed_spill_threshold,
     bool & coupled_spilled)
 {
     if (packed_writer && !packed_virtual_name.empty())
     {
-        auto open_per_file = [data_part_storage, file_path, buf_size, write_settings, cancellation_hook]()
+        auto open_per_file = [data_part_storage, file_path, buf_size, write_settings]()
         {
-            return data_part_storage->writeFile(file_path, buf_size, write_settings, cancellation_hook);
+            return data_part_storage->writeFile(file_path, buf_size, write_settings);
         };
         return std::make_unique<SizeAdaptiveSpoolBuffer>(
             packed_spill_threshold,
@@ -236,7 +235,7 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
             file_path,
             coupled_spilled);
     }
-    return data_part_storage->writeFile(file_path, buf_size, write_settings, cancellation_hook);
+    return data_part_storage->writeFile(file_path, buf_size, write_settings);
 }
 
 
@@ -301,17 +300,16 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     const CompressionCodecPtr & marks_compression_codec_,
     size_t marks_compress_block_size_,
     const WriteSettings & query_write_settings,
-    std::function<void()> cancellation_hook,
     const SizeAdaptivePacking & packing) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     is_size_adaptive(packing.writer != nullptr && (!packing.data_name.empty() || !packing.marks_name.empty())),
-    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, cancellation_hook, packing.spill_threshold, spool_coupled_spilled)),
+    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
-    marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, cancellation_hook, packing.spill_threshold, spool_coupled_spilled)),
+    marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),

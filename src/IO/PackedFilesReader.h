@@ -5,7 +5,6 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
-#include <functional>
 
 namespace DB
 {
@@ -26,11 +25,7 @@ class PackedFilesReader
 public:
     /// Constructor that loads the index from an archive file on disk. The disk and path are used
     /// only to read the index here; they are not retained.
-    PackedFilesReader(
-        const DiskPtr & disk,
-        const String & data_file_name,
-        const ReadSettings & read_settings,
-        const std::function<void()> & cancellation_hook = {});
+    PackedFilesReader(const DiskPtr & disk, const String & data_file_name, const ReadSettings & read_settings);
 
     /// Constructor that initializes the index by the provided one.
     explicit PackedFilesReader(PackedFilesIO::Index index_);
@@ -51,8 +46,7 @@ public:
         const String & data_file_name,
         const String & file_name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        const std::function<void()> & cancellation_hook = {}) const;
+        std::optional<size_t> read_hint) const;
 
     const PackedFilesIO::Index & getIndex() const { return index; }
 

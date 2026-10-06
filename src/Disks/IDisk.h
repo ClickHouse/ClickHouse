@@ -249,8 +249,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::function<void()> cancellation_hook = {}) const;
+        std::optional<size_t> read_hint = {}) const;
 
     /// Populate a ReadPipeline with the stages needed to read from this disk.
     /// Every disk implementation must override this method.

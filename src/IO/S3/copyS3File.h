@@ -51,8 +51,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    const std::function<void()> & cancellation_hook = {});
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -92,8 +91,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    const std::function<void()> & cancellation_hook = {});
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+
 }
 
 #endif

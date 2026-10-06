@@ -10,6 +10,49 @@
 
 using namespace DB;
 
+TEST(PartitionActionBlocker, ObserverTracksLatePartitionBlocks)
+{
+    PartitionActionBlocker blocker;
+    auto canceled = blocker.getCancellationPredicate("p");
+    EXPECT_FALSE(canceled());
+    auto other = blocker.cancelForPartition("other");
+    EXPECT_FALSE(canceled());
+    {
+        auto lock = blocker.cancelForPartition("p");
+        EXPECT_TRUE(canceled());
+    }
+    EXPECT_FALSE(canceled());
+    auto all = blocker.cancel();
+    EXPECT_TRUE(canceled());
+}
+
+TEST(PartitionActionBlocker, ObserverTracksRecreatedPartition)
+{
+    PartitionActionBlocker blocker;
+    auto canceled = blocker.getCancellationPredicate("p");
+    {
+        auto lock = blocker.cancelForPartition("p");
+        EXPECT_TRUE(canceled());
+    }
+    blocker.compactPartitionBlockers();
+    EXPECT_EQ(blocker.countPartitionBlockers(), 0);
+    EXPECT_FALSE(canceled());
+    auto lock = blocker.cancelForPartition("p");
+    EXPECT_TRUE(canceled());
+}
+
+TEST(PartitionActionBlocker, ObserverOutlivesBlocker)
+{
+    auto blocker = std::make_unique<PartitionActionBlocker>();
+    auto canceled = blocker->getCancellationPredicate("p");
+    {
+        auto lock = blocker->cancelForPartition("p");
+        blocker.reset();
+        EXPECT_TRUE(canceled());
+    }
+    EXPECT_FALSE(canceled());
+}
+
 TEST(PartitionActionBlocker, TestDefaultConstructor)
 {
     PartitionActionBlocker blocker;

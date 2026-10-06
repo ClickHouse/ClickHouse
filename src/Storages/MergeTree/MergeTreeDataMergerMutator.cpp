@@ -552,11 +552,10 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
     /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
     /// distinguish a cancelled build from a completed one.
-    const String partition_id = future_part->part_info.getPartitionId();
     context->setInteractiveCancelCallback(
-        [&blocker = merges_blocker, merge_entry, partition_id]()
+        [is_canceled = (*merge_entry)->getCancellationPredicate()]
         {
-            if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+            if (is_canceled())
                 throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
             return false;
         });

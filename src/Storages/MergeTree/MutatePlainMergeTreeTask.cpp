@@ -24,6 +24,14 @@ namespace ErrorCodes
 }
 
 
+MutatePlainMergeTreeTask::~MutatePlainMergeTreeTask()
+{
+    ThreadGroupSwitcher operation_group(
+        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    mutate_task.reset();
+    new_part.reset();
+}
+
 StorageID MutatePlainMergeTreeTask::getStorageID() const
 {
     return storage.getStorageID();
@@ -43,7 +51,9 @@ void MutatePlainMergeTreeTask::prepare()
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
+        task_context,
+        storage.merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId()));
+    ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -198,6 +208,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
+    ThreadGroupSwitcher operation_group(
+        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     if (mutate_task)
         mutate_task->cancel();
 
@@ -208,6 +220,8 @@ void MutatePlainMergeTreeTask::cancel() noexcept
     /// temp directories which guards temporary dir from background removal which can
     /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
     mutate_task.reset();
+
+    new_part.reset();
 
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();

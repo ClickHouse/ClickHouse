@@ -122,12 +122,6 @@ public:
     /// use different metadata storage.
     /// TODO: maybe remove it at all, we don't want copies
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
-    void copyFile(
-        const std::string & from_file_path,
-        const std::string & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
@@ -140,12 +134,6 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) override;
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings,
-        std::function<void()> cancellation_hook) override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeFile(const std::string & path) override
@@ -274,8 +262,7 @@ private:
         const std::string & path,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings,
-        std::function<void()> cancellation_hook = {});
+        const WriteSettings & settings);
 
     String wrappedPath(const String & path) const
     {

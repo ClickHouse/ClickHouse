@@ -1987,7 +1987,6 @@ static void finalizeMutatedPart(
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook,
     StorageMetadataPtr metadata_snapshot,
     bool sync)
 {
@@ -1996,7 +1995,7 @@ static void finalizeMutatedPart(
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = new_data_part->getDataPartStorage().writeFile(
-            IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings, cancellation_hook);
+            IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
         out_hashing.finalize();
@@ -2008,7 +2007,7 @@ static void finalizeMutatedPart(
     if (execute_ttl_type != ExecuteTTLType::NONE)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings, cancellation_hook);
+        auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         out_hashing.finalize();
@@ -2021,7 +2020,7 @@ static void finalizeMutatedPart(
     if (serialization_infos.needsPersistence())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(
-            IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings, cancellation_hook);
+            IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
         HashingWriteBuffer out_hashing(*out_serialization);
         serialization_infos.writeJSON(out_hashing);
         out_hashing.finalize();
@@ -2038,14 +2037,14 @@ static void finalizeMutatedPart(
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
             auto out = serializeStatisticsPacked(
-                new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, write_settings, cancellation_hook);
+                new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, write_settings);
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
             auto files = serializeStatisticsWide(
-                new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, write_settings, cancellation_hook);
+                new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, write_settings);
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -2090,7 +2089,7 @@ static void finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, write_settings, cancellation_hook);
+        auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, write_settings);
         new_data_part->checksums.write(*out_checksums);
         written_files.push_back(std::move(out_checksums));
     }
@@ -2111,7 +2110,7 @@ static void finalizeMutatedPart(
     const bool codec_is_approximate = source_part->default_codec_is_approximate;
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(
-            IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings, cancellation_hook);
+            IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
         if (codec_is_approximate)
             DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
         else
@@ -2122,14 +2121,14 @@ static void finalizeMutatedPart(
     if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(
-            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings, cancellation_hook);
+            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         written_files.push_back(std::move(out_metadata));
     }
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings, cancellation_hook);
+        auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
         new_data_part->getColumns().writeText(*out_columns);
         written_files.push_back(std::move(out_columns));
     }
@@ -2138,7 +2137,7 @@ static void finalizeMutatedPart(
     {
         /// Write a file with a description of columns substreams.
         auto out_columns_substreams = new_data_part->getDataPartStorage().writeFile(
-            IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, 4096, write_settings, cancellation_hook);
+            IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, 4096, write_settings);
         new_data_part->getColumnsSubstreams().writeText(*out_columns_substreams);
         written_files.push_back(std::move(out_columns_substreams));
     }
@@ -2222,7 +2221,6 @@ struct MutationContext
     time_t time_of_mutation{};
     ContextPtr context;
     WriteSettings write_settings;
-    std::function<void()> cancellation_hook;
     ReservationSharedPtr space_reservation;
 
     CompressionCodecPtr compression_codec;
@@ -2311,8 +2309,8 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        if ((new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled())
+            || (*mutate_entry)->is_cancelled->load(std::memory_order_relaxed))
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -3244,8 +3242,7 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->write_settings,
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
-            ctx->cancellation_hook);
+            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3419,7 +3416,7 @@ private:
                 if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                 {
                     ctx->new_data_part->getDataPartStorage().copyFileFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination, ctx->cancellation_hook);
+                        ctx->source_part->getDataPartStorage(), it->name(), destination);
                 }
                 else
                 {
@@ -3442,7 +3439,7 @@ private:
                     if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                     {
                         projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name(), ctx->cancellation_hook);
+                            *projection_data_part_storage_src, p_it->name(), p_it->name());
                     }
                     else
                     {
@@ -3531,7 +3528,6 @@ private:
                     ctx->dropped_skip_index_archive_file_names,
                     ctx->new_data_part->getDataPartStorage(),
                     ctx->write_settings,
-                    ctx->cancellation_hook,
                     ctx->context->getReadSettings(),
                     ctx->new_data_part->checksums,
                     ctx->need_sync);
@@ -3640,8 +3636,7 @@ private:
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
                 /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
                 ctx->write_settings,
-                /*external_packed_skip_indices_writer=*/ nullptr,
-                ctx->cancellation_hook);
+                /*external_packed_skip_indices_writer=*/ nullptr);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -3768,7 +3763,6 @@ private:
             ctx->execute_ttl_type,
             ctx->compression_codec,
             ctx->write_settings,
-            ctx->cancellation_hook,
             ctx->metadata_snapshot,
             ctx->need_sync);
     }
@@ -3902,14 +3896,6 @@ MutateTask::MutateTask(
     ctx->commands = commands_;
     ctx->context = context_;
     ctx->write_settings = context_->getWriteSettings();
-    std::weak_ptr<MutationContext> weak_ctx = ctx;
-    ctx->cancellation_hook = [weak_ctx]
-    {
-        if (auto locked_ctx = weak_ctx.lock())
-            locked_ctx->checkOperationIsNotCanceled();
-        else
-            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-    };
     ctx->time_of_mutation = time_of_mutation_;
     ctx->future_part = future_part_;
     ctx->metadata_snapshot = metadata_snapshot_;
@@ -4469,13 +4455,14 @@ bool MutateTask::prepare()
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-        IDataPartStorage::ClonePartParams clone_params{
+        IDataPartStorage::ClonePartParams clone_params
+        {
             .txn = ctx->txn,
             .hardlinked_files = &ctx->hardlinked_files,
             .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
-            .cancellation_hook = ctx->cancellation_hook,
+
         };
 
         MergeTreeData::MutableDataPartPtr part;

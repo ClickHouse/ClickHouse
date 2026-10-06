@@ -8,7 +8,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteBufferFromFileBase.h>
 
-#include <functional>
 #include <optional>
 #include <IO/WriteSettings.h>
 
@@ -42,10 +41,10 @@ public:
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
 
     PackedFilesWriter() = default;
-    explicit PackedFilesWriter(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
+    explicit PackedFilesWriter(WriteSettings write_settings);
 
     /// Sets settings for the archive destination.
-    void setArchiveWriteSettings(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
+    void setArchiveWriteSettings(WriteSettings write_settings);
     bool hasWriteSettings() const { return write_settings.has_value(); }
 
     /// Creates memory buffer for the data of file
@@ -101,7 +100,6 @@ public:
         chassert(write_settings.has_value());
         return *write_settings;
     }
-    const std::function<void()> & getCancellationHook() const { return cancellation_hook; }
 
     /// Applies changes of files metadata both to the @written_files and @index.
     void applyMetadataChanges(PackedFilesIO::Index & index);
@@ -210,7 +208,6 @@ private:
 
     /// Settings used while flushing the archive with data.
     std::optional<WriteSettings> write_settings;
-    std::function<void()> cancellation_hook;
 };
 
 }

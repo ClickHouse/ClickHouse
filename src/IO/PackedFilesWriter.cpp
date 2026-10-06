@@ -14,16 +14,14 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-PackedFilesWriter::PackedFilesWriter(WriteSettings write_settings_, std::function<void()> cancellation_hook_)
+PackedFilesWriter::PackedFilesWriter(WriteSettings write_settings_)
     : write_settings(std::move(write_settings_))
-    , cancellation_hook(std::move(cancellation_hook_))
 {
 }
 
-void PackedFilesWriter::setArchiveWriteSettings(WriteSettings write_settings_, std::function<void()> cancellation_hook_)
+void PackedFilesWriter::setArchiveWriteSettings(WriteSettings write_settings_)
 {
     write_settings = std::move(write_settings_);
-    cancellation_hook = std::move(cancellation_hook_);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

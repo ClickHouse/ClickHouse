@@ -45,15 +45,13 @@ public:
         BlobStorageLogWriterPtr blob_log_,
         std::optional<ObjectAttributes> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-        const WriteSettings & write_settings_ = {},
-        std::function<void()> cancellation_hook_ = {});
+        const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
     void nextImpl() override;
     void preFinalize() override;
     std::string getFileName() const override { return key; }
     void sync() override { next(); }
-    void setCancellationHook(std::function<void()> cancellation_hook_) override { cancellation_hook = std::move(cancellation_hook_); }
 
 private:
     /// Receives response from the server after sending all data.
@@ -93,7 +91,6 @@ private:
     const String key;
     const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
-    std::function<void()> cancellation_hook;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
     /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
