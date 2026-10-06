@@ -55,8 +55,7 @@ INSERT INTO t_alias_field (`x.y`) VALUES (100);
 SELECT 'alias field', c2 FROM t_alias_field;
 DROP TABLE t_alias_field;
 
--- `x.y` and `x`.`y` in one lambda with the parameter `x` resolve to the same thing.
--- `share_nested_offsets = 0` allows renaming a column to a dotted name.
+-- A compound x.y and a quoted `x.y` in one lambda with the parameter x resolve to the same thing.
 DROP TABLE IF EXISTS t_field_pair;
 CREATE TABLE t_field_pair (`x.y` Int64, arr Array(Tuple(y Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> x.y + `x.y` * 1000, arr)) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_field_pair RENAME COLUMN `x.y` TO `x.z`; -- { serverError BAD_ARGUMENTS }
@@ -64,6 +63,7 @@ INSERT INTO t_field_pair (`x.y`, arr) VALUES (7, [(1), (2)]);
 SELECT 'field pair', c2 FROM t_field_pair;
 DROP TABLE t_field_pair;
 
+-- `share_nested_offsets = 0` allows renaming a column to a dotted name.
 DROP TABLE IF EXISTS t_field_new;
 CREATE TABLE t_field_new (c9 Int64, arr Array(Tuple(z Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> c9 + x.z, arr)) ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
 ALTER TABLE t_field_new RENAME COLUMN c9 TO `x.z`; -- { serverError BAD_ARGUMENTS }
@@ -99,6 +99,12 @@ DROP TABLE IF EXISTS t_constraint_lambda_alias;
 CREATE TABLE t_constraint_lambda_alias (a Int64, arr Array(Int64), CONSTRAINT k CHECK arrayAll(x -> (x + 1 AS b) > 0, arr) AND (a > 0)) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_constraint_lambda_alias RENAME COLUMN a TO b; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_constraint_lambda_alias;
+
+-- An alias in a TTL GROUP BY SET expression.
+DROP TABLE IF EXISTS t_ttl_set_alias;
+CREATE TABLE t_ttl_set_alias (d Date, key UInt64, c0 UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = any((c0 AS c1) + c1);
+ALTER TABLE t_ttl_set_alias RENAME COLUMN c1 TO v; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_ttl_set_alias;
 
 -- The options of an index type are not column expressions.
 DROP TABLE IF EXISTS t_index_options;
@@ -152,6 +158,26 @@ ALTER TABLE t_to_field_name RENAME COLUMN a TO `x.z`;
 INSERT INTO t_to_field_name (`x.z`, arr) VALUES (10, [(1), (2)]);
 SELECT 'to field name', c2 FROM t_to_field_name;
 DROP TABLE t_to_field_name;
+
+-- Identifiers and aliases inside a subquery belong to the subquery.
+DROP TABLE IF EXISTS t_subquery_alias;
+CREATE TABLE t_subquery_alias (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT 1 AS u);
+ALTER TABLE t_subquery_alias RENAME COLUMN x TO u;
+SELECT 'subquery alias', position(create_table_query, 'WHERE u < (SELECT 1 AS u)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_alias';
+DROP TABLE t_subquery_alias;
+
+DROP TABLE IF EXISTS t_subquery_local;
+CREATE TABLE t_subquery_local (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT max(x) FROM (SELECT 100 AS x));
+ALTER TABLE t_subquery_local RENAME COLUMN x TO u;
+SELECT 'subquery local', position(create_table_query, 'WHERE u < (SELECT max(x) FROM (SELECT 100 AS x))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_local';
+DROP TABLE t_subquery_local;
+
+-- A TTL GROUP BY SET expression is renamed like the other expressions.
+DROP TABLE IF EXISTS t_ttl_set;
+CREATE TABLE t_ttl_set (d Date, key UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = max(c1);
+ALTER TABLE t_ttl_set RENAME COLUMN c1 TO v;
+SELECT 'ttl set', position(create_table_query, 'SET value = max(v)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_set';
+DROP TABLE t_ttl_set;
 
 -- Renames that keep every reference bound to the same column.
 DROP TABLE IF EXISTS t_self_alias;

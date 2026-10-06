@@ -46,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1384,7 +1385,13 @@ void AlterCommand::apply(
             });
         }
         if (metadata.table_ttl.definition_ast)
+        {
             rename_in(metadata.table_ttl.definition_ast, "the table TTL");
+            for (const auto & element : metadata.table_ttl.definition_ast->children)
+                if (auto * ttl_element = element->as<ASTTTLElement>())
+                    for (auto & assignment : ttl_element->group_by_assignments)
+                        rename_in(assignment, "the table TTL");
+        }
 
         auto constraints_data = metadata.constraints.getConstraints();
         for (auto & constraint : constraints_data)

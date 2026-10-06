@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
@@ -91,7 +92,7 @@ public:
 
         if (lambda)
             inLambda(*lambda, [&](const ASTPtr & body) { collect(body, where); });
-        else
+        else if (!ast->as<ASTSubquery>())
             for (const auto & child : ast->children)
                 collect(child, where);
     }
@@ -110,7 +111,7 @@ public:
 
         if (const auto * lambda = asLambda(ast))
             inLambda(*lambda, [&](const ASTPtr & body) { if (conflict.empty()) conflict = check(body, where); });
-        else
+        else if (!ast->as<ASTSubquery>())
             for (const auto & child : ast->children)
                 if (conflict.empty())
                     conflict = check(child, where);
@@ -201,7 +202,8 @@ private:
 
 bool RenameColumnMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &, const Data &)
 {
-    return !asLambda(node);
+    /// A subquery resolves its identifiers against its own tables.
+    return !asLambda(node) && !node->as<ASTSubquery>();
 }
 
 void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)

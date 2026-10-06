@@ -27,6 +27,9 @@ quoted	[7000,7000]
 arrayMap(x -> (`x.z` * 1000), arr)
 to field name	[11,12]
 to field name	[11,12]
+subquery alias	1
+subquery local	1
+ttl set	1
 self alias	20
 self alias	20
 (u AS u) + u
