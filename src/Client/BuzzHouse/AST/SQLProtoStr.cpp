@@ -1812,7 +1812,9 @@ CONV_FN(JoinCore, jcc)
         ret += JoinConst_Name(jcc.join_const()).substr(2);
     }
     ret += " JOIN ";
-    if (jcc.lateral())
+    /// `LATERAL` is only parsed before a subquery (`(VALUES ...)` included) and never with `CROSS JOIN`
+    if (jcc.lateral() && jcc.join_op() != JoinType::J_CROSS && jcc.tos().has_joined_table()
+        && (jcc.tos().joined_table().tof().has_select() || jcc.tos().joined_table().tof().has_values_standard()))
     {
         ret += "LATERAL ";
     }
