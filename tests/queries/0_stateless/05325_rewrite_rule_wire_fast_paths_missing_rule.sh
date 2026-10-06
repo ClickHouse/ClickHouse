@@ -29,8 +29,9 @@ CREATE USER ${PG_USER} HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
 for statement in "BEGIN" "COMMIT" "SET application_name = 'test'" "RESET ALL" "PREPARE p_05325 AS SELECT 1" "DEALLOCATE p_05325" "SELECT 1"
 do
     echo "postgresql: ${statement}"
-    printf "SET query_rules = '%s';\n%s;\n" "${RULE}" "${statement}" \
-        | psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only 2>&1 \
+    # Each `-c` is sent as it is, without a terminating `;`, as the drivers send these statements.
+    psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only \
+        -c "SET query_rules = '${RULE}'" -c "${statement}" 2>&1 \
         | grep -c "${RULE}"
 done
 

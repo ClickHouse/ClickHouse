@@ -869,14 +869,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
     /// The fast paths below answer the user's statement without passing it to `executeQuery`
     /// (the federated-setup `SET` no-ops) or execute synthesized SQL with `query_rules` cleared
-    /// (the query and setting replacements), so the statement would otherwise skip the "every
-    /// rule listed in `query_rules` must exist" check that ordinary SQL gets in `astTraversal`.
-    validateQueryRulesExist(session->sessionContext());
+    /// (the query and setting replacements), so they check themselves that every rule listed in
+    /// `query_rules` exists, as ordinary SQL does in `astTraversal`. Ordinary SQL is left to
+    /// `executeQuery`, which logs the failure to `system.query_log`.
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
     // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
+        validateQueryRulesExist(session->sessionContext());
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
     }
     else
@@ -956,7 +957,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
             /// a mapped `SET` variable, ...); the client never submitted that SQL, so the session's
             /// `query_rules` must not rewrite or reject it. Direct user SQL (the `else` branch)
             /// keeps the setting. The context is private to this query, so clearing the setting
-            /// does not affect anything else.
+            /// does not affect anything else. The rules are checked before that, with the query id
+            /// and the query scope of this statement already set up.
+            validateQueryRulesExist(query_context);
             query_context->setSetting("query_rules", String{});
 
             ReadBufferFromString replacement(replacement_query);

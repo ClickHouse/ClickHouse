@@ -1140,14 +1140,15 @@ void PostgreSQLHandler::processQuery()
 
         /// Several statements below are answered without ever reaching `executeQuery` (and so
         /// `astTraversal`): the driver `BEGIN` / `COMMIT` and setup `SET`s, the no-op `RESET` /
-        /// `UNLISTEN` / `DISCARD`, `PREPARE`, `DEALLOCATE` and `COPY`. Check here, for all of them,
-        /// that every rule listed in `query_rules` exists, as ordinary SQL does.
-        validateQueryRulesExist(session->sessionContext());
-
+        /// `UNLISTEN` / `DISCARD`, `PREPARE` and `DEALLOCATE` (`COPY` runs `astTraversal` itself).
+        /// Each of them checks that every rule listed in `query_rules` exists, as ordinary SQL does.
+        /// Ordinary SQL is left to `executeQuery`, which does the same check with a query id and
+        /// logs the failure to `system.query_log`.
         bool psycopg2_cond = query->query == "BEGIN" || query->query == "COMMIT"; // psycopg2 starts and ends queries with BEGIN/COMMIT commands
         bool jdbc_cond = query->query.contains("SET extra_float_digits") || query->query.contains("SET application_name"); // jdbc starts with setting this parameter
         if (psycopg2_cond || jdbc_cond)
         {
+            validateQueryRulesExist(session->sessionContext());
             message_transport->send(
                 PostgreSQLProtocol::Messaging::CommandComplete(
                     PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query->query), 0));
@@ -1158,6 +1159,7 @@ void PostgreSQLHandler::processQuery()
         /// `UNLISTEN *`) as no-ops instead of failing them with a syntax error.
         if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
         {
+            validateQueryRulesExist(session->sessionContext());
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
             return;
         }
@@ -1279,6 +1281,7 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
         return false;
     }
 
+    validateQueryRulesExist(session->sessionContext());
     prepared_statements_manager.addStatement(prepare->as<ASTPreparedStatement>());
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
@@ -1327,6 +1330,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
         return false;
     }
 
+    validateQueryRulesExist(session->sessionContext());
     prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>()->function_name);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
