@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskQueue.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
@@ -49,7 +49,7 @@ private:
     TaskRunner runner;
 
     Wyrd::Mutex mutex;
-    TaskQueue local_tasks;
+    LocalTasks local_tasks;
     Wyrd::Atomic<size_t> local_tasks_count = 0;
 
     std::optional<Task> next;

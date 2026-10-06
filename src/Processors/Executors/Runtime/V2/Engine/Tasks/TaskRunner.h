@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
@@ -35,7 +36,7 @@ public:
 
     void run(Task task);
     const std::vector<Task> & getFoundTasks() const;
-    const std::vector<AsyncTask> & getFoundAsyncTasks() const;
+    const std::vector<PollRequest> & getFoundPollRequests() const;
     WorkIntervals takeWorkIntervals();
 
 private:
@@ -46,7 +47,7 @@ private:
 
     /// Graph prepare temporary data.
     std::vector<Task> tasks_found;
-    std::vector<AsyncTask> async_tasks_found;
+    std::vector<PollRequest> poll_requests_found;
     std::vector<InputPort *> pending_inputs;
     std::vector<OutputPort *> pending_outputs;
     std::vector<IProcessor *> finished_processors;

@@ -163,10 +163,10 @@ size_t Worker::runTask(Task task)
     for (const auto & found : runner.getFoundTasks() | std::views::reverse)
         pushToNext(found);
 
-    for (const auto & found : runner.getFoundAsyncTasks())
-        pool.poller.add(*found.state, found.fd, found.events, found.timeout_ms);
+    for (const auto & found : runner.getFoundPollRequests())
+        pool.poller.add(found);
 
-    const size_t work_found = runner.getFoundTasks().size() + runner.getFoundAsyncTasks().size();
+    const size_t work_found = runner.getFoundTasks().size() + runner.getFoundPollRequests().size();
     return work_found == 0 ? 0 : work_found - 1;
 }
 
@@ -221,24 +221,21 @@ size_t Worker::poll(int timeout_ms)
 
     auto fired = pool.poller.poll(timeout_ms);
     for (auto * state : fired | std::views::reverse)
-        pushToLocal(Task{.state = state, .kind = Task::Kind::AsyncReady});
+        pushToLocal(Task::create(*state, Task::Step::AsyncReady));
 
     return fired.size();
 }
 
 void Worker::drain()
 {
-    TaskQueue taken;
     {
         std::lock_guard lock(mutex);
-        taken.takeAll(local_tasks);
+        pool.global_tasks.takeAll(local_tasks);
         local_tasks_count.store(0);
     }
 
     if (next)
-        taken.pushBack(*std::exchange(next, std::nullopt));
-
-    pool.global_tasks.takeAll(taken);
+        pool.global_tasks.push(*std::exchange(next, std::nullopt));
 }
 
 size_t Worker::taskCount() const

@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Engine/Poller.h>
+#include <Processors/Executors/Runtime/V2/Engine/Polling/Poller.h>
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
 
@@ -117,19 +117,19 @@ Poller::Poller()
 
 Poller::~Poller() = default;
 
-void Poller::add(ProcessorState & state, int fd, uint32_t events, int64_t timeout_ms)
+void Poller::add(const PollRequest & request)
 {
     std::lock_guard lock(mutex);
 
-    if (!fds.emplace(&state, fd).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is already registered in the poller", static_cast<const void *>(&state));
+    if (!fds.emplace(request.state, request.fd).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is already registered in the poller", static_cast<const void *>(request.state));
 
-    epoll.add(fd, &state, events);
+    epoll.add(request.fd, request.state, request.events);
     pending_count.fetch_add(1);
 
-    if (timeout_ms >= 0)
+    if (request.timeout_ms >= 0)
     {
-        deadlines->arm(&state, timeout_ms);
+        deadlines->arm(request.state, request.timeout_ms);
         updateTimer();
     }
 }
@@ -197,7 +197,7 @@ void Poller::wakeup()
 
 #else
 
-void Poller::add(ProcessorState &, int, uint32_t, int64_t)
+void Poller::add(const PollRequest &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async processors are not supported on this platform");
 }

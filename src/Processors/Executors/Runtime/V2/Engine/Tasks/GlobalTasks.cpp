@@ -11,18 +11,19 @@ namespace Runtime::V2
 void GlobalTasks::push(Task task)
 {
     std::lock_guard lock(mutex);
-    tasks.pushBack(task);
+    tasks.push_back(task);
     tasks_count.store(tasks.size());
 }
 
-void GlobalTasks::takeFront(TaskQueue & from, size_t count)
+void GlobalTasks::takeFront(LocalTasks & from, size_t count)
 {
     std::lock_guard lock(mutex);
-    tasks.takeFront(from, count);
+    for (size_t i = 0; i < count; ++i)
+        tasks.push_back(from.popFront());
     tasks_count.store(tasks.size());
 }
 
-void GlobalTasks::takeAll(TaskQueue & from)
+void GlobalTasks::takeAll(LocalTasks & from)
 {
     takeFront(from, from.size());
 }
@@ -36,7 +37,8 @@ std::optional<Task> GlobalTasks::tryPop()
     if (tasks.empty())
         return std::nullopt;
 
-    Task task = tasks.popFront();
+    Task task = tasks.front();
+    tasks.pop_front();
     tasks_count.store(tasks.size());
     return task;
 }

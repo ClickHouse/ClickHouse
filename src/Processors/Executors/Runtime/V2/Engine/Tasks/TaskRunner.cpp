@@ -121,7 +121,7 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
 void TaskRunner::runAsyncReady(ProcessorState & state)
 {
     state.processor->onAsyncJobReady();
-    tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+    tasks_found.push_back(Task::create(state, Task::Step::Work));
 }
 
 void TaskRunner::runUpdatePipeline(ProcessorState & state)
@@ -140,7 +140,7 @@ void TaskRunner::runUpdatePipeline(ProcessorState & state)
     if (pipeline.cancelled())
         return;
 
-    tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Prepare});
+    tasks_found.push_back(Task::create(state, Task::Step::Prepare));
     for (auto * updated_state : updated)
         notifyOwner(*updated_state);
 }
@@ -175,7 +175,7 @@ void TaskRunner::notifyOwner(ProcessorState & state)
     {
         case ProcessorLock::Status::Idle:
             state.lock.setExecuting();
-            tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Prepare});
+            tasks_found.push_back(Task::create(state, Task::Step::Prepare));
             return;
         case ProcessorLock::Status::Executing:
             state.processor->onUpdatePorts();
@@ -218,7 +218,7 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
 
         case IProcessor::Status::Ready:
             state.lock.setExecuting();
-            tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+            tasks_found.push_back(Task::create(state, Task::Step::Work));
             return;
 
         case IProcessor::Status::Async:
@@ -226,7 +226,7 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
 #if defined(OS_LINUX) || defined(OS_DARWIN)
             auto [fd, events, timeout_ms] = processor.scheduleForEvent();
             state.lock.setExecuting();
-            async_tasks_found.push_back(AsyncTask{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
+            poll_requests_found.push_back(PollRequest{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
             return;
 #else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Asynchronous processors are not supported on this platform");
@@ -235,7 +235,7 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
 
         case IProcessor::Status::UpdatePipeline:
             state.lock.setExecuting();
-            tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::UpdatePipeline});
+            tasks_found.push_back(Task::create(state, Task::Step::UpdatePipeline));
             return;
     }
 }
@@ -263,22 +263,22 @@ TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, size_t worker_id_)
 void TaskRunner::run(Task task)
 {
     tasks_found.clear();
-    async_tasks_found.clear();
+    poll_requests_found.clear();
 
-    switch (task.kind)
+    switch (task.step())
     {
-        case Task::Kind::Prepare:
-            runPrepare(*task.state);
+        case Task::Step::Prepare:
+            runPrepare(task.state());
             break;
-        case Task::Kind::Work:
-            runWork(*task.state);
-            runPrepare(*task.state);
+        case Task::Step::Work:
+            runWork(task.state());
+            runPrepare(task.state());
             break;
-        case Task::Kind::AsyncReady:
-            runAsyncReady(*task.state);
+        case Task::Step::AsyncReady:
+            runAsyncReady(task.state());
             break;
-        case Task::Kind::UpdatePipeline:
-            runUpdatePipeline(*task.state);
+        case Task::Step::UpdatePipeline:
+            runUpdatePipeline(task.state());
             break;
     }
 }
@@ -288,9 +288,9 @@ const std::vector<Task> & TaskRunner::getFoundTasks() const
     return tasks_found;
 }
 
-const std::vector<AsyncTask> & TaskRunner::getFoundAsyncTasks() const
+const std::vector<PollRequest> & TaskRunner::getFoundPollRequests() const
 {
-    return async_tasks_found;
+    return poll_requests_found;
 }
 
 WorkIntervals TaskRunner::takeWorkIntervals()

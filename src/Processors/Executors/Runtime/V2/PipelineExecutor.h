@@ -16,15 +16,15 @@ namespace DB
 namespace Runtime::V2
 {
 
-class Executor : public IExecutor
+class PipelineExecutor : public IExecutor
 {
     void start(size_t num_threads, bool concurrency_control);
     void pushInitialTasks();
     void finalize();
 
 public:
-    Executor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem);
-    ~Executor() override;
+    PipelineExecutor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem);
+    ~PipelineExecutor() override;
 
     void execute(size_t num_threads, bool concurrency_control) override;
     bool executeUntil(std::atomic_bool * yield_flag) override;

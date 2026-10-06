@@ -8,9 +8,12 @@ namespace DB
 namespace Runtime::V2
 {
 
-struct Task
+using PackedTask = UInt64;
+
+class Task
 {
-    enum class Kind
+public:
+    enum class Step : UInt8
     {
         Prepare,
         Work,
@@ -18,16 +21,15 @@ struct Task
         UpdatePipeline,
     };
 
-    ProcessorState * state = nullptr;
-    Kind kind = Kind::Prepare;
-};
+    static Task create(ProcessorState & state, Step step);
+    static Task unpack(PackedTask packed);
+    static PackedTask pack(Task task);
 
-struct AsyncTask
-{
-    ProcessorState * state = nullptr;
-    int fd = -1;
-    uint32_t events = 0;
-    int64_t timeout_ms = -1;
+    ProcessorState & state() const;
+    Step step() const;
+
+private:
+    PackedTask packed;
 };
 
 }

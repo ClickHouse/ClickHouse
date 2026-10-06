@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Executor.h>
+#include <Processors/Executors/Runtime/V2/PipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -27,7 +27,7 @@ bool checkTimeLimit(const QueryStatusPtr & process_list_element)
 
 }
 
-Executor::Executor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
     : processors(std::move(processors_))
     , process_list_element(std::move(elem))
 {
@@ -35,13 +35,13 @@ Executor::Executor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
         process_list_element->addPipelineExecutor(this);
 }
 
-Executor::~Executor()
+PipelineExecutor::~PipelineExecutor()
 {
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
 }
 
-void Executor::start(size_t num_threads, bool concurrency_control)
+void PipelineExecutor::start(size_t num_threads, bool concurrency_control)
 {
     std::lock_guard lock(mutex);
 
@@ -70,7 +70,7 @@ void Executor::start(size_t num_threads, bool concurrency_control)
         pool->stop();
 }
 
-void Executor::pushInitialTasks()
+void PipelineExecutor::pushInitialTasks()
 {
     for (auto * sink : pipeline->sinks())
     {
@@ -79,11 +79,11 @@ void Executor::pushInitialTasks()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is locked before the execution started", sink->processor->getName());
 
         sink->lock.setExecuting();
-        pool->push(Task{.state = sink, .kind = Task::Kind::Prepare});
+        pool->push(Task::create(*sink, Task::Step::Prepare));
     }
 }
 
-void Executor::finalize()
+void PipelineExecutor::finalize()
 {
     if (!checkTimeLimit(process_list_element))
         cancel(IProcessor::CancelReason::CancelledByTimeout);
@@ -98,14 +98,14 @@ void Executor::finalize()
         pipeline->reportReadProgress(*read_progress_callback);
 }
 
-void Executor::execute(size_t num_threads, bool concurrency_control)
+void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     if (!checkTimeLimit(process_list_element))
         cancel(IProcessor::CancelReason::CancelledByTimeout);
 
     num_threads = std::max<size_t>(num_threads, 1);
 
-    OpenTelemetry::SpanHolder span("Executor::execute()");
+    OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
     span.addAttribute("clickhouse.thread_num", num_threads);
 
     try
@@ -126,7 +126,7 @@ void Executor::execute(size_t num_threads, bool concurrency_control)
     }
 }
 
-bool Executor::executeUntil(std::atomic_bool * yield_flag)
+bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 {
     if (!pool)
         start(1, true);
@@ -145,7 +145,7 @@ bool Executor::executeUntil(std::atomic_bool * yield_flag)
     return false;
 }
 
-void Executor::cancel(IProcessor::CancelReason reason)
+void PipelineExecutor::cancel(IProcessor::CancelReason reason)
 {
     std::lock_guard lock(mutex);
 
@@ -161,7 +161,7 @@ void Executor::cancel(IProcessor::CancelReason reason)
         pool->stop();
 }
 
-void Executor::cancelReading()
+void PipelineExecutor::cancelReading()
 {
     std::lock_guard lock(mutex);
 
@@ -175,7 +175,7 @@ void Executor::cancelReading()
     pipeline->cancel(IProcessor::CancelReason::PartialResult);
 }
 
-void Executor::setReadProgressCallback(ReadProgressCallbackPtr callback)
+void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 {
     std::lock_guard lock(mutex);
 
@@ -184,7 +184,7 @@ void Executor::setReadProgressCallback(ReadProgressCallbackPtr callback)
         pipeline->read_progress_callback = read_progress_callback.get();
 }
 
-void Executor::setStepProfiler(StepProfilerPtr step_profiler_)
+void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 {
     std::lock_guard lock(mutex);
 

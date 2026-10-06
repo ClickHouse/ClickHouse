@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
@@ -19,8 +20,6 @@ namespace DB
 namespace Runtime::V2
 {
 
-struct ProcessorState;
-
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 class Poller
@@ -35,7 +34,7 @@ public:
     Poller();
     ~Poller();
 
-    void add(ProcessorState & state, int fd, uint32_t events = EPOLLIN | EPOLLERR, int64_t timeout_ms = -1);
+    void add(const PollRequest & request);
     std::vector<ProcessorState *> poll(int timeout_ms);
     size_t pending() const;
     void wakeup();
@@ -61,7 +60,7 @@ private:
 class Poller
 {
 public:
-    void add(ProcessorState & state, int fd, uint32_t events = 0, int64_t timeout_ms = -1);
+    void add(const PollRequest & request);
     std::vector<ProcessorState *> poll(int) { return {}; }
     size_t pending() const { return 0; }
     void wakeup() {}
