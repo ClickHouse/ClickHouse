@@ -31,6 +31,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 namespace
 {
 
@@ -223,10 +228,12 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
         Cond produced = generate(&specialized, specialized.getOutputs().front());
         return setSubstituted(partition_id, std::move(produced));
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            throw;
         CurrentThread::checkIfNotCancelled();
         return generateUnsubstituted();
     }

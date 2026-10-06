@@ -24,3 +24,11 @@ CREATE TABLE t_qbit (q QBit(Float32, 4)) ENGINE = MergeTree ORDER BY tuple();
 SELECT L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS optimize_qbit_distance_function_reads = 1; -- { serverError CANNOT_PARSE_NUMBER }
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw', optimize_qbit_distance_function_reads = 1; -- { serverError TIMEOUT_EXCEEDED }
 DROP TABLE t_qbit;
+
+-- A timeout while folding a partition constant for index analysis is not one of the ignored evaluation failures,
+-- in the break mode too; otherwise the query completes after folding the predicate for every partition.
+DROP TABLE IF EXISTS t_partition_fold;
+CREATE TABLE t_partition_fold (p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY tuple();
+INSERT INTO t_partition_fold SELECT number FROM numbers(10);
+SELECT count() FROM t_partition_fold WHERE length(arrayResize([], 8000, repeat(toString(p), 16384))) = editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS use_constant_folding_in_index_analysis = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, max_execution_time = 0.001, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+DROP TABLE t_partition_fold;

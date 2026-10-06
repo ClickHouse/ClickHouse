@@ -687,17 +687,35 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
 template <typename T>
 size_t valueBytes(const NumericValueSlice<T> &) { return sizeof(T); }
 
-inline size_t valueBytes(const GenericValueSlice & slice) { return slice.elements->byteSizeAt(slice.position); }
+/// The sum of `byteSizeAt` over rows [begin, end), without visiting each element of fixed-size, string or array data.
+inline size_t rangeBytes(const IColumn & column, size_t begin, size_t end)
+{
+    if (column.valuesHaveFixedSize())
+        return (end - begin) * column.sizeOfValueIfFixed();
+    if (const auto * strings = typeid_cast<const ColumnString *>(&column))
+        return (end - begin) * sizeof(ColumnString::Offset) + strings->getOffsets()[end - 1] - strings->getOffsets()[begin - 1];
+    if (const auto * array = typeid_cast<const ColumnArray *>(&column))
+        return (end - begin) * sizeof(ColumnArray::Offset)
+            + rangeBytes(array->getData(), array->getOffsets()[begin - 1], array->getOffsets()[end - 1]);
+    size_t bytes = 0;
+    for (size_t i = begin; i < end; ++i)
+        bytes += column.byteSizeAt(i);
+    return bytes;
+}
+
+inline size_t valueBytes(const GenericValueSlice & slice) { return rangeBytes(*slice.elements, slice.position, slice.position + 1); }
 
 template <typename Slice>
 size_t valueBytes(const NullableSlice<Slice> & slice) { return valueBytes(static_cast<const Slice &>(slice)) + 1; }
 
+/// `units_per_value` is 0 until the first priced value; a constant extender is priced only once.
 template <typename ValueSource, typename Sink>
-void writeValueRepeatedly(ValueSource && value_source, Sink && sink, size_t count, CancellationBudget & budget)
+void writeValueRepeatedly(ValueSource && value_source, Sink && sink, size_t count, size_t & units_per_value, CancellationBudget & budget)
 {
     if (count == 0)
         return;
-    const size_t units_per_value = 1 + valueBytes(value_source.getWhole()) / CancellationBudget::bytes_per_unit;
+    if (units_per_value == 0 || !value_source.isConst())
+        units_per_value = 1 + valueBytes(value_source.getWhole()) / CancellationBudget::bytes_per_unit;
     const size_t max_chunk = std::max<size_t>(1, CancellationBudget::units_per_check / units_per_value);
     while (count > 0)
     {
@@ -716,6 +734,7 @@ void resizeDynamicSize(
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
     const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
     const IColumn * size_nested_column = size_nullable ? &size_nullable->getNestedColumn() : &size_column;
+    size_t units_per_value = 0;
 
     while (!sink.isEnd())
     {
@@ -737,7 +756,7 @@ void resizeDynamicSize(
                 if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
-                    writeValueRepeatedly(value_source, sink, length - array_size, budget);
+                    writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
                 }
                 else
                     writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -751,7 +770,7 @@ void resizeDynamicSize(
 
                 if (array_size <= length)
                 {
-                    writeValueRepeatedly(value_source, sink, length - array_size, budget);
+                    writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
                     writeSlice(array_source.getWhole(), sink);
                 }
                 else
@@ -771,6 +790,7 @@ template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeConstantSize(
     ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size, CancellationBudget & budget)
 {
+    size_t units_per_value = 0;
     while (!sink.isEnd())
     {
         auto array_size = array_source.getElementSize();
@@ -785,7 +805,7 @@ void resizeConstantSize(
             if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
-                writeValueRepeatedly(value_source, sink, length - array_size, budget);
+                writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
             }
             else
                 writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -799,7 +819,7 @@ void resizeConstantSize(
 
             if (array_size <= length)
             {
-                writeValueRepeatedly(value_source, sink, length - array_size, budget);
+                writeValueRepeatedly(value_source, sink, length - array_size, units_per_value, budget);
                 writeSlice(array_source.getWhole(), sink);
             }
             else

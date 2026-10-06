@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -140,11 +141,12 @@ void tryFoldFunctionToConstant(
             column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
         }
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
-        if (!best_effort)
+        /// A best-effort fold gives up on evaluation failures, not on a cancelled query. A timeout in
+        /// the `break` overflow mode does not mark the query as killed, so it is recognized by its code.
+        if (!best_effort || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
             throw;
-        /// A best-effort fold gives up on evaluation failures, not on a cancelled query.
         CurrentThread::checkIfNotCancelled();
         return;
     }
