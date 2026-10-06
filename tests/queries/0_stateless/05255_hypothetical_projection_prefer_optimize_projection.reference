@@ -1,0 +1,64 @@
+--- more marks than the base table ---
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+real: from the base table
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection
+--- the same marks and no ORDER BY to serve ---
+status: applicable
+verdict: not chosen
+reason: the same 1 mark would be read, and the query has no ORDER BY to serve
+real: from the base table
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads the same 1 mark as the base table and serves no ORDER BY
+real: from the projection
+--- no filter and no ORDER BY ---
+status: not_applicable
+reason: Query has no filter predicate, and the query has no ORDER BY to serve
+real: from the base table
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the query has no filter or ORDER BY for the projection to help with
+real: from the projection
+--- no parts to read, where the optimizer has no projection parts to swap in either ---
+status: not_applicable
+reason: The query reads no parts, so the optimizer would not consider a projection
+real: from the base table
+--- a projection that wins on cost stays plainly chosen ---
+status: applicable
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+real: from the projection
+--- the setting from the session ---
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection
+--- force_optimize_projection does the same ---
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection
+--- the query setting overrides the session one ---
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+real: from the base table
+--- a setting in a subquery that does not read the table stays there ---
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+real: from the base table
+--- the setting of the subquery that reads the table applies to it ---
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection

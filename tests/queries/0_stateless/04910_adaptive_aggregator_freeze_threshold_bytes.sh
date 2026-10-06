@@ -52,6 +52,17 @@ SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
 # hint initialized two-level could never freeze at all, failing the count assertion. The
 # two-level threshold is pinned below the freeze size so the two-level initialization stays
 # reachable from the recorded sizes.
+# The four UNION ALL branches are four streams of 500000 rows, one per table, so every table
+# outgrows the bound however the threads are scheduled (numbers_mt hands out blocks from a shared cursor).
+# The last check makes sure the warm run found the hint, so the cell cannot pass with two cold runs.
+warm_query="SELECT intHash64(number) AS k, count() AS c FROM
+(
+    SELECT number FROM numbers(0, 500000)
+    UNION ALL SELECT number FROM numbers(500000, 500000)
+    UNION ALL SELECT number FROM numbers(1000000, 500000)
+    UNION ALL SELECT number FROM numbers(1500000, 500000)
+)
+GROUP BY k FORMAT Null"
 warm_trace="$CLICKHOUSE_TMP/04910_warm_trace.log"
 $CLICKHOUSE_LOCAL --send_logs_level=trace --query "
 SET max_threads = 4;
@@ -63,8 +74,9 @@ SET collect_hash_table_stats_during_aggregation = 1;
 SET adaptive_aggregator_freeze_threshold = 1000000000;
 SET adaptive_aggregator_freeze_threshold_bytes = 2097152;
 
-SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
-SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
+$warm_query;
+$warm_query;
 SELECT 'warm and cold runs all froze', value FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes';
 " 2> "$warm_trace"
 grep -o 'frozen at [0-9]*' "$warm_trace" | awk '{ n++; if (n == 1 || $3 < min) min = $3 } END { print "warm freezes by growth\t" (n == 8 && min > 16384 ? 1 : 0) }'
+grep -c 'An entry for key=[0-9]* found in cache' "$warm_trace" | awk '{ print "warm run found the size hint\t" ($1 > 0 ? 1 : 0) }'

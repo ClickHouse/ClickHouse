@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 #include <Functions/IFunction.h>
@@ -8,7 +10,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -80,6 +84,114 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+template <typename T>
+concept ArrayIndexNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
+
+/// Constant, exactly representable needles in non-nullable numeric arrays.
+template <typename ConcreteAction, ArrayIndexNumeric T>
+    requires (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
+struct NumericArrayIndex
+{
+private:
+    using ResultType = typename ConcreteAction::ResultType;
+
+    static ALWAYS_INLINE ResultType findScalar(const T * data, size_t size, T value, size_t offset = 0)
+    {
+        ResultType result = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (data[i] == value)
+            {
+                ConcreteAction::apply(result, offset + i);
+                break;
+            }
+        }
+        return result;
+    }
+
+    static ALWAYS_INLINE ResultType findInBlocks(const T * data, size_t size, T value, size_t offset)
+    {
+        constexpr size_t elements_per_block = 64 / sizeof(T);
+        if (size < elements_per_block)
+            return findScalar(data, size, value, offset);
+
+        if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+        {
+            const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
+            ResultType result = 0;
+            if (found)
+                ConcreteAction::apply(result, offset + static_cast<size_t>(found - data));
+            return result;
+        }
+
+        size_t i = 0;
+        for (; size - i >= elements_per_block; i += elements_per_block)
+        {
+            unsigned found = 0;
+            for (size_t j = 0; j < elements_per_block; ++j)
+                found |= static_cast<unsigned>(data[i + j] == value);
+
+            if (found)
+            {
+#if defined(__x86_64__)
+                /// On x86 the rescan of a whole block becomes branchless code that reuses the comparisons above.
+                if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    return 1;
+                else
+                    return findScalar(data + i, elements_per_block, value, offset + i);
+#else
+                /// Elsewhere it keeps the comparisons above from being vectorized for 4- and 8-byte elements
+                /// (checked on ARM), so only `break` here and rescan after the loop.
+                break;
+#endif
+            }
+        }
+
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+            if (size - i >= elements_per_block)
+                return 1;
+
+        /// The first match, if any, is in the block at `i` or, if no block matched, in the tail.
+        return findScalar(data + i, std::min(size - i, elements_per_block), value, offset + i);
+    }
+
+    static ALWAYS_INLINE ResultType find(const T * data, size_t size, T value)
+    {
+        /// Keep early matches cheap before the branchless block scan.
+        constexpr size_t scalar_prefix_size = 8;
+        const size_t prefix_size = std::min(size, scalar_prefix_size);
+
+        const auto result = findScalar(data, prefix_size, value);
+        if (result || prefix_size == size)
+            return result;
+
+        return findInBlocks(data + prefix_size, size - prefix_size, value, prefix_size);
+    }
+
+public:
+    static void vector(
+        const PaddedPODArray<T> & data,
+        const ColumnArray::Offsets & offsets,
+        T value,
+        PaddedPODArray<ResultType> & result)
+    {
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        const T * __restrict raw_data = data.data();
+        const ColumnArray::Offset * __restrict raw_offsets = offsets.data();
+        ResultType * __restrict raw_result = result.data();
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const ColumnArray::Offset next_offset = raw_offsets[i];
+            raw_result[i] = find(raw_data + current_offset, next_offset - current_offset, value);
+            current_offset = next_offset;
+        }
+    }
+};
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -510,6 +622,9 @@ public:
     /// Get function name.
     String getName() const override { return name; }
 
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -609,6 +724,23 @@ private:
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+    }
+
+    /// An array of `Enum` values searched for a `String` is compared by the name of the enum value,
+    /// because the common type of `Enum` and `String` is `String`. Returns the type of the elements
+    /// in that case, and `nullptr` otherwise.
+    static const IDataTypeEnum * getEnumToCompareByName(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1].type))))
+            return nullptr;
+
+        /// The nested type is owned by the array type, which outlives this call.
+        const auto & nested_type = array_type->getNestedType();
+        return dynamic_cast<const IDataTypeEnum *>(removeNullable(removeLowCardinality(nested_type)).get());
     }
 
     /// What a date or time type counts. Two types that count different things are told apart by a
@@ -762,12 +894,16 @@ private:
 
     ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        ColumnPtr res;
-        if (!((res = executeNothing(arguments))
-              || (res = executeIntegral<INTEGRAL_PACK>(arguments))
-              || (res = executeConst(arguments, result_type))
-              || (res = executeString(arguments))
-              || (res = executeGeneric(arguments))))
+        ColumnPtr res = executeNothing(arguments);
+        if (!res)
+            res = executeIntegral<INTEGRAL_PACK>(arguments);
+        if (!res)
+            res = executeConst(arguments, result_type);
+        if (!res)
+            res = executeString(arguments);
+        if (!res)
+            res = executeGeneric(arguments);
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
@@ -861,6 +997,30 @@ private:
             return false;
 
         if (const auto * item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&data.right))
+        {
+            if constexpr (
+                Impl::ArrayIndexNumeric<Initial>
+                && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
+            {
+                if (!data.null_maps.first && !data.null_maps.second)
+                {
+                    const auto needle = item_arg_const->template getValue<Resulting>();
+                    Initial converted_needle{};
+                    if (isNaN(needle) || !accurate::convertNumeric<Resulting, Initial>(needle, converted_needle))
+                    {
+                        result.getData().resize_fill(data.offsets.size());
+                        return true;
+                    }
+
+                    Impl::NumericArrayIndex<ConcreteAction, Initial>::vector(
+                        left_typed->getData(),
+                        data.offsets,
+                        converted_needle,
+                        result.getData());
+                    return true;
+                }
+            }
+
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 left_typed->getData(),
                 data.offsets,
@@ -868,6 +1028,7 @@ private:
                 result.getData(),
                 data.null_maps.first,
                 nullptr);
+        }
         else if (const auto * item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 left_typed->getData(),
@@ -1264,13 +1425,41 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// The elements of a constant array of `Enum` values are the numeric values of the enum, while a
+        /// `String` argument is the name of an enum value, so a direct comparison of the fields never matches.
+        /// The common type of `Enum` and `String` is `String`, hence `equals` (and the non-constant code path
+        /// below, which casts both arguments to the common type) compares them by the name of the enum value.
+        /// Do the same here by replacing the values of the constant array by their names, and by casting the
+        /// searched value to `String` as well: a `FixedString` is padded with zero bytes, which the cast to
+        /// the common type removes, so comparing its raw bytes with a name would disagree with `equals`.
+        ColumnPtr searched_value_holder;
+        const auto * enum_type = getEnumToCompareByName(arguments);
+        if (enum_type)
+        {
+            for (auto & element : arr)
+                if (!element.isNull())
+                    element = enum_type->castToName(element);
+
+            if (!isString(removeNullable(arguments[1].type)))
+            {
+                DataTypePtr string_type = std::make_shared<DataTypeString>();
+                if (arguments[1].type->isNullable())
+                    string_type = std::make_shared<DataTypeNullable>(string_type);
+
+                searched_value_holder = castColumn(arguments[1], string_type);
+                item_arg = searched_value_holder.get();
+            }
+        }
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (isColumnNullableOrLowCardinalityNullable(
+                /// The array is sorted by the numeric values of the enum, which is not the order of the names.
+                if (enum_type
+                    || isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
                     current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
                 else

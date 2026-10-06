@@ -6,6 +6,8 @@ The same shape was fixed for the `Filesystem` database in
 https://github.com/ClickHouse/ClickHouse/issues/118042.
 """
 
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster, is_arm
@@ -25,6 +27,16 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def table_function_calls(query_id):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    rows = node.query(
+        "SELECT ProfileEvents['TableFunctionExecute'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ).splitlines()
+    assert len(rows) == 1, rows
+    return int(rows[0])
 
 
 def test_hdfs_database_cache_is_checked(started_cluster):
@@ -62,14 +74,18 @@ def test_hdfs_database_cache_is_checked(started_cluster):
     node.query("GRANT READ ON HDFS TO u")
 
     # With the grant the cached name is served. `TableFunctionExecute` counts calls of the table
-    # function, which serving from the cache does not make, so a counter that does not move is what
-    # shows the read was answered from the cache. The resolve below is the control that moves it.
-    calls = "SELECT sum(value) FROM system.events WHERE event = 'TableFunctionExecute'"
-    before = int(node.query(calls))
-    assert node.query("SELECT * FROM hdfs_db.`warm.tsv`", user="u") == "7\n"
-    assert int(node.query(calls)) == before
-    assert node.query("SELECT * FROM hdfs_db.`cold2.tsv`") == "7\n"
-    assert int(node.query(calls)) > before
+    # function, which serving from the cache does not make, so a read that counts none was served
+    # from the cache. The count is the read's own: the server also runs table functions by itself.
+    warm_id = str(uuid.uuid4())
+    assert (
+        node.query("SELECT * FROM hdfs_db.`warm.tsv`", user="u", query_id=warm_id)
+        == "7\n"
+    )
+    assert table_function_calls(warm_id) == 0
+    # Resolving a name that is not cached is the control that counts a call.
+    cold_id = str(uuid.uuid4())
+    assert node.query("SELECT * FROM hdfs_db.`cold2.tsv`", query_id=cold_id) == "7\n"
+    assert table_function_calls(cold_id) > 0
 
     # A grant restricted by URL must keep working: the filter is matched against the URI the table
     # function reports, which for HDFS is the host of the table and not its path.

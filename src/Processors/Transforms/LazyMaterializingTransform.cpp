@@ -266,8 +266,7 @@ void LazyMaterializingTransform::prepareMainChunk()
     {
         Stopwatch squashing_watch;
 
-        /// call private method squash without handling ChunkInfos
-        result_chunk = Squashing::squash(std::move(chunks));
+        result_chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
         chunks.clear();
         squash_ms = squashing_watch.elapsedMilliseconds();
     }
@@ -369,8 +368,7 @@ void LazyMaterializingTransform::prepareLazyChunk()
     {
         Stopwatch squash_watch;
 
-        /// call private method squash without handling ChunkInfos
-        chunk = Squashing::squash(std::move(chunks));
+        chunk = Squashing::squashWithoutChunkInfo(std::move(chunks));
         chunks.clear();
 
         squash_ms = squash_watch.elapsedMilliseconds();

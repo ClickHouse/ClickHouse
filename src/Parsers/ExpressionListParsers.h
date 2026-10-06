@@ -194,6 +194,8 @@ class ParserExpression : public IParserBase
 public:
     explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
 
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "lambda expression"; }
 

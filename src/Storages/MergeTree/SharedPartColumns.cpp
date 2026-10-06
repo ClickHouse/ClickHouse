@@ -2,8 +2,10 @@
 
 #include <base/scope_guard.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -133,8 +135,7 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
             const auto * custom = type.getCustomSerialization();
             writeStringBinary(custom ? custom->getCustomSerializationIdentity() : "", out);
         };
-        describe_custom_serialization(*column.type);
-        column.type->forEachChild(describe_custom_serialization);
+        forEachInTypeTree(*column.type, describe_custom_serialization);
     }
     return out.str();
 }
@@ -198,6 +199,10 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
     group->serializations.push_back(serialization);
     group->names.push_back(column.name);
 
+    auto substream_data = ISerialization::SubstreamData(serialization);
+    if (containsObjectType(*column.type))
+        substream_data.withType(column.type);
+
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto full_name = Nested::concatenateName(column.name, subname);
@@ -207,7 +212,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
         }
-    }, ISerialization::SubstreamData(serialization));
+    }, substream_data);
 
     /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
     group->serializations.shrink_to_fit();

@@ -1,0 +1,6 @@
+=== a temporary table named like the internal one does not get in the way ===
+root	4000
+└─ child	1000
+0
+=== two cluster reads in one query do not collide ===
+4

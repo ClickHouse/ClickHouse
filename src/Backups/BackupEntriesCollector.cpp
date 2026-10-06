@@ -27,6 +27,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #if CLICKHOUSE_CLOUD
@@ -61,6 +62,7 @@ namespace ErrorCodes
     extern const int CANNOT_BACKUP_TABLE;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -96,6 +98,22 @@ namespace
         int sleep_counter = attempt_no / attempts_before_sleep;
         std::chrono::milliseconds sleep_time = intExp2(std::min(sleep_counter, 10)) * min_sleep;
         return std::min(sleep_time, max_sleep);
+    }
+
+    /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
+    void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
+    {
+        /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
+        /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
+        if (BackupUtils::isInnerTable(database_name, table_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                "Table: {}.{}. Use the outer table name instead.",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
+        }
     }
 }
 
@@ -371,8 +389,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -385,8 +405,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -399,8 +421,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* table_name= */ {},
                     /* throw_if_table_not_found= */ false,
                     /* partitions= */ {},
+                    /* exclude_table_data= */ false,
                     /* all_tables= */ true,
-                    /* except_table_names= */ element.except_tables);
+                    /* except_table_names= */ element.except_tables,
+                    /* except_data_table_names= */ element.except_data_tables);
                 break;
             }
 
@@ -417,8 +441,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                             /* table_name= */ {},
                             /* throw_if_table_not_found= */ false,
                             /* partitions= */ {},
+                            /* exclude_table_data= */ false,
                             /* all_tables= */ true,
-                            /* except_table_names= */ element.except_tables);
+                            /* except_table_names= */ element.except_tables,
+                            /* except_data_table_names= */ element.except_data_tables);
                     }
                 }
                 break;
@@ -434,8 +460,10 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::optional<String> & table_name,
     bool throw_if_table_not_found,
     const std::optional<ASTs> & partitions,
+    bool exclude_table_data,
     bool all_tables,
-    const std::set<DatabaseAndTableName> & except_table_names)
+    const std::set<DatabaseAndTableName> & except_table_names,
+    const std::set<DatabaseAndTableName> & except_data_table_names)
 {
     checkIsQueryCancelled();
 
@@ -500,23 +528,46 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     if (table_name)
     {
-        auto & table_params = database_info.tables[*table_name];
+        if (exclude_table_data)
+            checkTableCanHaveDataExcluded(database_name, *table_name);
+
+        auto & table_params = database_info.tables.try_emplace(*table_name).first->second;
         if (throw_if_table_not_found)
             table_params.throw_if_table_not_found = true;
-        if (partitions)
-        {
-            table_params.partitions.emplace();
-            insertAtEnd(*table_params.partitions, *partitions);
-        }
-        database_info.except_table_names.emplace(*table_name);
+
+        /// One call naming a table is one single-table element of the query, so this is where an element's
+        /// own view of the table gets recorded. The partition scope and the exclusion are kept together and
+        /// per element: they are one request, and merging them across elements is what let one element's
+        /// request erase another's (see `DatabaseInfo::TableParams`).
+        auto & element_info = table_params.elements.emplace_back();
+        element_info.partitions = partitions;
+        element_info.except_data = exclude_table_data;
     }
 
     if (all_tables)
     {
-        database_info.all_tables = all_tables;
+        /// One call with `all_tables` is one DATABASE or ALL element covering this database, so this is where an
+        /// element's own view of the database gets recorded.
+        auto & element_info = database_info.all_tables_elements.emplace_back();
+
         for (const auto & except_table_name : except_table_names)
-            if (except_table_name.first == database_name)
-                database_info.except_table_names.emplace(except_table_name.second);
+        {
+            if (except_table_name.first != database_name)
+                continue;
+
+            element_info.except_table_names.emplace(except_table_name.second);
+        }
+
+        /// Only a DATABASE or ALL element can name other tables in EXCEPT DATA FROM TABLE/TABLES, and it can
+        /// only name tables it selects itself, i.e. tables of the databases it enumerates.
+        for (const auto & except_data_table_name : except_data_table_names)
+        {
+            if (except_data_table_name.first != database_name)
+                continue;
+
+            checkTableCanHaveDataExcluded(except_data_table_name.first, except_data_table_name.second);
+            element_info.except_data_table_names.emplace(except_data_table_name.second);
+        }
     }
 }
 
@@ -589,16 +640,18 @@ void BackupEntriesCollector::gatherTablesMetadata()
     {
         res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
 
-        if (!res_table_info.should_backup_data)
-            continue;
-
         const auto & database_info = database_infos.at(qualified_name.database);
-        auto it = database_info.tables.find(qualified_name.table);
-        if (it == database_info.tables.end())
-            continue;
 
-        const auto & partitions = it->second.partitions;
-        if (partitions && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
+        /// Only a single-table element can name partitions, so the engines that cannot back them up are
+        /// validated against those elements alone.
+        ///
+        /// Validated before `should_backup_data` is acted on, so it holds however the data came to be left
+        /// out - `EXCEPT DATA FROM TABLE`, `structure_only`, or a refreshable materialized view target.
+        /// Naming a partition of an engine that has none is a user error in each of those cases, and
+        /// answering it by silently ignoring the clause is worse than refusing the query.
+        auto it = database_info.tables.find(qualified_name.table);
+        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
+            && !res_table_info.storage->supportsBackupPartition())
         {
             throw Exception(
                 ErrorCodes::CANNOT_BACKUP_TABLE,
@@ -606,7 +659,12 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 res_table_info.storage->getName(),
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
-        res_table_info.partitions = partitions;
+
+        /// An excluded table contributes no partitions, so the scope below is left unset for it.
+        if (!res_table_info.should_backup_data)
+            continue;
+
+        res_table_info.partitions = database_info.partitionsWithData(qualified_name.table);
     }
 }
 
@@ -619,16 +677,14 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     auto filter_by_table_name = [&](const String & table_name)
     {
+        /// Only the reserved `.inner*` families can be told from the name. This filter is all a database
+        /// engine gets, and it is called with a name and nothing else - for a `Replicated` database while
+        /// walking the Keeper metadata listing, before any table definition has been read - so the inner
+        /// tables which take a definition to recognise are dropped from the result below instead.
         if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
-        if (database_info.tables.contains(table_name))
-            return true;
-
-        if (database_info.all_tables)
-            return !database_info.except_table_names.contains(table_name);
-
-        return false;
+        return database_info.isTableSelectedByAnyElement(table_name);
     };
 
     std::vector<std::pair<ASTPtr, StoragePtr>> db_tables;
@@ -900,7 +956,125 @@ bool BackupEntriesCollector::shouldBackupTableData(
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;
     }
+
+    if (isTableDataExcluded(table_name))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (excluded via EXCEPT DATA FROM TABLE)", table_name.getFullName());
+        return false;
+    }
+
     return true;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::TableParams::anyElementNamedPartitions() const
+{
+    return std::ranges::any_of(elements, [](const auto & element) { return element.partitions.has_value(); });
+}
+
+std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::TableParams::partitionsWithData() const
+{
+    std::optional<ASTs> res;
+
+    for (const auto & element : elements)
+    {
+        /// The element asks for none of the table's data, so it contributes no partitions.
+        if (element.except_data)
+            continue;
+
+        /// The element asks for the whole table, which subsumes any partition another element named.
+        if (!element.partitions)
+            return {};
+
+        if (!res)
+            res.emplace();
+        insertAtEnd(*res, *element.partitions);
+    }
+
+    return res;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::TableParams::isDataExcluded() const
+{
+    return std::ranges::all_of(elements, [](const auto & element) { return element.except_data; });
+}
+
+std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::partitionsWithData(const String & table_name) const
+{
+    /// A DATABASE or ALL element cannot name partitions - only a single-table element can - so such an
+    /// element selecting the table without excluding its data is asking for the table's data in full, and
+    /// that subsumes any partition a single-table element named. Least exclusion wins here as everywhere
+    /// else: naming a partition asks for more data, it never licenses dropping the rest.
+    for (const auto & element : all_tables_elements)
+    {
+        /// The element does not select the table at all, so it expresses no wish about its data.
+        if (element.except_table_names.contains(table_name))
+            continue;
+
+        if (!element.except_data_table_names.contains(table_name))
+            return {};
+    }
+
+    auto it = tables.find(table_name);
+    if (it == tables.end())
+        return {};
+
+    return it->second.partitionsWithData();
+}
+
+bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const String & table_name) const
+{
+    /// A table named by an element of its own is selected even when a wider element excludes it: the element
+    /// naming it asks for it, and that request wins.
+    if (tables.contains(table_name))
+        return true;
+
+    /// A DATABASE or ALL element selects every table of the database except the ones its own EXCEPT TABLES
+    /// names. The elements are asked one by one rather than through a merged set of names, because a name
+    /// excluded by one element says nothing about the others - one element selecting the table is enough.
+    for (const auto & element : all_tables_elements)
+    {
+        if (!element.except_table_names.contains(table_name))
+            return true;
+    }
+
+    return false;
+}
+
+bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    const auto & database_info = it->second;
+
+    /// The data is dropped only when every element selecting this table also excludes its data. An element
+    /// asking for the table without the clause is asking for its data, and that request wins: backing up data
+    /// the user meant to exclude is a far smaller harm than silently dropping data they asked for.
+    ///
+    /// Whether the table is selected at all is the same question `findTablesInDatabase` asks, so it is asked
+    /// through the same predicate: the two must not be able to drift apart.
+    if (!database_info.isTableSelectedByAnyElement(table_name.table))
+        return false;
+
+    bool wanted_by_any_element = false;
+
+    /// `TableParams::isDataExcluded` asks every single-table element naming this table, so it is false as
+    /// soon as one of them asked for the data.
+    if (auto table_it = database_info.tables.find(table_name.table); table_it != database_info.tables.end())
+        wanted_by_any_element = !table_it->second.isDataExcluded();
+
+    for (const auto & element : database_info.all_tables_elements)
+    {
+        /// The element does not select the table at all, so it expresses no wish about its data.
+        if (element.except_table_names.contains(table_name.table))
+            continue;
+
+        if (!element.except_data_table_names.contains(table_name.table))
+            wanted_by_any_element = true;
+    }
+
+    return !wanted_by_any_element;
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)

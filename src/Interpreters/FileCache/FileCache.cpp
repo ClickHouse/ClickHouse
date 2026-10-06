@@ -1388,6 +1388,7 @@ bool FileCache::doTryReserve(
                         file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
 
                     failure_reason = "query limit exceeded";
+                    reserve_stat.not_enough_space = true;
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
@@ -1434,6 +1435,7 @@ bool FileCache::doTryReserve(
         query_priority, failure_reason))
     {
         chassert(!failure_reason.empty());
+        reserve_stat.not_enough_space = true;
         return false;
     }
 
@@ -1456,6 +1458,25 @@ bool FileCache::doTryReserve(
     }
 
     bool main_size_incremented = false;
+
+    /// Protect against zombie queue entries which are not assigned to any file segment
+    /// and are not "invalidated" (which makes them non-removable).
+    auto rollback_main_entry = [&]
+    {
+        if (added_new_main_entry)
+        {
+            /// A freshly-created entry: `invalidate` zeroes it and hands it to the background
+            /// cleanup, and subtracts any size already added to `main_priority`.
+            if (main_priority_iterator)
+                main_priority_iterator->invalidate();
+        }
+        else if (main_size_incremented)
+        {
+            /// Existing entry: something after `main_priority_iterator->incrementSize` failed.
+            /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
+            main_priority_iterator->decrementSize(size);
+        }
+    };
 
     try
     {
@@ -1488,23 +1509,16 @@ bool FileCache::doTryReserve(
     }
     catch (...)
     {
-        /// Protect against zombie queue entries which are not assigned to any file segment
-        /// and are not "invalidated" (which makes them non-removable).
-        if (added_new_main_entry)
-        {
-            /// A freshly-created entry: `invalidate` zeroes it and hands it to the background
-            /// cleanup, and subtracts any size already added to `main_priority`.
-            if (main_priority_iterator)
-                main_priority_iterator->invalidate();
-        }
-        else if (main_size_incremented)
-        {
-            /// Existing entry: something after `main_priority_iterator->incrementSize` threw.
-            /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
-            main_priority_iterator->decrementSize(size);
-        }
-
+        rollback_main_entry();
         throw;
+    }
+
+    /// After eviction, so a full cache disk can still admit.
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
+    {
+        rollback_main_entry();
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
+        return false;
     }
 
     /// Mark that size was successfully updated.
@@ -1513,12 +1527,6 @@ bool FileCache::doTryReserve(
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
-
-    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
-    {
-        failure_reason = "Failed to create base directory for key, error: " + ec.message();
-        return false;
-    }
 
     return true;
 }

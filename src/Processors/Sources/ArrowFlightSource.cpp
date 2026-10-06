@@ -23,10 +23,18 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+    extern const SettingsUInt64 arrow_flight_request_timeout_sec;
 }
 
 namespace
 {
+
+UInt64 getRequestTimeoutSec(const ContextPtr & context)
+{
+    if (!context)
+        return 0;
+    return context->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
+}
 
 Block convertBlockToHeader(Block block, const Block & header, ContextPtr context)
 {
@@ -63,6 +71,7 @@ ArrowFlightSource::ArrowFlightSource(
     , sample_block(sample_block_)
     , virtual_header(virtual_header_)
     , context(context_)
+    , request_timeout_sec(getRequestTimeoutSec(context_))
 {
     initializeEndpoints(dataset_name_);
 }
@@ -76,6 +85,7 @@ ArrowFlightSource::ArrowFlightSource(
     , connection(connection_)
     , sample_block(sample_block_)
     , context(context_)
+    , request_timeout_sec(getRequestTimeoutSec(context_))
     , endpoints(std::move(endpoints_))
 {
 }
@@ -94,8 +104,8 @@ ArrowFlightSource::ArrowFlightSource(
 
 void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
 {
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
+    auto client = connection->getClient(request_timeout_sec);
+    auto options = connection->getCallOptions(request_timeout_sec);
 
     arrow::flight::FlightDescriptor descriptor;
     if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
@@ -108,7 +118,7 @@ void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
         descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     }
 
-    auto flight_info_res = client->GetFlightInfo(*options, descriptor);
+    auto flight_info_res = client->GetFlightInfo(options, descriptor);
     if (!flight_info_res.ok())
     {
         throw Exception(
@@ -133,23 +143,49 @@ bool ArrowFlightSource::nextEndpoint()
 
     const auto & endpoint = endpoints[current_endpoint];
 
-    auto client = connection->getClient();
-    auto options = connection->getOptions();
+    auto client = connection->getClient(request_timeout_sec);
+    auto options = connection->getCallOptions(request_timeout_sec);
 
     arrow::flight::Ticket ticket = endpoint.ticket;
 
-    auto stream_reader_res = client->DoGet(*options, ticket);
+    auto stream_reader_res = client->DoGet(options, ticket);
     if (!stream_reader_res.ok())
     {
         throw Exception(
             ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to initialize Arrow Flight stream: {}", stream_reader_res.status().ToString());
     }
 
-    stream_reader = std::move(stream_reader_res.ValueOrDie());
+    std::shared_ptr<arrow::flight::FlightStreamReader> new_reader = std::move(stream_reader_res).ValueOrDie();
+    {
+        std::lock_guard lock{flight_reader_mutex};
+        flight_reader = new_reader;
+    }
+    stream_reader = new_reader;
+
+    /// ISource::cancel sets is_cancelled before calling onCancel, so a cancellation raised
+    /// while DoGet was still running found no published reader to abort.
+    if (isCancelled())
+        new_reader->Cancel();
+
     initializeSchema();
 
     ++current_endpoint;
     return true;
+}
+
+void ArrowFlightSource::onCancel() noexcept
+{
+    /// Runs in parallel with generate, which blocks inside the reader's Next. The mutex may
+    /// therefore only cover the handover, never the call itself, and the copy keeps the reader
+    /// alive for the duration of Cancel.
+    std::shared_ptr<arrow::flight::FlightStreamReader> reader;
+    {
+        std::lock_guard lock{flight_reader_mutex};
+        reader = flight_reader;
+    }
+
+    if (reader)
+        reader->Cancel();
 }
 
 
@@ -178,6 +214,9 @@ Chunk ArrowFlightSource::generate()
     arrow::flight::FlightStreamChunk chunk;
     while (!chunk.data)
     {
+        if (isCancelled())
+            return {};
+
         if (!stream_reader && !nextEndpoint())
         {
             /// No more endpoints, we've read everything.
@@ -188,7 +227,13 @@ Chunk ArrowFlightSource::generate()
 
         auto chunk_res = stream_reader->Next();
         if (!chunk_res.ok())
+        {
+            /// onCancel aborts the Flight call, so a cancelled query reaches this as a failed
+            /// read. Reporting it would turn `KILL QUERY` into an Arrow transport error.
+            if (isCancelled())
+                return {};
             throw Exception(ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR, "Arrow Flight internal error: {}", chunk_res.status().ToString());
+        }
 
         chunk = chunk_res.ValueOrDie();
 
@@ -196,6 +241,8 @@ Chunk ArrowFlightSource::generate()
         {
             /// We've finished reading from this stream reader, now it's time to try the next endpoint.
             stream_reader = nullptr;
+            std::lock_guard lock{flight_reader_mutex};
+            flight_reader = nullptr;
         }
     }
 

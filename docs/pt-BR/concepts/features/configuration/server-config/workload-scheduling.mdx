@@ -8,11 +8,9 @@ doc_type: 'reference'
 
 Quando o ClickHouse executa várias queries simultaneamente, elas usam recursos compartilhados (CPU, memória e E/S). Restrições e políticas de escalonamento podem ser aplicadas para regular como os recursos são utilizados e compartilhados entre diferentes cargas de trabalho. É possível configurar uma hierarquia de escalonamento comum para todos os recursos. A raiz da hierarquia representa os recursos compartilhados, enquanto as folhas correspondem a cargas de trabalho específicas, contendo solicitações de recursos e alocações de queries específicas e atividades em segundo plano.
 
-<div id="resources">
-  ## Recursos
-</div>
+## Recursos {#resources}
 
-Por padrão, o agendamento de cargas de trabalho está desabilitado. Para habilitá-lo, é preciso criar recursos que serão usados no agendamento e pelo menos uma carga de trabalho. Todos os recursos são independentes e podem ser usados em qualquer combinação.
+Por padrão, o escalonamento de cargas de trabalho está desabilitado. Para habilitá-lo, é preciso criar recursos que serão usados no agendamento e pelo menos uma carga de trabalho. Todos os recursos são independentes e podem ser usados em qualquer combinação.
 
 Para habilitar o agendamento de CPU, é preciso criar um recurso de CPU para as threads MASTER ou WORKER (consulte [agendamento de CPU](#cpu_scheduling) para mais detalhes):
 
@@ -37,8 +35,8 @@ Para habilitar o escalonamento de E/S para um disco específico, você precisa c
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
 Um recurso pode ser usado em qualquer quantidade de disks, para READ, WRITE ou ambos, READ e WRITE. Há uma sintaxe que permite usar um recurso para todos os disks:
@@ -49,12 +47,10 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 Os recursos são classificados por modo de compartilhamento:
 
-* **Recursos compartilhados no tempo** (CPU, E/S, slots de consulta) - gerenciam solicitações de recursos enfileiradas nas folhas da hierarquia de agendamento. As solicitações são agendadas de acordo com as políticas e restrições definidas pela hierarquia. As solicitações de recursos são criadas quando uma consulta acessa o recurso correspondente. Por exemplo, quando uma consulta lê dados do disco ou usa a CPU para processamento, são criadas solicitações de recursos para cada quantum de trabalho realizado ou para a quantidade de bytes enviados ou recebidos por um socket.
-* **Recursos compartilhados no espaço** (Memória) - gerenciam alocações de recursos nas folhas da hierarquia de agendamento. As alocações podem estar em execução ou pendentes. As alocações pendentes ficam bloqueadas até que espaço suficiente seja liberado ou que outra alocação seja interrompida. As decisões se baseiam nos limites e nas políticas definidos pela hierarquia. Há uma correspondência de um para um entre alocações e consultas (ou atividades em segundo plano). Uma alocação é criada quando uma consulta começa a ser executada e é liberada quando termina. As alocações em execução podem aumentar ou diminuir de tamanho dinamicamente.
+* **Recursos compartilhados no tempo** (CPU, E/S, slots de consulta) - gerenciam solicitações de recursos enfileiradas nas folhas da hierarquia de escalonamento. As solicitações são agendadas de acordo com as políticas e restrições definidas pela hierarquia. As solicitações de recursos são criadas quando uma consulta acessa o recurso correspondente. Por exemplo, quando uma consulta lê dados do disco ou usa a CPU para processamento, são criadas solicitações de recursos para cada quantum de trabalho realizado ou para a quantidade de bytes enviados ou recebidos por um socket.
+* **Recursos compartilhados no espaço** (Memória) - gerenciam alocações de recursos nas folhas da hierarquia de escalonamento. As alocações podem estar em execução ou pendentes. As alocações pendentes ficam bloqueadas até que espaço suficiente seja liberado ou que outra alocação seja interrompida. As decisões se baseiam nos limites e nas políticas definidos pela hierarquia. Há uma correspondência de um para um entre alocações e consultas (ou atividades em segundo plano). Uma alocação é criada quando uma consulta começa a ser executada e é liberada quando termina. As alocações em execução podem aumentar ou diminuir de tamanho dinamicamente.
 
-<div id="workloads">
-  ## Hierarquia de cargas de trabalho
-</div>
+## Hierarquia de cargas de trabalho {#workloads}
 
 O ClickHouse fornece uma sintaxe SQL conveniente para definir a hierarquia de escalonamento. Todos os recursos são distribuídos em uma hierarquia comum de WORKLOAD. As regras de distribuição podem ser alteradas em alguns aspectos para recursos específicos, mas a hierarquia é a mesma. Cada WORKLOAD mantém os nós de escalonamento necessários para cada recurso. Uma carga de trabalho filha pode ser criada dentro de qualquer carga de trabalho, formando a hierarquia. O ClickHouse não impõe nenhuma estrutura específica ou predefinida para a hierarquia de cargas de trabalho.
 
@@ -138,9 +134,7 @@ Observe também que uma carga de trabalho ou recurso não pode ser excluído se 
   As configurações de carga de trabalho são convertidas em um conjunto apropriado de nós de escalonamento. Para detalhes mais específicos, consulte a descrição dos [tipos e opções](#hierarchy) de nós de escalonamento.
 </Note>
 
-<div id="workload-markup">
-  ## Marcação de carga de trabalho
-</div>
+## Marcação de carga de trabalho {#workload-markup}
 
 As consultas podem ser marcadas com a configuração `workload` para distinguir diferentes cargas de trabalho. Se `workload` não estiver definida, o valor &quot;default&quot; será usado. Observe que também é possível especificar outro valor usando perfis de configurações. Restrições de configuração podem ser usadas para tornar `workload` constante, caso você queira que todas as consultas do usuário sejam marcadas com um valor fixo da configuração `workload`.
 
@@ -155,9 +149,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 É possível atribuir uma configuração `workload` a atividades em segundo plano. Merges e mutações usam as configurações do servidor `merge_workload` e `mutation_workload`, respectivamente. Esses valores também podem ser substituídos para tabelas específicas usando as configurações do MergeTree `merge_workload` e `mutation_workload`.
 
-<div id="cpu_scheduling">
-  ## Escalonamento de CPU
-</div>
+## Escalonamento de CPU {#cpu_scheduling}
 
 Para habilitar o escalonamento de CPU para cargas de trabalho, crie um recurso de CPU e defina um limite para o número de threads concorrentes:
 
@@ -212,9 +204,7 @@ Para fornecer alocações justas para as cargas de trabalho, é necessário real
   Definir um recurso de CPU desabilita o efeito das configurações [`concurrent_threads_soft_limit_num`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) e [`concurrent_threads_soft_limit_ratio_to_cores`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). Em vez disso, a configuração de carga de trabalho `max_concurrent_threads` é usada para limitar o número de CPUs alocadas a uma carga de trabalho específica. Para obter o comportamento anterior, crie apenas o recurso WORKER THREAD, defina `max_concurrent_threads` para a carga de trabalho `all` com o mesmo valor de `concurrent_threads_soft_limit_num` e use a configuração de consulta `workload = "all"`. Essa configuração corresponde à configuração [`concurrent_threads_scheduler`](/pt-BR/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) definida com o valor &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
-<div id="threads_vs_cpus">
-  ## Threads vs. CPUs
-</div>
+## Threads vs. CPUs {#threads_vs_cpus}
 
 Há duas maneiras de controlar o consumo de CPU de uma carga de trabalho:
 
@@ -253,9 +243,7 @@ Aqui, limitamos o número total de threads de todas as queries a 2x o número de
   Se você quiser maximizar a utilização de CPU no seu servidor ClickHouse, evite usar `max_cpus` e `max_cpu_share` para a carga de trabalho raiz `all`. Em vez disso, defina um valor mais alto para `max_concurrent_threads`. Por exemplo, em um sistema com 8 CPUs, defina `max_concurrent_threads = 16`. Isso permite que 8 threads executem tarefas de CPU, enquanto outras 8 podem lidar com operações de E/S. Threads adicionais criarão pressão sobre a CPU, garantindo que as regras de agendamento sejam aplicadas. Em contraste, definir `max_cpus = 8` nunca criará pressão sobre a CPU, porque o servidor não pode exceder as 8 CPUs disponíveis.
 </Note>
 
-<div id="memory-reservations">
-  ## Reservas de memória
-</div>
+## Reservas de memória {#memory-reservations}
 
 <Note>
   O escalonamento de reserva de memória é experimental. Ele só entra em vigor quando existe um recurso `MEMORY RESERVATION`, e sua sintaxe SQL e seu comportamento podem mudar em lançamentos futuros. Ainda não há suporte para merges e mutações, e a remoção de uma consulta em execução ocorre em regime de melhor esforço: ela entra em vigor no próximo ponto de sincronização de memória da consulta, e não instantaneamente.
@@ -334,9 +322,7 @@ Se houver pressão de memória, as alocações da carga de trabalho de teste ser
 
 Observe que a carga de trabalho do sistema tem precedência 0 (padrão), que é superior à das cargas de trabalho de produção, staging e teste, mas elas não são cargas de trabalho irmãs. O ancestral comum mais próximo é a carga de trabalho all, cujos dois filhos têm a mesma precedência. Portanto, a carga de trabalho do sistema pendente não pode desalojar nenhuma delas, e vice-versa. Isso garante que as atividades do sistema não possam ser facilmente desalojadas.
 
-<div id="query_scheduling">
-  ## Agendamento de slots de consulta
-</div>
+## Agendamento de slots de consulta {#query_scheduling}
 
 Para habilitar o agendamento de slots de consulta para cargas de trabalho, crie o recurso QUERY e defina um limite para o número de consultas simultâneas ou de consultas por segundo:
 
@@ -355,21 +341,15 @@ A configuração de carga de trabalho `max_waiting_queries` limita o número de 
   As consultas bloqueadas ficarão em espera indefinidamente e não aparecerão em `SHOW PROCESSLIST` até que todas as restrições sejam atendidas.
 </Note>
 
-<div id="workload_entity_storage">
-  ## Armazenamento de cargas de trabalho e recursos
-</div>
+## Armazenamento de cargas de trabalho e recursos {#workload_entity_storage}
 
 As definições de todas as cargas de trabalho e de todos os recursos, na forma de instruções `CREATE WORKLOAD` e `CREATE RESOURCE`, são armazenadas de forma persistente em disco, em `workload_path`, ou no ZooKeeper, em `workload_zookeeper_path`. Recomenda-se usar o armazenamento no ZooKeeper para garantir consistência entre os nós. Como alternativa, a cláusula `ON CLUSTER` pode ser usada em conjunto com o armazenamento em disco.
 
-<div id="config_based_workloads">
-  ## Cargas de trabalho e recursos baseados em configuração
-</div>
+## Cargas de trabalho e recursos baseados em configuração {#config_based_workloads}
 
 Além das definições baseadas em SQL, cargas de trabalho e recursos podem ser predefinidos no arquivo de configuração do servidor. Isso é útil em ambientes em nuvem, nos quais algumas limitações são ditadas pela infraestrutura, enquanto outros limites podem ser alterados pelos clientes. As entidades baseadas em configuração têm prioridade sobre as definidas por SQL e não podem ser modificadas nem excluídas com comandos SQL.
 
-<div id="config_based_workloads_format">
-  ### Formato de configuração
-</div>
+### Formato de configuração {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -385,9 +365,7 @@ Além das definições baseadas em SQL, cargas de trabalho e recursos podem ser 
 
 A configuração usa a mesma sintaxe SQL das instruções `CREATE WORKLOAD` e `CREATE RESOURCE`. Todas as consultas devem ser válidas.
 
-<div id="config_based_workloads_usage_recommendations">
-  ### Recomendações de uso
-</div>
+### Recomendações de uso {#config_based_workloads_usage_recommendations}
 
 Para ambientes em nuvem, uma configuração típica pode incluir:
 
@@ -400,9 +378,7 @@ Isso garante que todas as atividades em segundo plano e consultas respeitem as l
 
 Outro caso de uso é ter configurações diferentes para nós distintos em um cluster heterogêneo.
 
-<div id="strict_resource_access">
-  ## Acesso restrito a recursos
-</div>
+## Acesso restrito a recursos {#strict_resource_access}
 
 Para garantir que todas as consultas sigam as políticas de agendamento de recursos, há uma configuração do servidor chamada `throw_on_unknown_workload`. Se ela estiver definida como `true`, toda consulta deverá usar uma configuração de consulta `workload` válida; caso contrário, será gerada a exceção `RESOURCE_ACCESS_DENIED`. Se ela estiver definida como `false`, essa consulta não usará o agendador de recursos, ou seja, terá acesso ilimitado a qualquer `RESOURCE`. A configuração de consulta &#39;use&#95;concurrency&#95;control = 0&#39; permite que a consulta contorne o agendador de CPU e tenha acesso ilimitado à CPU. Para impor o agendamento de CPU, crie uma restrição de configuração para manter &#39;use&#95;concurrency&#95;control&#39; como um valor constante somente leitura.
 
@@ -410,9 +386,7 @@ Para garantir que todas as consultas sigam as políticas de agendamento de recur
   Não defina `throw_on_unknown_workload` como `true` a menos que `CREATE WORKLOAD default` tenha sido executado. Isso pode causar problemas na inicialização do servidor se uma consulta sem a configuração explícita `workload` for executada durante a inicialização.
 </Note>
 
-<div id="hierarchy">
-  ### Hierarquia de nós de scheduling
-</div>
+### Hierarquia de nós de scheduling {#hierarchy}
 
 Do ponto de vista do subsistema de scheduling, cada recurso representa uma hierarquia de nós de scheduling. O ClickHouse cria automaticamente todos os nós de scheduling necessários com base nas definições de WORKLOAD e RESOURCE. Os nós de scheduling são detalhes de implementação de baixo nível, acessíveis por meio da tabela [system.scheduler](/pt-BR/reference/system-tables/scheduler).
 
@@ -462,9 +436,42 @@ graph TD
 * `precedence_allocation` - aplica a evicção de acordo com precedência estática (um valor menor significa precedência mais alta); uma alocação pendente de maior precedência remove alocações de menor precedência; os nós filhos devem especificar `precedence` (o padrão é 0).
 * `queue` - folha da hierarquia capaz de armazenar alocações em execução e pendentes.
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Backup e restauração {#backup-restore}
+
+Cargas de trabalho e recursos definidos em SQL podem ser incluídos em um backup do ClickHouse:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+Somente entidades definidas em SQL são incluídas no backup. Cargas de trabalho e recursos baseados em configuração (definidos via `<resources_and_workloads>` no arquivo de configuração do servidor) não são incluídos — eles fazem parte da configuração do servidor, cujo backup deve ser feito separadamente.
+
+Sempre faça backup e restaure `system.workloads` e `system.resources` juntos, no mesmo comando. Uma carga de trabalho pode referenciar um recurso (via `SETTINGS ... FOR <resource>`) e uma carga de trabalho pai, e um backup apenas de `system.workloads` não traz consigo as definições dos recursos referenciados. A restauração de uma carga de trabalho cujo recurso referenciado não esteja no backup nem já presente no servidor de destino falha.
+
+Para restaurar cargas de trabalho e recursos a partir de um backup:
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+A restauração exige os privilégios `CREATE WORKLOAD` e `CREATE RESOURCE`. Por padrão, as entidades existentes são preservadas sem alterações (semântica de `if not exists`); a configuração `create_workloads_and_resources` abaixo define como tratar uma entidade que já existe. Se o servidor usar armazenamento no ZooKeeper (`workload_zookeeper_path`), apenas uma réplica do cluster criará cada entidade; as demais réplicas recebem a alteração pelo mecanismo normal de replicação.
+
+Em configurações replicadas, ambas as tabelas podem ser incluídas em backup e restauradas com `ON CLUSTER`:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+A configuração de restauração `create_workloads_and_resources` determina como uma carga de trabalho ou recurso já existente é tratada durante a restauração (ela não ativa nem desativa a restauração dessas entidades). Aceita:
+
+* `if not exists` (padrão) — mantém uma entidade existente inalterada e cria apenas as que estão ausentes;
+* `create` — faz a restauração falhar se alguma entidade em restauração já existir;
+* `replace` — substitui uma entidade existente pela definição do backup (isso também exige o privilégio `DROP WORKLOAD` / `DROP RESOURCE`).
+  :::
+
+## Veja também {#see-also}
 
 * [system.scheduler](/pt-BR/reference/system-tables/scheduler)
 * [system.workloads](/pt-BR/reference/system-tables/workloads)
