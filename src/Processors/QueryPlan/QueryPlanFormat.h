@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <string>
 #include <string_view>
@@ -72,6 +72,8 @@ struct ExplainFormatSettings
     /// Set when the plan is rendered as part of EXPLAIN ANALYZE: steps can skip parts of their
     /// static description that the analyzed stats replace (e.g. the join estimation block).
     bool inside_explain_analyze = false;
+    /// Print secret function arguments (keys, passwords) as written instead of `[HIDDEN]`.
+    bool show_secrets = false;
     const PrettyColumnNameMap & pretty_names;
     const PrettyRuntimeFilterNameMap & runtime_filter_names;
 };
@@ -85,16 +87,13 @@ namespace QueryPlanFormat
     /// The same input column lists rendered as text for EXPLAIN PLAN, in the format of the report groups.
     void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix);
 
-    String formatNodePretty(
-        const ActionsDAG::Node * node,
-        const PrettyColumnNameMap & pretty_names,
-        const PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names,
-        int parent_precedence = 0);
+    /// Renders a DAG node the way the outputs of an `Expression` step are rendered, for steps that describe
+    /// an expression computed inside the operator (a join condition) rather than a named plan column.
+    String formatNodePretty(const ActionsDAG::Node * node, const ExplainFormatSettings & settings, PrettySetNameMap & subquery_set_names);
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool show_secrets);
 }
 
 }

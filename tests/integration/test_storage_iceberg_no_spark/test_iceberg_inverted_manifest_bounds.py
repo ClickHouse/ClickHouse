@@ -1,7 +1,8 @@
 """A manifest whose bounds cannot be trusted must not prune the data file they describe, so a
 filtered read still returns every matching row: a lower bound above the upper bound, and a bound
 declared in fewer bytes than its column. The fallback is per column: a well-formed column in the
-same manifest entry must keep pruning."""
+same manifest entry must keep pruning. A read decodes the bounds of only the columns its filter
+uses, so those checks filter on the broken column as well."""
 
 import decimal
 import os
@@ -266,7 +267,7 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     # than a manifest-wide loss of min/max pruning.
     assert _swap_bounds_in_manifests(manifests, only_field_id=1) > 0
     assert pruned_files(id_expr) == 0
-    assert pruned_files(s_expr) == 3
+    assert pruned_files(select("s < '1' AND id < 10")) == 3
 
     # Invert `s` as well, so no column has usable bounds. The fallback holds whichever column is
     # inverted, and neither filter may prune.
@@ -329,11 +330,11 @@ def test_iceberg_narrow_manifest_bounds(started_cluster_iceberg_no_spark):
     # would prune every file the filter needs. `s` is still well formed in the same manifest entry
     # and must keep pruning, so the fallback is per column.
     assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
-    assert pruned_files("s < '100010'") == 3
+    assert pruned_files("s < '100010' AND n > 50000") == 3
 
     # A count cannot tell a bound that was dropped from one that decoded to an inverted pair, which
-    # the sibling guard above drops for the same count. This names the column whose bound was
-    # dropped, and the read above has already parsed every bound in the manifest entry.
+    # the sibling guard above drops for the same count. This names the column whose bound the read
+    # above dropped.
     assert instance.grep_in_log(
         f"usable range border for column id 1 of data file '.*{table_name}"
     )
@@ -436,7 +437,7 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
     assert _swap_bounds_in_manifests(manifests, only_field_id=2) > 0
     assert pruned_files(d_expr) == 0
-    assert pruned_files(id_expr) == 1
+    assert pruned_files(f"{id_expr} AND {d_expr}") == 1
 
     # `e` is a Decimal32, so its unscaled bound is an Int32. A bound out of the column's declared
     # precision is still a legal encoding, and nothing rejects one: the pair below is ordered as
@@ -446,7 +447,7 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert pruned_files(e_expr) == 1
     assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
     assert pruned_files(e_expr) == 0
-    assert pruned_files(id_expr) == 1
+    assert pruned_files(f"{id_expr} AND {e_expr}") == 1
 
 
 def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
@@ -528,4 +529,4 @@ def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
     manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
     assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
     assert pruned_files("f > '190'") == 0
-    assert pruned_files("n < 15") == 3
+    assert pruned_files("n < 15 AND f > '190'") == 3

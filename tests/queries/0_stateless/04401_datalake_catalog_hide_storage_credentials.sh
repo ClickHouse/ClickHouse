@@ -16,6 +16,7 @@ storage_catalog_credential = '${SECRET}',
 storage_auth_header = '${SECRET}',
 storage_aws_access_key_id = '${SECRET}',
 storage_aws_secret_access_key = '${SECRET}',
+storage_aws_role_session_name = '${SECRET}',
 catalog_credential = '${SECRET}',
 auth_header = '${SECRET}',
 aws_access_key_id = '${SECRET}',
@@ -32,6 +33,7 @@ check_hidden() {
         storage_auth_header \
         storage_aws_access_key_id \
         storage_aws_secret_access_key \
+        storage_aws_role_session_name \
         catalog_credential \
         auth_header \
         aws_access_key_id \

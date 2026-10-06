@@ -15,7 +15,7 @@
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/receiveExchangeStreams.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
@@ -397,7 +397,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
         }
         else
         {
-            auto child_plans = frame.node->step->getChildPlans();
+            auto child_plans = frame.node->step->getChildPlans(/*for_explain=*/ true);
 
             if (!frame.children_array && !child_plans.empty())
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
@@ -595,7 +595,7 @@ static void buildTreeOffset(
     settings_format.header_prefix = parent_tree_prefix;
     settings_format.detail_prefix = parent_tree_prefix;
 
-    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans().empty();
+    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans(/*for_explain=*/ true).empty();
 
     if (frames.size() == 1)
     {
@@ -654,7 +654,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, options.show_secrets);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -674,6 +674,7 @@ void QueryPlan::explainPlan(
         .compact = options.compact,
         .pretty = options.pretty,
         .inside_explain_analyze = steps_to_stats != nullptr,
+        .show_secrets = options.show_secrets,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
@@ -721,7 +722,7 @@ void QueryPlan::explainPlan(
         {
             size_t child_idx = frame.next_child;
 
-            bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
+            bool has_child_plans_below = !frame.node->step->getChildPlans(/*for_explain=*/ true).empty();
             bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
             /// Skip the expression steps if we are in the compact mode
             auto * next_node = skip_expressions(frame.node->children[child_idx]);
@@ -734,7 +735,7 @@ void QueryPlan::explainPlan(
         }
         else
         {
-            auto child_plans = frame.node->step->getChildPlans();
+            auto child_plans = frame.node->step->getChildPlans(/*for_explain=*/ true);
 
             std::string base_prefix;
             if (options.pretty && !child_plans.empty())

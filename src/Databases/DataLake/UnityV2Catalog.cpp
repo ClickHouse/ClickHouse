@@ -18,6 +18,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -172,7 +173,7 @@ void UnityV2Catalog::maybeSetAuthHeader(const std::string & catalog_credential_,
     auth_header = parseAuthHeader(auth_header_);
     /// CREATE checks `http_forbid_headers`, ATTACH does not.
     DB::HTTPHeaderEntries header_to_check{*auth_header};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_to_check);
 }
 
 std::string UnityV2Catalog::getOAuthRequestParams() const
@@ -240,7 +241,7 @@ DB::HTTPHeaderEntries UnityV2Catalog::getAuthHeaders(bool force_refresh) const
         return {};
 
     DB::HTTPHeaderEntries headers{{"Authorization", "Bearer " + token}};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
     return headers;
 }
 
@@ -416,7 +417,27 @@ void UnityV2Catalog::createTable(
     }
 }
 
-void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
+void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
 }
@@ -444,6 +465,20 @@ bool UnityV2Catalog::updateSchema(
     return requestWithRetry([&](bool force_refresh)
     {
         return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+    });
+}
+
+Poco::JSON::Object::Ptr UnityV2Catalog::removeSnapshots(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const std::vector<Int64> & snapshot_ids,
+    const std::vector<String> & ref_names) const
+{
+    /// `nullptr` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->removeSnapshots(namespace_name, table_name, base_metadata, snapshot_ids, ref_names);
     });
 }
 
@@ -620,7 +655,7 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
     if (result.isDefaultReadableTable() && result.requiresCredentials())
     {
         const auto storage_type = parseStorageTypeFromLocation(result.getLocation());
-        if (auto credentials = getDeltaCredentials(object->get("table_id"), storage_type))
+        if (auto credentials = getDeltaCredentials(object->get("table_id"), storage_type, "READ"))
             result.setStorageCredentials(credentials);
     }
 
@@ -628,16 +663,15 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
 }
 
 std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
-    const std::string & table_id, StorageType storage_type) const
+    const std::string & table_id, StorageType storage_type, const std::string & operation) const
 {
-    LOG_DEBUG(log, "Getting credentials for table {}", table_id);
+    LOG_DEBUG(log, "Getting {} credentials for table {}", operation, table_id);
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return nullptr;
 
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
-    /// TODO: Change to READ_WRITE. (Be careful to not break any existing users with READ but not READ_WRITE permissions.)
-    request_body.set("operation", "READ");
+    request_body.set("operation", operation);
 
     auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
 
@@ -703,11 +737,28 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid]() -> std::shared_ptr<IStorageCredentials>
-    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
+    return getDeltaCredentialsCallback(*table_uuid, "READ");
+}
 
-        return getDeltaCredentials(unity_table_id, StorageType::S3);
+/// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (table_id.uuid == DB::UUIDHelpers::Nil)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
+            table_id.getNameForLogs());
+
+    return getDeltaCredentialsCallback(DB::toString(table_id.uuid), "READ_WRITE");
+}
+
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
+{
+    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
+
+        return getDeltaCredentials(unity_table_id, StorageType::S3, operation);
     };
 }
 

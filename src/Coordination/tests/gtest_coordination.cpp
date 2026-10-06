@@ -130,6 +130,41 @@ TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
     EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
+TEST(CoordinationKeeperContext, WaitLocalLogsPreprocessedOrShutdown)
+{
+    const auto make_context = []
+    { return std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>()); };
+
+    /// The caller is a thread of the Raft event loop, so the wait has to end on its own deadline
+    /// and report that the logs are still not preprocessed.
+    {
+        auto ctx = make_context();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(50));
+        EXPECT_GE(watch.elapsedMilliseconds(), 50);
+    }
+
+    /// Already preprocessed: returns without waiting, and says so.
+    {
+        auto ctx = make_context();
+        ctx->setLocalLogsPreprocessed();
+        Stopwatch watch;
+        EXPECT_TRUE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+
+    /// Shutdown ends the wait as well, but that is not the same thing as the logs being
+    /// preprocessed: reporting true here would have the caller log `preprocessed=true` for a
+    /// replay that never finished.
+    {
+        auto ctx = make_context();
+        ctx->setShutdownCalled();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+}
+
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 {
     auto load = [](const std::string & xml)
@@ -1322,6 +1357,19 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS));
+}
+
+TEST(CoordinationFeatureFlags, ShortFeatureStringsDoNotReadPastTheEnd)
+{
+    DB::KeeperFeatureFlags empty_flags("");
+    EXPECT_FALSE(empty_flags.isEnabled(DB::KeeperFeatureFlag::FILTERED_LIST));
+
+    DB::KeeperFeatureFlags one_byte_flags(std::string(1, 0));
+    EXPECT_FALSE(one_byte_flags.isEnabled(DB::KeeperFeatureFlag::CREATE_WITH_STATS));
+
+    DB::KeeperFeatureFlags two_byte_flags(std::string(2, 0));
+    EXPECT_FALSE(two_byte_flags.isEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS));
 }
 
 TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
