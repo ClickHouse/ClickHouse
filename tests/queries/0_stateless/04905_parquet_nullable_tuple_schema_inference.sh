@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 T="$CLICKHOUSE_TMP/${CLICKHOUSE_DATABASE}_04905"
 trap 'rm -f "$T"_*.parquet' EXIT
 
-OPTS="allow_experimental_nullable_tuple_type = 1, engine_file_truncate_on_insert = 1"
+OPTS="enable_nullable_tuple_type = 1, engine_file_truncate_on_insert = 1"
 
 # All fixtures are written by ClickHouse itself, so the physical schema is checked in the same run.
 $CLICKHOUSE_LOCAL -m -q "
@@ -63,9 +63,9 @@ $CLICKHOUSE_LOCAL -m -q "
     CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('${T}_top.parquet', Parquet);
     SELECT toTypeName(p), isNull(p) FROM t ORDER BY toString(p);"
 
-echo '--- allow_experimental_nullable_tuple_type = 0: the type must stay one CREATE TABLE accepts'
+echo '--- enable_nullable_tuple_type = 0: the type must stay one CREATE TABLE accepts'
 $CLICKHOUSE_LOCAL -m -q "
-    SET allow_experimental_nullable_tuple_type = 0;
+    SET enable_nullable_tuple_type = 0;
     DESC file('${T}_top.parquet', Parquet);"
 
 echo '--- schema_inference_make_columns_nullable = 0'

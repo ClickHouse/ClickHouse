@@ -8,21 +8,16 @@
 # crafted directly: with the static Huffman code, every literal byte below 144 is an 8-bit
 # codeword, so the block body is a byte translation of the payload shifted by the 3 header bits.
 #
-# The assertion is on time, because the quadratic decoder still produces the right bytes, just
-# far too slowly. An absolute budget is not robust: the linear ingest of a 36 MB body takes
-# 0.2 s on a release build but well over 15 s under TSan when the flaky check runs 18 copies of
-# the test at once. So the same payload is ingested twice - first as an ordinary multi-block
-# gzip, which every decoder handles in linear time, then as the single block - and the test
-# asserts that the single-block ingest is at most 10x slower than the multi-block one. Both
-# sides scale together with machine speed and load, so the ratio does not depend on either:
-# measured on a release build, the quadratic decoder needs about 22 s for the single block
-# against about 0.3 s for the multi-block stream (over 70x), and the linear decoder about the
-# same time for both. The quadratic growth was confirmed to hold over the whole range
-# (10/20/40/60 MB took 1.8/6.9/27.3/61.1 s), so the pre-fix margin does not depend on the
-# machine being as fast as the one measured. The payload is 90 lines of 400 KB rather than many
-# short ones so that line parsing and the `MergeTree` write cost nothing next to the
-# decompression under test (with 520000 short lines they dominated at 5.8 s). The multi-block
-# baseline is ingested first so that any one-off warm-up cost lands on the baseline side.
+# The quadratic decoder produces the right bytes, it just does far more work, so the assertion is
+# on work: the same payload is ingested twice - first as an ordinary multi-block gzip, which every
+# decoder handles in linear time, then as the single block - and the single block must cost at most
+# 10x the user CPU of the baseline. CPU, not elapsed time, because re-decoding is computation while
+# an oversubscribed runner adds wall clock and no CPU: over eight CI runs the CPU ratio stayed in
+# [1.005, 1.099] where wall clock spanned [0.41, 14.89], and a pre-fix binary sits at 122-127x.
+# The payload is 90 lines of 400 KB rather than many short ones so that line parsing and the
+# `MergeTree` write cost nothing next to the decompression under test (with 520000 short lines
+# they dominated at 5.8 s). The multi-block baseline is ingested first so that any one-off warm-up
+# cost lands on the baseline side.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -57,26 +52,51 @@ open(sys.argv[2], 'wb').write(blob)
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04836 (s String) ENGINE = MergeTree ORDER BY ()"
 
+# Unique per invocation, not per database: the query_log reads below key on query_id alone.
+suffix="${CLICKHOUSE_DATABASE}_$(random_str 10)"
+qid_multi="04836_multi_${suffix}"
+qid_single="04836_single_${suffix}"
+
 function ingest()
 {
-    local start
-    start=$(date +%s%N)
     ${CLICKHOUSE_CURL} -sS -X POST -H 'Content-Encoding: gzip' -H 'Transfer-Encoding: chunked' \
-        -T "$1" "${CLICKHOUSE_URL}&query=INSERT%20INTO%20t_04836%20FORMAT%20LineAsString"
-    echo $(( $(date +%s%N) - start ))
+        -T "$2" "${CLICKHOUSE_URL}&query_id=$1&query=INSERT%20INTO%20t_04836%20FORMAT%20LineAsString"
 }
 
-MULTI_BLOCK_NS=$(ingest "${MULTI_BLOCK_FILE}")
+ingest "${qid_multi}" "${MULTI_BLOCK_FILE}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(length(s)), sum(cityHash64(s)) FROM t_04836"
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE t_04836"
 
-SINGLE_BLOCK_NS=$(ingest "${SINGLE_BLOCK_FILE}")
+ingest "${qid_single}" "${SINGLE_BLOCK_FILE}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(length(s)), sum(cityHash64(s)) FROM t_04836"
 
-if (( SINGLE_BLOCK_NS > MULTI_BLOCK_NS * 10 )); then
-    echo "single-block ingest took ${SINGLE_BLOCK_NS} ns, multi-block ingest took ${MULTI_BLOCK_NS} ns"
+# The query_log entry is written after the HTTP response is sent, so a single FLUSH LOGS races the
+# log write (https://github.com/ClickHouse/ClickHouse/issues/84364).
+for _ in {1..60}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    landed=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT countIf(query_id = '${qid_multi}') = 1 AND countIf(query_id = '${qid_single}') = 1
+        FROM system.query_log
+        WHERE query_id IN ('${qid_multi}', '${qid_single}')
+            AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")
+    [ "$landed" = "1" ] && break
+    sleep 0.5
+done
+
+# An aggregate over an empty set still yields 0, so the arithmetic below always gets a number.
+read -r MULTI_US SINGLE_US <<< "$(${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_multi}'),
+        sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_single}')
+    FROM system.query_log
+    WHERE query_id IN ('${qid_multi}', '${qid_single}')
+        AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")"
+
+# Both counters must be nonzero, so that a measurement that went missing cannot read as success.
+if (( MULTI_US == 0 || SINGLE_US == 0 || SINGLE_US > MULTI_US * 10 )); then
+    echo "single-block ingest used ${SINGLE_US} us of CPU, multi-block ingest used ${MULTI_US} us"
 fi
-echo "single-block ingest within 10x of multi-block: $(( SINGLE_BLOCK_NS <= MULTI_BLOCK_NS * 10 ))"
+echo "single-block ingest within 10x of multi-block: $(( MULTI_US > 0 && SINGLE_US > 0 && SINGLE_US <= MULTI_US * 10 ))"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_04836"
 rm -f "${MULTI_BLOCK_FILE}" "${SINGLE_BLOCK_FILE}"

@@ -1,0 +1,10 @@
+A constraint violation rolls back the storage engine chunk:
+UNIQUE constraint failed
+0
+A valid storage engine chunk is committed:
+1,2,3
+A constraint violation rolls back the table function chunk:
+UNIQUE constraint failed
+0
+A valid table function chunk is committed:
+4,5,6

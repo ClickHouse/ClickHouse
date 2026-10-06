@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/import-langfuse-trace-data
+sidebarTitle: 'Langfuse Cloud 트레이스 데이터 가져오기'
+title: 'Langfuse Cloud 트레이스 데이터 가져오기'
+description: 'ClickPipes를 사용하여 Langfuse Cloud에서 내보낸 LLM 트레이스 데이터를 ClickHouse Cloud로 로드하는 방법을 설명합니다.'
+keywords: ['langfuse', 'observability', 'llm', 'clickpipes', 'object storage', 'blob storage', 'import']
+doc_type: 'guide'
+---
+
+이 가이드에서는 [Langfuse Cloud](https://cloud.langfuse.com/)의 LLM 트레이스 데이터를 ClickHouse Cloud로 로드하여 실시간 분석에 활용하는 과정을 단계별로 안내합니다.
+
+## Langfuse Cloud에서 내보내기 {#export-from-langfuse-cloud}
+
+[이 가이드](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)에 따라 Langfuse Cloud에서 예약 내보내기에 사용할 Blob Storage 통합을 구성하십시오. 트레이스 데이터(trace data)를 객체 스토리지로 내보내는 작업은 최소 `20 minutes` 간격으로 예약하거나 `hourly`, `daily`, `weekly` 주기로 예약할 수 있습니다. 기본적으로 각 내보내기에는 트레이스 속성으로 보강된 `observations`와 `scores`가 포함됩니다.
+
+### 내보낸 파일 구성 {#exported-file-layout}
+
+Langfuse Cloud의 Blob Storage 통합은 대상 버킷 또는 스토리지 컨테이너에 다음과 같은 디렉터리 구조로 데이터를 기록합니다.
+
+```text
+{prefix}{project-id}/
+├── observations_v2/   # observations enriched with trace attributes
+├── scores/            # scores
+└── manifests/         # one JSON file per completed run with export metadata
+```
+
+## ClickHouse Cloud로 가져오기 {#import-into-clickhouse-cloud}
+
+Langfuse Cloud에서 Blob Storage 통합을 구성하면 트레이스 데이터가 일정에 따라 대상 버킷 또는 스토리지 컨테이너로 내보내집니다. 이 데이터를 ClickHouse Cloud로 가져오려면 [ClickPipes](/ko/integrations/clickpipes)와 ClickPipes에서 제공하는 관리형 객체 스토리지 커넥터를 사용하면 됩니다.
+
+| 데이터 소스                                                                                                                                                                                                                                                                                | 세부 정보                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| <span style={{display: 'inline-flex', alignItems: 'flex-start'}}><img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 로고" className="integration-table-logo" width="24" height="24" /><span><strong>Amazon S3</strong><br /><em>및 S3 호환 객체 스토리지</em></span></span> | [S3 ClickPipes](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)를 사용하여 통합합니다.             |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 로고" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                     | [GCS ClickPipes](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview)를 사용하여 통합합니다. |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 로고" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                            | [ABS ClickPipes](/ko/integrations/clickpipes/object-storage/azure-blob-storage/overview)를 사용하여 통합합니다.   |
+
+### ClickPipe 생성 {#create-a-clickpipe}
+
+이 예시에서는 S3 ClickPipe를 사용하여 Langfuse Cloud의 예약 내보내기 데이터가 저장되는 S3 버킷에서 데이터를 가져옵니다. 이 방법은 모든 객체 스토리지 내보내기 대상에 기본 템플릿으로 적용할 수 있습니다. 데이터 소스별 안내는 [ClickPipes 문서](/ko/integrations/clickpipes)를 참조하십시오.
+
+<Steps>
+  <Step title="데이터 소스를 선택하세요" id="1-select-the-data-source">
+    **1.** ClickHouse Cloud의 기본 탐색 메뉴에서 **Data sources**를 선택한 다음 **Create ClickPipe**를 클릭하십시오.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="ClickPipe 생성" />
+    </Frame>
+
+    **2.** **Amazon S3** 타일을 클릭하십시오. ClickPipes UI에 나열되지 않은 다른 S3 호환 서비스에 연결할 때도 이 타일을 사용할 수 있습니다.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step1.webp" alt="Amazon S3 데이터 소스 선택" />
+    </Frame>
+  </Step>
+
+  <Step title="연결 설정하기" id="2-set-up-the-connection">
+    **1.** Langfuse Cloud 내보내기 파일을 수신하는 버킷에 ClickPipes가 연결하고 인증하는 데 필요한 세부 정보를 입력하세요.
+
+    * **인증 방법**: S3 ClickPipe는 [IAM 자격 증명](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials)(`Credentials`)과 [IAM 역할 기반 인증](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role)(`IAM role`)을 지원합니다. ClickPipes에는 버킷에 대한 읽기 액세스 권한만 있으면 됩니다. 인증 및 권한에 대한 안내는 [참고 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)를 참조하십시오.
+
+    * **S3 파일 경로**: ClickPipe가 하위 디렉터리를 가리키도록 지정하고, `*` 와일드카드를 사용하여 내보낸 파일 전체와 일치하도록 설정하십시오. 하위 디렉터리마다 내보낸 파일의 스키마가 서로 다르므로, 하위 디렉터리별로 ClickPipe를 하나씩 **반드시** 생성해야 합니다.
+
+      | 하위 디렉터리            | 파일 경로                                                                                         |
+      | ------------------ | --------------------------------------------------------------------------------------------- |
+      | `observations_v2/` | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/observations_v2/*` |
+      | `scores/`          | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/scores/*`          |
+
+      중첩된 프리픽스에 걸쳐 파일을 일치시키는 방법 등 지원되는 패턴에 대한 안내는 [참고 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching)를 참조하십시오.
+
+    **2.** Langfuse가 대상 버킷에 새 파일을 기록하면 자동으로 수집되도록 **Continuous ingestion**을 선택하세요.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_continuous_ingestion.webp" alt="지속적인 수집이 활성화된 Langfuse 내보내기의 연결 세부 정보." />
+    </Frame>
+
+    **3.** **Incoming data**를 클릭하세요. ClickPipes가 버킷에서 메타데이터를 가져오고, 다음 단계에서 target table의 스키마를 추론합니다.
+  </Step>
+
+  <Step title="수신 데이터 검사" id="3-validate-incoming-data">
+    **1.** ClickPipes가 버킷에 연결하여 지정된 경로의 파일 목록을 조회하고 파일 포맷을 추론합니다. 이 예시에서는 Langfuse Cloud의 기본 내보내기 파일 포맷(Parquet)을 사용했습니다.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_incoming_data.webp" alt="Langfuse 내보내기 경로와 일치하는 파일 목록(파일 유형: Parquet)" />
+    </Frame>
+
+    **2.** **Parse information**을 클릭하십시오. ClickPipes가 샘플 파일을 사용해 내보낸 데이터의 스키마를 추론하고, 소스 필드를 ClickHouse target table에 자동으로 매핑합니다.
+  </Step>
+
+  <Step title="대상을 구성하세요" id="4-configure-target">
+    **1.** 이 단계에서는 추론된 스키마를 검토하고, 데이터 타입 매핑 조정, [정렬 키](/ko/best-practices/choosing-a-primary-key) 정의, [테이블 엔진](/ko/reference/engines/table-engines) 선택 등 target table의 구성을 원하는 대로 지정할 수 있습니다.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_table_settings.webp" alt="정렬 키가 environment, name, timestamp, trace_id, observation_id, id로 설정되어 전용 langfuse 데이터베이스에 기록되는 scores 내보내기" />
+    </Frame>
+
+    **Upload data to**에서 **New table**을 선택한 상태로 두고 다음 항목을 설정하십시오.
+
+    * **Database** 및 **Name**: Langfuse 데이터 전용 데이터베이스(예: `langfuse`)와 알아보기 쉬운 대상 테이블 이름(예: `scores`)을 지정합니다. ClickPipes는 이름 충돌을 방지하기 위해 기본적으로 `default.s3-<uuid>`를 사용합니다.
+
+    * **Sorting key**: 대상 테이블의 [순서 지정 키](/ko/best-practices/choosing-a-primary-key)로, ClickHouse가 데이터를 디스크에 저장하는 방식을 결정합니다. 최적의 성능을 얻으려면 정렬 키를 데이터 액세스 패턴에 맞춰야 쿼리에서 읽지 않고 건너뛸 수 있는 데이터를 최대화할 수 있습니다.
+
+      | 하위 디렉터리            | 대상 테이블            | 권장 정렬 키                                                      |
+      | ------------------ | ----------------- | ------------------------------------------------------------ |
+      | `observations_v2/` | `observations_v2` | `environment, start_time, trace_id, id`                      |
+      | `scores/`          | `scores`          | `environment, name, timestamp, trace_id, observation_id, id` |
+
+      이 키는 `ReplacingMergeTree` 테이블에서 중복 제거에도 사용되므로, 컬럼 조합으로 레코드를 고유하게 식별할 수 있어야 합니다. **여러 Langfuse 프로젝트**를 하나의 테이블에 적재하는 경우 정렬 키 맨 앞에 `project_id`를 추가하십시오. 정렬 키 선택 방법은 [참고 문서](/ko/best-practices/choosing-a-primary-key)를 참조하십시오.
+
+    * **Partition by**: 오래된 trace를 만료할 계획이 없다면 비워 두십시오. ClickHouse에서 [파티셔닝](/ko/best-practices/choosing-a-partitioning-key)은 쿼리 최적화가 아니라 데이터 관리를 위한 기능이며, 권장 정렬 키만으로도 시간 범위 쿼리를 충분히 걸러낼 수 있습니다. 보존 기간 관리가 필요하다면 시간 컬럼(`toYYYYMM(start_time)`, `scores`는 `toYYYYMM(timestamp)`)으로 파티셔닝하십시오. 이렇게 하면 한 달치 trace를 `DROP PARTITION` 작업 한 번으로 만료할 수 있습니다.
+
+    **2.** 다음으로 **Advanced settings**를 펼치고, 중복 제거를 위해 **Engine**을 [`ReplacingMergeTree`](/ko/engines/table-engines/mergetree-family/replacingmergetree)로 설정한 후 **Version** 컬럼으로 `updated_at`을 지정하십시오.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_advanced_settings.webp" alt="ReplacingMergeTree 엔진과 버전 컬럼으로 updated_at이 설정된 고급 설정" />
+    </Frame>
+
+    Langfuse Cloud Blob Storage 통합의 내보내기 구간은 시작과 끝 경계를 모두 포함하므로, 동일한 레코드가 여러 내보내기 파일에 중복으로 들어갈 수 있습니다. 분석 쿼리 패턴이 멱등성을 갖지 않는다면(멱등적인 예: `uniq()`, `max()`, `min()`), `ReplacingMergeTree`를 대상 엔진으로 사용하여 다운스트림 데이터 모델에서 **반드시** 중복 제거를 처리해야 합니다.
+
+    <Note>
+      **ReplacingMergeTree로 중복 제거하기**
+
+      이 테이블 엔진은 백그라운드 머지 과정에서 중복을 제거합니다. 읽기 시점에 중복을 완전히 제거하려면(즉, merge-on-read 방식) 쿼리에 **반드시** `FINAL` 수정자(또는 `argMax()` 방식의 집계)를 사용해야 합니다.
+    </Note>
+  </Step>
+
+  <Step title="권한 설정" id="5-configure-permissions">
+    ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. custom 역할 또는 사전 정의된 역할 중 하나를 선택하여 이 내부 사용자에게 부여하십시오.
+
+    * `Full access`: 클러스터 전체에 대한 액세스 권한을 가집니다. 대상 테이블에 materialized view 또는 딕셔너리를 함께 사용하는 경우 이 역할이 필요합니다.
+    * `Only destination table`: 대상 테이블에 대한 `INSERT` 권한만 가집니다.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="권한" />
+    </Frame>
+
+    **Complete setup**을 클릭하여 ClickPipe를 생성하십시오.
+  </Step>
+
+  <Step title="설정 완료" id="6-complete-setup">
+    이제 모든 설정이 완료되었습니다! ClickPipes는 먼저 지정된 경로에 있는 모든 파일에 대해 과거 데이터 백필을 수행한 다음, 버킷에 새로 들어오는 파일을 수집하기 시작합니다.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_clickpipes_running.webp" alt="Data sources 아래에서 실행 중인 observations 및 scores ClickPipes" />
+    </Frame>
+
+    ClickHouse Cloud로 가져오려는 하위 디렉터리마다 이 가이드의 단계를 반복하십시오.
+  </Step>
+</Steps>
+
+### 트레이스 데이터 쿼리 {#query-trace-data}
+
+ClickPipes가 실행되면 ClickHouse Cloud에서 Langfuse Cloud 트레이스 데이터를 직접 쿼리할 수 있습니다. 아래 예시에서는 비용 및 지연 시간 롤업, 단일 트레이스 재구성, 점수(score)와 모델 및 프롬프트 간 상관관계 분석 등 자주 사용되는 쿼리 패턴을 다룹니다.
+
+#### 시간 버킷별 메트릭 롤업 {#time-bucketed-metric-rollups}
+
+<Tip>
+  `usage_details`, `cost_details` 등 일부 필드는 `Map` 컬럼으로 내보내집니다. 개별 값을 읽으려면 키로 조회하세요(예: `sum(cost_details['total'])`).
+</Tip>
+
+```sql
+SELECT
+    toStartOfHour(start_time) AS t,
+    provided_model_name,
+    count()                        AS spans,
+    quantile(0.95)(latency)        AS p95_latency,
+    sum(total_cost)                AS cost,
+    sum(usage_details['total'])    AS tokens
+FROM observations_v2 FINAL
+WHERE start_time >= now() - INTERVAL 7 DAY
+-- AND environment = '<environment>'
+GROUP BY t, provided_model_name
+ORDER BY t;
+```
+
+#### 트레이스 재구성 {#trace-reconstruction}
+
+```sql
+SELECT *
+FROM observations_v2 FINAL
+WHERE trace_id = '<trace_id>'
+ORDER BY start_time;
+```
+
+#### 품질 분석 {#quality-analysis}
+
+```sql
+SELECT
+    o.provided_model_name,
+    s.name,
+    avg(s.value) AS avg_score
+FROM "s3-26237f63-84dc-4a7d-a0e1-7361cf55ee0b" AS s FINAL
+JOIN "s3-80899034-ce1e-4dc9-a4e6-b059ddec4175" AS o FINAL ON s.trace_id = o.trace_id
+--WHERE s.environment = '<environment>'
+GROUP BY o.provided_model_name, s.name
+ORDER BY avg_score DESC;
+```
+
+## 관련 항목 {#see-also}
+
+* [Langfuse와 ClickHouse](/ko/products/cloud/features/ai-ml/langfuse)
+* [Langfuse Cloud Blob Storage 내보내기](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)
+* [객체 스토리지용 ClickPipes](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)

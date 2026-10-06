@@ -1,0 +1,5 @@
+rows	10
+the engine is unchanged	MergeTree
+and the rows are readable	10
+the flag is kept: 1
+the setting is gone from the table	0

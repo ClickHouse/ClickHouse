@@ -391,6 +391,7 @@ std::vector<MergeTreeTransaction::AffectedSMTTable> MergeTreeTransaction::getAff
     std::unordered_map<Int64, size_t> row_index_by_cross_replica_id;
     for (const auto & storage : storages)
     {
+        /// NOLINT(storage-cast): the tables register themselves here via `shared_from_this`, never through the catalog.
         const auto * smt = dynamic_cast<const StorageSharedMergeTree *>(storage.get());
         if (!smt)
             continue;

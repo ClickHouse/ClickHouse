@@ -11,53 +11,39 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
-<div id="monitoring-and-metrics">
-  ## Monitoreo y métricas
-</div>
+## Monitoreo y métricas {#monitoring-and-metrics}
 
-<div id="metrics-access">
-  ### ¿Cómo puedo acceder a las métricas de mi instancia de ClickHouse Managed Postgres?
-</div>
+### ¿Cómo puedo acceder a las métricas de mi instancia de ClickHouse Managed Postgres? {#metrics-access}
 
 Puede supervisar el uso de CPU, memoria, IOPS y almacenamiento directamente desde la consola de ClickHouse Cloud, en la pestaña **monitoreo** de su instancia de ClickHouse Managed Postgres.
 
 Además, puede explorar [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) para obtener un análisis detallado de sus consultas en la pestaña **Query Insights**.
 
-<div id="backup-and-recovery">
-  ## Copia de seguridad y recuperación
-</div>
+## Copia de seguridad y recuperación {#backup-and-recovery}
 
-<div id="backup-options">
-  ### ¿Qué opciones de copia de seguridad están disponibles?
-</div>
+### ¿Qué opciones de copia de seguridad están disponibles? {#backup-options}
 
-ClickHouse Managed Postgres incluye copias de seguridad automáticas diarias con archivado continuo de WAL, lo que permite la recuperación a un momento dado en cualquier instante dentro de una ventana de retención de 7 días. Las copias de seguridad se almacenan en S3.
+ClickHouse Managed Postgres incluye copias de seguridad automáticas diarias con archivado continuo de WAL, lo que permite la recuperación a un momento dado en cualquier instante dentro de una ventana de retención de 7 días. Las copias de seguridad se almacenan en almacenamiento de objetos.
 
 Para obtener todos los detalles sobre la frecuencia de las copias de seguridad, la retención y cómo realizar una recuperación a un momento dado, consulta la documentación de [Copias de seguridad y restauración](/es/products/managed-postgres/backup-and-restore).
 
-<div id="infrastructure-and-automation">
-  ## Infraestructura y automatización
-</div>
+## Infraestructura y automatización {#infrastructure-and-automation}
 
-<div id="terraform-support">
-  ### ¿Hay soporte para Terraform disponible para ClickHouse Managed Postgres?
-</div>
+### ¿Qué proveedores de nube son compatibles? {#supported-cloud-providers}
 
-Actualmente, no hay soporte para Terraform para ClickHouse Managed Postgres. Recomendamos usar la consola de ClickHouse Cloud o [OpenAPI](/es/products/managed-postgres/openapi) para crear y gestionar sus instancias.
+ClickHouse Managed Postgres está disponible en AWS en public beta. GCP se encuentra en Private Preview. Puede apuntarse a la lista de espera de la Private Preview de GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist) y leer el [anuncio](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) para obtener más información. Consulte [Proveedores de nube compatibles](/es/products/managed-postgres/overview#supported-cloud-providers) para más detalles.
 
-<div id="extensions-and-configuration">
-  ## Extensiones y configuración
-</div>
+### ¿Hay soporte para Terraform disponible para ClickHouse Managed Postgres? {#terraform-support}
 
-<div id="extensions-supported">
-  ### ¿Qué extensiones son compatibles?
-</div>
+Sí. Puede crear y gestionar servicios de ClickHouse Managed Postgres con el Terraform provider de ClickHouse mediante el recurso `clickhouse_postgres_service`. Consulte la [referencia de Terraform](/es/products/managed-postgres/terraform) para obtener más detalles. También puede usar la consola de ClickHouse Cloud o [OpenAPI](/es/products/managed-postgres/openapi) para crear y gestionar sus instancias.
+
+## Extensiones y configuración {#extensions-and-configuration}
+
+### ¿Qué extensiones son compatibles? {#extensions-supported}
 
 ClickHouse Managed Postgres incluye más de 90 extensiones de PostgreSQL, entre ellas algunas tan populares como PostGIS, pgvector, pg&#95;cron y muchas más. Para consultar la lista completa de extensiones disponibles y las instrucciones de instalación, consulta la documentación de [Extensiones](/es/products/managed-postgres/extensions).
 
-<div id="config-customization">
-  ### ¿Puedo personalizar los parámetros de configuración de PostgreSQL?
-</div>
+### ¿Puedo personalizar los parámetros de configuración de PostgreSQL? {#config-customization}
 
 Sí, puedes modificar los parámetros de configuración de PostgreSQL y PgBouncer desde la pestaña **Settings** de la consola. Para obtener más información sobre los parámetros disponibles y cómo cambiarlos, consulta la documentación de [Settings](/es/products/managed-postgres/settings).
 
@@ -65,13 +51,9 @@ Sí, puedes modificar los parámetros de configuración de PostgreSQL y PgBounce
   Si necesitas un parámetro que actualmente no está disponible, ponte en contacto con [soporte](https://clickhouse.com/support/program) para solicitarlo.
 </Tip>
 
-<div id="connection-pooling">
-  ## Pool de conexiones
-</div>
+## Pool de conexiones {#connection-pooling}
 
-<div id="prepared-statement-errors">
-  ### ¿Por qué veo errores de `prepared statement does not exist` al usar PgBouncer?
-</div>
+### ¿Por qué veo errores de `prepared statement does not exist` al usar PgBouncer? {#prepared-statement-errors}
 
 ClickHouse Managed Postgres ejecuta PgBouncer en modo de **pooling por transacciones**. En este modo, una conexión backend de Postgres solo se asigna al cliente durante una única transacción y luego se devuelve al pool; la siguiente transacción del mismo cliente puede terminar en un backend distinto.
 
@@ -100,9 +82,7 @@ Síntomas que suelen deberse a esta misma causa raíz:
 
 Si su carga de trabajo depende de sentencias preparadas, conéctese **directamente a PostgreSQL** (puerto 5432) en lugar del pooler PgBouncer: las conexiones directas admiten sentencias preparadas con normalidad. Consulte [Conexión](/es/products/managed-postgres/connection) para obtener más información sobre cómo elegir entre los endpoints agrupados y directos.
 
-<div id="pgbouncer-vs-pg-connections">
-  ### ¿Qué significa el parámetro `max_client_conn` en PgBouncer y cómo se relaciona con `max_connections` en Postgres?
-</div>
+### ¿Qué significa el parámetro `max_client_conn` en PgBouncer y cómo se relaciona con `max_connections` en Postgres? {#pgbouncer-vs-pg-connections}
 
 Controlan cosas distintas:
 
@@ -111,19 +91,13 @@ Controlan cosas distintas:
 
 Una instancia típica de ClickHouse Managed Postgres está configurada para que PgBouncer acepte aproximadamente **10× más conexiones de cliente que backends de Postgres** (por ejemplo, 5000 clientes / 500 backends). Si ve errores de conexión en el pooler, es mucho más probable que esté alcanzando un límite de backend por pool (`default_pool_size`) que el límite general de clientes.
 
-<div id="database-capabilities">
-  ## Capacidades de la base de datos
-</div>
+## Capacidades de la base de datos {#database-capabilities}
 
-<div id="multiple-databases-schemas">
-  ### ¿Puedo crear varias bases de datos y esquemas?
-</div>
+### ¿Puedo crear varias bases de datos y esquemas? {#multiple-databases-schemas}
 
 Sí. ClickHouse Managed Postgres ofrece toda la funcionalidad nativa de PostgreSQL, incluido el soporte para varias bases de datos y esquemas dentro de una sola instancia. Puede crear y administrar bases de datos y esquemas mediante comandos estándar de PostgreSQL.
 
-<div id="rbac-support">
-  ### ¿Se admite el control de acceso basado en roles (RBAC)?
-</div>
+### ¿Se admite el control de acceso basado en roles (RBAC)? {#rbac-support}
 
 Tienes acceso completo de superusuario a tu instancia de ClickHouse Managed Postgres, lo que te permite crear roles y administrar permisos mediante comandos estándar de PostgreSQL.
 
@@ -131,23 +105,15 @@ Tienes acceso completo de superusuario a tu instancia de ClickHouse Managed Post
   Está previsto incorporar este año funciones avanzadas de RBAC con integración en consola.
 </Note>
 
-<div id="upgrades">
-  ## Actualizaciones
-</div>
+## Actualizaciones {#upgrades}
 
-<div id="version-upgrades">
-  ### ¿Cómo se gestionan las actualizaciones de versión de PostgreSQL?
-</div>
+### ¿Cómo se gestionan las actualizaciones de versión de PostgreSQL? {#version-upgrades}
 
 Tanto las actualizaciones de versión menores como las mayores se realizan mediante failover y, por lo general, solo provocan unos pocos segundos de inactividad. Puede configurar [actualizaciones programadas](/es/products/managed-postgres/upgrades#scheduled-upgrades) para controlar los días y la ventana de dos horas en UTC en la que se aplican las actualizaciones. Para obtener más información, consulte la documentación de [Actualizaciones](/es/products/managed-postgres/upgrades).
 
-<div id="migration">
-  ## Migración
-</div>
+## Migración {#migration}
 
-<div id="migration-tools">
-  ### ¿Qué herramientas hay disponibles para migrar a ClickHouse Managed Postgres?
-</div>
+### ¿Qué herramientas hay disponibles para migrar a ClickHouse Managed Postgres? {#migration-tools}
 
 ClickHouse Managed Postgres admite varios métodos de migración:
 

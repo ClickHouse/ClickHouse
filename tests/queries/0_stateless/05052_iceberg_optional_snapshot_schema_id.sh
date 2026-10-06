@@ -69,5 +69,3 @@ echo "Historical snapshot from raw legacy v3 metadata"
 ${CLICKHOUSE_CLIENT} --iceberg_snapshot_id="${HISTORICAL_SNAPSHOT_ID}" --query "
     SELECT c FROM icebergS3(s3_conn, filename='iceberg_optional_snapshot_schema_id',
         SETTINGS iceberg_metadata_file_path='metadata/v3.metadata.json') ORDER BY c"
-
-

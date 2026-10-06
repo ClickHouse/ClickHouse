@@ -138,9 +138,7 @@ Os nós do Keeper usam nomes de pod por meio de seu headless Service: `<pod>.<he
   ## Configuração do pod do Kubernetes
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Distribuição automática por topologia e afinidade
-</div>
+### Distribuição automática por topologia e afinidade {#automatic-topology-spread-and-affinity}
 
 Distribua os pods entre zonas de disponibilidade:
 
@@ -153,6 +151,22 @@ spec:
 
 <Note>
   Garanta que seu cluster do Kubernetes tenha nós suficientes em zonas diferentes para atender às restrições de distribuição.
+</Note>
+
+Com um autoscaler de nós (Karpenter, Cluster Autoscaler), a restrição de distribuição por si só não consegue
+provisionar uma zona que ainda não tenha nós — o scheduler se limita às zonas que consegue ver.
+Defina `topologyMinDomains` com o número de zonas de disponibilidade para forçar a distribuição:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` requer `topologyZoneKey`. Os pods permanecem em `Pending` enquanto houver menos zonas
+  disponíveis do que o solicitado, portanto mantenha o valor dentro das zonas que seu cluster consegue oferecer.
 </Note>
 
 <div id="manual-configuration">
@@ -719,10 +733,10 @@ O nome do contêiner `version-probe` é o nome padrão usado pelo operador — a
 
 Duas flags no gerenciador do operador controlam globalmente o loop de verificação de upgrade:
 
-| Flag                              | Padrão  | Efeito                                                                                                                                                        |
-| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | Com que frequência o operador busca novamente a lista de versões upstream                                                                                     |
-| `--disable-version-update-checks` | `false` | Desabilita completamente a verificação de upgrade. A condição `VersionUpgraded` não é definida, e nenhum tráfego HTTP de saída para `clickhouse.com` é gerado |
+| Flag                              | Padrão  | Efeito                                                                                                                                                               |
+| --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`   | Com que frequência o operador busca novamente a lista de versões upstream. Deve ser maior que zero quando as verificações de atualização de versão estão habilitadas |
+| `--disable-version-update-checks` | `false` | Desabilita completamente a verificação de upgrade. A condição `VersionUpgraded` não é definida, e nenhum tráfego HTTP de saída para `clickhouse.com` é gerado        |
 
 Defina `--disable-version-update-checks=true` em ambientes isolados da internet ou quando a saída para `clickhouse.com` não for permitida.
 
@@ -833,9 +847,7 @@ spec:
   em texto simples (`passwordType: password`).
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### Usuários personalizados na configuração
-</div>
+### Usuários personalizados na configuração {#custom-users-in-configuration}
 
 Configure usuários adicionais em arquivos de configuração.
 
@@ -1084,4 +1096,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## Resync periódico {#periodic-resync}
+
+Além de reagir a eventos do Kubernetes, o operador refaz o reconcile de cada cluster em um intervalo fixo. Isso mantém as condições de status atualizadas para o state que nenhum watch consegue observar — saúde das réplicas do ClickHouse, quorum do Keeper — e refaz retries de remediação, como a limpeza de pods do Kubernetes travados.
+
+O intervalo é controlado pela environment variable `RESYNC_PERIOD` do operador (padrão `30s`). Ela se aplica a recursos `KeeperCluster`, nos quais `0` desativa o resync periódico. Recursos `ClickHouseCluster` fazem poll de `system.warnings` do ClickHouse a cada 30 segundos, o que já dispara novamente a reconciliação, de modo que `RESYNC_PERIOD` atualmente não tem efeito sobre eles.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```
