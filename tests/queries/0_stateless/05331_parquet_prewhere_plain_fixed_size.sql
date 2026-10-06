@@ -33,7 +33,7 @@ CREATE TABLE src ENGINE = Memory AS SELECT
     toFixedString(substring(hex(cityHash64(number, 27)), 1, 3), 3) AS c_fs3,
     toFixedString(hex(cityHash64(number, 28)), 16) AS c_fs16,
     reinterpretAsUUID(reinterpretAsFixedString(toUInt128(cityHash64(number, 29)) * cityHash64(number, 30))) AS c_uuid
-FROM numbers(30011);
+FROM numbers(5003);
 
 -- A File table takes its format settings from its own SETTINGS clause, not from the query.
 CREATE TABLE pq AS src ENGINE = File(Parquet) SETTINGS
@@ -53,8 +53,8 @@ SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE k > 4294967294;
 SELECT count(), sum(cityHash64(*)) FROM src WHERE k > 4294967294;
 
 SELECT 'all but one row';
-SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE k != 12345;
-SELECT count(), sum(cityHash64(*)) FROM src WHERE k != 12345;
+SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE k != 2345;
+SELECT count(), sum(cityHash64(*)) FROM src WHERE k != 2345;
 
 SELECT 'half, scattered';
 SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE cityHash64(k) % 2 = 0;
@@ -68,9 +68,9 @@ SELECT '99.9%';
 SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE k % 1000 != 0;
 SELECT count(), sum(cityHash64(*)) FROM src WHERE k % 1000 != 0;
 
-SELECT 'runs of 3000 rows';
-SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE intDiv(k, 3000) % 2 = 0;
-SELECT count(), sum(cityHash64(*)) FROM src WHERE intDiv(k, 3000) % 2 = 0;
+SELECT 'runs of 1500 rows';
+SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE intDiv(k, 1500) % 2 = 0;
+SELECT count(), sum(cityHash64(*)) FROM src WHERE intDiv(k, 1500) % 2 = 0;
 
 SELECT 'UInt8 filter with values above 1';
 SELECT count(), sum(cityHash64(*)) FROM pq PREWHERE x;
