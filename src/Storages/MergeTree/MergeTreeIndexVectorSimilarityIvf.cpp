@@ -24,7 +24,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -595,20 +597,44 @@ void createVectorSimilarityIvfInnerObjects(
     }
 }
 
-void dropVectorSimilarityIvfInnerObjects(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
+Strings getVectorSimilarityIvfIndexNames(const StorageInMemoryMetadata & metadata)
+{
+    Strings index_names;
+    for (const auto & index : metadata.secondary_indices)
+        if (isVectorSimilarityIvfIndex(index))
+            index_names.push_back(index.name);
+    return index_names;
+}
+
+Strings getVectorSimilarityIvfIndexNames(const ASTCreateQuery & create)
+{
+    Strings index_names;
+    if (!create.columns_list || !create.columns_list->indices)
+        return index_names;
+    for (const auto & child : create.columns_list->indices->children)
+    {
+        const auto * index = child->as<ASTIndexDeclaration>();
+        const auto type = index ? index->getType() : nullptr;
+        if (!type || type->name != "vector_similarity" || !type->arguments || type->arguments->children.empty())
+            continue;
+        const auto * method = type->arguments->children[0]->as<ASTLiteral>();
+        if (method && method->value == Field("ivf"))
+            index_names.push_back(index->name);
+    }
+    return index_names;
+}
+
+void dropVectorSimilarityIvfInnerObjects(const StorageID & table_id, const Strings & index_names, ContextPtr context)
 {
     if (table_id.uuid == UUIDHelpers::Nil || isSharedCatalogReplay(context))
         return;
 
-    for (const auto & index : metadata.secondary_indices)
+    for (const auto & index_name : index_names)
     {
-        if (!isVectorSimilarityIvfIndex(index))
-            continue;
-
         /// The dictionary reads from the table, so it goes first. Like the inner table of a materialized view: no DDL guards
         /// (they must be taken in name order) and no synchronous drop (it may deadlock in the background drop task).
-        dropInnerObject(getVectorSimilarityIvfCentroidsDictionaryID(table_id, index.name), /*is_dictionary=*/ true, context);
-        dropInnerObject(getVectorSimilarityIvfCentroidsTableID(table_id, index.name), /*is_dictionary=*/ false, context);
+        dropInnerObject(getVectorSimilarityIvfCentroidsDictionaryID(table_id, index_name), /*is_dictionary=*/ true, context);
+        dropInnerObject(getVectorSimilarityIvfCentroidsTableID(table_id, index_name), /*is_dictionary=*/ false, context);
     }
 }
 

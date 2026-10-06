@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ASTCreateQuery;
+
 /// IVF index: INDEX name (vec, cid) TYPE vector_similarity('ivf', distance, dimensions, samples = ..., clustering = f(k, ...)).
 /// The table is sorted by cid, so clusters are primary key ranges; each granule stores the row count per cid.
 /// The skip index is used more for maintaining statistics and advanced vector math related.
@@ -123,8 +125,12 @@ void createVectorSimilarityIvfInnerObjects(
 /// the samples table, fills the centroids table and reloads the dictionary. Failures are logged.
 void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context);
 
-/// Drops the internal objects of a "IVF" table.
-void dropVectorSimilarityIvfInnerObjects(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context);
+/// Names of the IVF indexes of a table, from its metadata or from its CREATE query (which does not require loading the table).
+Strings getVectorSimilarityIvfIndexNames(const StorageInMemoryMetadata & metadata);
+Strings getVectorSimilarityIvfIndexNames(const ASTCreateQuery & create);
+
+/// Drops the internal objects of the given IVF indexes of a table.
+void dropVectorSimilarityIvfInnerObjects(const StorageID & table_id, const Strings & index_names, ContextPtr context);
 
 MergeTreeIndexPtr vectorSimilarityIvfIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIvfIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);

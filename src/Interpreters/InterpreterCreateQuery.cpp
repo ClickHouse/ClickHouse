@@ -2371,7 +2371,8 @@ void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & 
         return;
 
     auto table = DatabaseCatalog::instance().tryGetTable({create.getDatabase(), create.getTable()}, getContext());
-    if (!castStorage<MergeTreeData>(table, DeferredTable::Load))
+    /// A table which was just created is never deferred, so nothing is loaded here (e.g. tables defined by table functions).
+    if (!castStorage<MergeTreeData>(table, DeferredTable::Skip))
         return;
 
     const auto metadata = table->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
@@ -2386,7 +2387,7 @@ void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & 
         /// Fail-close: do not leave a table without the hidden objects of its indexes. The synchronous drop waits until
         /// nothing references the table, so the reference held here must be released first.
         table.reset();
-        dropVectorSimilarityIvfInnerObjects(table_id, *metadata, getContext());
+        dropVectorSimilarityIvfInnerObjects(table_id, getVectorSimilarityIvfIndexNames(*metadata), getContext());
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext()->getGlobalContext(), getContext(), table_id,
             /*sync=*/ true, /*ignore_sync_setting=*/ false, /*need_ddl_guard=*/ true);
         throw;
