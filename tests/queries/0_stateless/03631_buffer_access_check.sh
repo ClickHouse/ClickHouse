@@ -56,4 +56,25 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(s) ON $db.test_table_3 TO $user"
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_3"
 
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_4 (allowed String, secret UInt8) ENGINE = MergeTree ORDER BY allowed;
+INSERT INTO $db.test_table_4 VALUES ('foo', 1);
+CREATE TABLE $db.test_alias_4 ENGINE = Alias(currentDatabase(), 'test_table_4');
+CREATE TABLE $db.test_buffer_4 (allowed String, x UInt8 DEFAULT 0)
+    ENGINE = Buffer($db, test_alias_4, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_4 TO $user;
+GRANT SELECT(allowed, x) ON $db.test_alias_4 TO $user;
+GRANT SELECT(allowed) ON $db.test_table_4 TO $user;
+
+CREATE TABLE $db.test_table_5 (k UInt32, n Nested(a UInt8, c UInt8)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.test_table_5 VALUES (1, [1, 2], [3, 4]);
+CREATE TABLE $db.test_buffer_5 (k UInt32, n Nested(a UInt8, b UInt8, c UInt8))
+    ENGINE = Buffer($db, test_table_5, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_5 TO $user;
+GRANT SELECT(\`n.b\`, \`n.c\`) ON $db.test_table_5 TO $user;
+EOF
+# The row count and the sizes of `n.b` are read from destination columns the user may read.
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT x FROM $db.test_buffer_4"
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT n.b FROM $db.test_buffer_5"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

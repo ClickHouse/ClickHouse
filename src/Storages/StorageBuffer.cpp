@@ -509,6 +509,18 @@ void StorageBuffer::read(
                 columns_to_fill.insert(columns_to_fill.end(), fill_closure.begin(), fill_closure.end());
                 fill_support = fill_inputs;
 
+                /// A destination column read only for the row count or the sizes of a `Nested` group is the smallest
+                /// one the user may read, as for `count()`.
+                auto smallest_readable_column = [&](const NamesAndTypesList & columns)
+                {
+                    const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
+                    NamesAndTypesList readable_columns;
+                    for (const auto & column : columns)
+                        if (readable.contains(column.name))
+                            readable_columns.push_back(column);
+                    return ExpressionActions::getSmallestColumn(readable_columns.empty() ? columns : readable_columns).name;
+                };
+
                 /// A missing `Nested` member gets the sizes of an array of its group the destination has.
                 for (const String & name : columns_to_fill)
                 {
@@ -525,7 +537,7 @@ void StorageBuffer::read(
                         continue;
 
                     auto read_array = std::ranges::find_first_of(columns_intersection, group_arrays.getNames());
-                    String size_source = read_array != columns_intersection.end() ? *read_array : ExpressionActions::getSmallestColumn(group_arrays).name;
+                    String size_source = read_array != columns_intersection.end() ? *read_array : smallest_readable_column(group_arrays);
                     if (read_array == columns_intersection.end())
                         columns_intersection.push_back(size_source);
                     fill_support.insert(std::move(size_source));
@@ -539,13 +551,8 @@ void StorageBuffer::read(
                     local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), fill_support_names);
                 }
 
-                /// Like `count()`, reading only the row count needs `SELECT` on at least one column of the destination.
                 if (columns_intersection.empty())
-                {
-                    checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
-                    columns_intersection.push_back(
-                        ExpressionActions::getSmallestColumn(destination_metadata_snapshot->getColumns().getAllPhysical()).name);
-                }
+                    columns_intersection.push_back(smallest_readable_column(destination_metadata_snapshot->getColumns().getAllPhysical()));
             }
 
             if (columns_intersection.empty())
