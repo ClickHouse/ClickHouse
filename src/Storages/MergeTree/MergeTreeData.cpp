@@ -408,6 +408,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char merge_tree_drop_all_data_pause_before_removing_parts[];
     extern const char claim_inject_stale_part_dir[];
     /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
     /// test can make the table read-only while the loading is pending and check that it stops.
@@ -5255,6 +5256,8 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_TRACE(log, "dropAllData: waiting for locks.");
+
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_drop_all_data_pause_before_removing_parts);
     auto settings_ptr = getSettings();
 
     auto lock = lockParts();
@@ -5376,6 +5379,9 @@ void MergeTreeData::dropAllData()
 
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+            removeOwnFilesInDiskRootOnDrop(disk);
 
         if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
         {
@@ -7870,14 +7876,34 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
         empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
-        for (const auto & part : parts_to_remove)
+
+        /// We still have to take min_block into account to avoid creating multiple covering ranges
+        /// that intersect each other. The level and the mutation version matter just as much:
+        /// `MergeTreePartInfo::contains` demands a strictly greater level when the block ranges
+        /// differ, so a covering part whose level is not above the level of everything it spans
+        /// does not actually cover it.
+        auto widen_to_cover = [&](const MergeTreePartInfo & info)
         {
-            /// We still have to take min_block into account to avoid creating multiple covering ranges
-            /// that intersect each other
-            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
-            empty_info.level = std::max(empty_info.level, part->info.level);
-            empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
-        }
+            empty_info.min_block = std::min(empty_info.min_block, info.min_block);
+            empty_info.level = std::max(empty_info.level, info.level);
+            empty_info.mutation = std::max(empty_info.mutation, info.mutation);
+        };
+
+        for (const auto & part : parts_to_remove)
+            widen_to_cover(part->info);
+
+        /// Parts that were outdated earlier are still on disk: they are only unlinked once
+        /// `old_parts_lifetime` has passed. The ones that no active part covers - a part dropped by
+        /// `DROP PART`, or an empty part dropped in the background - are seen by the part loader
+        /// after a restart. The covering part has to contain those as well, otherwise the loader
+        /// finds a pair of parts that neither contain one another nor are disjoint, and the server
+        /// refuses to start with "Part ... intersects previous part ...".
+        /// Only the block range is checked here (not `drop_range.contains`), because a part that
+        /// lies inside the dropped blocks has to be covered whatever its level and mutation are.
+        for (const auto & part : inactive_parts_to_remove_immediately)
+            if (drop_range.min_block <= part->info.min_block && part->info.max_block <= drop_range.max_block)
+                widen_to_cover(part->info);
+
         empty_info.level += 1;
 
         const auto & source_part = parts_to_remove.front();
@@ -10351,12 +10377,12 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
         auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
         auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
         const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
+        const bool has_time = is_broken_down && literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
         if (is_broken_down)
         {
             /// The broken-down reader takes the characters at their positions without checking them, so `'2024-02-2/'`
             /// would be read as `2024-02-19` and `'20/4-03-01 00:00:00'` as `1994-03-01 00:00:00`, and the comparison
             /// below would agree with it.
-            const bool has_time = literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
             if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3)
                 || !is_digit_at(5) || !is_digit_at(6) || !is_separator_at(7) || !is_digit_at(8) || !is_digit_at(9)
                 || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
@@ -10381,7 +10407,8 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
             /// `DateTime64` text parsing keeps `scale` fractional digits and ignores the rest, so on a `DateTime64(3)` key
             /// `'2024-02-19 00:00:00.5009'` would be read as `.500`.
             const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
-            const size_t dot = literal.find('.');
+            /// The date and time separators of a broken-down value may be `.` too, as in `'2024.02.19 00:00:00.500'`.
+            const size_t dot = literal.find('.', is_broken_down ? (has_time ? 19 : 10) : 0);
             if (dot != String::npos)
                 for (size_t pos = dot + 1 + scale; is_digit_at(pos); ++pos)
                     if (literal[pos] != '0')
@@ -10905,7 +10932,14 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                     if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
                         continue;
 
-                    if (self(column_default->expression, self))
+                    /// A column definition is authored at table scope, so an identifier inside it is a
+                    /// storage column even when a lambda of the predicate binds that name.
+                    std::vector<String> enclosing_lambda_parameters;
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+                    const bool definition_is_nondeterministic = self(column_default->expression, self);
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+
+                    if (definition_is_nondeterministic)
                         return true;
                 }
             }

@@ -256,7 +256,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, std::optional<bool> * has_metadata_out = nullptr);
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
@@ -632,8 +632,6 @@ private:
         Coordination::Requests & ops,
         String part_name,
         NameSet & absent_replicas_paths);
-
-    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
                                              std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,

@@ -311,6 +311,13 @@ public:
         return nullptr;
     }
 
+    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/)
+    {
+        return {};
+    }
+
+    virtual std::string getMetadataLocationURI() const;
+
     virtual bool optimize(
         ObjectStoragePtr /*object_storage*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,

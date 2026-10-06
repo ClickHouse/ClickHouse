@@ -285,7 +285,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     hash_state.update(type);
 
@@ -325,12 +325,12 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
         /// builds matching without dropping any other constant's value (it still serializes normally
         /// for distributed propagation).
-        if (!is_runtime_filter_id)
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -340,7 +340,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     struct Frame
     {
@@ -357,7 +357,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, with_variable_size_constant_values);
             stack.pop();
         }
         else
@@ -3871,7 +3871,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-    const NameSet & cross_type_equivalent_columns)
+    const NameSet & cross_type_equivalent_columns,
+    bool filter_is_always_false)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4020,14 +4021,19 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const bool left_stream_push_down_enabled = !left_stream_allowed_nodes.empty();
     const bool right_stream_push_down_enabled = !right_stream_allowed_nodes.empty();
 
-    if (!left_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
-    if (!right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
-    /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
-    /// EITHER side is disabled.
-    if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    /// If no row passes the filter, the join output is already empty once a side that may be filtered
+    /// receives it, so a disabled side can receive the no-input conjuncts too and is not read in vain.
+    if (!filter_is_always_false)
+    {
+        if (!left_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
+        if (!right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
+        /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
+        /// EITHER side is disabled.
+        if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    }
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
@@ -4978,14 +4984,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        /// When computing a cache key (`registry.for_cache_key`), skip the VALUE of the runtime-filter
-        /// id carrier only: it is a volatile per-plan-build rendezvous key, not a stable key component,
-        /// while its `result_name`/`column_flags` (already written) carry the stable structural id.
-        /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
-        /// key, otherwise semantically different queries would share statistics. This output is
-        /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
-        /// path (`for_cache_key == false`) always writes it.
-        if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
+        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
+        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
+        /// execution costs more than the rest of planning. It also leaves out the value of the
+        /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
+        /// stable identity. This output is hash-only and never deserialized; the transmission path
+        /// (`for_cache_key == false`) always writes the value.
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
