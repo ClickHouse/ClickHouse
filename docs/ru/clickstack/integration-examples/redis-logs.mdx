@@ -32,7 +32,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Доступ к файлам журнала Redis
 
 <Steps>
-  <Step title="Проверьте настройки логирования Redis" id="verify-redis">
+  <Step>
+    #### Проверьте настройки логирования Redis
+
     Сначала проверьте настройки логирования Redis. Подключитесь к Redis и проверьте расположение файла журнала:
 
     ```bash
@@ -48,25 +50,27 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Если Redis пишет логи в stdout, настройте запись в файл, обновив `redis.conf`:
 
     ```bash
-    # Log to file instead of stdout
+    # Запись в файл вместо stdout
     logfile /var/log/redis/redis-server.log
 
-    # Set log level (options: debug, verbose, notice, warning)
+    # Установить уровень логирования (варианты: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     После изменения конфигурации перезапустите Redis:
 
     ```bash
-    # For systemd
+    # Для systemd
     sudo systemctl restart redis
 
-    # For Docker
+    # Для Docker
     docker restart <redis-container>
     ```
   </Step>
 
-  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
+  <Step>
+    #### Создайте пользовательскую конфигурацию OTel collector
+
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл `redis-monitoring.yaml` со следующей конфигурацией:
@@ -122,7 +126,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Настройте ClickStack для загрузки пользовательской конфигурации" id="load-custom">
+  <Step>
+    #### Настройте ClickStack для загрузки пользовательской конфигурации
+
     Чтобы включить пользовательскую конфигурацию коллектора в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать пользовательский файл конфигурации в `/etc/otelcol-contrib/custom.config.yaml`
@@ -136,14 +142,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... существующая конфигурация ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... другие переменные окружения ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... other volumes ...
+          # ... другие тома ...
     ```
 
     ##### Вариант 2: Docker Run (образ «всё в одном»)
@@ -164,7 +170,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверка журналов в HyperDX" id="verifying-logs">
+  <Step>
+    #### Проверка журналов в HyperDX
+
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Представление логов" />
@@ -180,7 +188,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию Redis перед настройкой своих систем в продакшне, мы предоставляем образец данных с заранее сгенерированными журналами Redis, имитирующими реальные паттерны.
 
 <Steps>
-  <Step title="Скачайте образец данных" id="download-sample">
+  <Step>
+    #### Скачайте образец данных
+
     Скачайте образец файла журнала:
 
     ```bash
@@ -188,7 +198,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Создайте тестовую конфигурацию коллектора" id="test-config">
+  <Step>
+    #### Создайте тестовую конфигурацию коллектора
+
     Создайте файл с именем `redis-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -230,7 +242,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Запустите ClickStack с демонстрационной конфигурацией" id="run-demo">
+  <Step>
+    #### Запустите ClickStack с демонстрационной конфигурацией
+
     Запустите ClickStack с демо-журналами и этой конфигурацией:
 
     ```bash
@@ -244,6 +258,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **Файл журнала монтируется напрямую в контейнер. Это сделано для тестирования со статическими демонстрационными данными.**
+
     </Note>
 
     ## Проверьте журналы в HyperDX
@@ -270,14 +285,16 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   ## Панели мониторинга и визуализации
 </div>
 
-Чтобы упростить начало мониторинга Redis в ClickStack, мы предоставляем основные визуализации для журнала Redis.
+Чтобы упростить начало мониторинга Redis в ClickStack, мы предоставляем основные визуализации для Redis Logs.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импорт преднастроенной панели мониторинга" id="import-dashboard">
+  <Step>
+    #### Импорт преднастроенной панели мониторинга
+
     1. Откройте HyperDX и перейдите в раздел Dashboards.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
@@ -288,7 +305,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
+  <Step>
+    #### Панель мониторинга будет создана со всеми преднастроенными визуализациями
+
     <Note>
       Для демо-набора данных установите временной диапазон **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (скорректируйте его в соответствии с вашим часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.
     </Note>
@@ -399,7 +418,7 @@ tail -5 /var/log/redis/redis-server.log
 * Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинг API, события безопасности)
 
 <div id="going-to-production">
-  ## Переход в продакшн
+  ## Переход к продакшну
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшн мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы настроить конфигурацию для продакшн.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы настроить конфигурацию для продакшна.

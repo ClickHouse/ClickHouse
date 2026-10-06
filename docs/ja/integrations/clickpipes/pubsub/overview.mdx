@@ -88,7 +88,7 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" size="lg" border />
 
-10. **おめでとうございます！** 最初の Pub/Sub ClickPipe の設定が正常に完了しました。今後は継続的に実行され、Pub/Sub トピック から ClickHouse Cloud サービス にデータがリアルタイムで取り込まれます。
+10. **おめでとうございます！** 最初の Pub/Sub ClickPipe の設定が正常に完了しました。今後は継続的に実行され、Pub/Sub トピック から ClickHouse Cloud service にデータがリアルタイムで取り込まれます。
 
 <div id="managed-subscriptions">
   ## 管理対象サブスクリプション
@@ -252,6 +252,6 @@ Pub/Sub 向け ClickPipes は **at-least-once** 配信を提供します。Pub/S
   ## 認証
 </div>
 
-Pub/Sub 向け ClickPipes は、サービスアカウントの JSON キーを使用して GCP に対して認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、メッセージの取り込みと管理対象サブスクリプションのライフサイクル管理のために実行時に使用します。
+Pub/Sub 向け ClickPipes は、サービスアカウントの JSON キーを使用して GCP に認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそのファイルを保存時に暗号化し、実行時にはメッセージの消費と管理対象サブスクリプションのライフサイクル管理に使用します。
 
-必要な IAM 権限の正確な一覧と、推奨されるカスタムロール定義については、[Pub/Sub IAM permissions guide](/ja/integrations/clickpipes/pubsub/auth) を参照してください。
+必要な IAM 権限の正確な一覧と、推奨されるカスタムロールの定義については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth) を参照してください。

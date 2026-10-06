@@ -57,7 +57,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_join_right_table_sorting;
+    extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 default_max_bytes_in_join;
@@ -80,11 +81,9 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
-    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
-    extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
@@ -207,8 +206,7 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(
-    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
@@ -224,21 +222,19 @@ TableJoin::TableJoin(
     , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
-    , allow_join_sorting(settings[Setting::allow_join_right_table_sorting])
+    , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
-    , legacy_join_size_limits_trigger_spilling(settings[Setting::legacy_join_size_limits_trigger_spilling])
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
-    , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , analyze_mode(analyze_mode_)
+    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
 {
 }
 
@@ -265,15 +261,13 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
-    , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
-    , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , analyze_mode(settings.join_analyze_mode)
+    , enable_analyzer(true)
 {
 }
 
@@ -523,24 +517,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     {
         if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
-            auto right_key = right_table_keys.getByName(right_key_name);
-
-            /// A promoted key must be Nullable so an unmatched-left row fills NULL rather than the
-            /// storage default, which `firstNonDefault` would then prefer over the left NULL.
-            /// A matched row cannot have a NULL left key here, so matched values are unchanged.
-            if ((using_promoted_right_keys.contains(right_key_name)
-                 || using_promoted_right_keys.contains(renamedRightColumnName(right_key_name)))
-                && isLeftOrFull(kind())
-                && !isNullableOrLowCardinalityNullable(right_key.type) && JoinCommon::canBecomeNullable(right_key.type))
-            {
-                auto left_key = columns_from_left_table.tryGetByName(left_key_name);
-                if (left_key && isNullableOrLowCardinalityNullable(left_key->type))
-                {
-                    right_key.type = JoinCommon::convertTypeToNullable(right_key.type);
-                    right_key.column = nullptr;
-                }
-            }
-
+            const auto & right_key = right_table_keys.getByName(right_key_name);
             required_right_keys.insert(right_key);
             keys_sources.push_back(left_key_name);
         }
@@ -665,8 +642,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
-        || isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
             inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
@@ -856,8 +832,7 @@ TableJoin::createConvertingActions(
     NameToNameMap right_column_rename;
 
     /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
-        || isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
     inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
     if (!left_type_map.empty() || !right_type_map.empty())
     {
@@ -1280,6 +1255,8 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
+    assertEnableAnalyzer();
+
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
     for (auto & clause : clauses)
@@ -1296,6 +1273,12 @@ void TableJoin::swapSides()
     setKind(updated_kind);
 }
 
+void TableJoin::assertEnableAnalyzer() const
+{
+    if (!enable_analyzer)
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
+}
+
 TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
 {
     if (!tmp_data)
@@ -1304,8 +1287,7 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .current_metric = CurrentMetrics::TemporaryFilesForJoin,
         .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-        .num_files = ProfileEvents::ExternalJoinWritePart,
-        .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
+        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
 }
 
 bool allowParallelHashJoin(

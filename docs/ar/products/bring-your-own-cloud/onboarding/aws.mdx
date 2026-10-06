@@ -1,0 +1,303 @@
+---
+title: 'التهيئة الأولية لـ BYOC على AWS'
+slug: /cloud/reference/byoc/onboarding/aws
+sidebarTitle: 'التهيئة الأولية لـ BYOC على AWS'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'AWS']
+description: 'نشر ClickHouse على بنيتك التحتية السحابية الخاصة بك'
+doc_type: 'مرجع'
+---
+
+<div id="onboarding-process">
+  ## عملية التهيئة الأولية
+</div>
+
+يمكن للعملاء بدء عملية التهيئة الأولية من خلال التواصل [معنا](https://clickhouse.com/cloud/bring-your-own-cloud). يجب أن يكون لدى العملاء حساب AWS مخصص وأن يعرفوا المنطقة التي سيستخدمونها. في الوقت الحالي، نسمح للمستخدمين بإطلاق خدمات BYOC فقط في المناطق التي ندعمها في ClickHouse Cloud.
+
+<div id="prepare-an-aws-account">
+  ### جهّز حساب AWS
+</div>
+
+يُنصح العملاء بإعداد حساب AWS مخصّص لاستضافة نشر BYOC لـ ClickHouse لضمان مستوى أفضل من العزل. ومع ذلك، يمكن أيضًا استخدام حساب مشترك وVPC حالية. راجع التفاصيل في *إعداد البنية التحتية لـ BYOC* أدناه.
+
+وباستخدام هذا الحساب وعنوان البريد الإلكتروني الأولي لمسؤول المؤسسة، يمكنك التواصل مع فريق دعم ClickHouse.
+
+<div id="initialize-byoc-setup">
+  ### تهيئة إعداد BYOC
+</div>
+
+يمكن إجراء الإعداد الأولي لـ BYOC باستخدام قالب CloudFormation أو وحدة Terraform. ويؤدي كلا الخيارين إلى إنشاء دور IAM نفسه، ما يتيح لوحدات تحكم BYOC في ClickHouse Cloud إدارة بنيتك التحتية. لاحظ أن موارد S3 وVPC وموارد الحوسبة اللازمة لتشغيل ClickHouse لا يشملها هذا الإعداد الأولي.
+
+<div id="cloudformation-template">
+  #### قالب CloudFormation
+</div>
+
+[قالب CloudFormation الخاص بـ BYOC](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)
+
+<div id="terraform-module">
+  #### وحدة Terraform
+</div>
+
+[وحدة BYOC لـ Terraform](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)
+
+```hcl
+module "clickhouse_onboarding" {
+  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+  byoc_env = "production"
+}
+```
+
+<div id="set-up-byoc-infrastructure">
+  ### إعداد البنية التحتية لـ BYOC
+</div>
+
+بعد إنشاء CloudFormation stack، سيُطلب منك إعداد البنية التحتية، بما في ذلك S3 وVPC وعنقود EKS، من خلال Cloud Console. يجب تحديد بعض الإعدادات في هذه المرحلة، لأنه لا يمكن تغييرها لاحقًا. وتحديدًا:
+
+* **المنطقة التي تريد استخدامها**: يمكنك اختيار أي منطقة من [المناطق العامة](/ar/products/cloud/reference/supported-regions) المتاحة لدينا لـ ClickHouse Cloud.
+* **نطاق CIDR لـ VPC الخاص بـ BYOC**: نستخدم افتراضيًا `10.0.0.0/16` كنطاق CIDR لـ VPC الخاص بـ BYOC. إذا كنت تخطط لاستخدام إقران VPC مع حساب آخر، فتأكد من عدم تداخل نطاقات CIDR. خصص نطاق CIDR مناسبًا لـ BYOC، وبحد أدنى `/22` لاستيعاب workloads اللازمة.
+* **مناطق التوافر لـ VPC الخاص بـ BYOC**: إذا كنت تخطط لاستخدام إقران VPC، فإن توحيد مناطق التوافر بين الحساب المصدر وحساب BYOC يمكن أن يساعد في تقليل تكاليف حركة المرور العابرة لمناطق التوافر. في AWS، قد تشير لاحقات مناطق التوافر (`a, b, c`) إلى معرّفات فعلية مختلفة للمناطق عبر الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
+
+<div id="customer-managed-vpc">
+  #### VPC بإدارة العميل
+</div>
+
+افتراضيًا، سيوفّر ClickHouse Cloud شبكة VPC مخصّصة لتحقيق عزل أفضل في نشر BYOC لديك. ومع ذلك، يمكنك أيضًا استخدام شبكة VPC موجودة في حسابك. يتطلب ذلك تهيئة محددة، ويجب التنسيق بشأنه عبر ClickHouse Support.
+
+**تهيئة شبكة VPC الحالية لديك**
+
+1. خصّص ما لا يقل عن 3 شبكات فرعية خاصة عبر 3 مناطق توافر مختلفة ليستخدمها ClickHouse Cloud.
+2. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR بحد أدنى `/23` (على سبيل المثال، 10.0.0.0/23) لتوفير عدد كافٍ من عناوين IP لنشر ClickHouse.
+3. أضف الوسم `kubernetes.io/role/internal-elb=1` إلى كل شبكة فرعية لتمكين تهيئة موازن التحميل بشكل صحيح.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-1.webp" alt="شبكة BYOC الفرعية" />
+
+<br />
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-2.webp" alt="وسوم شبكة BYOC الفرعية" />
+
+<br />
+
+4. هيئ نقطة نهاية Gateway لـ S3
+   إذا لم تكن شبكة VPC لديك تحتوي بالفعل على نقطة نهاية Gateway لـ S3 مهيأة، فستحتاج إلى إنشاء واحدة لتمكين اتصال آمن وخاص بين شبكة VPC لديك وAmazon S3. تتيح نقطة النهاية هذه لخدمات ClickHouse لديك الوصول إلى S3 دون المرور عبر الإنترنت العام. يُرجى الرجوع إلى لقطة الشاشة أدناه للاطلاع على تهيئة نموذجية.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-s3-endpoint.webp" alt="نقطة نهاية S3 في BYOC" />
+
+<br />
+
+**تواصل مع ClickHouse Support**
+أنشئ تذكرة دعم تتضمن المعلومات التالية:
+
+* معرّف AWS account الخاص بك
+* منطقة AWS التي تريد نشر الخدمة فيها
+* معرّف VPC الخاص بك
+* معرّفات الشبكات الفرعية الخاصة التي خصصتها لـ ClickHouse
+* مناطق التوافر التي تقع فيها هذه الشبكات الفرعية
+
+<div id="optional-setup-vpc-peering">
+  ### اختياري: إعداد إقران VPC
+</div>
+
+لإنشاء أو حذف إقران VPC لـ ClickHouse BYOC، اتبع الخطوات:
+
+<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+  #### الخطوة 1: تفعيل موازن التحميل الخاص لـ ClickHouse BYOC
+</div>
+
+تواصل مع ClickHouse Support لتفعيل موازن التحميل الخاص.
+
+<div id="step-2-create-a-peering-connection">
+  #### الخطوة 2: إنشاء اتصال الإقران
+</div>
+
+1. انتقل إلى VPC Dashboard في حساب ClickHouse BYOC.
+2. اختر Peering Connections.
+3. انقر على Create Peering Connection.
+4. اضبط VPC Requester على معرّف ClickHouse VPC.
+5. اضبط VPC Accepter على معرّف VPC الهدف. (اختر حسابًا آخر إذا كان ذلك منطبقًا)
+6. انقر على Create Peering Connection.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC إنشاء اتصال الإقران" />
+
+<br />
+
+<div id="step-3-accept-the-peering-connection-request">
+  #### الخطوة 3 قبول طلب اتصال الإقران
+</div>
+
+انتقل إلى حساب الإقران، وفي صفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب إقران VPC هذا.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC قبول اتصال الإقران" />
+
+<br />
+
+<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+  #### الخطوة 4: أضف الوجهة إلى جداول التوجيه في ClickHouse VPC
+</div>
+
+في حساب ClickHouse BYOC،
+
+1. حدِّد &quot;Route Tables&quot; في &quot;VPC Dashboard&quot;.
+2. ابحث عن معرّف ClickHouse VPC. حرِّر كل جدول توجيه مرتبط بالشبكات الفرعية الخاصة.
+3. انقر على زر &quot;Edit&quot; ضمن علامة التبويب &quot;Routes&quot;.
+4. انقر على &quot;Add another route&quot;.
+5. أدخل نطاق CIDR الخاص بالـ VPC الهدف في خانة &quot;Destination&quot;.
+6. حدِّد &quot;Peering Connection&quot; ومعرّف اتصال الإقران في خانة &quot;Target&quot;.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC إضافة جدول توجيه" />
+
+<br />
+
+<div id="step-5-add-destination-to-the-target-vpc-route-tables">
+  #### الخطوة 5 إضافة الوجهة إلى جداول توجيه VPC الهدف
+</div>
+
+في حساب AWS الخاص بالربط البيني،
+
+1. حدّد Route Tables في VPC Dashboard.
+2. ابحث عن معرّف VPC الهدف.
+3. انقر على زر Edit ضمن علامة التبويب Routes.
+4. انقر على Add another route.
+5. أدخل نطاق CIDR الخاص بـ ClickHouse VPC في حقل Destination.
+6. حدّد “Peering Connection” ومعرّف اتصال الإقران في حقل Target.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC إضافة جدول توجيه" />
+
+<br />
+
+<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
+  #### الخطوة 6: عدّل مجموعة الأمان للسماح بالوصول من VPC المقترنة
+</div>
+
+في حساب ClickHouse BYOC، تحتاج إلى تحديث إعدادات Security Group للسماح بحركة المرور من VPC المقترنة لديك. يُرجى التواصل مع ClickHouse Support لطلب إضافة Inbound rules تتضمن نطاقات CIDR الخاصة بـ VPC المقترنة لديك.
+
+***
+
+يجب أن تكون خدمة ClickHouse الآن قابلة للوصول من VPC المقترنة.
+
+للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص ونقطة endpoint خاصة لتأمين الاتصال من VPC المقترنة الخاصة بالمستخدم. وتتبع نقطة endpoint الخاصة تنسيق نقطة endpoint العامة مع اللاحقة `-private`. على سبيل المثال:
+
+* **نقطة endpoint العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **نقطة endpoint الخاصة**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+
+اختياريًا، بعد التحقق من أن الاقتران يعمل، يمكنك طلب إزالة موازن التحميل العام لـ ClickHouse BYOC.
+
+<div id="upgrade-process">
+  ## عملية الترقية
+</div>
+
+نقوم بترقية البرمجيات بانتظام، بما في ذلك ترقية إصدار قاعدة بيانات ClickHouse، وClickHouse Operator، وEKS، ومكوّنات أخرى.
+
+ومع أننا نهدف إلى أن تتم الترقيات بسلاسة (مثل الترقيات التدريجية وعمليات إعادة التشغيل)، فقد تؤثر بعض الترقيات، مثل تغييرات إصدار ClickHouse وترقيات عُقد EKS، في الخدمة. ويمكن للعملاء تحديد نافذة صيانة (على سبيل المثال، كل يوم ثلاثاء الساعة 1:00 صباحًا بتوقيت PDT)، بما يضمن تنفيذ هذه الترقيات خلال الوقت المجدول فقط.
+
+<Note>
+  لا تنطبق نوافذ الصيانة على إصلاحات الأمان والثغرات الأمنية. إذ تُدار هذه الحالات كترقيات خارج الدورة، مع التواصل في الوقت المناسب للتنسيق على موعد مناسب وتقليل الأثر التشغيلي إلى أدنى حد.
+</Note>
+
+<div id="cloudformation-iam-roles">
+  ## أدوار IAM الخاصة بـ CloudFormation
+</div>
+
+<div id="bootstrap-iam-role">
+  ### دور IAM التمهيدي
+</div>
+
+يملك دور IAM التمهيدي الأذونات التالية:
+
+* **عمليات EC2 وVPC**: مطلوبة لإعداد VPC وعناقيد EKS.
+* **عمليات S3 (مثل `s3:CreateBucket`)**: مطلوبة لإنشاء حاويات لتخزين ClickHouse BYOC.
+* **أذونات `route53:*`**: مطلوبة لكي يتمكن DNS الخارجي من تهيئة السجلات في Route 53.
+* **عمليات IAM (مثل `iam:CreatePolicy`)**: مطلوبة لكي تتمكن وحدات التحكم من إنشاء أدوار إضافية (راجع القسم التالي لمزيد من التفاصيل).
+* **عمليات EKS**: تقتصر على الموارد التي تبدأ أسماؤها بالبادئة `clickhouse-cloud`.
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### أدوار IAM إضافية تُنشئها وحدة التحكم
+</div>
+
+بالإضافة إلى `ClickHouseManagementRole` الذي أُنشئ عبر CloudFormation، ستُنشئ وحدة التحكم عدة أدوار إضافية.
+
+تتولاها التطبيقات التي تعمل داخل عنقود EKS الخاص بالعميل:
+
+* **مُصدِّر الحالة Role**
+  * مكوّن في ClickHouse يبلّغ معلومات الحالة الصحية للخدمة إلى ClickHouse Cloud.
+  * يتطلب إذنًا بالكتابة إلى قائمة انتظار SQS مملوكة لـ ClickHouse Cloud.
+* **Load-Balancer Controller**
+  * وحدة تحكم AWS موازن التحميل قياسية.
+  * EBS CSI Controller لإدارة وحدات التخزين لخدمات ClickHouse.
+* **External-DNS**
+  * ينشر إعدادات DNS إلى Route 53.
+* **Cert-Manager**
+  * يوفّر شهادات TLS لنطاقات خدمة BYOC.
+* **Cluster Autoscaler**
+  * يضبط حجم مجموعة العُقد حسب الحاجة.
+
+الدوران **`K8s-control-plane`** و**`k8s-worker`** مخصّصان لأن تتولاهما خدمات AWS EKS.
+
+وأخيرًا، يتيح **`data-plane-mgmt`** لمكوّن من ClickHouse Cloud Control Plane مواءمة الموارد المخصّصة اللازمة، مثل `ClickHouseCluster` وIstio Virtual Service/Gateway.
+
+<div id="network-boundaries">
+  ## حدود الشبكة
+</div>
+
+يغطي هذا القسم أنواعًا مختلفة من حركة مرور الشبكة من وإلى شبكة VPC الخاصة بالعميل في BYOC:
+
+* **الوارد**: حركة المرور الداخلة إلى شبكة VPC الخاصة بالعميل في BYOC.
+* **الصادر**: حركة المرور التي تنشأ من شبكة VPC الخاصة بالعميل في BYOC وتُرسل إلى وجهة خارجية.
+* **عام**: نقطة نهاية شبكة يمكن الوصول إليها عبر الإنترنت العام.
+* **خاص**: نقطة نهاية شبكة لا يمكن الوصول إليها إلا عبر اتصالات خاصة، مثل إقران VPC أو VPC Private Link أو Tailscale.
+
+**يتم نشر Ingress الخاص بـ Istio خلف AWS NLB لاستقبال حركة مرور عميل ClickHouse.**
+
+*الوارد، عام (وقد يكون خاصًا)*
+
+تتولى بوابة Ingress الخاصة بـ Istio إنهاء TLS. وتُخزَّن الشهادة، التي يوفّرها CertManager باستخدام Let&#39;s Encrypt، كـ secret داخل عنقود EKS. وتكون حركة المرور بين Istio وClickHouse [مشفّرة بواسطة AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types) لأنهما موجودان داخل شبكة VPC نفسها.
+
+بشكل افتراضي، يكون Ingress متاحًا علنًا مع التصفية عبر IP allow list. ويمكن للعملاء إعداد إقران VPC لجعله خاصًا وتعطيل الاتصالات العامة. نوصي بشدة بإعداد [عامل تصفية IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لتقييد الوصول.
+
+<div id="troubleshooting-access">
+  ### إمكانية الوصول لاستكشاف الأخطاء وإصلاحها
+</div>
+
+*وارد، عام (قد يكون خاصًا)*
+
+يحتاج مهندسو ClickHouse Cloud إلى إمكانية وصول لاستكشاف الأخطاء وإصلاحها عبر Tailscale. ويُمنحون مصادقة قائمة على الشهادات عند الحاجة لعمليات نشر BYOC.
+
+<div id="billing-scraper">
+  ### جامع بيانات الفوترة
+</div>
+
+*الصادرة، خاصة*
+
+يجمع جامع بيانات الفوترة بيانات الفوترة من ClickHouse ويرسلها إلى حاوية S3 تملكها ClickHouse Cloud.
+
+يعمل كحاوية جانبية إلى جانب حاوية خادم ClickHouse، ويجمع دوريًا مقاييس CPU والذاكرة. تُوجَّه الطلبات ضمن المنطقة نفسها عبر نقاط نهاية خدمة بوابة VPC.
+
+<div id="alerts">
+  ### التنبيهات
+</div>
+
+*صادر، عام*
+
+تم إعداد AlertManager لإرسال التنبيهات إلى ClickHouse Cloud عندما يكون عنقود ClickHouse الخاص بالعميل غير سليم.
+
+تُخزَّن المقاييس والسجلات داخل BYOC VPC الخاص بالعميل. وتُخزَّن السجلات حاليًا محليًا على EBS. وفي تحديث مستقبلي، ستُخزَّن في LogHouse، وهي خدمة ClickHouse داخل BYOC VPC. وتعتمد المقاييس على مكدس Prometheus وThanos، وتُخزَّن محليًا داخل BYOC VPC.
+
+<div id="service-state">
+  ### حالة الخدمة
+</div>
+
+*حركة صادرة*
+
+يرسل مُصدِّر الحالة معلومات عن حالة خدمة ClickHouse إلى SQS تابع لـ ClickHouse Cloud.

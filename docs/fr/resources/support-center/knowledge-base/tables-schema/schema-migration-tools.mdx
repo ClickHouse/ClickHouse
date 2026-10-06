@@ -1,147 +1,25 @@
 ---
 date: 2023-06-07
-title: "Outils de migration de schéma pour ClickHouse"
-description: "Découvrez les outils de migration de schéma pour ClickHouse et comment gérer l'évolution des schémas de base de données au fil du temps."
+title: "Outils de migration automatique de schéma pour ClickHouse"
+description: "Découvrez les outils de migration automatique de schéma pour ClickHouse et comment gérer l'évolution des schémas de base de données au fil du temps."
 tags: ['Outils et utilitaires']
 keywords: ['Migration automatique de schémas']
 ---
 
-<div id="what-is-schema-management">
-  ## Qu’est-ce que la gestion des schémas ?
+<div id="automatic-schema-migration-tools-for-clickhouse">
+  ## Outils de migration automatique de schéma pour ClickHouse
 </div>
 
-La gestion des schémas consiste à appliquer aux schémas de base de données les principes du contrôle de version. Elle englobe souvent des actions telles que le suivi et l’automatisation des modifications apportées aux tables, aux colonnes et à leurs relations, afin que les mises à jour de schéma soient reproductibles, auditables et cohérentes d’un environnement à l’autre. La gestion des schémas entre en jeu lorsque la structure des données dans la base de données doit être modifiée pour un nouveau cas d’usage ou une optimisation des performances.
+On nous demande souvent quel outil de migration de schéma convient le mieux à ClickHouse et quelle est la meilleure façon de gérer les schémas de base de données dans ClickHouse lorsqu’ils évoluent au fil du temps.
 
-<div id="why-is-it-important">
-  ### Pourquoi est-ce important ?
-</div>
+Il n’existe pas d’outil standard de migration de schéma pour ClickHouse, mais nous avons compilé la liste suivante (sans ordre particulier) d’outils de migration automatique de schéma compatibles avec ClickHouse que nous connaissons :
 
-Les outils de gestion des schémas permettent d’automatiser les changements de schéma en parallèle des déploiements applicatifs. Il est courant que des changements de schéma soient un prérequis au déploiement d’une nouvelle version d’application. Ces outils sont également appelés outils de « migration de schéma » ou de « migration de base de données », car les utilisateurs migrent d’une version de la base de données vers une autre.
-
-Sans outils de gestion des schémas, les modifications apportées à la base de données sont manuelles, sujettes aux erreurs et difficiles à coordonner entre les équipes et les environnements. Bien qu’il soit toujours possible d’exécuter des DDL directement sur la base de données, ces outils apportent le contrôle de version, des déploiements automatisés, la prise en charge des retours arrière et une piste d’audit. Pour ClickHouse en particulier, où certaines modifications DDL peuvent être coûteuses ou irréversibles, un processus de migration structuré avec des étapes de revue est particulièrement critique.
-
-<div id="types-of-schema-management-approaches">
-  ### Types d’approches de gestion des schémas
-</div>
-
-On distingue généralement deux catégories d’outils de gestion des schémas.
-
-<div id="imperative">
-  #### Impératif
-</div>
-
-Ces outils utilisent des fichiers SQL versionnés qui décrivent comment passer de l’état A à l’état B. Vous écrivez des instructions DDL explicites comme `CREATE TABLE`, `ALTER TABLE` ou `DROP COLUMN` dans des fichiers. L’outil exécute ensuite les fichiers dans l’ordre et garde la trace de ceux qui ont déjà été appliqués. Dans cette catégorie, c’est vous qui définissez exactement quel SQL exécuter.
-
-Exemples : Golang Migrate, Goose et Flyway.
-
-<div id="declarative">
-  #### Déclaratif
-</div>
-
-Ces outils commencent par demander à l’utilisateur de définir un schéma cible. L’outil détecte la différence entre la base de données courante et l’état souhaité, puis génère et applique la migration nécessaire. Cette approche réduit le besoin d’écrire manuellement les migrations et limite la dérive du schéma. Dans cette catégorie, l’outil dicte le SQL exact à exécuter.
-
-Exemples : Atlas et Liquibase.
-
-Il existe une troisième catégorie d’outils qui se concentrent moins sur les changements de schéma de la base de données et davantage sur la transformation des données elles-mêmes.
-
-Exemple : dbt.
-
-Cet article se concentre uniquement sur les outils de changement de schéma de la base de données.
-
-Choisissez un outil qui correspond au mode de fonctionnement de votre équipe. Les outils impératifs offrent une visibilité complète sur le DDL exact qui sera exécuté, mais exigent une attention particulière pour identifier et gérer la dérive du schéma. Les outils déclaratifs automatisent une grande partie de la maintenance et aident à éviter la dérive du schéma, mais vous devez toujours examiner le plan généré avant de l’appliquer à ClickHouse. Assurez-vous qu’aucune mutation inattendue ni aucune réécriture coûteuse ne se cache dans un plan généré automatiquement.
-
-<div id="what-to-consider-when-choosing-a-tool">
-  ## Points à considérer lors du choix d’un outil
-</div>
-
-<div id="what-does-your-team-already-use">
-  ### Qu’utilise déjà votre équipe ?
-</div>
-
-Vous aurez probablement tendance à privilégier des outils dont l’écosystème vous est déjà familier. Si votre équipe travaille principalement avec Go, Golang Migrate ou Goose lui sembleront sans doute naturels. Si vous évoluez dans l’écosystème Java, vous utilisez peut-être déjà Flyway ou Liquibase. Si votre équipe d’infrastructure utilise Terraform et des approches d’infrastructure as code, le modèle déclaratif d’Atlas peut être un bon choix. Il y a un réel intérêt à choisir un outil que votre équipe connaît déjà : le meilleur outil est celui qui sera adopté et utilisé de façon constante.
-
-<div id="what-is-your-desired-process">
-  ### Quel est le processus souhaité ?
-</div>
-
-Réfléchissez à la manière dont les changements de schéma circulent dans votre organisation. Déterminez si vous avez besoin de :
-
-* Un workflow simple « écrire du SQL, l’exécuter en intégration continue, et c’est tout », comme Goose ou Golang Migrate.
-* Des workflows d’approbation gérés, des pistes d’audit et RBAC, comme Bytebase ou Liquibase.
-* De définir votre schéma de manière déclarative et de laisser l’outil déterminer les différences, comme Atlas.
-
-Choisissez l’outil en fonction de vos exigences et de votre processus.
-
-<div id="recommended-tools">
-  ## Outils recommandés
-</div>
-
-Voici les outils que nous recommandons généralement aux utilisateurs de ClickHouse, en fonction de leur maturité, de leur compatibilité avec ClickHouse, de leur adoption par la communauté et de leur adéquation aux contraintes opérationnelles.
-
-<div id="atlas">
-  ### Atlas
-</div>
-
-[Atlas](https://atlasgo.io/guides/clickhouse) est un outil de gestion de schéma as code qui repose sur une approche déclarative. Vous définissez l’état cible de votre schéma en HCL ou en SQL, puis Atlas inspecte votre base de données courante, calcule les différences, génère un plan de migration et l’applique, éventuellement après validation de votre part.
-
-**Pourquoi Atlas fonctionne bien avec ClickHouse :** Atlas offre une prise en charge native de ClickHouse, notamment pour les tables, les vues, les vues matérialisées, les projections, les partitions et les UDFs. Atlas a ajouté la prise en charge des clusters dans la version 0.37 en septembre 2025. Il prend en charge à la fois HCL et les définitions de schéma en SQL brut.
-
-**Points de vigilance :** Le driver ClickHouse d’Atlas est disponible uniquement avec l’offre Pro ou pendant une période d’essai. Atlas génère des plans de migration, mais n’en évalue pas le coût. Une différence peut sembler simple, comme modifier un type de colonne, mais déclencher une mutation coûteuse sur une table de plusieurs téraoctets. Passez toujours en revue les plans générés avant de les appliquer.
-
-**Particulièrement adapté à :** Les équipes qui souhaitent des workflows d’infrastructure as code et une détection automatique de la dérive.
-
-* **Type :** Déclaratif
-* **Langage :** Go, distribué sous la forme d’un binaire unique
-* **Licence et disponibilité :** Open Core ; l’Atlas CLI dispose d’une édition communautaire Apache 2.0, mais la prise en charge de ClickHouse nécessite l’offre Pro ou une période d’essai
-* **Prise en charge des clusters :** Oui
-
-<div id="golang-migrate">
-  ### Golang Migrate
-</div>
-
-[Golang Migrate](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse) est un outil de migration simple et largement utilisé. Vous rédigez des fichiers SQL versionnés avec des étapes « up » et « down », et l’outil les applique dans l’ordre, en suivant l’état dans une table `schema_migrations` de votre base de données ClickHouse.
-
-**Pourquoi il fonctionne bien avec ClickHouse :** il est simple et flexible. Vous écrivez exactement le DDL ClickHouse que vous voulez exécuter. C’est un binaire Go unique, sans dépendances d’exécution, ce qui facilite son intégration dans un pipeline CI/CD ou un conteneur Docker.
-
-**Point de vigilance :** si un fichier de migration contient plusieurs instructions et que l’une d’elles échoue en cours de route, la base de données peut se retrouver dans un état partiellement appliqué nécessitant une intervention manuelle. Ce risque reste maîtrisable en appliquant une règle simple : une instruction par fichier.
-
-**Particulièrement adapté à :** les équipes qui veulent de la simplicité et un contrôle total sur les requêtes SQL exécutées sur leur instance ClickHouse.
-
-* **Type :** Impératif
-* **Langage :** Go
-* **Licence :** open source, MIT
-* **Prise en charge des clusters :** Oui
-
-<div id="goose">
-  ### Goose
-</div>
-
-[Goose](https://github.com/pressly/goose) est un autre outil d’exécution de migrations basé sur Go, avec une philosophie similaire à celle de Golang Migrate. Vous écrivez des fichiers SQL versionnés, ou des fonctions Go pour la logique complexe, et Goose les applique séquentiellement tout en suivant l’état dans une table de versions dans ClickHouse.
-
-**Pourquoi il fonctionne bien avec ClickHouse :** Goose est SQL-first, nécessite très peu de configuration, dispose d’une CLI simple et s’intègre facilement dans des pipelines de CI/CD. Goose permet également d’écrire des migrations sous forme de fonctions Go, ce qui offre davantage de flexibilité pour une logique complexe que le SQL seul ne peut pas exprimer.
-
-**Point de vigilance :** Goose ne fournit ni diff de schéma ni génération automatique de migrations.
-
-**Idéal pour :** Les équipes qui utilisent déjà Goose, ou celles qui préfèrent ses conventions de fichiers de migration à celles de Golang Migrate.
-
-* **Type :** Impératif
-* **Langage :** Go, distribué sous la forme d’un seul binaire
-* **Licence :** open source, MIT
-* **Prise en charge des clusters :** Non
-
-<div id="other-tools-in-the-ecosystem">
-  ## Autres outils de l’écosystème
-</div>
-
-Les outils suivants fonctionnent également avec ClickHouse. Ils peuvent mieux convenir selon votre stack et votre workflow. Toutefois, nous recommandons généralement les outils ci-dessus.
-
-| Outil                                                                                         | Licence     | À envisager pour...                                                                                                                                                        |
-| :-------------------------------------------------------------------------------------------- | :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | Open Core   | Les grandes organisations qui ont besoin de gouvernance, de workflows d’approbation et de pistes d’audit sur plusieurs environnements                                      |
-| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | Open Source | Les équipes déjà standardisées sur Flyway ou sur une infrastructure basée sur la JVM                                                                                       |
-| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | Open Core   | Les équipes qui utilisent Liquibase sur plusieurs bases de données et recherchent une approche cohérente                                                                   |
-| [`clickhouse-migrations` pour Node.js](https://www.npmjs.com/package/clickhouse-migrations)   | Open Source | Les équipes Node.js ou TypeScript qui recherchent un outil simple, centré sur ClickHouse                                                                                   |
-| [Houseplant](https://github.com/juneHQ/houseplant)                                            | Open Source | Les équipes Python qui recherchent des outils adaptés à l’environnement et spécifiques à ClickHouse                                                                        |
-| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | Open Source | Les équipes qui préfèrent les scripts de déploiement natifs du clickhouse client ou une gestion explicite des dépendances dans des déploiements complexes                  |
-| [Alembic](https://alembic.sqlalchemy.org/) avec SQLAlchemy                                    | Open Source | Les équipes Python qui utilisent déjà SQLAlchemy pour l’accès à la base de données                                                                                         |
-| [`clickhouse-migrations` pour Python](https://github.com/zifter/clickhouse-migrations)        | Open Source | Les équipes Python qui recherchent un outil de migration simple, basé sur des fichiers, disponible en CLI et en bibliothèque, avec prise en charge des clusters ClickHouse |
+* [Goose](https://github.com/pressly/goose)
+* [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)
+* [Atlas](https://atlasgo.io/guides/clickhouse?utm_source=clickhouse\&utm_term=knowledge)
+* [Bytebase](https://www.bytebase.com/)
+* [Flyway](https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html)
+* [Liquibase](https://www.liquibase.com/)
+* Un [outil communautaire simple](https://github.com/VVVi/clickhouse-migrations) appelé `clickhouse-migrations`
+* Un autre [outil communautaire](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse) écrit en Go
+* [Houseplant](https://houseplant.readthedocs.io)

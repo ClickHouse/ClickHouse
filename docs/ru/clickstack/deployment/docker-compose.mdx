@@ -45,7 +45,9 @@ Docker Compose открывает дополнительные порты для
 <br />
 
 <Steps>
-  <Step title="Клонируйте репозиторий" id="clone-the-repo">
+  <Step>
+    ### Клонируйте репозиторий
+
     Чтобы развернуть с помощью Docker Compose, клонируйте репозиторий ClickStack, перейдите в каталог и выполните `docker-compose up`:
 
     ```shell
@@ -54,7 +56,9 @@ Docker Compose открывает дополнительные порты для
     ```
   </Step>
 
-  <Step title="Перейдите в интерфейс HyperDX" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### Перейдите в интерфейс HyperDX
+
     Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс HyperDX.
 
     Создайте пользователя, указав имя пользователя и пароль, соответствующие требованиям.
@@ -72,7 +76,9 @@ Docker Compose открывает дополнительные порты для
     Пример использования другого экземпляра ClickHouse см. в разделе [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step title="Заполните сведения о подключении" id="complete-connection-details">
+  <Step>
+    ### Заполните сведения о подключении
+
     Чтобы подключиться к развернутому экземпляру ClickHouse, просто нажмите **Create** и примите настройки по умолчанию.
 
     Если вы хотите подключиться к собственному **внешнему кластеру ClickHouse**, например к ClickHouse Cloud, вы можете вручную ввести свои учетные данные для подключения.
@@ -92,7 +98,7 @@ Docker Compose открывает дополнительные порты для
 ```shell
 user@example-host clickstack % cat .env
 
-# Used by docker-compose.yml
+# Используется docker-compose.yml
 IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
 LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
 ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
@@ -103,14 +109,14 @@ IMAGE_VERSION=2
 IMAGE_NIGHTLY_TAG=2-nightly
 IMAGE_LATEST_TAG=latest
 
-# Set up domain URLs
-HYPERDX_API_PORT=8000 #optional (should not be taken by other services)
+# Настройка URL-адресов домена
+HYPERDX_API_PORT=8000 #необязательно (не должен использоваться другими сервисами)
 HYPERDX_APP_PORT=8080
 HYPERDX_APP_URL=http://localhost
 HYPERDX_LOG_LEVEL=debug
 HYPERDX_OPAMP_PORT=4320
 
-# Otel/ClickHouse config
+# Конфигурация OTel/ClickHouse
 HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 

@@ -148,51 +148,12 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
-    announceReadRequestMap();
-
     initialized = true;
-}
-
-void MergeTreeReaderStream::updateReadRequestMap(MarkRangesPtr request_map_)
-{
-    if (request_map_ == request_map)
-        return;
-
-    request_map = std::move(request_map_);
-    if (initialized)
-        announceReadRequestMap();
-}
-
-void MergeTreeReaderStream::announceReadRequestMap()
-{
-    if (!request_map)
-        return;
-
-    ByteRangeSet file_ranges;
-    for (const auto & range : *request_map)
-    {
-        const auto left = getLeftOffset(range.begin);
-        if (!left)
-            return;
-
-        const size_t right = getRightOffset(range.end);
-        if (right > *left)
-            file_ranges.add({*left, right - *left});
-    }
-    data_buffer->setRequestMap(std::move(file_ranges));
 }
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)
 {
     init();
-
-    /// All marks of an empty file point to its beginning, so don't load them.
-    if (file_size == 0)
-    {
-        seekToMark(MarkInCompressedFile{0, 0});
-        return;
-    }
-
     loadMarks();
 
     const auto & mark = marks_getter->getMark(row_index, column_position);
@@ -253,11 +214,6 @@ size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, si
 
 bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
 {
-    /// All marks of an empty file point to its beginning, so there is at most one distinct mark,
-    /// and there is no need to load them.
-    if (file_size == 0)
-        return (marks_count == 0 ? 0 : 1) <= max_transitions;
-
     auto marks = marks_loader->loadMarks();
 
     size_t num_distinct = 0;
@@ -330,10 +286,6 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     if (marks_count == 0)
         return 0;
 
-    /// All marks of an empty file point to its beginning, so don't load them.
-    if (file_size == 0)
-        return 0;
-
     chassert(right_mark <= marks_count);
     loadMarks();
 
@@ -383,13 +335,6 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     if (settings.is_metadata_file)
         return file_size;
 
-    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
-    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
-    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
-    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
-    if (settings.is_single_value_per_part)
-        return file_size;
-
     /// This is a good scenario. The compressed block is finished within the right mark,
     /// and previous mark was different.
     if (marks_getter->getMark(right_mark, 0).offset_in_decompressed_block == 0
@@ -422,28 +367,8 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     return file_size;
 }
 
-std::optional<size_t> MergeTreeReaderStreamSingleColumn::getLeftOffset(size_t mark)
-{
-    /// As in `getRightOffset`: marks do not delimit what these streams read.
-    if (marks_count == 0 || settings.is_metadata_file || settings.is_single_value_per_part)
-        return std::nullopt;
-
-    if (file_size == 0)
-        return 0;
-
-    if (mark >= marks_count)
-        return file_size;
-
-    loadMarks();
-    return marks_getter->getMark(mark, 0).offset_in_compressed_file;
-}
-
 std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
 {
-    /// All marks of an empty file point to its beginning, so don't load them.
-    if (file_size == 0)
-        return {0, 0};
-
     loadMarks();
 
     size_t max_range_bytes = 0;
@@ -485,13 +410,9 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumnWholePart::estimateMa
     return {file_size, file_size};
 }
 
-void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t row_index)
+void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t)
 {
-    /// The only mark of the whole part is the start of the file.
-    if (row_index != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to mark {}", row_index);
-
-    seekToStart();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to marks");
 }
 
 size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position)
@@ -537,18 +458,6 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
     }
 
     return next_stripe_right_mark_in_file.offset_in_compressed_file;
-}
-
-std::optional<size_t> MergeTreeReaderStreamMultipleColumns::getLeftOffsetOneColumn(size_t mark, size_t column_position)
-{
-    if (marks_count == 0)
-        return std::nullopt;
-
-    if (mark >= marks_count)
-        return file_size;
-
-    loadMarks();
-    return marks_getter->getMark(mark, column_position).offset_in_compressed_file;
 }
 
 std::pair<size_t, size_t>

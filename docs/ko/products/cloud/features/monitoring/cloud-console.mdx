@@ -71,12 +71,12 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 <Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="ClickHouse Cloud의 Advanced dashboard" border />
 
 <Note>
-  ClickHouse Cloud는 이 대시보드에 표시되는 메트릭을 시스템 테이블에서 스크레이프해 저장하므로, 서비스가 유휴 상태여도 확인할 수 있습니다. 이러한 메트릭에 액세스해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스가 다시 활성화되지도 않습니다.
+  ClickHouse Cloud는 이 대시보드에 표시되는 메트릭을 system table에서 스크레이프해 저장하므로, 서비스가 유휴 상태여도 확인할 수 있습니다. 이러한 메트릭에 액세스해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스가 다시 활성화되지도 않습니다.
 </Note>
 
-아래 표는 Advanced Dashboard의 각 그래프를 해당 ClickHouse 메트릭 이름, 시스템 테이블 소스, 집계 유형에 매핑한 것입니다:
+아래 표는 Advanced Dashboard의 각 그래프를 해당 ClickHouse 메트릭 이름, system table 소스, 집계 유형에 매핑한 것입니다:
 
-| 그래프                     | 해당 ClickHouse 메트릭 이름                                                                                                                                                    | 시스템 테이블              | 집계 유형                  |
+| 그래프                     | 해당 ClickHouse 메트릭 이름                                                                                                                                                    | System table              | 집계 유형                  |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------- |
 | 쿼리/초                    | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | 합계 / bucketSizeSeconds |
 | 실행 중인 쿼리                | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | 평균                     |
@@ -111,9 +111,9 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
   ## 쿼리 인사이트
 </div>
 
-**쿼리 인사이트** 기능을 사용하면 다양한 시각화와 테이블을 통해 ClickHouse에 기본 제공되는 쿼리 로그를 더 쉽게 활용할 수 있습니다. ClickHouse의 `system.query_log` 테이블은 쿼리 최적화, 디버깅, 그리고 클러스터 전반의 상태와 성능을 모니터링하는 데 중요한 정보 소스입니다.
+**쿼리 인사이트** 기능을 사용하면 다양한 시각화와 테이블을 통해 ClickHouse에 기본으로 내장된 쿼리 로그를 더 쉽게 활용할 수 있습니다. ClickHouse의 `system.query_log` 테이블은 쿼리 최적화, 디버깅, 그리고 전체 클러스터 상태와 성능을 모니터링하는 데 핵심적인 정보원입니다.
 
-서비스를 선택한 후 왼쪽 사이드바에서 **모니터링** 탐색 항목을 펼치면 **쿼리 인사이트** 하위 항목이 표시됩니다:
+서비스를 선택한 후 왼쪽 사이드바에서 **모니터링** 탐색 메뉴를 펼치면 **쿼리 인사이트** 하위 항목이 표시됩니다:
 
 <Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="쿼리 인사이트 UI 개요" border />
 
@@ -152,6 +152,6 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 </div>
 
 * [알림](/ko/products/cloud/features/monitoring/notifications) — 스케일링 이벤트, 오류, 청구에 대한 알림을 구성합니다
-* [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) — 각 대시보드 시각화에 대한 자세한 참고 정보
-* [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables) — 시스템 내부를 자세히 검사하기 위해 시스템 테이블에 대해 사용자 지정 SQL 쿼리를 실행합니다
+* [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) — 각 대시보드 시각화에 대한 상세 참고 문서
+* [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables) — 심층적인 내부 검사를 위해 시스템 테이블에 사용자 지정 SQL 쿼리를 실행합니다
 * [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 메트릭을 Grafana, Datadog 또는 기타 Prometheus 호환 도구로 내보냅니다

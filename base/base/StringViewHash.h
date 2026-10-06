@@ -170,14 +170,8 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-constexpr bool operator== (std::string_view lhs, std::string_view rhs)
+inline bool operator== (std::string_view lhs, std::string_view rhs)
 {
-    if consteval
-    {
-        /// `==` would recurse into the operator being defined; the standard specifies `compare` as its result.
-        return lhs.compare(rhs) == 0; // NOLINT(readability-string-compare)
-    }
-
     if (lhs.size() != rhs.size())
         return false;
 
@@ -191,29 +185,19 @@ constexpr bool operator== (std::string_view lhs, std::string_view rhs)
 #endif
 }
 
-constexpr bool operator!= (std::string_view lhs, std::string_view rhs)
+inline bool operator!= (std::string_view lhs, std::string_view rhs)
 {
     return !(lhs == rhs);
 }
 
-constexpr bool operator< (std::string_view lhs, std::string_view rhs)
+inline bool operator< (std::string_view lhs, std::string_view rhs)
 {
-    if consteval
-    {
-        return lhs.compare(rhs) < 0;
-    }
-
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp < 0 || (cmp == 0 && lhs.size() < rhs.size());
 }
 
-constexpr bool operator> (std::string_view lhs, std::string_view rhs)
+inline bool operator> (std::string_view lhs, std::string_view rhs)
 {
-    if consteval
-    {
-        return lhs.compare(rhs) > 0;
-    }
-
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp > 0 || (cmp == 0 && lhs.size() > rhs.size());
 }

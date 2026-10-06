@@ -23,7 +23,7 @@ import S3Settings from '/snippets/ja/_s3_settings.mdx';
 データ処理やデータ破損を引き起こすソフトウェアバグなどです。
 
 多くの場合、このようなミスはすべてのレプリカに影響します。ClickHouse には一部の種類のミスを防ぐための
-組み込みの安全策があります。たとえば、[デフォルト](/ja/reference/settings/session-settings/max#max_table_size_to_drop)
+組み込みの安全策があります。たとえば、[デフォルト](/ja/reference/settings/session-settings#max_table_size_to_drop)
 では、50 Gb を超えるデータを含む `MergeTree` ファミリーのエンジンを使用するテーブルを
 そのまま削除することはできません。とはいえ、こうした安全策ですべてのケースを
 カバーできるわけではなく、問題が発生する可能性は残ります。

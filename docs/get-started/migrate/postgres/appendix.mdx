@@ -76,7 +76,7 @@ When you have only one shard and replicas (common since ClickHouse vertically sc
 
 While topologies with multiple shards and replicas are possible without a distributed table, these advanced deployments typically have their own routing infrastructure. We therefore assume deployments with more than one shard are using a Distributed table (distributed tables can be used with single shard deployments but are usually unnecessary).
 
-In this case, you should ensure consistent node routing is performed based on a property e.g. `session_id` or `user_id`. The settings [`prefer_localhost_replica=0`](/reference/settings/session-settings/prefer#prefer_localhost_replica), [`load_balancing=in_order`](/reference/settings/session-settings/load-balancing#load_balancing) should be [set in the query](/concepts/features/configuration/settings/settings-query-level). This will ensure any local replicas of shards are preferred, with replicas preferred as listed in the configuration otherwise - provided they have the same number of errors - failover will occur with random selection if errors are higher. [`load_balancing=nearest_hostname`](/reference/settings/session-settings/load-balancing#load_balancing) can also be used as an alternative for this deterministic shard selection.
+In this case, you should ensure consistent node routing is performed based on a property e.g. `session_id` or `user_id`. The settings [`prefer_localhost_replica=0`](/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/reference/settings/session-settings#load_balancing) should be [set in the query](/concepts/features/configuration/settings/settings-query-level). This will ensure any local replicas of shards are preferred, with replicas preferred as listed in the configuration otherwise - provided they have the same number of errors - failover will occur with random selection if errors are higher. [`load_balancing=nearest_hostname`](/reference/settings/session-settings#load_balancing) can also be used as an alternative for this deterministic shard selection.
 
 > When creating a Distributed table, you will specify a cluster. This cluster definition, specified in config.xml, will list the shards (and their replicas) - thus allowing users to control the order in which they're used from each node. Using this, you can ensure selection is deterministic.
 
@@ -91,7 +91,7 @@ This can be achieved in several ways (in order of preference):
 
 1. **Read/Write to the same node** - If you're using native protocol, or a [session to do your write/read via HTTP](/concepts/features/interfaces/http#default-database), you should then be connected to the same replica: in this scenario you're reading directly from the node where you're writing, then your read will always be consistent.
 1. **Sync replicas manually** - If you write to one replica and read from another, you can use issue `SYSTEM SYNC REPLICA LIGHTWEIGHT` prior to reading.
-1. **Enable sequential consistency** - via the query setting [`select_sequential_consistency = 1`](/reference/settings/session-settings/other#select_sequential_consistency). In OSS, the setting `insert_quorum = 'auto'` must also be specified.
+1. **Enable sequential consistency** - via the query setting [`select_sequential_consistency = 1`](/reference/settings/session-settings#select_sequential_consistency). In OSS, the setting `insert_quorum = 'auto'` must also be specified.
 
 <br />
 
@@ -183,5 +183,6 @@ The following table shows the equivalent ClickHouse data types for Postgres.
 | `HSTORE` | [Map(K, V)](/reference/data-types/map), [Map](/reference/data-types/map)(K,[Variant](/reference/data-types/variant)) |
 | `UUID` | [UUID](/reference/data-types/uuid) |
 | `ARRAY<T>` | [ARRAY(T)](/reference/data-types/array) |
+| `JSON` | [String](/reference/data-types/string), [Variant](/reference/data-types/variant), [Nested](/reference/data-types/nested-data-structures/index), [Tuple](/reference/data-types/tuple) |
 | `JSON` | [String](/reference/data-types/string), [Variant](/reference/data-types/variant), [Nested](/reference/data-types/nested-data-structures), [Tuple](/reference/data-types/tuple) |
 | `JSONB` | [String](/reference/data-types/string) |

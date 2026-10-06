@@ -10,7 +10,7 @@ keywords: ['Proportion de valeurs vides/égales à zéro', 'Calculer']
   ## Comment calculer la proportion de valeurs vides/égales à zéro dans chaque colonne d’une table
 </div>
 
-Si une colonne est clairsemée (vide ou contient principalement des zéros), ClickHouse peut l’encoder dans un format clairsemé et optimiser automatiquement les calculs : les données n’ont pas besoin d’être entièrement décompressées pendant les requêtes. En effet, si vous savez à quel point une colonne est clairsemée, vous pouvez définir sa proportion à l’aide du [paramètre `ratio_of_defaults_for_sparse_serialization`](/fr/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization) afin d’optimiser la sérialisation.
+Si une colonne est sparse (vide ou contient principalement des zéros), ClickHouse peut l’encoder dans un format sparse et optimiser automatiquement les calculs : les données n’ont pas besoin d’être entièrement décompressées pendant les requêtes. En effet, si vous savez à quel point une colonne est sparse, vous pouvez définir sa proportion à l’aide du [paramètre `ratio_of_defaults_for_sparse_serialization`](/fr/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) afin d’optimiser la sérialisation.
 
 Cette requête pratique peut prendre un certain temps, mais elle analyse chaque ligne de votre table et détermine la proportion de valeurs égales à zéro (ou à la valeur par défaut) dans chaque colonne de la table spécifiée :
 

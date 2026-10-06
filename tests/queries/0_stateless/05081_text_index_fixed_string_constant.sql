@@ -3,6 +3,10 @@
 -- `String = FixedString(N)` ignores the constant's trailing zero padding, but the index terms were
 -- extracted from the padded bytes, so every granule looked unmatched and matching rows disappeared.
 
+-- On 26.7 the statistics part pruning drops the whole part for `FixedString(6) IN (SELECT FixedString(10))`
+-- even without a skip index, which is unrelated to the text index and hides what this test checks.
+SET use_statistics_for_part_pruning = 0;
+
 SELECT 'Ground truth';
 SELECT 'hello' = toFixedString('hello', 10);
 

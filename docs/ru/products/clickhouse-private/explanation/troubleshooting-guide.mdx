@@ -1,0 +1,564 @@
+---
+noindex: true
+title: "Руководство по устранению неполадок"
+sidebarTitle: "Устранение неполадок"
+description: "В этом руководстве собраны распространенные проблемы, их симптомы, вероятные причины и способы устранения в развертываниях ClickHouse Private."
+---
+
+В этом руководстве собраны распространенные проблемы, их симптомы, вероятные причины и способы устранения в развертываниях ClickHouse Private. Каждый пункт построен по схеме: симптом, причина, решение.
+
+***
+
+<div id="operator-issues">
+  ## Проблемы с оператором
+</div>
+
+<div id="cr-changes-not-being-applied">
+  ### Изменения в CR не применяются
+</div>
+
+**Симптом:** Изменения, внесенные в CR ClickHouseCluster, долгое время не проходят реконсиляцию и не применяются к кластеру.
+
+**Причина:** Обычно это происходит по одной из трех причин:
+
+1. Сам оператор постоянно перезапускается из-за сбоев.
+2. Поды ClickHouse (Keeper или server) постоянно перезапускаются из-за сбоев, что блокирует реконсиляцию.
+3. В CR присутствует аннотация `clickhouse.com/skip-reconcile`, из-за которой оператор полностью пропускает реконсиляцию.
+
+**Решение:**
+
+1. Проверьте журналы оператора на наличие сбоев или ошибок:
+
+   ```bash
+   kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+   ```
+
+2. Проверьте, не зациклились ли поды Keeper и server на сбоях:
+
+   ```bash
+   kubectl get pods -n <namespace>
+   kubectl logs <pod-name> -n <namespace>
+   ```
+
+3. Проверьте, есть ли в CR аннотация skip-reconcile:
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o yaml | grep skip-reconcile
+   ```
+
+   Если она есть и больше не нужна, удалите ее:
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+***
+
+<div id="how-to-drop-a-server-replica">
+  ### Как удалить реплику сервера
+</div>
+
+**Симптом:** Вам нужно удалить конкретную реплику из кластера без scale-in (уменьшения желаемого числа реплик).
+
+**Причина:** Реплика работает некорректно, зависла или по другой причине требует ручного удаления.
+
+**Решение:**
+
+1. **Добавьте аннотацию skip-reconcile**, чтобы оператор не вмешивался:
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile=remove-replica
+   ```
+
+   Убедитесь, что оператор это заметил, проверив журнал на наличие строки:
+
+   ```text
+   Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation"
+   ```
+
+2. **Удалите реплику из ReplicaStateMap.** Сначала проверьте текущее содержимое:
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+   ```
+
+   Затем отредактируйте подресурс status, чтобы удалить запись нужной реплики:
+
+   ```ini
+   EDITOR=vim kubectl edit clickhousecluster <cluster-name> -n <namespace> --subresource=status
+   ```
+
+3. **Удалите StatefulSet** для реплики:
+
+   ```bash
+   kubectl delete sts <replica-statefulset-name> -n <namespace>
+   ```
+
+   После удаления StatefulSet дождитесь завершения работы пода.
+
+4. **Удалите аннотацию skip-reconcile:**
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+   Оператор запустит новую реплику и удалит сведения об удаленной реплике из ClickHouse.
+
+5. **Проверьте**, войдя в кластер ClickHouse и убедившись, что старая реплика удалена. Если срок действия каких-либо lease, удерживаемых репликой, еще не истек, оператор повторит попытку удаления. Очистка должна завершиться в течение 5 минут.
+
+***
+
+<div id="server-pod-hanging-on-termination">
+  ### Под сервера зависает при завершении работы
+</div>
+
+**Симптом:** Поды сервера надолго остаются в статусе `Terminating`:
+
+```text
+NAME                            READY   STATUS        RESTARTS   AGE
+c-navy-wl-64-server-gbwmanx-0   1/2     Terminating   0          3m25s
+c-navy-wl-64-server-pxb9mde-0   1/2     Terminating   0          3m25s
+```
+
+**Причина:** Перед завершением работы поды сервера выполняют хук PreStop, который закрывает соединения и ожидает завершения выполняющихся запросов. Если есть активные долгие запросы или соединения, под останется в состоянии завершения.
+
+**Решение:**
+
+1. Проверьте журнал хука PreStop, чтобы понять, чего именно ожидает хук:
+
+   ```bash
+   kubectl exec <pod-name> -- cat /var/log/clickhouse-server/prestop.log
+   ```
+
+2. Проверьте серверные журналы на наличие сообщений лога о полученных сигналах, указывающих на текущее состояние процесса завершения работы.
+
+***
+
+<div id="multiple-clickhouseclusters-in-the-same-namespace">
+  ### Несколько ClickHouseClusters в одном пространстве имен
+</div>
+
+**Симптом:** Неожиданное поведение при реконсиляции, ресурсы неожиданно изменяются или удаляются, либо оператор постоянно переключается между состояниями кластера.
+
+**Причина:** В одном и том же пространстве имен существует более одного пользовательского ресурса `ClickHouseCluster`. Оператор предполагает, что в каждом пространстве имен есть только один `ClickHouseCluster`, и не может корректно выполнить реконсиляцию, если несколько экземпляров используют одно пространство имен.
+
+**Решение:**
+
+1. Проверьте, сколько ресурсов `ClickHouseCluster` существует в пространстве имен:
+
+   ```bash
+   kubectl get clickhouseclusters -n <namespace>
+   ```
+
+2. Если ресурсов больше одного, перенесите дополнительные кластеры в отдельные пространства имен. В каждом пространстве имен должен быть только один экземпляр `ClickHouseCluster`.
+
+3. Helm-чарт `onprem-clickhouse-cluster` по умолчанию создает `ResourceQuota`, что предотвращает такую ситуацию. Убедитесь, что квота настроена:
+
+   ```bash
+   kubectl get resourcequota -n <namespace>
+   ```
+
+   Если квота отсутствует, убедитесь, что в ваших значениях Helm параметр `resourceQuota.enabled` установлен в `true` (значение по умолчанию).
+
+***
+
+<div id="cr-not-in-healthy-running-state">
+  ### CR не в корректном состоянии Running
+</div>
+
+**Симптом:** У CR ClickHouseCluster состояние отличается от `Running`, или поды перезапускаются.
+
+**Причина:** Различные проблемы могут мешать переходу в нормальное состояние — поды в состоянии crashlooping, нехватка ресурсов, ошибки конфигурации или сбои планирования.
+
+**Решение:**
+
+1. Проверьте состояние кластера во всех пространствах имен:
+
+   ```bash
+   kubectl get clickhouseclusters -A
+   ```
+
+2. Выведите описание проблемного пода, чтобы получить подробную информацию о состоянии и событиях:
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+3. Проверьте журналы ранее завершённого контейнера:
+
+   ```bash
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+4. Проверьте события пространства имен на наличие проблем с планированием или ресурсами:
+
+   ```bash
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="clickhouse-server-issues">
+  ## Проблемы с сервером ClickHouse
+</div>
+
+<div id="crashlooping-server-pods">
+  ### Поды сервера в состоянии CrashLoopBackOff
+</div>
+
+**Симптом:** Поды сервера ClickHouse находятся в состоянии `CrashLoopBackOff`.
+
+**Причина:** Процесс сервера ClickHouse аварийно завершается при запуске или вскоре после него. Это может быть вызвано ошибками конфигурации, повреждением данных, нехваткой памяти или завершением по OOM со стороны Kubernetes.
+
+**Решение:**
+
+1. Проверьте журнал пода сервера ClickHouse, чтобы выяснить причину сбоя:
+
+   ```bash
+   kubectl logs <pod-name> -n <namespace>
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+2. Если сбой вызван нехваткой памяти или завершением со стороны Kubernetes, проверьте события Kubernetes:
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="data-losscorruption-clickhousebrokenpartdetectedonselect">
+  ### Потеря/повреждение данных (ClickHouseBrokenPartDetectedOnSelect)
+</div>
+
+**Симптом:** Срабатывает alert `ClickHouseBrokenPartDetectedOnSelect`, либо запросы SELECT завершаются ошибками `POTENTIALLY_BROKEN_DATA_PART`.
+
+**Причина:** Чтение SMT data part завершилось ошибкой без возможности повторной попытки. Исключение `POTENTIALLY_BROKEN_DATA_PART` генерируется, если во время операции SELECT обнаруживается поврежденная data part.
+
+**Решение:**
+
+1. **Проверьте журналы** на наличие исключения `POTENTIALLY_BROKEN_DATA_PART`. Если в журналах его нет, также проверьте `system.errors`.
+
+2. **Определите, какие части данных потеряны.** Выполните запрос к `system.replicas`, чтобы найти затронутые таблицы:
+
+   ```sql
+   SELECT
+       database,
+       table,
+       lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+3. **Найдите журналы, связанные с потерянными частями.** Проверьте `/var/log/clickhouse-server/` на поде (для архивных журналов используйте `zgrep`) или выполните запрос к `system.text_log`:
+
+   ```sql
+   SELECT
+       hostName(),
+       event_time,
+       logger_name,
+       message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+   Добавьте условие по диапазону `event_time`, чтобы ускорить запрос.
+
+4. **Разберитесь в истории потерянных частей.** Выберите имя потерянной части и найдите все связанные журналы:
+
+   ```sql
+   SELECT
+       event_time,
+       message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%' AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+   Сосредоточьтесь на сообщениях лога *до* `Part * is lost forever`. Сообщения после этого момента не имеют значения (любая &quot;найденная&quot; часть на самом деле является пустой заменой).
+
+5. **Проверьте ложноположительные срабатывания:**
+
+6. Проверьте, есть ли у таблицы TTL и должна ли была потерянная часть в любом случае быть удалена.
+
+7. Проверьте `system.query_log` на наличие запросов TRUNCATE или DROP PARTITION, которые должны были удалить потерянные части.
+
+8. **Дополнительное исследование:**
+
+9. Если часть была detached как поврежденная, определите, почему это произошло.
+
+10. Если вы видите `The specified key does not exist`, найдите во всех журналах имя blob, чтобы понять, когда и почему он был удален. Также проверьте сообщения лога о блокировках zero-copy.
+
+11. Обратитесь в службу поддержки ClickHouse со своими выводами.
+
+***
+
+<div id="table-replicas-read-only-clickhousetablereplicasreadonly">
+  ### Реплики таблиц в режиме только для чтения (ClickHouseTableReplicasReadOnly)
+</div>
+
+**Симптом:** Срабатывает alert `ClickHouseTableReplicasReadOnly`, либо запись в таблицы завершается ошибкой, потому что они находятся в режиме только для чтения.
+
+**Причина:** Таблица находится в режиме только для чтения как минимум один час. Это не относится к таблицам в базах данных `*_broken_replicated_tables` и `*_broken_tables`. Причиной может быть неудачно выполненная операция `DROP` или проблема с подключением к Keeper.
+
+**Решение:**
+
+1. **Проверьте, остались ли в кластере таблицы в режиме только для чтения**:
+
+   ```sql
+   SELECT
+     dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+     database,
+     table,
+     hostname()
+   FROM clusterAllReplicas(default, system.replicas)
+   WHERE is_readonly = 1
+   ```
+
+2. **Выясните причину.** Наличие таблиц в режиме только для чтения обычно указывает на то, что был выполнен `StorageSharedMergeTree::shutdown`, но объект хранилища остался активным. Поищите в текстовых журналах записи, используя имя таблицы в качестве имени логгера.
+
+3. **Попробуйте перезапустить реплику** для каждой затронутой таблицы:
+
+   ```sql
+   SYSTEM RESTART REPLICA <database>.<table>
+   ```
+
+   Имена таблиц можно получить из запроса на шаге 1. Иногда проблема оказывается незначительной, и перезапуск ее устраняет.
+
+4. Если проблема сохраняется, проверьте журналы Keeper на предмет возможных проблем с подключением или координацией.
+
+***
+
+<div id="replica-already-exists-clickhousereplicaalreadyexists">
+  ### Реплика уже существует (ClickHouseReplicaAlreadyExists)
+</div>
+
+**Симптом:** Срабатывает alert `ClickHouseReplicaAlreadyExists`, либо не удаётся создать реплику из-за ошибки `REPLICA_ALREADY_EXISTS`.
+
+**Причина:** Не удалось создать реплицируемую таблицу (SMT или RMT), поскольку с путём в ZooKeeper уже связана существующая реплика. Маловероятно, что это вызвано ошибкой пользователя (явное повторное использование UUID теперь запрещено через `database_replicated_allow_explicit_uuid`). Скорее всего, это ошибка в базе данных Replicated или Shared Catalog.
+
+**Решение:**
+
+Обратитесь в службу поддержки ClickHouse. Скорее всего, это ошибка, требующая разбирательства со стороны инженерной команды.
+
+***
+
+<div id="cannot-write-to-file-descriptor-clickhousecannotwritetofiledescriptor">
+  ### Невозможно записать в дескриптор файла (ClickHouseCannotWriteToFileDescriptor)
+</div>
+
+**Симптом:** Срабатывает alert `ClickHouseCannotWriteToFileDescriptor`, либо в журналах появляются ошибки `CANNOT_WRITE_TO_FILE_DESCRIPTOR` или `no space left on device`.
+
+**Причина:** Диск кэша заполнен. Исключение генерируется, когда не хватает места для новой записи кэша или для внешней обработки данных (например, внешней агрегации, внешних JOIN). Это может быть связано с ошибкой конфигурации: диск был создан с меньшим объемом, чем запрошен в config CR.
+
+**Решение:**
+
+1. **Сначала проверьте известную проблему с `partial_merge`.** Есть известная ошибка при отслеживании использования диска кэша, когда указана настройка запроса `join_algorithm = 'partial_merge'`. Проверьте, используется ли эта настройка.
+
+2. **Подключитесь к поду:**
+
+   ```bash
+   kubectl exec -n <namespace> -it <pod> -- /bin/bash
+   ```
+
+3. **Проверьте фактический размер диска:**
+
+   ```text
+   df -h
+   ```
+
+4. **Проверьте требуемый размер диска кэша** в ClickHouse:
+
+   ```sql
+   SELECT path, max_size FROM system.filesystem_cache_settings
+   ```
+
+   Обратите внимание, что несколько кэшей (например, `s3diskWithCache`, `diskPlainRewritableForSystemTablesWithCache`) могут использовать один и тот же путь (`/mnt/clickhouse-cache/sharedS3DiskCache`).
+
+5. **Сравните фактический и требуемый размеры:**
+
+6. Если фактический размер диска меньше требуемого, проблема связана с ошибкой конфигурации. Обратитесь к команде Data Plane Operator.
+
+7. Если размер диска достаточен, вероятно, это ошибка в отслеживании использования диска кэша. Проведите проверку через `system.filesystem_cache`.
+
+***
+
+<div id="storage-and-infrastructure-issues">
+  ## Проблемы с хранилищем и инфраструктурой
+</div>
+
+<div id="zone-details-could-not-be-found-for-any-pv">
+  ### Не удалось найти сведения о зоне ни для одного PV
+</div>
+
+**Симптом:** В логах ClickHouse Operator отображается ошибка `zone details couldn't be found for any PV`, и реконсиляция не может завершиться.
+
+**Причина:** Оператор ожидает, что для PersistentVolumes будут автоматически заданы node affinity с учетом топологии с использованием метки `topology.kubernetes.io/zone`. Обычно это обеспечивают provisioner&#39;ы томов с поддержкой топологии (например, AWS EBS). Однако у некоторых облачных провайдеров (например, IBM) или в средах в собственной инфраструктуре эта метка не заполняется автоматически либо используются нестандартные метки.
+
+**Решение:**
+
+1. **Добавьте `allowedTopologies` в свой StorageClass**, чтобы тома создавались с корректными node affinity:
+
+   ```yaml
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: local-nvme-sc
+   allowVolumeExpansion: true
+   parameters:
+     path: /nvme/disk
+   provisioner: rancher.io/local-path
+   reclaimPolicy: Delete
+   volumeBindingMode: WaitForFirstConsumer
+   allowedTopologies:
+     - matchLabelExpressions:
+         - key: topology.kubernetes.io/zone
+           values:
+             - <your_cluster_name>-keeper
+             - <your_host_1>
+             - <your_host_2>
+             - <your_host_3>
+         - key: directpv.min.io/zone
+           values:
+             - default
+   ```
+
+2. **Если для топологии используются нестандартные метки**, настройте свойство оператора `additionalZoneLabelRegexes`. Например, при использовании Helm-чарта задайте Helm-значение `operator.additionalZoneLabelRegexes` в виде регулярного выражения, соответствующего вашим меткам (например, `directpv.*zone`).
+
+***
+
+<div id="nvme-disk-questions">
+  ### Вопросы о диске NVMe
+</div>
+
+**Симптом:** Неясно, требуются ли экземпляры с подключённым NVMe, или возникают вопросы об использовании альтернативного хранилища для диска кэша.
+
+**Причина:** Диск NVMe служит томом кэша для данных, поступающих из S3 (или эквивалентного объектного хранилища). Оператор монтирует его в поды сервера ClickHouse и настраивает как S3-диск кэша:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+При использовании SharedMergeTree ClickHouse не хранит данные локально. Кэш существует исключительно для оптимизации производительности запросов.
+
+**Решение:**
+
+Вместо NVMe можно использовать другие устройства хранения (например, AWS EBS). В этом случае скорректируйте следующее:
+
+1. Убедитесь, что диски подключены к экземплярам, используемым для Kubernetes-подов сервера ClickHouse.
+2. Измените шаблон запуска, чтобы он учитывал изменения в конфигурации дисков. Вы по-прежнему можете создать RAID-диск и отформатировать его в ext4 или xfs, но для вывода списка устройств используйте соответствующие инструменты (например, `lsblk`).
+3. Если диски смонтированы не в `/nvme/disk`, задайте `hostPathBaseDirectory` в Helm-чарте ClickHouseCluster равным фактической точке монтирования.
+
+Обратите внимание, что альтернативные варианты хранилища могут повлиять на производительность запросов.
+
+***
+
+<div id="configuration-issues">
+  ## Проблемы конфигурации
+</div>
+
+<div id="loadbalancertype-field-behavior">
+  ### Поведение поля loadBalancerType
+</div>
+
+**Симптом:** Указание поля `loadBalancerType` в CRD ClickHouseCluster не приводит к созданию аннотаций load balancer в Service.
+
+**Причина:** Поле `loadBalancerType` не добавляет аннотации load balancer в Service кластера ClickHouse. ClickHouse Operator не поддерживает создание load balancer для кластера ClickHouse. Это поле имеет смысл только в ClickHouse Cloud, где оно используется для упрощения создания пользователей в консоли Cloud SQL.
+
+**Решение:**
+
+Никаких действий не требуется, если только вы не используете ClickHouse Cloud. Если для вашего кластера ClickHouse нужен load balancer, настройте его отдельно с помощью стандартных аннотаций и конфигураций Kubernetes Service, вне CRD ClickHouseCluster.
+
+***
+
+<div id="diagnostic-commands-quick-reference">
+  ## Краткая справка по командам диагностики
+</div>
+
+<div id="cluster-status">
+  ### Статус кластера
+</div>
+
+```bash
+kubectl get clickhouseclusters -A
+```
+
+<div id="operator-logs">
+  ### Журналы оператора
+</div>
+
+```bash
+kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+```
+
+<div id="pod-events-and-details">
+  ### События и подробности о поде
+</div>
+
+```bash
+kubectl describe pod <pod-name> -n <namespace>
+kubectl get events -n <namespace>
+```
+
+<div id="previous-container-logs-after-a-crash">
+  ### Журналы предыдущего контейнера (после сбоя)
+</div>
+
+```bash
+kubectl logs -p <pod-name> -n <namespace>
+```
+
+<div id="replica-state-map">
+  ### Схема состояний реплики
+</div>
+
+```bash
+kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+```
+
+<div id="replication-queue-size-per-table-sql">
+  ### Размер очереди репликации по каждой таблице (SQL)
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```
+
+Альтернативный вариант через `system.replicas`:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table-sql">
+  ### Самая старая запись в очереди репликации для каждой таблицы (SQL)
+</div>
+
+Создайте предупреждение, если возраст самой старой записи превышает 1 день.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```

@@ -227,12 +227,7 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        R"(
-CREATE TABLE t (s String) ENGINE = Memory;
-INSERT INTO t VALUES ('a1'), ('a02');
-
-SELECT s FROM t ORDER BY naturalSortKey(s);
-        )",
+        "SELECT s FROM t ORDER BY naturalSortKey(s)",
         R"(
 ┌─s───┐
 │ a1  │

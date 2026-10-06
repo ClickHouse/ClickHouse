@@ -1,0 +1,64 @@
+---
+title: 'Bring Your Own Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: '개요'
+keywords: ['BYOC', '클라우드', 'Bring Your Own Cloud']
+description: '자체 클라우드 인프라에 ClickHouse 배포'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+BYOC(Bring Your Own Cloud)를 사용하면 자체 클라우드 인프라에 ClickHouse Cloud를 배포할 수 있습니다. 이는 ClickHouse Cloud 관리형 서비스를 사용할 수 없는 특정 요구 사항이나 제약 조건이 있을 때 유용합니다.
+
+> **액세스가 필요하시면 [문의해 주세요](https://clickhouse.com/cloud/bring-your-own-cloud).** 자세한 내용은 [서비스 약관](https://clickhouse.com/legal/agreements/terms-of-service)을 참조하십시오.
+
+현재 BYOC는 AWS에서만 지원됩니다. GCP 및 Azure의 대기자 명단은 [여기](https://clickhouse.com/cloud/bring-your-own-cloud)에서 등록할 수 있습니다.
+
+<Note>
+  BYOC는 대규모 배포를 위해 특별히 설계되었으며, 고객은 약정 계약을 체결해야 합니다.
+</Note>
+
+<div id="glossary">
+  ## 용어집
+</div>
+
+* **ClickHouse VPC:**  ClickHouse Cloud가 소유한 VPC입니다.
+* **Customer BYOC VPC:** 고객의 클라우드 계정이 소유한 VPC로, ClickHouse Cloud가 프로비저닝 및 관리하며 ClickHouse Cloud BYOC 배포 전용으로 사용됩니다.
+* **Customer VPC** Customer BYOC VPC에 연결해야 하는 애플리케이션에 사용되는, 고객의 클라우드 계정이 소유한 기타 VPC입니다.
+
+<div id="features">
+  ## 기능
+</div>
+
+<div id="supported-features">
+  ### 지원되는 기능
+</div>
+
+* **SharedMergeTree**: ClickHouse Cloud와 BYOC는 동일한 바이너리와 구성을 사용합니다. 따라서 SharedMergeTree와 같은 ClickHouse 코어의 모든 기능을 BYOC에서도 지원합니다.
+* **서비스 상태 관리를 위한 Console 액세스**:
+  * 시작, 중지, 종료 등의 작업을 지원합니다.
+  * 서비스와 상태를 확인할 수 있습니다.
+* **백업 및 복원.**
+* **수동 수직 및 수평 스케일링.**
+* **유휴 상태 전환.**
+* **Warehouses**: 컴퓨트-컴퓨트 분리
+* **Tailscale을 통한 제로 트러스트 네트워크.**
+* **모니터링**:
+  * Cloud Console에는 서비스 상태를 모니터링할 수 있는 기본 제공 상태 대시보드가 포함되어 있습니다.
+  * Prometheus, Grafana, Datadog를 사용한 중앙 집중식 모니터링을 위해 Prometheus 스크레이핑을 지원합니다. 설정 방법은 [Prometheus 문서](/ko/products/cloud/features/monitoring/prometheus)를 참조하십시오.
+* **VPC Peering.**
+* **통합**: 전체 목록은 [이 페이지](/ko/integrations/home)에서 확인하십시오.
+* **S3 보안.**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/).**
+
+<div id="planned-features-currently-unsupported">
+  ### 예정된 기능(현재는 지원되지 않음)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/) (CMEK, 고객 관리형 암호화 키)
+* ClickPipes를 통한 수집
+* 자동 스케일링
+* MySQL 인터페이스
