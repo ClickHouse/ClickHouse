@@ -26,9 +26,12 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -53,17 +56,20 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/StepWallClockRegistry.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
@@ -331,6 +337,161 @@ namespace
             }
         }
     };
+
+    /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
+    void hideWholeNode(ASTPtr & node)
+    {
+        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        hidden->setAlias(node->tryGetAlias());
+        node = std::move(hidden);
+    }
+
+    /// Replace every literal inside a node with `'[HIDDEN]'`, keeping the expression structure. Only
+    /// for the secret arguments of `encrypt` / `HMAC`, where the shape is not a secret (a key built as
+    /// `leftPad('...', 16, '*')` stays readable as such); every other secret slot is hidden whole.
+    void hideLiteralsInSubtree(ASTPtr & node)
+    {
+        if (node->as<ASTLiteral>())
+        {
+            hideWholeNode(node);
+            return;
+        }
+        for (auto & child : node->children)
+            hideLiteralsInSubtree(child);
+    }
+
+    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
+    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    {
+        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
+            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+    }
+
+    bool isKeyValueArgument(const IAST & node)
+    {
+        const auto * function = node.as<ASTFunction>();
+        return function && function->name == "equals" && function->arguments && function->arguments->children.size() == 2;
+    }
+
+    /// The secret value of a `key = value` argument is its second child; anything else carries the
+    /// secret in the node itself.
+    ASTPtr & secretValueSlot(ASTPtr & node)
+    {
+        if (isKeyValueArgument(*node))
+            return node->as<ASTFunction>()->arguments->children[1];
+        return node;
+    }
+
+    /// Replace an argument with the partially masked SQL the formatter prints for it: a URL with its
+    /// credentials removed, or the masked locator of a `Backup` database. The original node must not
+    /// stay in the tree, so text that does not parse, or parses into a node that cannot take the
+    /// argument's place (a `COLUMNS(...)` matcher has no alias), hides the argument whole.
+    void replaceWithMaskedText(ASTPtr & node, const String & text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        String error;
+        ASTPtr parsed = tryParseQuery(
+            parser,
+            pos,
+            text.data() + text.size(),
+            error,
+            /* hilite= */ false,
+            "masked secret argument",
+            /* allow_multi_statements= */ false,
+            /* max_query_size= */ 0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /* skip_insignificant= */ true);
+        if (!parsed || !dynamic_cast<ASTWithAlias *>(parsed.get()))
+        {
+            hideWholeNode(node);
+            return;
+        }
+        parsed->setAlias(node->tryGetAlias());
+        node = std::move(parsed);
+    }
+
+    /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead. As in the
+    /// formatter, a secret slot becomes one `'[HIDDEN]'` literal. That includes the slots the finder could
+    /// not inspect (a url built by `concat(...)`, an identifier in a password slot): their expression is
+    /// part of the secret and must not be dumped node by node. Only the `encrypt` / `HMAC` span keeps its
+    /// structure (see `hideLiteralsInSubtree`). All values of a nested map (`headers(...)`,
+    /// `extra_credentials(...)`) are hidden; the formatter keeps the non-secret `extra_credentials`
+    /// values, so the dump is stricter.
+    struct HideSecretArgumentsMatcher
+    {
+        struct Data
+        {
+        };
+
+        static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
+        {
+            auto * function = ast->as<ASTFunction>();
+            if (!function || !function->arguments)
+                return;
+
+            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            if (!secret_arguments.hasSecrets())
+                return;
+
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (auto * map = arguments[i]->as<ASTFunction>();
+                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                {
+                    for (auto & entry : map->arguments->children)
+                        hideWholeNode(secretValueSlot(entry));
+                    continue;
+                }
+
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    replaceWithMaskedText(arguments[i], replaced->second);
+                    continue;
+                }
+
+                /// An individually masked argument: only the named `key = value` form keeps its key.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    hideWholeNode(masked->second ? secretValueSlot(arguments[i]) : arguments[i]);
+                    continue;
+                }
+
+                if (!(secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count))
+                    continue;
+
+                if (!secret_arguments.replacement.empty())
+                {
+                    const auto text
+                        = secret_arguments.quote_replacement ? quoteString(secret_arguments.replacement) : secret_arguments.replacement;
+                    replaceWithMaskedText(secret_arguments.are_named ? secretValueSlot(arguments[i]) : arguments[i], text);
+                    continue;
+                }
+
+                if (secret_arguments.are_named)
+                {
+                    hideWholeNode(secretValueSlot(arguments[i]));
+                    continue;
+                }
+
+                /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
+                /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
+                /// `key = value` in the span: it is a positional secret written as a comparison.
+                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                    hideLiteralsInSubtree(arguments[i]);
+                else
+                    hideWholeNode(arguments[i]);
+            }
+        }
+    };
+
+    using HideSecretArgumentsVisitor = InDepthNodeVisitor<HideSecretArgumentsMatcher, true>;
 
 }
 
@@ -935,6 +1096,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
+            /// `optimize = 1` inlines views the user may read but whose secrets they may not see.
+            /// Hide them under the same gate as `SHOW CREATE`.
+            if (!canDisplaySecrets(query_context))
+            {
+                HideSecretArgumentsVisitor::Data data;
+                HideSecretArgumentsVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -1213,6 +1382,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+
+            auto outer_thread_group = CurrentThread::getGroup();
+            if (!outer_thread_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
+
+            /// Keep the group alive until the plan and pipeline release their operator trackers.
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
+            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
+
             QueryPlan plan = std::move(analyzed.plan);
             ContextPtr context = analyzed.context;
             auto parallel_replicas_builder = analyzed.parallel_replicas_builder;
@@ -1237,70 +1415,65 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-            watch.restart();
-            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
-            planning_ns += watch.elapsed();
-
-            watch.restart();
-            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
-
-            pipeline.setNormalizedQueryHash(query_context->getNormalizedQueryHash());
-            auto to_complete = options.to_stage == QueryProcessingStage::Complete;
-            auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
-
-            /// setLimitsAndQuota attaches a transform, so it must run before the pipeline is completed below.
-            if (!inner_ignore_limits && to_complete)
+            QueryPipeline pipeline;
+            StepProfilerPtr step_profiler;
+            UInt64 execute_ns = 0;
             {
-                auto limits = StreamLocalLimits::forQueryResult(context->getSettingsRef());
-                pipeline.setLimitsAndQuota(limits, quota);
-            }
-
-            if (quota)
-                pipeline.setQuota(quota);
-
-            pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
-
-            /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
-            /// these sources, including when it comes from nested sub-plans the plan walk would miss.
-            for (const auto & processor : pipeline.getProcessors())
-            {
-                const auto * proc_ptr = processor.get();
-                if (dynamic_cast<const RemoteSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
-                    || dynamic_cast<const DelayedSource *>(proc_ptr))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
-            }
-
-            planning_ns += watch.elapsed();
-
-            auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
-            step_wall_clock_registry->populateFromPlan(plan);
-            pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
-
-            pipeline.setCollectWorkIntervals(analyzed.time);
-
-            CompletedPipelineExecutor executor(pipeline);
-
-            if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
-                executor.setCancelCallback(
-                    std::move(cancel_callback),
-                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
-
-            auto outer_thread_group = CurrentThread::getGroup();
-            if (!outer_thread_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
-
-            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
-            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
-
-            watch.restart();
-            {
+                /// Operator trackers created during pipeline construction must have the same parent as during execution.
                 ThreadGroupSwitcher switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
+
+                watch.restart();
+                auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
+                planning_ns += watch.elapsed();
+
+                watch.restart();
+                pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+
+                pipeline.setNormalizedQueryHash(query_context->getNormalizedQueryHash());
+                auto to_complete = options.to_stage == QueryProcessingStage::Complete;
+                auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
+
+                /// setLimitsAndQuota attaches a transform, so it must run before the pipeline is completed below.
+                if (!inner_ignore_limits && to_complete)
+                {
+                    auto limits = StreamLocalLimits::forQueryResult(context->getSettingsRef());
+                    pipeline.setLimitsAndQuota(limits, quota);
+                }
+
+                if (quota)
+                    pipeline.setQuota(quota);
+
+                pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+
+                /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
+                /// these sources, including when it comes from nested sub-plans the plan walk would miss.
+                for (const auto & processor : pipeline.getProcessors())
+                {
+                    const auto * proc_ptr = processor.get();
+                    if (dynamic_cast<const RemoteSource *>(proc_ptr)
+                        || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
+                        || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
+                        || dynamic_cast<const DelayedSource *>(proc_ptr))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+                }
+
+                planning_ns += watch.elapsed();
+
+                step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+                pipeline.setStepProfiler(step_profiler);
+
+                CompletedPipelineExecutor executor(pipeline);
+
+                if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
+                    executor.setCancelCallback(
+                        std::move(cancel_callback),
+                        query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+
+                watch.restart();
                 executor.execute();
+                execute_ns = watch.elapsed();
             }
-            UInt64 execute_ns = watch.elapsed();
 
             UInt64 total_time_ns = planning_ns + execute_ns;
 
@@ -1308,7 +1481,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, watch.getStart(), execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

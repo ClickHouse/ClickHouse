@@ -97,6 +97,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -178,10 +183,16 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
     }
 
@@ -192,10 +203,17 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlaceNotNull(
+                row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 

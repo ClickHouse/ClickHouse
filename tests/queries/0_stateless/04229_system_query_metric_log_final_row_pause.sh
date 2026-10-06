@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: `PAUSEABLE_ONCE` failpoint fires exactly once globally; a concurrent
 #   run of this test could steal the failpoint pause from the other run.
 

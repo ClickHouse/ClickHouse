@@ -212,6 +212,7 @@ public:
 
         String next();
         size_t size();
+        size_t sizeForStreams(size_t requested);
     private:
         class Impl;
         /// shared_ptr to have copy constructor
@@ -410,7 +411,7 @@ public:
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
+    /// If `headers(...)` argument is present, parses it and moves it before the key-value arguments (to the array end if there are none).
     /// Returns number of arguments excluding `headers(...)`.
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 

@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 결합 방향에 따라 해당하는 함수로 변환합니다.
 
-<div id="access-operators">
-  ## 접근 연산자
-</div>
+## 접근 연산자 {#access-operators}
 
 `a[N]` – 배열 원소에 접근합니다. `arrayElement(a, N)` 함수와 같습니다.
 `N`은 정수 배열일 수도 있으며, 이 경우 `arrayMap(i -> a[i], N)`과 마찬가지로 해당 위치의 모든 원소가 배열로 반환됩니다.
@@ -19,17 +17,13 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
 
 `a.N` – 튜플 원소에 접근합니다. `tupleElement(a, N)` 함수와 같습니다.
 
-<div id="numeric-negation-operator">
-  ## 숫자 부호 반전 연산자
-</div>
+## 숫자 부호 반전 연산자 {#numeric-negation-operator}
 
 `-a` – `negate(a)` 함수입니다.
 
 튜플 부호 반전은 다음을 참조하십시오: [tupleNegate](/ko/reference/functions/regular-functions/tuple-functions#tupleNegate).
 
-<div id="multiplication-and-division-operators">
-  ## 곱셈 및 나눗셈 연산자
-</div>
+## 곱셈 및 나눗셈 연산자 {#multiplication-and-division-operators}
 
 `a * b` – `multiply(a, b)` 함수입니다.
 
@@ -41,9 +35,7 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
 
 `a % b` – `modulo(a, b)` 함수입니다。
 
-<div id="addition-and-subtraction-operators">
-  ## 덧셈 및 뺄셈 연산자
-</div>
+## 덧셈 및 뺄셈 연산자 {#addition-and-subtraction-operators}
 
 `a + b` – `plus(a, b)` 함수입니다.
 
@@ -53,105 +45,73 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
 
 튜플 뺄셈: [tupleMinus](/ko/reference/functions/regular-functions/tuple-functions#tupleMinus).
 
-<div id="comparison-operators">
-  ## 비교 연산자
-</div>
+## 비교 연산자 {#comparison-operators}
 
-<div id="equals-function">
-  ### equals 함수
-</div>
+### equals 함수 {#equals-function}
 
 `a = b` – `equals(a, b)` 함수입니다.
 
 `a == b` – `equals(a, b)` 함수입니다.
 
-<div id="notequals-function">
-  ### notEquals 함수
-</div>
+### notEquals 함수 {#notequals-function}
 
 `a != b` – `notEquals(a, b)` 함수입니다.
 
 `a <> b` – `notEquals(a, b)` 함수입니다.
 
-<div id="lessorequals-function">
-  ### lessOrEquals 함수
-</div>
+### lessOrEquals 함수 {#lessorequals-function}
 
 `a <= b` - `lessOrEquals(a, b)` 함수입니다.
 
-<div id="greaterorequals-function">
-  ### greaterOrEquals 함수
-</div>
+### greaterOrEquals 함수 {#greaterorequals-function}
 
 `a >= b` – `greaterOrEquals(a, b)` 함수입니다.
 
-<div id="less-function">
-  ### less 함수
-</div>
+### less 함수 {#less-function}
 
 `a < b` – `less(a, b)` 함수입니다.
 
-<div id="greater-function">
-  ### greater 함수
-</div>
+### greater 함수 {#greater-function}
 
 `a > b` – `greater(a, b)` 함수입니다.
 
-<div id="like-function">
-  ### like 함수
-</div>
+### like 함수 {#like-function}
 
 `a LIKE b` – `like(a, b)` 함수입니다.
 
-<div id="notlike-function">
-  ### notLike 함수
-</div>
+### notLike 함수 {#notlike-function}
 
 `a NOT LIKE b` – `notLike(a, b)` 함수입니다.
 
-<div id="ilike-function">
-  ### ilike 함수
-</div>
+### ilike 함수 {#ilike-function}
 
 `a ILIKE b` – `ilike(a, b)` 함수입니다.
 
-<div id="match-function">
-  ### match 함수
-</div>
+### match 함수 {#match-function}
 
 `a REGEXP b` – `match(a, b)` 함수입니다.
 
 `a ~ b` – `match(a, b)` 함수입니다(PostgreSQL 스타일의 정규식 일치).
 
-<div id="notmatch-function">
-  ### notMatch 함수
-</div>
+### notMatch 함수 {#notmatch-function}
 
 `a !~ b` – `notMatch(a, b)` 함수(`a`가 정규식 `b`와 일치하지 않는지 확인합니다).
 
-<div id="matchcaseinsensitive-function">
-  ### matchCaseInsensitive 함수
-</div>
+### matchCaseInsensitive 함수 {#matchcaseinsensitive-function}
 
 `a ~* b` – `matchCaseInsensitive(a, b)` 함수(대소문자를 구분하지 않는 정규식 일치)입니다.
 
-<div id="notmatchcaseinsensitive-function">
-  ### notMatchCaseInsensitive 함수
-</div>
+### notMatchCaseInsensitive 함수 {#notmatchcaseinsensitive-function}
 
 `a !~* b` – `notMatchCaseInsensitive(a, b)` 함수(`a`가 정규식 `b`와 대소문자를 구분하지 않고 일치하지 않는지 확인합니다).
 
-<div id="between-function">
-  ### BETWEEN 함수
-</div>
+### BETWEEN 함수 {#between-function}
 
 `a BETWEEN b AND c` – `a >= b AND a <= c`와 동일합니다.
 
 `a NOT BETWEEN b AND c` – `a < b OR a > c`와 동일합니다.
 
-<div id="is-not-distinct-from">
-  ### is not distinct from 연산자 (`<=>`)
-</div>
+### is not distinct from 연산자 (`<=>`) {#is-not-distinct-from}
 
 <Note>
   25.10부터는 `<=>`를 다른 연산자와 마찬가지로 사용할 수 있습니다.
@@ -185,70 +145,48 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-<div id="operators-for-working-with-strings">
-  ## 문자열을 다루는 연산자
-</div>
+## 문자열을 다루는 연산자 {#operators-for-working-with-strings}
 
-<div id="overlay">
-  ### OVERLAY
-</div>
+### OVERLAY {#overlay}
 
 * `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 함수입니다.
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 함수입니다.
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 함수입니다.
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 함수입니다.
 
-<div id="operators-for-working-with-data-sets">
-  ## 데이터 세트 작업을 위한 연산자
-</div>
+## 데이터 세트 작업을 위한 연산자 {#operators-for-working-with-data-sets}
 
 [IN 연산자](/ko/reference/statements/in) 및 [EXISTS](/ko/reference/operators/exists) 연산자를 참조하십시오.
 
-<div id="in-function">
-  ### in 함수
-</div>
+### in 함수 {#in-function}
 
 `a IN ...` – `in(a, b)` 함수입니다.
 
-<div id="notin-function">
-  ### notIn 함수
-</div>
+### notIn 함수 {#notin-function}
 
 `a NOT IN ...`에 해당하는 `notIn(a, b)` 함수입니다.
 
-<div id="globalin-function">
-  ### globalIn 함수
-</div>
+### globalIn 함수 {#globalin-function}
 
 `a GLOBAL IN ...` – `globalIn(a, b)` 함수입니다.
 
-<div id="globalnotin-function">
-  ### globalNotIn 함수
-</div>
+### globalNotIn 함수 {#globalnotin-function}
 
 `a GLOBAL NOT IN ...` – `globalNotIn(a, b)` 함수입니다.
 
-<div id="in-subquery-function">
-  ### in 서브쿼리 함수
-</div>
+### in 서브쿼리 함수 {#in-subquery-function}
 
 `a = ANY (subquery)` – `in(a, subquery)` 함수와 같습니다.
 
-<div id="notin-subquery-function">
-  ### notIn 서브쿼리 함수
-</div>
+### notIn 서브쿼리 함수 {#notin-subquery-function}
 
 `a != ANY (subquery)` – `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`와 동일합니다.
 
-<div id="in-subquery-function-1">
-  ### in subquery 함수
-</div>
+### in subquery 함수 {#in-subquery-function-1}
 
 `a = ALL (subquery)` – `a IN (SELECT singleValueOrNull(*) FROM subquery)`와 같습니다.
 
-<div id="notin-subquery-function">
-  ### notIn 서브쿼리 함수
-</div>
+### notIn 서브쿼리 함수 {#notin-subquery-function-1}
 
 `a != ALL (subquery)` – `notIn(a, subquery)` 함수입니다.
 
@@ -286,9 +224,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-<div id="some-all-on-arrays">
-  ### 배열에 대한 `SOME` / `ALL`
-</div>
+### 배열에 대한 `SOME` / `ALL` {#some-all-on-arrays}
 
 위에서 설명한 서브쿼리 형식 외에도 `SOME` / `ALL`의 오른쪽에는 배열 표현식(배열 리터럴, 배열 타입의 컬럼, 또는 배열을 반환하는 임의의 표현식)이 올 수 있습니다. 이는 PostgreSQL 스타일의 배열 한정자 구문입니다. 이 구문은 구문 분석 시점에 인식되어 배열 함수로 재작성되므로 수동으로 재작성할 필요가 없습니다:
 
@@ -338,13 +274,9 @@ SELECT
   ```
 </Info>
 
-<div id="operators-for-working-with-dates-and-times">
-  ## 날짜 및 시간을 다루는 연산자
-</div>
+## 날짜 및 시간을 다루는 연산자 {#operators-for-working-with-dates-and-times}
 
-<div id="extract">
-  ### EXTRACT
-</div>
+### EXTRACT {#extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -430,9 +362,7 @@ FROM test.Orders;
 
 [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql)에서 더 많은 예시를 확인할 수 있습니다.
 
-<div id="interval">
-  ### INTERVAL
-</div>
+### INTERVAL {#interval}
 
 [Date](/ko/reference/data-types/date) 및 [DateTime](/ko/reference/data-types/datetime) 타입 값과의 산술 연산에 사용되는 [인터벌](/ko/reference/data-types/special-data-types/interval) 타입 값을 생성합니다.
 
@@ -506,9 +436,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * [인터벌](/ko/reference/data-types/special-data-types/interval) 데이터 타입
 * [toInterval](/ko/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 변환 함수
 
-<div id="date-time-addition">
-  ### 날짜 및 시간 덧셈
-</div>
+### 날짜 및 시간 덧셈 {#date-time-addition}
 
 [Date](/ko/reference/data-types/date) 또는 [Date32](/ko/reference/data-types/date32) 값은 `+` 연산자를 사용해 [Time](/ko/reference/data-types/time) 또는 [Time64](/ko/reference/data-types/time64) 값에 더할 수 있습니다. 결과는 해당 날짜의 지정된 시각을 나타내는 [DateTime](/ko/reference/data-types/datetime) 또는 [DateTime64](/ko/reference/data-types/datetime64)입니다. 이 연산은 교환법칙이 성립합니다.
 
@@ -558,9 +486,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-<div id="at-time-zone">
-  ### AT TIME ZONE 및 AT LOCAL
-</div>
+### AT TIME ZONE 및 AT LOCAL {#at-time-zone}
 
 후위 연산자 `AT TIME ZONE` 및 `AT LOCAL`은 `DateTime` 또는 `DateTime64` 값을 다른 시간대로 변환합니다. 이는 기존 [`toTimeZone`](/ko/reference/functions/regular-functions/date-time-functions#toTimezone) 함수의 축약 문법입니다:
 
@@ -615,27 +541,19 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/ko/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/ko/reference/functions/regular-functions/date-time-functions#timezone)
 
-<div id="logical-and-operator">
-  ## 논리 AND 연산자
-</div>
+## 논리 AND 연산자 {#logical-and-operator}
 
 구문 `SELECT a AND b` — 함수 [and](/ko/reference/functions/regular-functions/logical-functions#and)로 `a`와 `b`의 논리곱을 계산합니다.
 
-<div id="logical-or-operator">
-  ## 논리 OR 연산자
-</div>
+## 논리 OR 연산자 {#logical-or-operator}
 
 구문 `SELECT a OR b` — [or](/ko/reference/functions/regular-functions/logical-functions#or) 함수를 사용해 `a`와 `b`의 논리합을 계산합니다.
 
-<div id="logical-negation-operator">
-  ## 논리 부정 연산자
-</div>
+## 논리 부정 연산자 {#logical-negation-operator}
 
 구문 `SELECT NOT a` — 함수 [not](/ko/reference/functions/regular-functions/logical-functions#not)를 사용해 `a`의 논리 부정을 계산합니다.
 
-<div id="conditional-operator">
-  ## 조건 연산자
-</div>
+## 조건 연산자 {#conditional-operator}
 
 `a ? b : c` – `if(a, b, c)` 함수입니다.
 
@@ -643,9 +561,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 조건 연산자는 먼저 b와 c의 값을 계산한 다음, 조건 a가 참인지 확인하고 그에 해당하는 값을 반환합니다. `b` 또는 `C`가 [arrayJoin()](/ko/reference/functions/regular-functions/array-join) 함수인 경우, &quot;a&quot; 조건과 관계없이 각 행이 복제됩니다.
 
-<div id="conditional-expression">
-  ## 조건부 표현식
-</div>
+## 조건부 표현식 {#conditional-expression}
 
 ```sql
 CASE [x]
@@ -661,57 +577,43 @@ END
 
 `transform` 함수는 `NULL`에서는 작동하지 않습니다.
 
-<div id="concatenation-operator">
-  ## 연결 연산자
-</div>
+## 연결 연산자 {#concatenation-operator}
 
 `s1 || s2` – `concat(s1, s2)` 함수입니다.
 
-<div id="lambda-creation-operator">
-  ## 람다 생성 연산자
-</div>
+## 람다 생성 연산자 {#lambda-creation-operator}
 
 `x -> expr` – `lambda(x, expr) 함수.`
 
 다음 연산자는 괄호이므로 우선순위가 없습니다:
 
-<div id="array-creation-operator">
-  ## 배열 생성 연산자
-</div>
+## 배열 생성 연산자 {#array-creation-operator}
 
 `[x1, ...]` – `array(x1, ...)` 함수.
 
-<div id="tuple-creation-operator">
-  ## 튜플 생성 연산자
-</div>
+## 튜플 생성 연산자 {#tuple-creation-operator}
 
 `(x1, x2, ...)` – `tuple(x2, x2, ...)` 함수입니다.
 
-<div id="associativity">
-  ## 결합 방향
-</div>
+## 결합 방향 {#associativity}
 
 모든 이항 연산자는 좌결합입니다. 예를 들어 `1 + 2 + 3`은 `plus(plus(1, 2), 3)`으로 변환됩니다.
 하지만 때로는 이것이 예상대로 동작하지 않을 수 있습니다. 예를 들어 `SELECT 4 > 2 > 3`의 결과는 0입니다.
 
 효율성을 위해 `and` 및 `or` 함수는 인수를 개수 제한 없이 받을 수 있습니다. 이에 해당하는 `AND` 및 `OR` 연산자 체인은 이 함수를 한 번 호출하는 형태로 변환됩니다.
 
-<div id="checking-for-null">
-  ## `NULL` 검사하기
-</div>
+## `NULL` 검사하기 {#checking-for-null}
 
 ClickHouse는 `IS NULL` 및 `IS NOT NULL` 연산자를 지원합니다.
 
-<div id="is_null">
-  ### IS NULL
-</div>
+### IS NULL {#is_null}
 
 * [널 허용](/ko/reference/data-types/nullable) 타입 값에서 `IS NULL` 연산자는 다음을 반환합니다.
   * 값이 `NULL`이면 `1`
   * 그렇지 않으면 `0`
 * 그 밖의 값에서는 `IS NULL` 연산자가 항상 `0`을 반환합니다.
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 이 동작을 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. `SELECT n IS NULL FROM table` 쿼리는 `SELECT n.null FROM TABLE`로 변환됩니다.
+[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 이 동작을 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. `SELECT n IS NULL FROM table` 쿼리는 `SELECT n.null != 0 FROM TABLE`로 변환됩니다.
 
 {/* */}
 
@@ -725,9 +627,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-<div id="is_not_null">
-  ### IS NOT NULL
-</div>
+### IS NOT NULL {#is_not_null}
 
 * [널 허용](/ko/reference/data-types/nullable) 타입의 값에 대해 `IS NOT NULL` 연산자는 다음 값을 반환합니다.
   * 값이 `NULL`이면 `0`
@@ -748,9 +648,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 [optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 이를 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. 쿼리 `SELECT n IS NOT NULL FROM table`는 `SELECT NOT n.null FROM TABLE`로 변환됩니다.
 
-<div id="checking-boolean-values">
-  ## 불리언 값 확인
-</div>
+## 불리언 값 확인 {#checking-boolean-values}
 
 ClickHouse는 `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, `IS NOT UNKNOWN` 연산자를 지원합니다.
 이 연산자들은 [Bool](/ko/reference/data-types/boolean) 및 `Nullable(Bool)` 표현식과 함께 사용됩니다.

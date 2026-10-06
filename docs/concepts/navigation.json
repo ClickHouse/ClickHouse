@@ -263,6 +263,7 @@
                   "group": "Web SQL UI (Play)",
                   "pages": [
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/index",
+                    "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping"

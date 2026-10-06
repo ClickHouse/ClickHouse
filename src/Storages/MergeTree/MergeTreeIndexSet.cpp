@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -30,17 +31,14 @@ namespace ErrorCodes
 /// 0b11 -- can be true and false at the same time
 static const Field UNKNOWN_FIELD(3u);
 
+/// 0b10 -- can be false only
+static const Field FALSE_FIELD(2u);
+
 /// ColumnVariant::getExtremes, which ColumnDynamic delegates to, sets both bounds to Null without
 /// reading the rows, and a Null bound in Range means "unbounded", never "the value NULL".
 static bool hasMeaningfulFieldExtremes(const IDataType & type)
 {
-    bool result = !isDynamic(type) && !isVariant(type);
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (isDynamic(child) || isVariant(child))
-            result = false;
-    });
-    return result;
+    return !anyInTypeTree(type, [](const IDataType & subtype) { return isDynamic(subtype) || isVariant(subtype); });
 }
 
 
@@ -634,18 +632,16 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
 
-                /// A NULL atom value yields a NULL from `__bitWrapperFunc` rather than a BoolMask.
-                /// That NULL propagates through `__bitBoolMaskAnd`/`Or` and wrongly prunes a granule
-                /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
+                /// A NULL atom never makes the condition true, so its NULL mask reads as "can be false" only.
                 if (isNullableOrLowCardinalityNullable(result_node->result_type))
                 {
-                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                    auto unknown_type = std::make_shared<DataTypeUInt8>();
-                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
-                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
+                    auto false_name = calculateConstantActionNodeName(FALSE_FIELD);
+                    auto false_type = std::make_shared<DataTypeUInt8>();
+                    ColumnConstPtr false_column = false_type->createColumnConst(1, FALSE_FIELD);
+                    const auto & false_node = result_dag.addColumn(std::move(false_column), std::move(false_type), std::move(false_name));
 
                     auto if_null_function = FunctionFactory::instance().get("ifNull", context);
-                    result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
+                    result_node = &result_dag.addFunction(if_null_function, {result_node, &false_node}, {});
                 }
             }
             else
@@ -688,8 +684,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
@@ -844,8 +839,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     if (WhichDataType(node.result_type).isSet())
     {

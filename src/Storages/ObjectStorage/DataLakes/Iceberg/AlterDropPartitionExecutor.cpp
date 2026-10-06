@@ -116,8 +116,9 @@ void validateDropPartitionAST(const ASTPartition & ast, const PartitionCommand &
 ///
 /// For the function form, each argument is constant-folded with
 /// `evaluateConstantExpression` (so transforms like `icebergBucket(4, 'abc')`
-/// or `toYearNumSinceEpoch(toDate('2025-01-01'))` evaluate to their
-/// partition-key value). Each resulting `Field` is then coerced to the
+/// or `icebergYear(toDate('2025-01-01'))` evaluate to their
+/// partition-key value; the `PARTITION BY` aliases such as `toYearNumSinceEpoch`
+/// evaluate as the matching `iceberg*` transform). Each resulting `Field` is then coerced to the
 /// corresponding partition-result type via `convertFieldToTypeOrThrow`.
 Row parsePartitionTuple(const IAST & value_ast, const DataTypes & partition_types, ContextPtr context)
 {
@@ -161,7 +162,17 @@ Row parsePartitionTuple(const IAST & value_ast, const DataTypes & partition_type
 
     for (size_t i = 0; i < partitions_fields_count; ++i)
     {
-        Field value = evaluateConstantExpression(args[i], context).first;
+        ASTPtr element = args[i];
+        if (const auto * function = element->as<ASTFunction>())
+        {
+            String name = normalizeIcebergTransformFunctionName(function->name);
+            if (name != function->name)
+            {
+                element = element->clone();
+                element->as<ASTFunction &>().name = std::move(name);
+            }
+        }
+        Field value = evaluateConstantExpression(element, context).first;
         out[i] = convertFieldToTypeOrThrow(value, *partition_types[i]);
     }
     return out;

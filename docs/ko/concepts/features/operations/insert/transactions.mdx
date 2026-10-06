@@ -1,5 +1,5 @@
 ---
-description: 'ClickHouse의 트랜잭션(ACID) 지원을 설명하는 문서'
+description: 'ClickHouse의 삽입 보장과 실험적 트랜잭션 기능을 이해하고, 트랜잭션 워크로드에 ClickHouse Managed Postgres를 사용해야 하는 경우를 알아봅니다.'
 slug: /guides/developer/transactional
 title: '트랜잭션(ACID) 지원'
 doc_type: 'guide'
@@ -8,9 +8,17 @@ doc_type: 'guide'
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
-  ## 사례 1: MergeTree* 계열의 한 테이블의 한 파티션에 INSERT
-</div>
+이 페이지에서는 삽입 보장과 여러 SQL 문에 걸친 트랜잭션에 대한 실험적 지원을 포함하여 ClickHouse 분석 데이터베이스의 트랜잭션 보장을 설명합니다.
+
+<Tip>
+  **트랜잭션 워크로드(OLTP)에 적합한 데이터베이스를 찾고 있습니까?**
+
+  개별 레코드에 대한 빈번한 읽기와 쓰기가 필요한 애플리케이션이라면 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)를 애플리케이션의 시스템 오브 레코드(system of record)로 사용하고, ClickPipes로 커밋된 변경 사항을 복제하여 분석용으로 ClickHouse를 추가하십시오. [Postgres와 ClickHouse가 함께 동작하는 방식 알아보기](/ko/products/managed-postgres/overview#transactions-and-analytics).
+</Tip>
+
+ClickHouse에 대한 삽입의 원자성, 격리성 또는 지속성을 확인하려면 아래 사례를 이어서 참고하십시오.
+
+## 사례 1: MergeTree* 계열의 한 테이블의 한 파티션에 INSERT {#case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family}
 
 삽입되는 행이 패킹되어 단일 블록으로 삽입되면(참고 사항 참조) 트랜잭션(ACID)이 보장됩니다.
 
@@ -20,39 +28,29 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 * Durable: 성공한 INSERT는 클라이언트에 응답하기 전에 단일 레플리카 또는 여러 레플리카(`insert_quorum` setting으로 제어됨)의 파일 시스템에 기록되며, ClickHouse는 OS에 파일 시스템 데이터를 저장 매체와 동기화하도록 요청할 수 있습니다(`fsync_after_insert` setting으로 제어됨).
 * materialized view가 관련된 경우 하나의 statement로 여러 테이블에 INSERT할 수 있습니다(클라이언트의 INSERT 대상이 연결된 materialized view를 가진 테이블인 경우).
 
-<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
-  ## 사례 2: MergeTree* 계열의 단일 테이블에서 여러 파티션에 INSERT
-</div>
+## 사례 2: MergeTree* 계열의 단일 테이블에서 여러 파티션에 INSERT {#case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family}
 
 위의 사례 1과 같지만, 다음과 같은 세부 사항이 있습니다:
 
 * 테이블에 파티션이 많고 INSERT가 여러 파티션에 걸쳐 수행되는 경우, 각 파티션에 대한 삽입은 각각 독립적인 트랜잭션으로 처리됩니다
 
-<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
-  ## 사례 3: MergeTree* 계열의 분산 테이블 하나에 INSERT
-</div>
+## 사례 3: MergeTree* 계열의 분산 테이블 하나에 INSERT {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
 
 위의 사례 1과 동일하며, 다음과 같은 차이점이 있습니다:
 
 * Distributed 테이블에 대한 INSERT는 전체적으로는 트랜잭션이 아니지만, 각 세그먼트에 대한 삽입은 트랜잭션으로 처리됩니다
 
-<div id="case-4-using-a-buffer-table">
-  ## 사례 4: Buffer 테이블 사용
-</div>
+## 사례 4: Buffer 테이블 사용 {#case-4-using-a-buffer-table}
 
 * Buffer 테이블에 삽입하는 작업은 원자성, 격리성, 일관성, 내구성을 모두 보장하지 않습니다
 
-<div id="case-5-using-async_insert">
-  ## 사례 5: `async_insert` 사용
-</div>
+## 사례 5: `async_insert` 사용 {#case-5-using-async_insert}
 
 위의 사례 1과 동일하지만, 다음 사항에 유의하십시오:
 
 * `async_insert`가 활성화되어 있고 `wait_for_async_insert`가 1(기본값)로 설정된 경우에도 원자성(atomicity)은 보장되지만, `wait_for_async_insert`가 0으로 설정된 경우에는 원자성(atomicity)이 보장되지 않습니다.
 
-<div id="notes">
-  ## 참고 사항
-</div>
+## 참고 사항 {#notes}
 
 * 클라이언트에서 일부 데이터 포맷으로 삽입된 행은 다음과 같은 경우 하나의 블록으로 패킹됩니다:
   * 삽입 포맷이 행 기반(CSV, TSV, Values, JSONEachRow 등)이고, 데이터가 `max_insert_block_size`행 미만(기본값 약 1 000 000행)이거나, 병렬 파싱을 사용하는 경우(기본적으로 활성화됨) `min_chunk_bytes_for_parallel_parsing`바이트 미만(기본값 10 MB)인 경우
@@ -65,9 +63,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 * ACID에서 말하는 &quot;consistency&quot;는 분산 시스템의 의미를 다루지 않습니다. 이에 대해서는 https://jepsen.io/consistency 를 참조하십시오. 이는 다른 설정(`select_sequential_consistency`)으로 제어됩니다
 * 이 설명은 여러 테이블, materialized view, 여러 SELECT 등에 걸쳐 완전한 기능의 트랜잭션을 지원하는 새로운 트랜잭션 기능은 다루지 않습니다(다음 섹션인 Transactions, Commit, and Rollback 참조)
 
-<div id="transactions-commit-and-rollback">
-  ## 트랜잭션, 커밋 및 롤백
-</div>
+## 트랜잭션, 커밋 및 롤백 {#transactions-commit-and-rollback}
 
 <ExperimentalBadge />
 
@@ -75,9 +71,9 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 이 문서 상단에서 설명한 기능에 더해, ClickHouse는 트랜잭션, 커밋, 롤백 기능을 실험적으로 지원합니다.
 
-<div id="requirements">
-  ### 요구 사항
-</div>
+애플리케이션 워크로드에는 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview#transactions-and-analytics)를 고려하십시오.
+
+### 요구 사항 {#requirements}
 
 * 트랜잭션 추적을 위해 ClickHouse Keeper 또는 ZooKeeper를 배포합니다
 * atomic DB만 지원합니다(기본값)
@@ -89,23 +85,17 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
   </clickhouse>
   ```
 
-<div id="notes-1">
-  ### 참고 사항
-</div>
+### 참고 사항 {#notes-1}
 
 * 이는 실험적 기능이므로 변경될 수 있습니다.
 * 트랜잭션(트랜잭션) 중 예외가 발생하면 해당 트랜잭션을 커밋할 수 없습니다. 여기에는 오타로 인해 발생한 `UNKNOWN_FUNCTION` 예외를 포함한 모든 예외가 해당합니다.
 * 중첩 트랜잭션은 지원되지 않습니다. 현재 트랜잭션을 완료한 후 새 트랜잭션을 시작하십시오.
 
-<div id="configuration">
-  ### 구성
-</div>
+### 구성 {#configuration}
 
 다음 예시는 ClickHouse Keeper가 활성화된 단일 노드 ClickHouse 서버 환경을 기준으로 합니다.
 
-<div id="enable-experimental-transaction-support">
-  #### 실험적 트랜잭션 지원 활성화
-</div>
+#### 실험적 트랜잭션 지원 활성화 {#enable-experimental-transaction-support}
 
 ```xml title=/etc/clickhouse-server/config.d/transactions.xml
 <clickhouse>
@@ -113,9 +103,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 </clickhouse>
 ```
 
-<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
-  #### ClickHouse Keeper가 활성화된 단일 ClickHouse 서버 노드용 기본 구성
-</div>
+#### ClickHouse Keeper가 활성화된 단일 ClickHouse 서버 노드용 기본 구성 {#basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled}
 
 <Note>
   ClickHouse 서버와 적절한 정족수(quorum)의 ClickHouse Keeper 노드를 배포하는 방법에 대한 자세한 내용은 [배포](/ko/guides/oss/deployment-and-scaling/terminology) 문서를 참조하십시오. 여기에 제시된 구성은 실험 목적으로만 제공됩니다.
@@ -161,13 +149,9 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 </clickhouse>
 ```
 
-<div id="example">
-  ### 예시
-</div>
+### 예시 {#example}
 
-<div id="verify-that-experimental-transactions-are-enabled">
-  #### 실험적 트랜잭션이 활성화되었는지 확인
-</div>
+#### 실험적 트랜잭션이 활성화되었는지 확인 {#verify-that-experimental-transactions-are-enabled}
 
 실험적 트랜잭션과 ClickHouse Keeper가 활성화되었는지 확인하려면 `BEGIN TRANSACTION` 또는 `START TRANSACTION`을 실행한 다음 `ROLLBACK`을 실행하십시오. ClickHouse Keeper는 트랜잭션 추적에 사용됩니다.
 
@@ -205,9 +189,7 @@ ROLLBACK
 Ok.
 ```
 
-<div id="create-a-table-for-testing">
-  #### 테스트용 테이블 생성
-</div>
+#### 테스트용 테이블 생성 {#create-a-table-for-testing}
 
 <Tip>
   테이블 생성은 트랜잭션으로 처리되지 않습니다. 이 DDL 쿼리는 트랜잭션 외부에서 실행하십시오.
@@ -226,9 +208,7 @@ ORDER BY n
 Ok.
 ```
 
-<div id="begin-a-transaction-and-insert-a-row">
-  #### 트랜잭션을 시작하고 행을 삽입합니다
-</div>
+#### 트랜잭션을 시작하고 행을 삽입합니다 {#begin-a-transaction-and-insert-a-row}
 
 ```sql
 BEGIN TRANSACTION
@@ -261,9 +241,7 @@ FROM mergetree_table
   트랜잭션 내에서 테이블을 쿼리하면 아직 커밋되지 않았더라도 행이 삽입된 상태임을 확인할 수 있습니다.
 </Note>
 
-<div id="rollback-the-transaction-and-query-the-table-again">
-  #### 트랜잭션을 롤백한 다음 테이블을 다시 쿼리합니다
-</div>
+#### 트랜잭션을 롤백한 다음 테이블을 다시 쿼리합니다 {#rollback-the-transaction-and-query-the-table-again}
 
 트랜잭션이 롤백되었는지 확인합니다:
 
@@ -286,9 +264,7 @@ Ok.
 0 rows in set. Elapsed: 0.002 sec.
 ```
 
-<div id="complete-a-transaction-and-query-the-table-again">
-  #### 트랜잭션을 완료한 뒤 테이블을 다시 쿼리하기
-</div>
+#### 트랜잭션을 완료한 뒤 테이블을 다시 쿼리하기 {#complete-a-transaction-and-query-the-table-again}
 
 ```sql
 BEGIN TRANSACTION
@@ -325,9 +301,7 @@ FROM mergetree_table
 └────┘
 ```
 
-<div id="transactions-introspection">
-  ### 트랜잭션 내부 검사
-</div>
+### 트랜잭션 내부 검사 {#transactions-introspection}
 
 `system.transactions` 테이블(table)을 쿼리하여 트랜잭션을 확인할 수 있지만, 트랜잭션이 진행 중인 세션(session)에서는 해당
 테이블을 쿼리할 수 없다는 점에 유의하십시오. 이 테이블을 쿼리하려면 두 번째 `clickhouse client` 세션을 여십시오.
@@ -348,8 +322,6 @@ is_readonly: 1
 state:       RUNNING
 ```
 
-<div id="more-details">
-  ## 추가 정보
-</div>
+## 추가 정보 {#more-details}
 
 더 광범위한 테스트를 확인하고 진행 상황을 최신 상태로 파악하려면 이 [메타 이슈](https://github.com/ClickHouse/ClickHouse/issues/48794)를 참조하십시오.
