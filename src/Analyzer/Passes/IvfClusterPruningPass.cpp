@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 
 #include <Common/typeid_cast.h>
 
@@ -94,8 +95,7 @@ public:
             return;
 
         const auto & storage = table_node->getStorage();
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
-        if (!merge_tree)
+        if (!castStorage<MergeTreeData>(storage, DeferredTable::Load))
             return;
 
         auto context = getContext();

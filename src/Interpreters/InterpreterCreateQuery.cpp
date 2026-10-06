@@ -2371,7 +2371,7 @@ void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & 
         return;
 
     auto table = DatabaseCatalog::instance().tryGetTable({create.getDatabase(), create.getTable()}, getContext());
-    if (!dynamic_cast<const MergeTreeData *>(table.get()))
+    if (!castStorage<MergeTreeData>(table, DeferredTable::Load))
         return;
 
     const auto metadata = table->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);

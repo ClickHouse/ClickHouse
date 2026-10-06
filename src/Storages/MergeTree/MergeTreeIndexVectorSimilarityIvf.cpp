@@ -251,21 +251,21 @@ void MergeTreeIndexGranuleVectorSimilarityIvf::serializeBinary(WriteBuffer & ost
 
 void MergeTreeIndexGranuleVectorSimilarityIvf::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    UInt64 file_version;
+    UInt64 file_version = 0;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
         throw Exception(ErrorCodes::FORMAT_VERSION_TOO_OLD,
             "IVF index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
             FILE_FORMAT_VERSION, file_version);
 
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
 
     cluster_counts.clear();
     for (UInt64 i = 0; i < size; ++i)
     {
-        IvfClusterId cluster_id;
-        UInt64 count;
+        IvfClusterId cluster_id = 0;
+        UInt64 count = 0;
         readBinaryLittleEndian(cluster_id, istr);
         readVarUInt(count, istr);
         cluster_counts.emplace_hint(cluster_counts.end(), cluster_id, count);
