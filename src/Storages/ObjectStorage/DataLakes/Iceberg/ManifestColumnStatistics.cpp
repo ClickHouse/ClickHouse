@@ -248,15 +248,12 @@ UInt64 ManifestColumnStatistics::estimateDistinctValues(
     /// above the rows and the clamp below gives the estimate.
     else if (range_width)
         num_distinct_values = *range_width;
-    /// `column_sizes` over the width of a fixed-width type; a variable-width type skips to the guess from the type.
+    /// `column_sizes` over the width of a fixed-width type; a variable-width type skips to the guess below.
     else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
         num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
-    else if (isBool(target.nested_type))
-        num_distinct_values = 2;
-    else if (isString(target.nested_type))
-        num_distinct_values = rows / 2;
+    /// The estimator's own guess, as for MergeTree without a `uniq` statistic.
     else
-        num_distinct_values = rows / 10 * 3 + rows % 10 * 3 / 10;
+        num_distinct_values = column.num_distinct_values;
 
     /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
     return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
