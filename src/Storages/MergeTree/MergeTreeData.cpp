@@ -5703,7 +5703,6 @@ void checkDefaultsOfSortingKeyColumns(
                         continue;
 
                     dependencies.push_back(dependency);
-                    /// The analyzer has already followed the ALIAS chains.
                     const auto dependency_default = new_columns.getDefault(dependency);
                     if (dependency_default && dependency_default->kind != ColumnDefaultKind::Alias)
                         expressions.push_back(dependency_default->expression);
