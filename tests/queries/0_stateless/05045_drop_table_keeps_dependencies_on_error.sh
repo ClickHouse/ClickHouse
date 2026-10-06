@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-replicated-database, no-fasttest
 # no-parallel: the failpoint below is server-global, so a concurrent DROP TABLE would consume it.
 # no-replicated-database: there the DROP is enqueued in the replicated DDL log and returns before the
 # local drop runs, so the injected failure never reaches the client.
