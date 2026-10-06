@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-shared-merge-tree, no-parallel
+# Tags: no-object-storage, no-shared-merge-tree, no-parallel, no-fasttest
 # Tag no-object-storage: object storage disks do not fsync local directories.
 # Tag no-shared-merge-tree: the mutation_*.txt entry file is a plain-MergeTree-only durability record;
 #   SharedMergeTree keeps mutations in Keeper.
