@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <IO/ReadPipeline.h>
+#include <IO/PipelineReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
 #include <base/scope_guard.h>
+#include <base/defines.h>
 
 #include <chrono>
 #include <cstring>
@@ -27,6 +29,8 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromFileDescriptorRead;
+    extern const Event CreatedReadBufferDirectIO;
+    extern const Event CreatedReadBufferDirectIOFailed;
 }
 
 namespace DB::FileCacheSetting
@@ -243,6 +247,51 @@ TEST(ReadPipeline, LocalFileSourceUnknownSizeReadsAtEOF)
 {
     checkLocalFileSourceReadAtEOF(/* known_size */ false);
 }
+
+
+#if defined(OS_LINUX)
+
+TEST(ReadPipeline, LocalFileSourceExecutorUnknownSizeDoesNotUseDirectIO)
+{
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
+
+    const String data = "hello";
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(data, out);
+        out.finalize();
+    }
+
+    ReadSettings settings;
+    settings.reader_executor.enabled = true;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 4096;
+
+    ReadPipeline pipeline;
+    pipeline.setLocalFileSource(
+        tmp_file->path(), StoredObjects{testObject(tmp_file->path(), StoredObject::UnknownSize)}, settings);
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto direct_io_before = counters[ProfileEvents::CreatedReadBufferDirectIO];
+    const auto direct_io_failed_before = counters[ProfileEvents::CreatedReadBufferDirectIOFailed];
+
+    auto buf = pipeline.build();
+    /// Ensure the test covers `LocalSourceReader`, not the legacy path.
+    ASSERT_NE(dynamic_cast<PipelineReadBuffer *>(buf.get()), nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+
+    /// `UnknownSize` must not be treated as a huge file exceeding the Direct I/O threshold.
+    /// Count failed opens too, so the test works even when `O_DIRECT` is unsupported.
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferDirectIO], direct_io_before);
+    EXPECT_EQ(counters[ProfileEvents::CreatedReadBufferDirectIOFailed], direct_io_failed_before);
+}
+
+#endif
 
 
 /// -- Source + Gather: single object --
