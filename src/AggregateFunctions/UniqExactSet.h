@@ -112,6 +112,20 @@ public:
         }
     }
 
+    void ALWAYS_INLINE prefetch(const value_type & key) const
+    {
+        if (isTwoLevel())
+            asTwoLevel().prefetch(key);
+        else
+            asSingleLevel().prefetch(key);
+    }
+
+    /// Whether inserts are likely to miss the cache, so prefetching their cells pays.
+    bool ALWAYS_INLINE isWorthPrefetching(size_t l2_cache_size) const
+    {
+        return isTwoLevel() || asSingleLevel().getBufferSizeInBytes() > l2_cache_size;
+    }
+
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.

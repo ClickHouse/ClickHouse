@@ -17,6 +17,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -30,6 +31,11 @@
 #include <Columns/ColumnString.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+namespace ProfileEvents
+{
+    extern const Event AggregationUniqExactPrefetchedRows;
+}
 
 namespace DB
 {
@@ -562,6 +568,7 @@ private:
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
+    static constexpr bool is_uniq_exact = detail::IsUniqExactSet<DataSet>::value;
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -617,6 +624,8 @@ public:
                 [&](size_t row) { return DataSet::fullHash(Traits::hash(Traits::value(*columns[0], row))); },
                 [&](AggregateDataPtr place) { return &this->data(place).set; });
         }
+        else if constexpr (is_uniq_exact)
+            addBatchExact</*places_can_be_null=*/ true>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
         else
             IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatch(
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
@@ -627,12 +636,61 @@ public:
     {
         if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
             addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else if constexpr (is_uniq_exact)
+            addBatchExact</*places_can_be_null=*/ false>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
         else
             /// Unlike its addBatch, the base's non-null variant skips the per-row places[] test.
             IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatchWithNonNullPlaces(
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
+private:
+    /// A segment of rows reaching a set larger than L2 is hashed and prefetched in chunks; other segments
+    /// keep the per-row loop, which is faster while the sets stay in the cache.
+    template <bool places_can_be_null>
+    void addBatchExact(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const
+    {
+        using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>;
+        using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
+        using Key = typename DataSet::value_type;
+        static constexpr SetLevelHint hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
+        static constexpr size_t segment_size = 512;
+        static constexpr size_t probe_size = 8;
+
+        const char8_t * flags = if_argument_pos >= 0
+            ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
+        const size_t l2_cache_size = getL2CacheSize();
+        auto get_set = [&](AggregateDataPtr place) { return &this->data(place).set; };
+        size_t prefetched_rows = 0;
+
+        for (size_t segment_begin = row_begin; segment_begin < row_end; segment_begin += segment_size)
+        {
+            const size_t segment_end = std::min(segment_begin + segment_size, row_end);
+            const size_t probe_end = std::min(segment_begin + probe_size, segment_end);
+            bool prefetch = false;
+            for (size_t row = segment_begin; row < probe_end && !prefetch; ++row)
+                prefetch = (!places_can_be_null || places[row]) && (!flags || flags[row])
+                    && get_set(places[row] + place_offset)->isWorthPrefetching(l2_cache_size);
+
+            if (prefetch)
+            {
+                addBatchUniq<&DataSet::template insert<const Key &, hint>>(segment_begin, segment_end, places, place_offset,
+                    columns, if_argument_pos,
+                    [&](size_t row) -> Key { return Traits::hashExact(Traits::value(*columns[0], row)); }, get_set);
+                prefetched_rows += segment_end - segment_begin;
+            }
+            else if constexpr (places_can_be_null)
+                Base::addBatch(segment_begin, segment_end, places, place_offset, columns, arena, if_argument_pos);
+            else
+                Base::addBatchWithNonNullPlaces(segment_begin, segment_end, places, place_offset, columns, arena, if_argument_pos);
+        }
+
+        if (prefetched_rows)
+            ProfileEvents::increment(ProfileEvents::AggregationUniqExactPrefetchedRows, prefetched_rows);
+    }
+
+public:
     void ALWAYS_INLINE addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override

@@ -1053,6 +1053,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
+    M(AggregationUniqExactPrefetchedRows, "How many rows `uniqExact` processed in `GROUP BY` with the hash set cells prefetched, because the sets of their groups were larger than the CPU cache.", ValueType::Number) \
     M(AggregationSharedKeptKeysRebuilds, "Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
     M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
     M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \

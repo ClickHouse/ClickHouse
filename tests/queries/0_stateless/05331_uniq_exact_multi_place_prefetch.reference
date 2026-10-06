@@ -1,0 +1,11 @@
+single level	263	0	407317
+two level	263	0	407317
+String	263	0	407317
+If	263	0	271141
+Small sets	261	0	7317
+Skipped rows	0
+uniq_exact_prefetch_if	1
+uniq_exact_prefetch_single_level	1
+uniq_exact_prefetch_small_sets	0
+uniq_exact_prefetch_string	1
+uniq_exact_prefetch_two_level	1
