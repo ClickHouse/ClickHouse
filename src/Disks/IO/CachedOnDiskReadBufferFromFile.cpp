@@ -1694,6 +1694,10 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             }
         }
 
+        /// Only cache hits count for the efficiency window.
+        if (state.read_type == ReadType::CACHED)
+            file_segment.markRead(offset, size);
+
         if (do_download && download_current_segment_succeeded)
             chassert(file_segment.getCurrentWriteOffset() >= offset + size);
 

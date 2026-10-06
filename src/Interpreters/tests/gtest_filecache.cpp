@@ -45,6 +45,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
+#include <Interpreters/FileCache/FileCacheEfficiency.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
@@ -57,6 +58,8 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/ChainedBuffers.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -78,6 +81,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictedNoHitBytes;
 }
 
 using namespace std::chrono_literals;
@@ -123,6 +127,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsUInt64 efficiency_window_sec;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
 }
 
 void printRanges(const auto & segments)
@@ -4227,4 +4233,637 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+namespace
+{
+
+/// One efficiency granule, and a file segment of 8 granules: reads in whole granules give exact values.
+constexpr size_t G = FileSegment::EFFICIENCY_GRANULE_SIZE;
+constexpr size_t S = 8 * G;
+/// An efficiency window that the real time of a test never reaches the end of: the tests move to
+/// the next window only with `shiftTimeForTesting`.
+constexpr UInt64 W = 3600;
+
+/// A small LRU cache that holds 8 file segments of `S` bytes.
+FileCacheSettings efficiencyCacheSettings(UInt64 window_sec)
+{
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 8 * S;
+    settings[FileCacheSetting::max_elements] = 16;
+    settings[FileCacheSetting::max_file_segment_size] = S;
+    settings[FileCacheSetting::boundary_alignment] = S;
+    settings[FileCacheSetting::reserve_granularity] = 2 * G;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::efficiency_window_sec] = window_sec;
+    return settings;
+}
+
+DB::ContextMutablePtr makeEfficiencyQueryContext(const String & query_id)
+{
+    ServerUUID::setRandomForUnitTests();
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    return query_context;
+}
+
+}
+
+TEST_F(FileCacheTest, EfficiencyWindow)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_window_test"));
+    auto cache = DB::FileCache("efficiency_window", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_window_key");
+    auto next_window = [&]
+    {
+        cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+        return cache.getEfficiency().getSnapshot();
+    };
+    auto expect = [&](const FileCacheEfficiency::Snapshot & snapshot, UInt64 active, UInt64 passive)
+    {
+        EXPECT_EQ(snapshot.active_bytes, active);
+        EXPECT_EQ(snapshot.passive_bytes, passive);
+        EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, cache.getUsedCacheSize());
+    };
+
+    auto holder_a = cache.getOrSet(key, 0, S, 8 * S, {}, 0, user);
+    auto a = get(holder_a, 0);
+    download(a);
+    auto holder_b = cache.getOrSet(key, S, S, 8 * S, {}, 0, user);
+    auto b = get(holder_b, 0);
+    download(b);
+    EXPECT_FALSE(FileSegment::getInfo(b).efficiency.last_hit_windows_ago.has_value());
+
+    /// Window 0: A is read in full; B is not read and stays idle.
+    a->markRead(0, S);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.active_bytes, S);
+    expect(next_window(), /*active=*/S, /*passive=*/0);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.idle_bytes, S);
+    EXPECT_EQ(FileSegment::getInfo(a).efficiency.last_hit_windows_ago, 1);
+
+    /// Window 1: a 16-byte read of A counts its whole granule.
+    a->markRead(G + 10, 16);
+    expect(next_window(), G, 7 * G);
+
+    /// Window 2: no reads.
+    expect(next_window(), 0, 0);
+
+    /// Window 3: removing an unread file segment does not change the window.
+    a->markRead(0, G);
+    holder_b = nullptr;
+    b.reset();
+    cache.removeFileSegment(key, S, user.user_id);
+    expect(next_window(), G, 7 * G);
+
+    /// Window 4: a read file segment leaves the window when it is removed.
+    a->markRead(0, G);
+    holder_a = nullptr;
+    a.reset();
+    cache.removeFileSegment(key, 0, user.user_id);
+    expect(next_window(), 0, 0);
+
+    /// Window 5: reserve-ahead growth and the shrink at completion of a read file segment.
+    {
+        auto holder_c = cache.getOrSet(key, 2 * S, S, 8 * S, {}, 0, user);
+        auto c = get(holder_c, 0);
+        ASSERT_EQ(c->getOrSetDownloader(), FileSegment::getCallerId());
+        auto key_str = key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        auto write_granule = [&]
+        {
+            std::string data(G, '0');
+            c->write(data.data(), G, c->getCurrentWriteOffset());
+        };
+        std::string failure_reason;
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G (`reserve_granularity`)
+        write_granule();
+        c->markRead(2 * S, G);                              /// active G, passive G
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// fits into the reserved 2 * G
+        write_granule();
+        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G more: passive 3 * G
+        write_granule();
+        ASSERT_EQ(c->getReservedSize(), 4 * G);
+    }
+    /// The shrink at completion returns G bytes: passive 2 * G.
+    expect(next_window(), G, 2 * G);
+
+    /// Window 6: a read past the end of a file segment of `G + 100` bytes stops at its end.
+    auto short_key = FileCacheKey::fromPath("efficiency_window_short");
+    auto holder_d = cache.getOrSet(short_key, 0, G + 100, /*file_size=*/G + 100, {}, 0, user);
+    auto d = get(holder_d, 0);
+    ASSERT_EQ(d->range().size(), G + 100);
+    download(d);
+    d->markRead(G + 90, 110);
+    EXPECT_EQ(FileSegment::getInfo(d).efficiency.active_bytes, 100);
+    expect(next_window(), 100, G);
+
+    /// Window 7: eviction (of C, then D) removes the share of a read file segment.
+    d->markRead(0, G + 100);
+    holder_d = nullptr;
+    d.reset();
+    auto filler_key = FileCacheKey::fromPath("efficiency_window_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
+        download(get(holder, 0));
+    }
+    expect(next_window(), 0, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_concurrent_test"));
+    auto cache = DB::FileCache("efficiency_concurrent", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_concurrent_key");
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < 8; ++i)
+        threads.emplace_back([&, i] { segment->markRead(i * G, G); });
+    for (auto & thread : threads)
+        thread.join();
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, S);
+    EXPECT_EQ(snapshot.passive_bytes, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyDisabled)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_disabled_test"));
+    auto cache = DB::FileCache("efficiency_disabled", efficiencyCacheSettings(0));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_disabled_key");
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+    segment->markRead(0, S);
+
+    EXPECT_FALSE(FileSegment::getInfo(segment).efficiency.last_hit_windows_ago.has_value());
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.idle_bytes, S);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 0);
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_granule_test"));
+    /// Alignment 1 makes the shrink exact.
+    auto settings = efficiencyCacheSettings(W);
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_granule", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// A file segment that shrinks to 10 bytes before its first read counts 10 bytes.
+    auto shrunk_key = FileCacheKey::fromPath("efficiency_granule_shrunk");
+    {
+        auto holder = cache.getOrSet(shrunk_key, 0, S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        ASSERT_EQ(segment->range().size(), S);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(10, 1000, failure_reason));
+        auto key_str = shrunk_key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(10, '0');
+        segment->write(data.data(), 10, segment->getCurrentWriteOffset());
+    }
+    auto holder_shrunk = cache.getOrSet(shrunk_key, 0, 10, /*file_size=*/4 * S, {}, 0, user);
+    auto shrunk = get(holder_shrunk, 0);
+    ASSERT_EQ(shrunk->range().size(), 10);
+    ASSERT_EQ(shrunk->state(), State::DOWNLOADED);
+    shrunk->markRead(0, 10);
+    EXPECT_EQ(FileSegment::getInfo(shrunk).efficiency.active_bytes, 10);
+
+    /// The last granule of a file segment of `2 * G + 1001` bytes is cut at its end.
+    auto odd_key = FileCacheKey::fromPath("efficiency_granule_odd");
+    auto holder_odd = cache.getOrSet(odd_key, 0, 2 * G + 1001, /*file_size=*/2 * G + 1001, {}, 0, user);
+    auto odd = get(holder_odd, 0);
+    ASSERT_EQ(odd->range().size(), 2 * G + 1001);
+    download(odd);
+    odd->markRead(0, 2 * G + 1001);
+    EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 2 * G + 1001);
+}
+
+TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_stale_window_test"));
+    auto cache = DB::FileCache("efficiency_stale_window", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_stale_window_key");
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    segment->markRead(0, G);
+
+    /// A stale reader in window 0 must not move the segment back.
+    cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(W / 2));
+    segment->markRead(G, G);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W / 2));
+    segment->markRead(2 * G, G);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 2 * G);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 2 * G);
+    EXPECT_EQ(snapshot.passive_bytes, 6 * G);
+}
+
+TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_no_hit_test"));
+    auto cache = DB::FileCache("efficiency_no_hit", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_no_hit_key");
+    auto no_hit_bytes = [] { return ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedNoHitBytes]; };
+
+    /// A: filled and entered again by its filler, which `hits_count` counts as a hit; never served from the cache.
+    {
+        auto holder = cache.getOrSet(key, 0, S, 8 * S, {}, 0, user);
+        auto a = get(holder, 0);
+        download(a);
+        a->increasePriority();
+        ASSERT_EQ(a->getHitsCount(), 1);
+    }
+    /// B: served from the cache.
+    {
+        auto holder = cache.getOrSet(key, S, S, 8 * S, {}, 0, user);
+        auto b = get(holder, 0);
+        download(b);
+        b->markRead(S, S);
+    }
+
+    /// Eight new file segments fill the cache: LRU evicts A, then B.
+    const auto before = no_hit_bytes();
+    auto filler_key = FileCacheKey::fromPath("efficiency_no_hit_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
+        download(get(holder, 0));
+        if (i == 6)
+            EXPECT_EQ(no_hit_bytes() - before, S);   /// A is evicted.
+    }
+    EXPECT_EQ(no_hit_bytes() - before, S);   /// B was served, so it adds nothing.
+}
+
+TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytesAfterReload)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_no_hit_reload_test"));
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_no_hit_reload_key");
+    auto no_hit_bytes = [] { return ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictedNoHitBytes]; };
+
+    /// A file segment served from the cache before a restart.
+    {
+        auto cache = DB::FileCache("efficiency_no_hit_reload", efficiencyCacheSettings(W));
+        cache.initialize();
+        auto holder = cache.getOrSet(key, 0, S, /*file_size=*/S, {}, 0, user);
+        auto segment = get(holder, 0);
+        download(segment);
+        segment->markRead(0, S);
+    }
+
+    /// The cache loads it on startup as not served, so its eviction counts as no-hit.
+    auto cache = DB::FileCache("efficiency_no_hit_reload", efficiencyCacheSettings(W));
+    cache.initialize();
+    ASSERT_EQ(cache.getUsedCacheSize(), S);
+    const auto before = no_hit_bytes();
+    auto filler_key = FileCacheKey::fromPath("efficiency_no_hit_reload_filler");
+    for (size_t i = 0; i < 8; ++i)
+    {
+        auto holder = cache.getOrSet(filler_key, i * S, S, /*file_size=*/8 * S, {}, 0, user);
+        download(get(holder, 0));
+    }
+    EXPECT_EQ(no_hit_bytes() - before, S);
+}
+
+TEST_F(FileCacheTest, EfficiencySegmentWindows)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_segment_windows_test"));
+    auto cache = DB::FileCache("efficiency_segment_windows", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_segment_windows_key");
+    auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    download(segment);
+    auto expect = [&](UInt64 active, UInt64 passive, UInt64 idle, std::optional<UInt64> last_hit_windows_ago, UInt64 last_hit_active,
+        UInt64 last_hit_passive)
+    {
+        const auto info = FileSegment::getInfo(segment).efficiency;
+        EXPECT_EQ(info.active_bytes, active);
+        EXPECT_EQ(info.passive_bytes, passive);
+        EXPECT_EQ(info.idle_bytes, idle);
+        EXPECT_EQ(info.last_hit_windows_ago, last_hit_windows_ago);
+        EXPECT_EQ(info.last_hit_active_bytes, last_hit_active);
+        EXPECT_EQ(info.last_hit_passive_bytes, last_hit_passive);
+    };
+
+    /// Window 0: read in full.
+    segment->markRead(0, S);
+    expect(S, 0, 0, std::nullopt, 0, 0);
+
+    /// Window 1: a narrow read; the earlier hit window is window 0.
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    segment->markRead(0, G);
+    expect(G, 7 * G, 0, 1, S, 0);
+
+    /// Window 2: no read; the latest hit window is window 1.
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    expect(0, 0, S, 1, G, 7 * G);
+}
+
+TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_cache_writer_test"));
+    auto cache = std::make_shared<DB::FileCache>("efficiency_cache_writer", efficiencyCacheSettings(W));
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("efficiency_cache_writer_key");
+    auto holder = cache->getOrSet(key, 0, S, S, {}, 0, user);
+    auto segment = get(holder, 0);
+    FileSegmentsHolderSharedPtr shared_holder = std::move(holder);
+    auto key_str = key.toString();
+    fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+
+    auto chain = [](size_t offset, size_t size)
+    {
+        auto buffer = std::make_shared<OwnedChainedBuffer>(size);
+        memset(buffer->data(), '0', size);
+        ChainedBuffers chained;
+        chained.append(ChainedBufferNode{std::move(buffer), 0, size, offset});
+        return chained;
+    };
+    auto fill = [&](DiskCacheWriter & writer, size_t offset, size_t size)
+    {
+        auto role = writer.takeFillRole();
+        ASSERT_TRUE(role);
+        ASSERT_EQ(writer.write(chain(offset, size), role), size);
+    };
+    auto active = [&] { return FileSegment::getInfo(segment).efficiency.active_bytes; };
+
+    const DB::FilesystemCacheSettings settings;
+    DiskCacheWriter a(cache, /*object_file_offset=*/0, settings, shared_holder, ByteRange{0, S});
+    DiskCacheWriter b(cache, /*object_file_offset=*/0, settings, shared_holder, ByteRange{0, S});
+
+    /// A writer that serves its own fill does not reuse the cache.
+    fill(a, 0, 2 * G);
+    EXPECT_EQ(a.read(ByteRange{0, 2 * G}).totalBytes(), 2 * G);
+    EXPECT_EQ(active(), 0);
+
+    /// The bytes of another writer are a cache hit; own ones are still not.
+    fill(b, 2 * G, G);
+    EXPECT_EQ(a.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
+    EXPECT_EQ(active(), G);
+    EXPECT_EQ(b.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
+    EXPECT_EQ(active(), 3 * G);
+}
+
+TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_shrink_test"));
+    /// Alignment 1 makes the shrink exact.
+    auto settings = efficiencyCacheSettings(W);
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_shrink", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// A hit before the shrink starts the window while the segment is still `S` bytes.
+    auto key = FileCacheKey::fromPath("efficiency_shrink_key");
+    const FileSegment * before_shrink = nullptr;
+    {
+        auto holder = cache.getOrSet(key, 0, S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        before_shrink = segment.get();
+        ASSERT_EQ(segment->range().size(), S);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(2 * G + 100, 1000, failure_reason));
+        auto key_str = key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(2 * G + 100, '0');
+        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        segment->markRead(0, G);
+    }
+
+    /// The last holder shrank the same segment to its downloaded size. A hit on the new tail in the
+    /// same window counts only the bytes up to the new end.
+    auto holder = cache.getOrSet(key, 0, 2 * G + 100, /*file_size=*/4 * S, {}, 0, user);
+    auto segment = get(holder, 0);
+    ASSERT_EQ(segment.get(), before_shrink);
+    ASSERT_EQ(segment->range().size(), 2 * G + 100);
+    segment->markRead(2 * G, 100);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, G + 100);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, G + 100);
+    EXPECT_EQ(snapshot.passive_bytes, G);
+}
+
+TEST(FileCacheSegmentSizes, Buckets)
+{
+    const FileCacheSegmentSizes sizes(4_MiB);
+    auto expect = [&](size_t range_size, UInt8 bucket, bool large)
+    {
+        const auto size_class = sizes.getClass(range_size);
+        EXPECT_EQ(size_class.bucket, bucket) << range_size;
+        EXPECT_EQ(size_class.large, large) << range_size;
+    };
+    expect(1, 0, false);
+    expect(512_KiB, 0, false);
+    expect(512_KiB + 1, 1, false);
+    expect(4_MiB, 3, false);
+    expect(4_MiB + 1, 4, true);
+    expect(16_MiB, 5, true);
+    expect(16_MiB + 1, 6, true);
+    expect(32_MiB, 6, true);
+
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(0), "524288");
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(5), "16777216");
+    EXPECT_EQ(FileCacheSegmentSizes::getBucketName(6), "inf");
+}
+
+namespace
+{
+
+void expectSegmentSizes(FileCache & cache, const std::map<size_t, FileCacheSegmentSizes::Bucket> & expected, UInt64 large_bytes)
+{
+    const auto buckets = cache.getSegmentSizes().getBuckets();
+    for (size_t i = 0; i < buckets.size(); ++i)
+    {
+        const auto it = expected.find(i);
+        const auto bucket = it == expected.end() ? FileCacheSegmentSizes::Bucket{} : it->second;
+        EXPECT_EQ(buckets[i].segments, bucket.segments) << "bucket " << FileCacheSegmentSizes::getBucketName(i);
+        EXPECT_EQ(buckets[i].bytes, bucket.bytes) << "bucket " << FileCacheSegmentSizes::getBucketName(i);
+    }
+    EXPECT_EQ(cache.getSegmentSizes().getLargeBytes(), large_bytes);
+}
+
+}
+
+TEST_F(FileCacheTest, SegmentSizes)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("segment_sizes_test"));
+    /// File segments up to `4 * S` (2 MiB), aligned to `S` (512 KiB, the first bucket bound).
+    auto settings = efficiencyCacheSettings(0);
+    settings[FileCacheSetting::max_size] = 32 * S;
+    settings[FileCacheSetting::max_file_segment_size] = 4 * S;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t bucket_512k = 0;
+    const size_t bucket_2m = 2;
+
+    {
+        auto cache = DB::FileCache("segment_sizes", settings);
+        cache.initialize();
+
+        /// A file segment counts from its first reservation.
+        auto key = FileCacheKey::fromPath("segment_sizes_key");
+        {
+            auto holder = cache.getOrSet(key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+            auto segment = get(holder, 0);
+            ASSERT_EQ(segment->range().size(), 4 * S);
+            expectSegmentSizes(cache, {}, 0);
+
+            ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+            std::string failure_reason;
+            ASSERT_TRUE(segment->reserve(3 * G, 1000, failure_reason));
+            expectSegmentSizes(cache, {{bucket_2m, {1, 3 * G}}}, 3 * G);
+
+            auto key_str = key.toString();
+            fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+            std::string data(3 * G, '0');
+            segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        }
+        /// The last holder shrinks it to `S` (the downloaded size rounded up to the alignment),
+        /// so it moves to the 512 KiB bucket and is not large anymore.
+        expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}}, 0);
+
+        auto small_key = FileCacheKey::fromPath("segment_sizes_small");
+        auto small_holder = cache.getOrSet(small_key, 0, G + 100, /*file_size=*/G + 100, {}, 0, user);
+        download(get(small_holder, 0));
+        expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}}, 0);
+
+        auto big_key = FileCacheKey::fromPath("segment_sizes_big");
+        auto big_holder = cache.getOrSet(big_key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+        download(get(big_holder, 0));
+        big_holder = nullptr;
+        expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+        EXPECT_EQ(cache.getUsedCacheSize(), 4 * G + 100 + 4 * S);
+
+        /// Temporary data does not count.
+        {
+            auto temporary_holder = cache.set(
+                FileCacheKey::fromPath("segment_sizes_temporary"), 0, G, CreateFileSegmentSettings(FileSegmentKind::Ephemeral), user);
+            auto & temporary = temporary_holder->front();
+            ASSERT_EQ(temporary.getOrSetDownloader(), FileSegment::getCallerId());
+            std::string failure_reason;
+            ASSERT_TRUE(temporary.reserve(G, 1000, failure_reason));
+            EXPECT_EQ(cache.getUsedCacheSize(), 5 * G + 100 + 4 * S);
+            expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+        }
+
+        /// Removal subtracts the file segment.
+        small_holder = nullptr;
+        cache.removeFileSegment(small_key, 0, user.user_id);
+        expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+    }
+
+    /// On startup the file segments count with the sizes of their files.
+    auto cache = DB::FileCache("segment_sizes", settings);
+    cache.initialize();
+    expectSegmentSizes(cache, {{bucket_512k, {1, 3 * G}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
+}
+
+TEST_F(FileCacheTest, EfficiencyLargeSegments)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_large_test"));
+    /// File segments up to `4 * S`, aligned to `S`: a segment of `4 * S` is large, one of `S` is not.
+    auto settings = efficiencyCacheSettings(W);
+    settings[FileCacheSetting::max_size] = 32 * S;
+    settings[FileCacheSetting::max_file_segment_size] = 4 * S;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+    auto cache = DB::FileCache("efficiency_large", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto large_holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_large_key"), 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+    auto large = get(large_holder, 0);
+    download(large);
+    large->markRead(0, G);
+
+    auto short_holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_short_key"), 0, S, /*file_size=*/S, {}, 0, user);
+    auto short_segment = get(short_holder, 0);
+    download(short_segment);
+    short_segment->markRead(0, G);
+
+    /// A hit on a large file segment, which then shrinks to `S` (the downloaded size rounded up to the
+    /// alignment) and is not large anymore: its bytes leave the large class.
+    auto shrink_key = FileCacheKey::fromPath("efficiency_shrink_to_short_key");
+    {
+        auto holder = cache.getOrSet(shrink_key, 0, 4 * S, /*file_size=*/4 * S, {}, 0, user);
+        auto segment = get(holder, 0);
+        ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(segment->reserve(3 * G, 1000, failure_reason));
+        auto key_str = shrink_key.toString();
+        fs::create_directories(fs::path(cache_base_path) / key_str.substr(0, 3) / key_str);
+        std::string data(3 * G, '0');
+        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+        segment->markRead(0, G);
+    }
+    EXPECT_EQ(cache.getSegmentSizes().getLargeBytes(), 4 * S);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    const auto snapshot = cache.getEfficiency().getSnapshot();
+    EXPECT_EQ(snapshot.active_bytes, 3 * G);
+    EXPECT_EQ(snapshot.passive_bytes, (4 * S - G) + (S - G) + 2 * G);
+    EXPECT_EQ(snapshot.idle_bytes, 0);
+    EXPECT_EQ(snapshot.large_active_bytes, G);
+    EXPECT_EQ(snapshot.large_passive_bytes, 4 * S - G);
+    EXPECT_EQ(snapshot.large_idle_bytes, 0);
 }

@@ -212,12 +212,34 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
+        size_t active_bytes = 0;
+        size_t passive_bytes = 0;
+        size_t idle_bytes = 0;
+        size_t large_active_bytes = 0;
+        size_t large_passive_bytes = 0;
+        size_t large_idle_bytes = 0;
+        FileCacheSegmentSizes::Buckets size_buckets{};
 
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
+
+            const auto cache_buckets = cache_data->cache->getSegmentSizes().getBuckets();
+            for (size_t i = 0; i < size_buckets.size(); ++i)
+            {
+                size_buckets[i].segments += cache_buckets[i].segments;
+                size_buckets[i].bytes += cache_buckets[i].bytes;
+            }
+
+            const auto efficiency = cache_data->cache->getEfficiency().getSnapshot();
+            active_bytes += efficiency.active_bytes;
+            passive_bytes += efficiency.passive_bytes;
+            idle_bytes += efficiency.idle_bytes;
+            large_active_bytes += efficiency.large_active_bytes;
+            large_passive_bytes += efficiency.large_passive_bytes;
+            large_idle_bytes += efficiency.large_idle_bytes;
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
@@ -226,6 +248,31 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheActiveBytes"] = { active_bytes,
+            "Unique bytes of the `cache` virtual filesystem served from the cache in the last full efficiency window (`efficiency_window_sec`), rounded up to 64 KiB granules. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (at least one buffer, `prefetch_buffer_size` by default), not the bytes that the query decompresses. Active, passive and idle bytes add up to the cache size at the window rotation, at most one asynchronous metrics update after the window ends." };
+        new_values["FilesystemCachePassiveBytes"] = { passive_bytes,
+            "Bytes of the `cache` virtual filesystem not served from the cache in the last full efficiency window, in file segments with at least one cache hit in it. Cache efficiency is active / (active + passive)." };
+        new_values["FilesystemCacheIdleBytes"] = { idle_bytes,
+            "Bytes of the `cache` virtual filesystem in file segments with no cache hit in the last full efficiency window." };
+        new_values["FilesystemCacheLargeSegmentsActiveBytes"] = { large_active_bytes,
+            "The part of `FilesystemCacheActiveBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
+        new_values["FilesystemCacheLargeSegmentsPassiveBytes"] = { large_passive_bytes,
+            "The part of `FilesystemCachePassiveBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
+        new_values["FilesystemCacheLargeSegmentsIdleBytes"] = { large_idle_bytes,
+            "The part of `FilesystemCacheIdleBytes` in large file segments: the ones with a range larger than `boundary_alignment`." };
+
+        AsynchronousMetricKeyValues segments_by_size;
+        AsynchronousMetricKeyValues bytes_by_size;
+        for (size_t i = 0; i < size_buckets.size(); ++i)
+        {
+            const String bucket = FileCacheSegmentSizes::getBucketName(i);
+            segments_by_size[bucket] = static_cast<double>(size_buckets[i].segments);
+            bytes_by_size[bucket] = static_cast<double>(size_buckets[i].bytes);
+        }
+        new_values["FilesystemCacheFileSegmentsBySize"] = { "size", std::move(segments_by_size),
+            "The number of file segments in the `cache` virtual filesystem by the size of their range. The key is the inclusive upper bound of the size bucket in bytes, or `inf`. Temporary data is not counted." };
+        new_values["FilesystemCacheBytesBySegmentSize"] = { "size", std::move(bytes_by_size),
+            "Bytes in the `cache` virtual filesystem by the size of the file segment range. The key is the inclusive upper bound of the size bucket in bytes, or `inf`. Temporary data is not counted." };
     }
 
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of

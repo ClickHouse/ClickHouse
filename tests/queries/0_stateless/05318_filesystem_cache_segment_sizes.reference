@@ -1,0 +1,7 @@
+1	1
+1
+1	1
+0	0
+1	1
+FilesystemCacheBytesBySegmentSize	['1048576','16777216','2097152','4194304','524288','8388608','inf']
+FilesystemCacheFileSegmentsBySize	['1048576','16777216','2097152','4194304','524288','8388608','inf']

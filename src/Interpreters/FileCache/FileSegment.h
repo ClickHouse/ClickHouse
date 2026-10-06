@@ -14,6 +14,11 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <Interpreters/FileCache/FileCacheSegmentSizes.h>
+#include <Common/ByteMutex.h>
+#include <optional>
+#include <vector>
 
 
 namespace Poco { class Logger; }
@@ -169,6 +174,16 @@ public:
 
     void increasePriority();
 
+    /// `markRead` counts reuse in granules of this size; the last one is cut at the segment end.
+    static constexpr size_t EFFICIENCY_GRANULE_SIZE = 64 * 1024;
+
+    /// Marks `[offset, offset + size)` as served from the cache. The caller holds this file segment, so its
+    /// range does not shrink during the call.
+    void markRead(size_t offset, size_t size);
+
+    /// Whether the cache served any byte of this file segment since it was cached.
+    bool wasServedFromCache() const;
+
     /**
      * ========== Methods used by `cache` ========================
      */
@@ -257,6 +272,23 @@ private:
     DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
 
+    /// The only way to change `reserved_size` after construction.
+    void addReservedSize(Int64 delta);
+
+    /// For a file segment loaded on startup: it has the reserved size from the start.
+    void onLoadedIntoCache();
+    void onRemovedFromCache(const FileSegmentGuard::Lock &);
+    /// Moves the file segment to the size class of its new range.
+    void onRangeShrunk();
+    FileSegmentEfficiencyInfo getEfficiencyInfo(const FileSegmentGuard::Lock &) const;
+
+    void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
+    /// Granules `[first, last]` of this segment that `[offset, offset + size)` overlaps; `nullopt` if none.
+    std::optional<std::pair<size_t, size_t>> getGranuleRangeUnlocked(size_t offset, size_t size) const TSA_REQUIRES(efficiency_mutex);
+    /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
+    size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
+    size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
+
     /// In release builds returns a single shared logger; in debug builds a per-segment one.
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -331,6 +363,14 @@ private:
     std::condition_variable cv;
     /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
     std::atomic_flag increasing_priority;
+    /// A leaf lock for the efficiency state and the size class: only the mutex of `FileCacheEfficiency`
+    /// is taken under it. The fields below are 1 or 2 bytes, so they fill the padding after
+    /// `increasing_priority`.
+    mutable ByteMutex efficiency_mutex;
+    bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
+    /// Whether the reserved size of this file segment is counted in `FileCacheSegmentSizes`, in `size_class`.
+    bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
+    FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// Per-segment logger with a unique name; only in debug/sanitizer builds.
@@ -339,6 +379,19 @@ private:
 #endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
+
+    /// Reuse coverage for `FileCacheEfficiency`. Allocated at the first cache hit, so a disabled cache
+    /// and a file segment without hits pay only for the pointer.
+    struct EfficiencyState
+    {
+        /// One bit per `EFFICIENCY_GRANULE_SIZE`; reset at each window start.
+        std::vector<bool> active_granules;
+        FileCacheEfficiency::Window window_id = FileCacheEfficiency::NEVER_READ;
+        /// The window before `window_id` with a cache hit, and its active bytes.
+        FileCacheEfficiency::Window previous_hit_window_id = FileCacheEfficiency::NEVER_READ;
+        UInt64 previous_active_bytes = 0;
+    };
+    std::unique_ptr<EfficiencyState> efficiency_state TSA_GUARDED_BY(efficiency_mutex);
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;

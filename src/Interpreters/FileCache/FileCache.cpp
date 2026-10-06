@@ -61,6 +61,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheBackgroundEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedNoHitBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
     extern const Event FilesystemCacheIdleClientEvictions;
@@ -138,6 +139,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
+    extern const FileCacheSettingsUInt64 efficiency_window_sec;
 }
 
 namespace
@@ -150,7 +152,8 @@ namespace
     }
 
     const HistogramMetrics::Buckets hits_buckets = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, 8192};
-    const HistogramMetrics::Buckets size_buckets = {4_KiB, 16_KiB, 64_KiB, 256_KiB, 1_MiB, 4_MiB, 16_MiB, 64_MiB};
+    /// The same bounds as `FileCacheSegmentSizes`, so the evicted and the resident file segments compare directly.
+    const HistogramMetrics::Buckets size_buckets(FileCacheSegmentSizes::BOUNDS.begin(), FileCacheSegmentSizes::BOUNDS.end());
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_total",
@@ -323,6 +326,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
+    , segment_sizes(boundary_alignment)
+    , efficiency(
+          settings[FileCacheSetting::efficiency_window_sec],
+          [this] { return getUsedCacheSize(); },
+          [this] { return segment_sizes.getLargeBytes(); })
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
@@ -1416,7 +1424,7 @@ bool FileCache::doTryReserve(
             main_eviction_info->releaseHoldSpace(lock);
             main_priority_iterator->incrementSize(size, lock);
 
-            file_segment.reserved_size += size;
+            file_segment.addReservedSize(static_cast<Int64>(size));
             chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
             return true;
         }
@@ -1523,7 +1531,7 @@ bool FileCache::doTryReserve(
     if (added_new_main_entry)
         file_segment.setQueueIterator(main_priority_iterator);
 
-    file_segment.reserved_size += size;
+    file_segment.addReservedSize(static_cast<Int64>(size));
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
     return true;
@@ -2618,7 +2626,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     segment.cache_it,
                     /* size_in_filename */segment.size_in_filename);
 
-                inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(FileSegmentPtr(file_segment))).second;
+                if (inserted)
+                    file_segment->onLoadedIntoCache();
             }
             catch (...)
             {
@@ -2669,6 +2679,8 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, const String & use
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+    if (efficiency.isEnabled() && !segment.wasServedFromCache())
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedNoHitBytes, segment.getReservedSize());
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;

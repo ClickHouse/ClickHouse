@@ -184,6 +184,82 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Filesystem cache" },
+            { "title", "Cache reuse in the last efficiency window (bytes)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avgIf(value, metric = 'FilesystemCacheActiveBytes') AS Active,
+    avgIf(value, metric = 'FilesystemCachePassiveBytes') AS Passive,
+    avgIf(value, metric = 'FilesystemCacheIdleBytes') AS Idle
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes')
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
+            { "title", "Reuse of large file segments in the last efficiency window (bytes)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avgIf(value, metric = 'FilesystemCacheLargeSegmentsActiveBytes') AS Active,
+    avgIf(value, metric = 'FilesystemCacheLargeSegmentsPassiveBytes') AS Passive,
+    avgIf(value, metric = 'FilesystemCacheLargeSegmentsIdleBytes') AS Idle
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric IN ('FilesystemCacheLargeSegmentsActiveBytes', 'FilesystemCacheLargeSegmentsPassiveBytes', 'FilesystemCacheLargeSegmentsIdleBytes')
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
+            { "title", "Cache bytes by file segment size" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avgIf(value, key = '524288') AS `up to 512 KiB`,
+    avgIf(value, key = '1048576') AS `up to 1 MiB`,
+    avgIf(value, key = '2097152') AS `up to 2 MiB`,
+    avgIf(value, key = '4194304') AS `up to 4 MiB`,
+    avgIf(value, key = '8388608') AS `up to 8 MiB`,
+    avgIf(value, key = '16777216') AS `up to 16 MiB`,
+    avgIf(value, key = 'inf') AS `over 16 MiB`
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric = 'FilesystemCacheBytesBySegmentSize'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
+            { "title", "Cache file segments by size" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avgIf(value, key = '524288') AS `up to 512 KiB`,
+    avgIf(value, key = '1048576') AS `up to 1 MiB`,
+    avgIf(value, key = '2097152') AS `up to 2 MiB`,
+    avgIf(value, key = '4194304') AS `up to 4 MiB`,
+    avgIf(value, key = '8388608') AS `up to 8 MiB`,
+    avgIf(value, key = '16777216') AS `up to 16 MiB`,
+    avgIf(value, key = 'inf') AS `over 16 MiB`
+FROM merge('system', '^asynchronous_metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric = 'FilesystemCacheFileSegmentsBySize'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
             { "title", "Cache elements" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
@@ -303,7 +379,8 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_FilesystemCacheEvictedBytes) AS Evicted,
-    avg(ProfileEvent_FilesystemCacheBackgroundEvictedBytes) AS BackgroundEvicted
+    avg(ProfileEvent_FilesystemCacheBackgroundEvictedBytes) AS BackgroundEvicted,
+    avg(ProfileEvent_FilesystemCacheEvictedNoHitBytes) AS EvictedNoHit
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
