@@ -3,7 +3,9 @@
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
 # Issue 120440: the min/max and NULL fraction of an Iceberg read with `use_iceberg_manifest_column_statistics`, from the
-# manifest bounds and NULL counts.
+# manifest bounds and NULL counts. The test checks that the min/max, NULL fraction and NDV come out as our rules compute
+# them: bounds decoded per type and merged over the files, NULLs counted per file, the NDV by the first rule that
+# applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
 # - T1: `ie_join` picks its two key conditions by the min/max (port of `05023` to Iceberg).
 # - T2: the `Estimated statistics` trace line: rows, then NDV [min, max, NULL fraction] per column.
 # - T3: files without values of a column count as NULLs, and its NDV is clamped to the non-NULL rows.
