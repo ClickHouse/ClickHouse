@@ -1310,7 +1310,7 @@ void compactIcebergTable(
                 IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(Iceberg::f_manifest_list)),
                 log);
 
-            /// The pre-compaction totals are recomputed from the live entries, so the new snapshot's are exact even if the stored ones are not.
+            /// Totals are recomputed from the live entries: the stored ones may be inexact.
             SnapshotSummaryTotals totals;
             std::vector<std::pair<ManifestFileCacheKey, std::vector<ProcessedManifestFileEntryPtr>>> data_manifests;
             std::vector<ProcessedManifestFileEntryPtr> position_deletes;
@@ -1508,9 +1508,8 @@ void compactIcebergTable(
                 /*refresh_cursor=*/std::nullopt,
                 summary);
 
-            /// Unaffected data manifests are carried forward; affected ones are replaced by their surviving files (as EXISTING
-            /// entries) and the rewritten files (as ADDED entries). Every delete manifest is dropped: each live position delete
-            /// is fully applied once all the data files it can apply to are rewritten.
+            /// Every delete manifest is dropped: each live position delete is fully applied once all the data files it can
+            /// apply to are rewritten.
             std::unordered_set<String> carry_forward_manifest_paths;
             ManifestFilesGroups existing_groups;
             ManifestFilesGroups added_groups;
