@@ -24,6 +24,7 @@ function cleanup()
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -43,6 +44,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
 
 reader_log="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_reader.log"
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args})
 " > "${reader_log}" 2>&1 &
@@ -64,6 +66,7 @@ grep -q 'S3_ERROR' "${reader_log}" && echo 'S3_ERROR is reported' || echo 'S3_ER
 
 echo '-- the next attempt succeeds once the metadata of the disk, which still lists the entry, is reloaded'
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 SYSTEM DROP DISK METADATA CACHE ${CLICKHOUSE_TEST_UNIQUE_NAME}_reader;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});

@@ -25,6 +25,7 @@ function cleanup()
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -39,7 +40,7 @@ SELECT count(), countIf(is_done) FROM system.mutations WHERE database = currentD
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE writer SYNC" &
+${CLICKHOUSE_CLIENT} --query "SET ignore_drop_queries_probability = 0; DROP TABLE writer SYNC" &
 drop_pid=$!
 
 # The drop is about to remove the parts.
@@ -47,6 +48,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${failpoint} PAUSE"
 
 echo '-- a readonly table over the same directory still sees the parts, the mutation and the deduplication log'
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
 SELECT count(), countIf(endsWith(value, '!')) FROM reader;
@@ -57,7 +59,7 @@ SELECT count() > 0 FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One') W
 # The failpoint pauses every drop, so the readonly table is dropped only after it is disabled.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${failpoint}"
 wait ${drop_pid}
-${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"
+${CLICKHOUSE_CLIENT} --query "SET ignore_drop_queries_probability = 0; DROP TABLE reader SYNC"
 
 echo '-- the completed drop leaves no objects behind'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One')"
