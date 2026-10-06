@@ -105,9 +105,27 @@ struct MD4Impl
     };
 };
 
-/// MD5Impl moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
+struct MD5Impl
+{
+    static constexpr auto name = "MD5";
+    static constexpr const EVP_MD * (*provider)() = &EVP_md5;
+    static constexpr bool available_in_fips_mode = false;
+    enum
+    {
+        length = MD5_DIGEST_LENGTH
+    };
+};
 
-/// SHA1Impl moved to FunctionSHA1.cpp (multi-buffer SIMD implementation).
+struct SHA1Impl
+{
+    static constexpr auto name = "SHA1";
+    static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
+    static constexpr bool available_in_fips_mode = false;
+    enum
+    {
+        length = SHA_DIGEST_LENGTH
+    };
+};
 
 struct SHA224Impl
 {
@@ -230,7 +248,7 @@ struct Keccak256Impl
 #endif
 
 template <typename Impl>
-class FunctionStringHashFixedString final : public IFunction
+class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -330,8 +348,8 @@ REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
     using FunctionMD4 = FunctionStringHashFixedString<OpenSSLProvider<MD4Impl>>;
-    /// MD5 is registered separately in FunctionMD5.cpp (multi-buffer SIMD implementation).
-    /// SHA1 is registered separately in FunctionSHA1.cpp (multi-buffer SIMD implementation).
+    using FunctionMD5 = FunctionStringHashFixedString<OpenSSLProvider<MD5Impl>>;
+    using FunctionSHA1 = FunctionStringHashFixedString<OpenSSLProvider<SHA1Impl>>;
     using FunctionSHA224 = FunctionStringHashFixedString<OpenSSLProvider<SHA224Impl>>;
     using FunctionSHA256 = FunctionStringHashFixedString<OpenSSLProvider<SHA256Impl>>;
     using FunctionSHA384 = FunctionStringHashFixedString<OpenSSLProvider<SHA384Impl>>;
@@ -380,7 +398,7 @@ Calculates the MD4 hash of the given string.
 SELECT HEX(MD4('abc'));
         )",
         R"(
-┌─HEX(MD4('abc'))──────────────────┐
+┌─hex(MD4('abc'))──────────────────┐
 │ A448017AAF21D8525FC10AE87AA6729D │
 └──────────────────────────────────┘
         )"
@@ -392,9 +410,65 @@ SELECT HEX(MD4('abc'));
 
     factory.registerFunction<FunctionMD4>(documentation_MD4);
 
-    /// MD5 registration moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
 
-    /// SHA1 registration moved to FunctionSHA1.cpp (multi-buffer SIMD implementation).
+    FunctionDocumentation::Description description_MD5 = R"(
+Calculates the MD5 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_MD5 = "MD5(s)";
+    FunctionDocumentation::Arguments arguments_MD5 = {
+        {"s", "The input string to hash.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_MD5 = {
+        "Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}
+    };
+    FunctionDocumentation::Examples example_MD5 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(MD5('abc'));
+        )",
+        R"(
+┌─hex(MD5('abc'))──────────────────┐
+│ 900150983CD24FB0D6963F7D28E17F72 │
+└──────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1};
+    FunctionDocumentation::Category category_MD5 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, {}, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
+
+    factory.registerFunction<FunctionMD5>(documentation_MD5);
+
+
+    FunctionDocumentation::Description description_SHA1 = R"(
+Calculates the SHA1 hash of the given string.
+    )";
+    FunctionDocumentation::Syntax syntax_SHA1 = "SHA1(s)";
+    FunctionDocumentation::Arguments arguments_SHA1 = {
+        {"s", "The input string to hash", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_SHA1 = {
+        "Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}
+    };
+    FunctionDocumentation::Examples example_SHA1 = {
+    {
+        "Usage example",
+        R"(
+SELECT HEX(SHA1('abc'));
+        )",
+        R"(
+┌─hex(SHA1('abc'))─────────────────────────┐
+│ A9993E364706816ABA3E25717850C26C9CD0D89D │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_SHA1 = {1, 1};
+    FunctionDocumentation::Category category_SHA1 = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation_SHA1 = {description_SHA1, syntax_SHA1, arguments_SHA1, {}, returned_value_SHA1, example_SHA1, introduced_in_SHA1, category_SHA1};
+
+    factory.registerFunction<FunctionSHA1>(documentation_SHA1);
 
     FunctionDocumentation::Description description_SHA224 = R"(
 Calculates the SHA224 hash of the given string.
@@ -413,7 +487,7 @@ Calculates the SHA224 hash of the given string.
 SELECT HEX(SHA224('abc'));
         )",
         R"(
-┌─HEX(SHA224('abc'))───────────────────────────────────────┐
+┌─hex(SHA224('abc'))───────────────────────────────────────┐
 │ 23097D223405D8228642A477BDA255B32AADBCE4BDA0B3F7E36C9DA7 │
 └──────────────────────────────────────────────────────────┘
         )"
@@ -442,7 +516,7 @@ Calculates the SHA256 hash of the given string.
 SELECT HEX(SHA256('abc'));
         )",
         R"(
-┌─HEX(SHA256('abc'))───────────────────────────────────────────────┐
+┌─hex(SHA256('abc'))───────────────────────────────────────────────┐
 │ BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD │
 └──────────────────────────────────────────────────────────────────┘
         )"
@@ -469,7 +543,7 @@ Calculates the SHA384 hash of the given string.
         "Usage example",
         "SELECT HEX(SHA384('abc'));",
         R"(
-┌─HEX(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
+┌─hex(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
 │ CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
@@ -497,7 +571,7 @@ Calculates the SHA512 hash of the given string.
 SELECT HEX(SHA512('abc'));
         )",
         R"(
-┌─HEX(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─hex(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
@@ -528,7 +602,7 @@ Calculates the SHA512_256 hash of the given string.
 SELECT HEX(SHA512_256('abc'));
         )",
         R"(
-┌─HEX(SHA512_256('abc'))───────────────────────────────────────────┐
+┌─hex(SHA512_256('abc'))───────────────────────────────────────────┐
 │ 53048E2681941EF99B2E29B76B4C7DABE4C2D0C634FC6D46E0E2F13107E7AF23 │
 └──────────────────────────────────────────────────────────────────┘
         )"

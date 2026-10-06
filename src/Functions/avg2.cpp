@@ -12,7 +12,7 @@ struct NameMidpoint
 using FunctionMidpointBinary = FunctionBinaryArithmetic<MidpointImpl, NameMidpoint>;
 
 template <typename SpecializedFunction>
-class Avg2Resolver final : public MidpointResolver<SpecializedFunction>
+class Avg2Resolver : public MidpointResolver<SpecializedFunction>
 {
 public:
     static constexpr auto name = "avg2";

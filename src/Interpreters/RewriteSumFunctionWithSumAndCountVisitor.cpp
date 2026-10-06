@@ -12,12 +12,7 @@ namespace DB
 void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
-    {
-        if (func->isWindowFunction())
-            return;
-
         visit(*func, ast, data);
-    }
 }
 
 /** Rewrites `sum(column +/- literal)` into two individual functions
@@ -42,7 +37,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!func_plus_minus || !function_supported.contains(Poco::toLower(func_plus_minus->name)) || func_plus_minus->arguments->children.size() != 2)
         return;
 
-    size_t column_id = 0;
+    size_t column_id;
     if (func_plus_minus->arguments->children[0]->as<ASTIdentifier>() && func_plus_minus->arguments->children[1]->as<ASTLiteral>())
         column_id = 0;
     else if (func_plus_minus->arguments->children[0]->as<ASTLiteral>() && func_plus_minus->arguments->children[1]->as<ASTIdentifier>())
@@ -56,7 +51,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         return;
 
     ///all the types listed are numbers and supported by 'plus' and 'minus'.
-    /// A `Decimal` literal is not: see the check of the column type below.
     Field::Types::Which literal_type = literal->value.getType();
     if (literal_type != Field::Types::UInt64 &&
         literal_type != Field::Types::Int64 &&
@@ -64,7 +58,11 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         literal_type != Field::Types::Int128 &&
         literal_type != Field::Types::UInt256 &&
         literal_type != Field::Types::Int256 &&
-        literal_type != Field::Types::Float64)
+        literal_type != Field::Types::Float64 &&
+        literal_type != Field::Types::Decimal32 &&
+        literal_type != Field::Types::Decimal64 &&
+        literal_type != Field::Types::Decimal128 &&
+        literal_type != Field::Types::Decimal256)
         return;
 
     const auto * column = func_plus_minus->arguments->children[column_id]->as<ASTIdentifier>();
@@ -86,12 +84,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     const auto column_type = column_type_name->type;
     if (!column_type || !isNumber(*column_type))
-        return;
-
-    /// `Decimal` addition computes in the native width of the decimal with an overflow check on every row:
-    /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, and `sum(a + 1200000000)` throws
-    /// `DECIMAL_OVERFLOW` for a row `999999999`. `sum(a) + 1200000000 * count(a)` does neither.
-    if (isDecimal(column_type))
         return;
 
     const String & column_name = column_type_name->name;

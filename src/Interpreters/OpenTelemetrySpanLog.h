@@ -2,6 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -11,6 +12,10 @@ namespace DB
 struct OpenTelemetrySpanLogElement
 {
     OpenTelemetry::Span span;
+
+    OpenTelemetrySpanLogElement() = default;
+    explicit OpenTelemetrySpanLogElement(OpenTelemetry::Span span_)
+        : span(std::move(span_)) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
 

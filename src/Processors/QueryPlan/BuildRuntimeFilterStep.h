@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 namespace DB
 {
@@ -16,10 +15,13 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
-        String filter_key_,
-        RuntimeFilterBuildOptions build_options_,
+        UInt64 exact_values_limit_,
+        UInt64 bloom_filter_bytes_,
+        UInt64 bloom_filter_hash_functions_,
         Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling);
+        UInt64 blocks_to_skip_before_reenabling,
+        Float64 max_ratio_of_set_bits_in_bloom_filter,
+        bool allow_to_use_not_exact_filter_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -27,11 +29,10 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     const String & getFilterColumnName() const { return filter_column_name; }
-    const String & getFilterName() const { return filter_name; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -46,17 +47,16 @@ private:
 
     String filter_column_name;
     DataTypePtr filter_column_type;
-    /// Stable structural id (`_runtime_filter_<hash>`), shown in EXPLAIN and serialized, so the build
-    /// step and its matching `__applyFilter` carry the same visible id.
     String filter_name;
-    /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
-    /// the matching `__applyFilter` looks it up by the same key. Kept off the plan (not shown, not
-    /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
-    String filter_key;
 
-    RuntimeFilterBuildOptions build_options;
+    UInt64 exact_values_limit;
+    UInt64 bloom_filter_bytes;
+    UInt64 bloom_filter_hash_functions;
     Float64 pass_ratio_threshold_for_disabling;
     UInt64 blocks_to_skip_before_reenabling;
+    Float64 max_ratio_of_set_bits_in_bloom_filter;
+
+    bool allow_to_use_not_exact_filter;
 };
 
 }

@@ -5,8 +5,6 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -201,7 +199,6 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         writeField(*columns[i], *serializations[i], row_num);
 }
 
-void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory)
 {
     factory.registerOutputFormat("Vertical", [](
@@ -214,65 +211,6 @@ void registerOutputFormatVertical(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
-
-    /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
-    /// makes the output not valid UTF-8 either. The values are written through the plain
-    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
-    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
-    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data
-    /// type names.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "Vertical",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
-                || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
-        });
-
-    factory.setDocumentation("Vertical", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✗     | ✔      |       |
-
-## Description {#description}
-
-Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-
-Note that [`NULL`](/reference/syntax) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
-
-## Example usage {#example-usage}
-
-Example:
-
-```sql
-SELECT * FROM t_null FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-x: 1
-y: ᴺᵁᴸᴸ
-```
-
-Rows are not escaped in Vertical format:
-
-```sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-test: string with 'quotes' and      with some special
- characters
-```
-
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
 }

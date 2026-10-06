@@ -9,7 +9,7 @@ namespace DB
 namespace
 {
 
-class FunctionRowNumberInBlock final : public IFunction
+class FunctionRowNumberInBlock : public IFunction
 {
 public:
     static constexpr auto name = "rowNumberInBlock";
@@ -67,7 +67,7 @@ public:
 REGISTER_FUNCTION(RowNumberInBlock)
 {
     FunctionDocumentation::Description description = R"(
-For each [block](/resources/develop-contribute/introduction/architecture#block) processed by `rowNumberInBlock`, returns the number of the current row.
+For each [block](../../development/architecture.md#block) processed by `rowNumberInBlock`, returns the number of the current row.
 
 The returned number starts from 0 for each block.
     )";
@@ -90,12 +90,20 @@ FROM
 ┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
 └────────────────────┘

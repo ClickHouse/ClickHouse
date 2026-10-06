@@ -72,7 +72,7 @@ public:
         CurrentOffsetsMap current_offsets;
         std::string consumer_id;
         std::string rdkafka_stat;
-        UInt64 num_messages_read{};
+        UInt64 num_messages_read;
         ExceptionsBuffer exceptions_buffer;
     };
 

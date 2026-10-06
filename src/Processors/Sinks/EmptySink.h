@@ -5,7 +5,7 @@ namespace DB
 {
 
 /// Sink which reads everything and do nothing with it.
-class EmptySink final : public ISink
+class EmptySink : public ISink
 {
 public:
     explicit EmptySink(SharedHeader header) : ISink(std::move(header)) {}

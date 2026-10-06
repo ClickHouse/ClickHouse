@@ -7,7 +7,6 @@ namespace DB
 
 class QueryNode;
 class TableNode;
-class UnionNode;
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
@@ -20,32 +19,6 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
 const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-class Context;
-using ContextPtr = std::shared_ptr<const Context>;
-
-/// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
-bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);
-
-/// Same, resolving a View / MaterializedView storage to the table that would actually be read.
-bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
-
-/// Find a UNION node whose every child query reads from a table eligible for parallel replicas.
-/// Used for views with UNION ALL where each branch reads from a separate MergeTree table.
-const UnionNode * findTableUnionForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
-
-/// Can parallel replicas read anything at all for this query, given these settings?
-///
-/// A conservative, plan-free approximation of the eligibility rules the planner applies: it walks the
-/// query tree and never builds a query plan, so it is cheap enough to run before deciding to plan the
-/// query a second time. It is meant to be used as a sound negative - `false` means the planner would
-/// certainly not produce a read from the other replicas, while `true` only means it might.
-///
-/// `query_tree_node` must be the root of a query tree, that is a `QueryNode` or a `UnionNode`. The
-/// negative is sound only for those: a bare table expression is reported ineligible whatever it reads.
-bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context);
 
 struct JoinTreeQueryPlan;
 

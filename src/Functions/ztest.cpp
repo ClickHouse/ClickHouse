@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionTwoSampleProportionsZTest final : public IFunction
+class FunctionTwoSampleProportionsZTest : public IFunction
 {
 public:
     static constexpr auto POOLED = "pooled";
@@ -174,7 +174,7 @@ public:
 
             /// z-statistics
             /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
-            Float64 zstat = 0;
+            Float64 zstat;
             if (is_unpooled)
             {
                 zstat = (props_x - props_y) / se;
@@ -239,10 +239,9 @@ In the unpooled version, the two proportions are used separately.
 SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
         )",
         R"(
-┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────────────────┐
-├──────────z_statistic─┬────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
-│ -0.20656724435948853 │ 0.8363478437079654 │    -0.09345975390115283 │      0.07563797172293502 │
-└──────────────────────┴────────────────────┴─────────────────────────┴──────────────────────────┘
+┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────┐
+│ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
+└────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

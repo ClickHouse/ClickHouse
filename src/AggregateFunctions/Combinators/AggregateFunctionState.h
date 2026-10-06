@@ -34,19 +34,13 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, createResultType(nested_))
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
         , nested_func(nested_)
     {}
 
     String getName() const override
     {
         return nested_func->getName() + "State";
-    }
-
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
-    {
-        DataTypeAggregateFunction::checkSupportedFunctions(nested_);
-        return nested_->getStateType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -62,24 +56,6 @@ public:
     DataTypePtr getNormalizedStateType() const override
     {
         return nested_func->getNormalizedStateType();
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
     }
 
     bool isVersioned() const override
@@ -126,7 +102,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -139,29 +115,14 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_func->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        return nested_func->getSerializedSizeBound(version);
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

@@ -6,7 +6,6 @@
 #include <mutex>
 #include <unordered_set>
 #include <base/defines.h>
-#include <base/types.h>
 
 
 namespace Poco { class URI; }
@@ -26,14 +25,6 @@ public:
     void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     void checkHostAndPort(const std::string & host, const std::string & port) const; /// Does the same as checkURL, but for host and port.
-
-    /// Parses a `host[:port]` string, checks it as checkHostAndPort does, and returns it rebuilt as
-    /// `host:port` with an explicit port - the string to hand to a client library in place of the
-    /// original value, so the library dials exactly what the filter saw. A string whose re-parse by
-    /// a client library could disagree with this parse is rejected with `BAD_ARGUMENTS`: only
-    /// visible ASCII is accepted, and `/`, `@`, `\` and an empty host are rejected.
-    /// `description` names the checked value in error messages, e.g. "Kafka broker".
-    std::string checkAndGetCanonicalHostAndPort(const std::string & host_and_port, UInt16 default_port, const std::string & description) const;
 
 private:
     std::atomic_bool is_initialized = false;

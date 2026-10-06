@@ -1,6 +1,5 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -30,20 +29,16 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
             {"MultiPartUploadWrite", static_cast<Int8>(EventType::MultiPartUploadWrite)},
             {"MultiPartUploadComplete", static_cast<Int8>(EventType::MultiPartUploadComplete)},
             {"MultiPartUploadAbort", static_cast<Int8>(EventType::MultiPartUploadAbort)},
-            {"Read", static_cast<Int8>(EventType::Read)},
-            {"Copy", static_cast<Int8>(EventType::Copy)},
         });
 
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the event."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read', 'Copy'"},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort'"},
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
@@ -53,9 +48,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
         {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
         {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
-        {"source_bucket", std::make_shared<DataTypeString>(), "Name of the bucket the object was copied from, for the 'Copy' event. Empty for other events."},
-        {"source_remote_path", std::make_shared<DataTypeString>(), "Path to the object the data was copied from, for the 'Copy' event. Empty for other events."},
-        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the operation."},
+        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
         {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
 
         {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
@@ -69,8 +62,6 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
 
     auto event_time_seconds = timeInSeconds(event_time);
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time_seconds);
     columns[i++]->insert(Decimal64(timeInMicroseconds(event_time)));
@@ -82,8 +73,6 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);
     columns[i++]->insert(local_path);
-    columns[i++]->insert(source_bucket);
-    columns[i++]->insert(source_remote_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(elapsed_microseconds);
     columns[i++]->insert(error_code);
@@ -95,10 +84,7 @@ void BlobStorageLog::addSettingsForQuery(ContextMutablePtr & mutable_context, IA
     SystemLog<BlobStorageLogElement>::addSettingsForQuery(mutable_context, query_kind);
 
     if (query_kind == IAST::QueryKind::Insert)
-    {
         mutable_context->setSetting("enable_blob_storage_log", false);
-        mutable_context->setSetting("enable_blob_storage_log_for_read_operations", false);
-    }
 }
 
 static std::string_view normalizePath(std::string_view path)

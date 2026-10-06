@@ -2,6 +2,7 @@
 
 #include <bitset>
 #include <type_traits>
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <base/types.h>
 #include <Poco/JSON/Array.h>
@@ -73,7 +74,6 @@ public:
 DB::Row getPartitionFields(const String & partition, const PaimonTableSchema & table_schema);
 String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
-void checkPathIsRelativeToTable(const String & path, std::string_view kind);
 
 template <typename T>
 void getValueFromJSON(T & t, const Poco::JSON::Object::Ptr & json, const String & key)

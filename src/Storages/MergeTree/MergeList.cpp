@@ -4,7 +4,6 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
 #include <Common/logger_useful.h>
@@ -110,18 +109,6 @@ MergeInfo MergeListElement::getInfo() const
 
     for (const auto & source_part_path : source_part_paths)
         res.source_part_paths.emplace_back(source_part_path);
-
-    {
-        std::lock_guard lock(projection_introspection_mutex);
-        res.current_projection = current_projection;
-        for (const auto & name : projections_done)
-            res.projections_completed.emplace_back(name);
-        for (const auto & name : projections_pending)
-            res.projections_remaining.emplace_back(name);
-    }
-    res.current_projection_progress = current_projection_progress.load(std::memory_order_relaxed);
-    res.current_projection_parts_merging = current_projection_parts_merging.load(std::memory_order_relaxed);
-    res.current_projection_parts_remaining = current_projection_parts_remaining.load(std::memory_order_relaxed);
 
     return res;
 }

@@ -8,7 +8,6 @@
 #include <sparsehash/sparse_hash_map>
 
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -21,16 +20,13 @@
 #include <Interpreters/AggregationCommon.h>
 
 
-namespace
-{
-
 struct SmallStringView
 {
     size_t size = 0;
 
     union
     {
-        const char * data_big{};
+        const char * data_big;
         char data_small[12];
     };
 
@@ -51,11 +47,11 @@ struct SmallStringView
             data_big = data_;
     }
 
-    [[maybe_unused]] SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
-    [[maybe_unused]] explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
-    SmallStringView() = default; // NOLINT(hicpp-member-init)
+    SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
+    explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
+    SmallStringView() = default;
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    std::string toString() const { return std::string(data(), size); }
 };
 
 
@@ -74,15 +70,14 @@ inline bool operator==(SmallStringView lhs, SmallStringView rhs)
 #endif
 }
 
-} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
 
 namespace ZeroTraits
 {
     template <>
-    [[maybe_unused]] inline bool check<SmallStringView>(SmallStringView x) { return x.size == 0; }
+    inline bool check<SmallStringView>(SmallStringView x) { return x.size == 0; }
 
     template <>
-    [[maybe_unused]] inline void set<SmallStringView>(SmallStringView & x) { x.size = 0; }
+    inline void set<SmallStringView>(SmallStringView & x) { x.size = 0; }
 }
 
 template <>
@@ -94,14 +89,11 @@ struct DefaultHash<SmallStringView>
     }
 };
 
-namespace
-{
 
 using Value = UInt64;
 
-} /// anonymous namespace
 
-int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {
@@ -144,8 +136,8 @@ int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
         using Map = HashMapWithSavedHash<std::string_view, Value>;
 
         Map map;
-        Map::LookupResult it = {};
-        bool inserted = {};
+        Map::LookupResult it;
+        bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -173,8 +165,8 @@ int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
         using Map = HashMapWithSavedHash<SmallStringView, Value>;
 
         Map map;
-        Map::LookupResult it = {};
-        bool inserted = {};
+        Map::LookupResult it;
+        bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {

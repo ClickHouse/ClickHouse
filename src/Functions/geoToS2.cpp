@@ -28,7 +28,7 @@ namespace
  * Accepts points of the form (longitude, latitude)
  * Returns s2 identifier
  */
-class FunctionGeoToS2 final : public IFunction
+class FunctionGeoToS2 : public IFunction
 {
 public:
     static constexpr auto name = "geoToS2";
@@ -128,7 +128,7 @@ public:
             if (!lat_lng.is_valid())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive "
+                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive"
                     "and the longitude is between -180 and 180 degrees inclusive.",
                     lon,
                     lat,

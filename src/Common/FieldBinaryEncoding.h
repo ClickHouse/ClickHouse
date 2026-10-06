@@ -40,9 +40,4 @@ Binary encoding for Fields:
 void encodeField(const Field &, WriteBuffer & buf);
 Field decodeField(ReadBuffer & buf);
 
-/// Same, but charges every decoded Field node to the complexity budget of the surrounding type decoding
-/// (see decodeDataType), so that a small type header cannot expand into an unbounded amount of work
-/// through the parameters of an AggregateFunction type. max_complexity == 0 means unlimited.
-Field decodeField(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
-
 }

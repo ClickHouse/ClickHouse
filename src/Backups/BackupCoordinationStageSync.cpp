@@ -8,17 +8,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ProfileEvents.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/join.hpp>
 
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredBackupCoordination;
-}
 
 namespace DB
 {
@@ -589,10 +583,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
     (*zk_nodes_changed).reset();
 
     /// Get zk nodes and subscribe on their changes.
-    Strings new_zk_nodes = zookeeper->getChildrenWatch(
-        zookeeper_path,
-        nullptr,
-        Coordination::WatchCallbackPtrOrEventPtr{zk_nodes_changed, ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination});
+    Strings new_zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);
     std::sort(new_zk_nodes.begin(), new_zk_nodes.end()); /// Sorting is necessary because we compare the list of zk nodes with its previous versions.
 
     State new_state;
@@ -714,7 +705,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
 
 int BackupCoordinationStageSync::parseStartNode(const String & start_node_contents, const String & host) const
 {
-    int version = 0;
+    int version;
     if (start_node_contents.empty())
     {
         version = kInitialVersion;
@@ -769,7 +760,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
 
     {
         std::lock_guard lock{mutex};
-        if (state.host_with_error || (failure_after_host_disconnected_for_seconds.count() == 0))
+        if (state.host_with_error || ((failure_after_host_disconnected_for_seconds.count() == 0)))
             return;
 
         auto monotonic_now = std::chrono::steady_clock::now();

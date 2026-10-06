@@ -124,7 +124,7 @@ namespace impl
 
         static void hex(TUInt uint_, char * out, std::string_view table)
         {
-            union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+            union
             {
                 TUInt value;
                 UInt8 uint8[sizeof(TUInt)];
@@ -143,7 +143,7 @@ namespace impl
 
         static TUInt unhex(const char * data)
         {
-            TUInt res{};
+            TUInt res;
             if constexpr (sizeof(TUInt) == 1)
             {
                 res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);

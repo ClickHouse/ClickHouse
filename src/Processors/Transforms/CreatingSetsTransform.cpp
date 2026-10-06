@@ -7,19 +7,11 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
 
-
-namespace ProfileEvents
-{
-    extern const Event SetsBuiltFromSubquery;
-}
 
 namespace DB
 {
@@ -31,24 +23,19 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-namespace FailPoints
-{
-    extern const char prepared_sets_build_ordered_set_inplace_fail[];
-}
-
 CreatingSetsTransform::~CreatingSetsTransform()
 {
     if (promise_to_build)
     {
-        /// An unfulfilled promise means the build was abandoned, not that it failed: publish the
-        /// retryable "no set" outcome. `work` resets the promise after storing a real error.
+        /// set_exception can also throw
         try
         {
-            promise_to_build->set_value(nullptr);
+            promise_to_build->set_exception(std::make_exception_ptr(
+                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to set_value for promise");
+            tryLogCurrentException(log, "Failed to set_exception for promise");
         }
     }
 
@@ -70,24 +57,12 @@ CreatingSetsTransform::CreatingSetsTransform(
     SharedHeader out_header_,
     SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
-    PreparedSetsCachePtr prepared_sets_cache_,
-    bool recoverable_build_)
+    PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
-    , recoverable_build(recoverable_build_)
 {
-}
-
-IProcessor::Status CreatingSetsTransform::prepare()
-{
-    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
-    /// The base class closes the input only on the path that still expects to generate output.
-    if (finished_input)
-        input.close();
-
-    return IAccumulatingTransform::prepare();
 }
 
 void CreatingSetsTransform::work()
@@ -98,7 +73,10 @@ void CreatingSetsTransform::work()
             init();
 
         if (done_with_set && done_with_table)
+        {
             finishConsume();
+            input.close();
+        }
 
         IAccumulatingTransform::work();
     }
@@ -176,11 +154,8 @@ void CreatingSetsTransform::startSubquery()
         LOG_TRACE(log, "Filling temporary table.");
 
     if (set_and_key->external_table)
-    {
         /// TODO: make via port
-        const auto metadata_snapshot = set_and_key->external_table->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        table_out = QueryPipeline(set_and_key->external_table->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
-    }
+        table_out = QueryPipeline(set_and_key->external_table->write({}, set_and_key->external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
 
     done_with_set = !set_and_key->set || set_from_cache;
     done_with_table = !set_and_key->external_table;
@@ -201,14 +176,14 @@ void CreatingSetsTransform::finishSubquery()
 
     if (set_from_cache)
     {
-        LOG_DEBUG(log, "Got set from cache in {:.3f} sec.", seconds);
+        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
     }
     else if (read_rows != 0)
     {
         if (set_and_key->set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {:.3f} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
         if (set_and_key->external_table)
-            LOG_DEBUG(log, "Created Table with {} rows in {:.3f} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
     else
     {
@@ -256,20 +231,7 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
-        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
-        /// (as a subquery timeout with `overflow_mode = 'break'` does). Only a recoverable build may be
-        /// abandoned, and the check precedes the injection so another build cannot spend the one shot.
-        if (recoverable_build)
-        {
-            fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
-            {
-                finishSubquery();
-                return {};
-            });
-        }
-
         set_and_key->set->finishInsert();
-        ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
             promise_to_build->set_value(set_and_key->set);

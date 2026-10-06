@@ -17,10 +17,9 @@ public:
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    void deserialize(ReadBuffer & buf) override;
 
     UInt64 estimateCardinality() const override;
-    bool isCompatibleWith(const IStatistics & other) const override;
 
     String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
 private:

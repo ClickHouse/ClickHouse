@@ -1,4 +1,3 @@
--- Tags: no-flaky-check
 CREATE DATABASE IF NOT EXISTS `0003566aaadatabase`;
 USE `0003566aaadatabase`;
 

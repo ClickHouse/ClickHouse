@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -11,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentDatabase final : public IFunction
+class FunctionCurrentDatabase : public IFunction
 {
     const String db_name;
 
@@ -60,7 +59,7 @@ REGISTER_FUNCTION(CurrentDatabase)
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-Also see the [`SET` statement](/reference/statements/use).
+Also see the [`SET` statement](/sql-reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentDatabase()";
     FunctionDocumentation::Arguments arguments = {};

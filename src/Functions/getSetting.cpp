@@ -28,7 +28,7 @@ enum class ErrorHandlingMode : uint8_t
 };
 
 /// Get the value of a setting.
-class FunctionGetSetting final : public IFunction, WithContext
+class FunctionGetSetting : public IFunction, WithContext
 {
 public:
     static FunctionPtr create(ContextPtr context_, ErrorHandlingMode mode_)
@@ -121,18 +121,17 @@ Returns the current value of a setting.
     {
         "Usage example",
         R"(
-SET optimize_move_to_prewhere = false;
-SELECT getSetting('optimize_move_to_prewhere');
-SET optimize_move_to_prewhere = true;
-SELECT getSetting('optimize_move_to_prewhere');
+SELECT getSetting('enable_analyzer');
+SET enable_analyzer = false;
+SELECT getSetting('enable_analyzer');
         )",
         R"(
-┌─getSetting('optimize_move_to_prewhere')─┐
-│ false                                   │
-└─────────────────────────────────────────┘
-┌─getSetting('optimize_move_to_prewhere')─┐
-│ true                                    │
-└─────────────────────────────────────────┘
+┌─getSetting('⋯_analyzer')─┐
+│ true                     │
+└──────────────────────────┘
+┌─getSetting('⋯_analyzer')─┐
+│ false                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -162,7 +161,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
         R"(
 my_value
 100
-\N
+NULL
         )"
     }
     };

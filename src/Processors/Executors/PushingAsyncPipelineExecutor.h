@@ -1,5 +1,4 @@
 #pragma once
-#include <list>
 #include <memory>
 #include <vector>
 
@@ -16,7 +15,7 @@ using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::vector<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors using several background threads.
 /// Typical usage is:
@@ -29,10 +28,7 @@ using Processors = std::list<ProcessorPtr>;
 class PushingAsyncPipelineExecutor
 {
 public:
-    /// `report_read_progress = false` skips the auto-progress reporting the pushed source would
-    /// otherwise do: used when the caller already reported progress for these rows through another
-    /// pipeline (e.g. a fallback fed by an upstream `SELECT` that counted its own reads).
-    explicit PushingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool report_read_progress = true);
+    explicit PushingAsyncPipelineExecutor(QueryPipeline & pipeline_);
     ~PushingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.

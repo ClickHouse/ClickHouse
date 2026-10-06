@@ -4,10 +4,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Interpreters/ITokenizer.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -36,7 +34,6 @@ public:
     /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
     /// A persisted definition would also resolve the source table under the global context or the engine credentials.
     bool canBeUsedToCreateTable() const override { return false; }
-    bool dependsOnCurrentUserGrants() const override { return true; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -51,9 +48,7 @@ private:
 
     /// Resolves the index of the source table and checks that the user may read it.
     std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
-
-    /// The result structure for the given resolved index.
-    static ColumnsDescription getColumns(const MergeTreeIndexPtr & index);
+    static ColumnsDescription getColumns();
 
     const char * getStorageEngineName() const override
     {
@@ -94,6 +89,20 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
+ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns()
+{
+    return ColumnsDescription{{
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"token", std::make_shared<DataTypeString>()},
+        {"dictionary_compression", getDictionaryCompressionType()},
+        {"cardinality", std::make_shared<DataTypeUInt64>()},
+        {"num_posting_blocks", std::make_shared<DataTypeUInt64>()},
+        {"has_embedded_postings", std::make_shared<DataTypeUInt8>()},
+        {"has_raw_postings", std::make_shared<DataTypeUInt8>()},
+        {"has_compressed_postings", std::make_shared<DataTypeUInt8>()}
+    }};
+}
+
 std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
     /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
@@ -108,7 +117,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
-    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr();
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
@@ -117,49 +126,16 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
-    if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
-
-    auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *text_index);
+    auto text_index = MergeTreeIndexFactory::instance().get(index_desc);
+    StorageMergeTreeTextIndex::checkAccess(context, source_table_ptr->getStorageID(), *text_index);
     return {std::move(source_table_ptr), std::move(text_index)};
-}
-
-ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIndexPtr & index)
-{
-    NamesAndTypesList columns
-    {
-        {"part_name", std::make_shared<DataTypeString>()},
-        {"token", std::make_shared<DataTypeString>()},
-    };
-
-    /// A `keyValuePairs` token is a `(key, value)` pair of a `Map` with a binary trailer. Expose its parts.
-    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index);
-
-    if (text_index.tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-    {
-        columns.emplace_back("token_key", std::make_shared<DataTypeString>());
-        columns.emplace_back("token_value", std::make_shared<DataTypeString>());
-    }
-
-    columns.insert(columns.end(),
-    {
-        {"dictionary_compression", getDictionaryCompressionType()},
-        {"cardinality", std::make_shared<DataTypeUInt64>()},
-        {"num_posting_blocks", std::make_shared<DataTypeUInt64>()},
-        {"has_embedded_postings", std::make_shared<DataTypeUInt8>()},
-        {"has_raw_postings", std::make_shared<DataTypeUInt8>()},
-        {"has_compressed_postings", std::make_shared<DataTypeUInt8>()},
-    });
-
-    return ColumnsDescription{columns};
 }
 
 ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    /// Resolving is also where e.g. `remote` over a local shard checks the access of the user.
-    return getColumns(resolveIndex(context).second);
+    /// The structure is static, but this is where e.g. `remote` over a local shard checks the access of the user.
+    resolveIndex(context);
+    return getColumns();
 }
 
 StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
@@ -169,77 +145,27 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool /*is_insert_query*/) const
 {
-    /// The structure comes from the same index object the storage reads with, so the two cannot diverge.
     auto [source_table_ptr, text_index] = resolveIndex(context);
-    auto columns = getColumns(text_index);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
         std::move(storage_id),
         std::move(source_table_ptr),
         std::move(text_index),
-        std::move(columns));
+        getColumns());
 
     res->startup();
     return res;
 }
 
-void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeTextIndex>(
-        {.description = R"DOCS_MD(
-Represents the dictionary of a text index in MergeTree tables.
-Returns tokens with their posting list metadata.
-It can be used for introspection.
-
-## Syntax {#syntax}
-
-```sql
-mergeTreeTextIndex(database, table, index_name)
-```
-
-## Arguments {#arguments}
-
-| Argument     | Description                                |
-|--------------|--------------------------------------------|
-| `database`   | The database name to read text index from. |
-| `table`      | The table name to read text index from.    |
-| `index_name` | The text index to read from.               |
-
-## Returned value {#returned-value}
-
-A table object with tokens and their posting list metadata.
-
-If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` pair of a `Map` column, and the result has two additional columns `token_key` and `token_value` with the decoded parts of the token.
-
-## Usage Example {#usage-example}
-
-```sql title="Query"
-CREATE TABLE tab
-(
-    id UInt64,
-    s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO tab SELECT number, concatWithSeparator(' ', 'apple', 'banana') FROM numbers(500);
-INSERT INTO tab SELECT 500 + number, concatWithSeparator(' ', 'cherry', 'date') FROM numbers(500);
-
-SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
-```
-
-```text title="Response"
-   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
-1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-2. │ all_1_1_0 │ banana │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-3. │ all_2_2_0 │ cherry │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-   └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
-```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        {
+            .description = "Reads the dictionary of a text index from a MergeTree table. Returns tokens with their posting list metadata.",
+            .examples = {{"mergeTreeTextIndex", "SELECT * FROM mergeTreeTextIndex(currentDatabase(), my_table, my_text_index)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
         {.allow_readonly = true}
     );
 }

@@ -129,7 +129,7 @@ bool traversePushOr(ASTPtr & node, size_t num_atoms, size_t max_atoms)
 
     if (func && func->name == "or")
     {
-        chassert(func->arguments->children.size() == 2);
+        assert(func->arguments->children.size() == 2);
         size_t and_node_id = func->arguments->children.size();
         for (size_t i = 0; i < func->arguments->children.size(); ++i)
         {
@@ -238,7 +238,7 @@ CNFQuery TreeCNFConverter::toCNF(
     auto cnf = tryConvertToCNF(query, max_growth_multiplier);
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-            "Cannot convert expression '{}' to CNF, because it produces to many clauses. "
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
             "Size of boolean formula in CNF can be exponential of size of source formula.",
             query->formatForErrorMessage());
 

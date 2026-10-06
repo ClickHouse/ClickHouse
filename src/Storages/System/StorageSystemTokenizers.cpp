@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemTokenizers.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -31,6 +30,3 @@ void StorageSystemTokenizers::fillData(MutableColumns & res_columns, ContextPtr,
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTokenizers) }

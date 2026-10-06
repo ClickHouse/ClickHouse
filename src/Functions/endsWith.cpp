@@ -25,9 +25,9 @@ Checks whether a string ends with the provided suffix.
         "Usage example",
         "SELECT endsWith('ClickHouse', 'House');",
         R"(
-┌─endsWith('ClickHouse', 'House')─┐
-│                               1 │
-└─────────────────────────────────┘
+┌─endsWith('Cl⋯', 'House')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };
@@ -54,13 +54,13 @@ Checks whether a string ends with the provided case-insensitive suffix.
         "Usage example",
         "SELECT endsWithCaseInsensitive('ClickHouse', 'HOUSE');",
         R"(
-┌─endsWithCaseInsensitive('ClickHouse', 'HOUSE')─┐
-│                                              1 │
-└────────────────────────────────────────────────┘
+┌─endsWithCaseInsensitive('Cl⋯', 'HOUSE')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
