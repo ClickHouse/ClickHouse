@@ -1,5 +1,3 @@
--- 128-row spill blocks (`prefer_external_sort_block_bytes = 1`) make the spilling queries take minutes under MSan.
--- Random settings limits: prefer_external_sort_block_bytes=(16744704, None)
 -- Isolate from the default ratio threshold: the spill must be triggered only by the explicit settings.
 SET max_bytes_ratio_before_external_distinct = 0;
 

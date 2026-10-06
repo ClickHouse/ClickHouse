@@ -51,7 +51,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold_bytes;
     extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
@@ -446,12 +446,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    /// The kept-keys cutoff and external aggregation are mutually exclusive at runtime,
-    /// arbitrated through this control shared by every stream and every branch below
-    /// (see `Aggregator::Params::SharedKeptKeysControl`).
-    if (params.shared_kept_keys_for_overflow_any)
-        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
-
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
@@ -696,18 +690,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         if (use_adaptive_aggregator)
             many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
 
-        /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
-        /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the
-        /// grouping key), so the per-stream cutoff is already exact: all rows of a key are in one
-        /// stream. The same holds for the sharded and single-stream branches below.
-        if (transform_params->params.shared_kept_keys_for_overflow_any && !skip_merging)
-        {
-            chassert(transform_params->params.max_rows_to_group_by
-                && transform_params->params.group_by_overflow_mode == OverflowMode::ANY
-                && !transform_params->params.overflow_row);
-            many_data->enableSharedKeptKeys();
-        }
-
         size_t counter = 0;
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -936,16 +918,6 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     auto many_data = std::make_shared<ManyAggregatedData>(normal_parts_pipeline->getNumStreams() + projection_parts_pipeline->getNumStreams());
     size_t counter = 0;
 
-    /// See the comment in `AggregatingStep::transformPipeline`: all the streams here are merged
-    /// into one result, so the kept-keys cutoff must be shared between them (both the streams
-    /// aggregating the raw parts and the streams merging the pre-aggregated projection parts),
-    /// and both aggregators must arbitrate spilling through one shared control.
-    if (params.shared_kept_keys_for_overflow_any)
-    {
-        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
-        many_data->enableSharedKeptKeys();
-    }
-
     AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
 
     /// TODO apply optimize_aggregation_in_order here somehow
@@ -989,12 +961,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number] = should_produce_results_in_order_of_bucket_number;
     settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging] = memory_bound_merging_of_aggregation_results_enabled;
 
-    /// The kept-keys cutoff (`shared_kept_keys_for_overflow_any`) is not serialized. Serialize
-    /// the plan without the derived `max_rows_to_group_by` so that a deserialized plan falls back
-    /// to the exact, unoptimized aggregation instead of the per-stream cutoff, which would be
-    /// unsound with aggregate functions in the projection.
-    settings[QueryPlanSerializationSetting::max_rows_to_group_by]
-        = params.shared_kept_keys_for_overflow_any ? 0 : params.max_rows_to_group_by;
+    settings[QueryPlanSerializationSetting::max_rows_to_group_by] = params.max_rows_to_group_by;
     settings[QueryPlanSerializationSetting::group_by_overflow_mode] = params.group_by_overflow_mode;
 
     settings[QueryPlanSerializationSetting::group_by_two_level_threshold] = params.group_by_two_level_threshold;

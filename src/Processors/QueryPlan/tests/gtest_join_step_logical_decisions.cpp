@@ -54,7 +54,7 @@ std::unique_ptr<JoinStepLogical> makeStep()
         JoinOperator{},
         makeExpressionActions(*left_header, *right_header),
         ActionsDAG::NodeRawConstPtrs{},
-        JoinSettings(settings, current_version),
+        JoinSettings(settings),
         SortingStep::Settings(settings));
 }
 

@@ -748,18 +748,14 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
     return std::make_unique<KeeperSnapshotReader>(std::move(in), keeper_context);
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(
-    nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage, bool allow_orphaned_nodes_removal) const
+SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
 {
     auto reader = makeSnapshotReader(buffer);
-    reader->allow_orphaned_nodes_removal = allow_orphaned_nodes_removal;
     storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
     result.snapshot_meta = reader->snapshot_meta;
     result.cluster_config = reader->cluster_config;
-    result.removed_orphan_subtree_roots = std::move(reader->removed_orphan_subtree_roots);
-    result.removed_orphan_ephemeral_sessions = std::move(reader->removed_orphan_ephemeral_sessions);
     return result;
 }
 
@@ -778,11 +774,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot(K
     auto buffer = deserializeLatestSnapshotBufferFromDisk();
     if (!buffer)
         return {};
-    /// Orphaned-nodes removal is deliberately NOT allowed here. `KeeperStateMachine::init` is the only
-    /// caller that removes orphans, because it is the only one whose caller (`KeeperServer::startup`)
-    /// afterwards verifies that no local log entry above the snapshot references the removed nodes.
-    /// Pruning from here would skip that verification and could silently diverge this replica.
-    return deserializeSnapshotFromBuffer(buffer, storage, /*allow_orphaned_nodes_removal=*/ false);
+    return deserializeSnapshotFromBuffer(buffer, storage);
 }
 
 DiskPtr KeeperSnapshotManager::getDisk() const

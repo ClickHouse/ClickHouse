@@ -190,7 +190,4 @@ public:
         const StoredObject & object, size_t object_offset, ByteRange range) = 0;
 };
 
-/// The cache tiers a read is layered through, fastest-first (e.g. page cache over filesystem cache).
-using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
-
 }

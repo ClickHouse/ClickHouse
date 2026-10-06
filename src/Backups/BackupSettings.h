@@ -6,7 +6,6 @@
 #include <optional>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
-#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -160,7 +159,7 @@ struct BackupSettings
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 
     struct Util
     {

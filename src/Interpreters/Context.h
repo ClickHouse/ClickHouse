@@ -20,7 +20,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -206,8 +205,6 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
-struct QueryExecutionCounters;
-using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -596,13 +593,9 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
-    /// Created by `makeQueryContext` and shared by every context copied from the query context.
-    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
-    /// Query metrics about the execution of a query.
-    mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -1066,7 +1059,6 @@ public:
     void setClientName(const String & client_name);
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
-    void setInitiatorVersionIfUnset();
     void setClientConnectionId(uint32_t connection_id);
     void setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number);
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
@@ -1179,11 +1171,6 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
-
-    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
-    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
-    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
-    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
 
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
@@ -1784,7 +1771,6 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
-    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
@@ -1802,7 +1788,6 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
-    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -1880,6 +1865,12 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
+
+    /// Server-wide override for the analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -2072,8 +2063,6 @@ public:
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
-    QueryExecutionCountersPtr getQueryExecutionCounters() const;
-
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -2204,14 +2193,11 @@ public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
-    /// `bandwidth` is the matching `max_*_bandwidth` setting, read by the caller under the settings
-    /// lock and passed in once that lock is released, never while it is held: these getters take
-    /// `mutex` exclusively themselves. Without it the setting is read here under a shared lock.
-    ThrottlerPtr getRemoteReadThrottler(std::optional<UInt64> bandwidth = {}) const;
-    ThrottlerPtr getRemoteWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
 
-    ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
-    ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getLocalReadThrottler() const;
+    ThrottlerPtr getLocalWriteThrottler() const;
 
     ThrottlerPtr getBackupsThrottler() const;
 

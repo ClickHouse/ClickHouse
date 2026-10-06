@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -252,11 +253,13 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
   ## 为服务启用 JWT 身份验证
 </div>
 
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
 
 | 参数        | 说明                                                                                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
