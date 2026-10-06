@@ -100,10 +100,6 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
-    /// The mark ranges the reader reads until the next call; null = the whole part.
-    /// Readers with streams pass it on to them.
-    virtual void updateReadRequestMap(MarkRangesPtr request_map);
-
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
     /// Read hints (currently vector-search results) are per-reader state: they are set once after the
@@ -119,8 +115,8 @@ public:
     const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
 
 protected:
-    /// Creates a context copy with experimental settings enabled.
-    /// Used when compiling default or virtual-column expressions at read time.
+    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
+    /// propagated. Used when compiling default or virtual-column expressions at read time.
     ContextPtr createContextForDefaultExpressions() const;
 
     /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
@@ -159,7 +155,6 @@ protected:
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
-    MarkRangesPtr read_request_map;
     /// Last mark of `all_mark_ranges`, used as the right bound of ranged read requests on remote disks.
     /// Cached because the ranges can contain thousands of fragments and the bound is needed on every read.
     size_t last_mark_to_read = 0;

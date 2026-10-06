@@ -2,14 +2,13 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <fmt/format.h>
 
 using namespace DB;
-using namespace DB::Runtime::V1;
 
 /// Regression test for the diagnostics of `ExecutingGraph::addEdge` when a connected peer is
 /// missing from the list of processors. The thrown `LOGICAL_ERROR` must identify both endpoints

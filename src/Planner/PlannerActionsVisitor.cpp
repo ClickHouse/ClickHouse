@@ -2,7 +2,7 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -202,20 +202,6 @@ public:
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
-                    else if (!constant_node.hasSourceExpression())
-                    {
-                        /** The constant did not come from the query text: a query tree pass built it the
-                          * same way on this server as on the initiator (for example the index mask that
-                          * `GroupingFunctionsResolvePass` adds as a trailing argument of
-                          * `__groupingOrdinary`). There is no initiator naming to simulate, so name it
-                          * exactly as the initiator does, or a header the initiator expects from this shard
-                          * would not match. A constant that does come from the query text is unaffected:
-                          * the initiator writes the ones that need a cast as `_CAST(...)`, which arrive here
-                          * with a source expression, and the rest need no cast, so their name is the same
-                          * either way.
-                          */
-                        result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
-                    }
                     else
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
@@ -279,31 +265,29 @@ public:
                     break;
                 }
 
-                /// Function tuple with enable_named_columns_in_function_tuple generates a named tuple
-                /// with element names taken from the argument aliases. The element names must be part
-                /// of the action node name in addition to the argument names appended below: the same
-                /// arguments with different aliases produce different result types, and different
-                /// arguments can have the same aliases (e.g. SELECT tuple(1 AS x), tuple(2 AS x)),
-                /// so neither the element names alone nor the argument names alone identify the action,
-                /// and actions with equal names are collapsed into one.
-                String named_tuple_element_names;
-                if (function_node.getFunctionName() == "tuple"
-                    && planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
                 {
-                    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
                     {
-                        if (type_tuple->hasExplicitNames())
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            const auto & names = type_tuple->getElementNames();
-                            size_t size = names.size();
-                            WriteBufferFromOwnString s;
-                            for (size_t i = 0; i < size; ++i)
+                            if (type_tuple->hasExplicitNames())
                             {
-                                if (i != 0)
-                                    s << ", ";
-                                s << backQuoteIfNeed(names[i]);
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
                             }
-                            named_tuple_element_names = s.str();
                         }
                     }
                 }
@@ -319,11 +303,6 @@ public:
 
                 WriteBufferFromOwnString buffer;
                 buffer << function_node.getFunctionName();
-
-                /// The names of the elements of a named tuple, written like function parameters:
-                /// tuple(`x`, `y`)(1_UInt8, 2_UInt8). Function tuple has no real parameters.
-                if (!named_tuple_element_names.empty())
-                    buffer << '(' << named_tuple_element_names << ')';
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 
@@ -902,12 +881,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
-                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-                String disambiguated = column_identifier
-                    ? *column_identifier
-                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
@@ -1028,21 +1002,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
-
-        if (!constant_node.hasSourceExpression())
-        {
-            /** The constant did not come from the query text: a query tree pass built it the same way
-              * on this server as on the initiator (for example the index mask that
-              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
-              * There is no initiator naming to simulate, so name it exactly as the initiator does,
-              * or a header the initiator expects from this shard would not match. A constant that
-              * does come from the query text is unaffected: the initiator writes the ones that need
-              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
-              * need no cast, so their name is the same either way.
-              */
-            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
-        }
-
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
@@ -1306,15 +1265,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
-    const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
-
-    /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
-    /// take the left operand alone, which `FunctionIn`'s variadic arity accepts.
-    const bool ignore_set = is_in_function && function_node.getFunctionName().ends_with("IgnoreSet");
-
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (is_in_function && !ignore_set)
+    if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
@@ -1347,8 +1300,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
-    /// An in-function is resolved with exactly two arguments, so the left operand alone remains.
-    size_t function_arguments_size = ignore_set ? 1 : function_arguments.size();
+    size_t function_arguments_size = function_arguments.size();
 
     Names function_arguments_node_names;
     function_arguments_node_names.reserve(function_arguments_size);
@@ -1405,9 +1357,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        /// An `IgnoreSet` node has one child against two expected types, so the loop below cannot see the mismatch.
-        bool argument_types_match = !ignore_set;
-        if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
         {
             const auto & expected_types = function_base->getArgumentTypes();
             for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)

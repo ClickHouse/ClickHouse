@@ -102,15 +102,9 @@
       "expanded": true,
       "group": "数据摄取",
       "pages": [
+        "zh/integrations/connectors/data-ingestion/index",
         "zh/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "Apache Airflow",
-          "pages": [
-            "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
-            "zh/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
-          ]
-        },
+        "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "zh/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -155,7 +149,15 @@
         },
         "zh/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
+          "expanded": false,
+          "group": "dbt",
+          "pages": [
+            "zh/integrations/connectors/data-ingestion/etl-tools/dbt/index",
+            "zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+            "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+            "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+            "zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+          ]
         },
         "zh/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -201,7 +203,6 @@
         "zh/integrations/connectors/tools/data-integration-index",
         "zh/integrations/connectors/data-integrations/integrations/retool",
         "zh/integrations/connectors/data-integrations/integrations/easypanel",
-        "zh/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "zh/integrations/connectors/data-integrations/integrations/middleware",
         "zh/integrations/connectors/data-integrations/integrations/notion",
         "zh/integrations/connectors/data-integrations/integrations/splunk"

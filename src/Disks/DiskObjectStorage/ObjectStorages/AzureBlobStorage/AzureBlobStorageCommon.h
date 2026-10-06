@@ -50,13 +50,6 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
-
-    /// Reject upload size settings that would otherwise produce an internal error
-    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
-    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
-    /// constructed, so it is never applied to endpoints that route to
-    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
-    void validateUploadSettings() const;
 };
 
 struct Endpoint
@@ -107,8 +100,6 @@ struct Endpoint
 
         return url;
     }
-
-    bool operator==(const Endpoint &) const = default;
 };
 
 #if USE_AZURE_BLOB_STORAGE
@@ -173,21 +164,6 @@ BlobClientOptions getClientOptions(
     const RequestSettings & request_settings,
     bool for_disk);
 
-/// The config keys the credential is built from. Kept apart from `AuthMethod` because the credential objects of
-/// the Azure SDK cannot be compared (e.g. the shared key cannot be read back), while
-/// `AzureObjectStorage::applyNewSettings` has to know whether the credential changed.
-struct AuthConfig
-{
-    std::optional<String> account_name;
-    std::optional<String> account_key;
-    std::optional<String> connection_string;
-    bool use_workload_identity = false;
-
-    bool operator==(const AuthConfig &) const = default;
-};
-
-AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 #endif

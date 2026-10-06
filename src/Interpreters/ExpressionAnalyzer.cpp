@@ -1,8 +1,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
@@ -40,7 +39,6 @@
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
@@ -87,7 +85,6 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool enable_early_constant_folding;
-    extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_in_set;
@@ -95,9 +92,12 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
-    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool optimize_read_in_order;
     extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool query_plan_aggregation_in_order;
+    extern const SettingsBool query_plan_read_in_order;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
@@ -117,7 +117,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int ILLEGAL_COLUMN;
-    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -473,6 +472,19 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     }
 }
 
+
+SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+{
+    const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
+    if (!table)
+        return nullptr;
+    auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (storage->getName() != "Set")
+        return nullptr;
+    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    return storage_set->getSet();
+}
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts)
 {
@@ -995,10 +1007,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
-    if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
-        && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
-        analyzed_join->setRowStoreEnabled(true);
-
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
@@ -1055,7 +1063,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
+                        StatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1069,7 +1077,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                analyzed_join, settings[Setting::max_threads], right_sample_block, HashJoinStatsCollectingParams{});
+                analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1083,12 +1091,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
-        /// Without a spill threshold `grace_hash` cannot run, but `join_algorithm` is a preference list:
-        /// leave it to the next algorithm. Listed alone, the constructor says what to set.
-        if (!analyzed_join->legacyJoinSizeLimitsTriggerSpilling() && analyzed_join->maxBytesBeforeExternalJoin() == 0
-            && analyzed_join->getEnabledJoinAlgorithms().size() > 1)
-            return {};
-
         if (!context->getTempDataOnDisk())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -1097,18 +1099,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
-            /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
-            /// Legacy mode gets 0, which is what standalone `grace_hash` was built with before the
-            /// threshold applied to it, so the size limits stay its only spill trigger.
             return std::make_shared<GraceHashJoin>(
                 context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
                 context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
-                analyzed_join,
-                std::make_shared<const Block>(std::move(left_sample_block)),
-                right_sample_block,
-                context->getTempDataOnDisk(),
-                /*any_take_last_row_=*/false,
-                analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin());
+                analyzed_join, std::make_shared<const Block>(std::move(left_sample_block)), right_sample_block, context->getTempDataOnDisk());
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
@@ -1130,7 +1124,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
+                        StatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1467,7 +1461,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     return true;
 }
 
-bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order,
+                                                  ManyExpressionActions & group_by_elements_actions)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -1504,6 +1499,17 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         if (group_by_keys.contains(result_column.name))
             validateGroupByKeyType(result_column.type);
+    }
+
+    if (optimize_aggregation_in_order)
+    {
+        for (auto & child : asts)
+        {
+            ActionsDAG actions_dag(columns_after_join);
+            getRootActions(child, only_types, actions_dag);
+            group_by_elements_actions.emplace_back(
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes)));
+        }
     }
 
     return true;
@@ -1671,7 +1677,8 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         appendSelectSkipWindowExpressions(step, child);
 }
 
-ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
+ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
+    ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
@@ -1758,6 +1765,17 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
         }
     }
 
+    if (optimize_read_in_order)
+    {
+        for (const auto & child : select_query->orderBy()->children)
+        {
+            ActionsDAG actions_dag(columns_after_join);
+            getRootActions(child, only_types, actions_dag);
+            order_by_elements_actions.emplace_back(
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes)));
+        }
+    }
+
     NameSet non_constant_inputs;
     if (with_fill)
     {
@@ -1824,42 +1842,6 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
         if (!existing_column_names.contains(child_name))
             step.addRequiredOutput(child_name);
     }
-
-    return true;
-}
-
-bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & chain, bool only_types)
-{
-    const auto * select_query = getSelectQuery();
-
-    if (!select_query->limitAfter() && !select_query->limitUntil())
-        return false;
-
-    ExpressionActionsChainSteps::Step & step = chain.lastStep(aggregated_columns);
-
-    auto analyze_boundary = [&](const ASTPtr & expr, const char * description)
-    {
-        if (!expr)
-            return;
-        if (expressionContainsArrayJoin(expr))
-            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
-        getRootActionsForHaving(expr, only_types, step.actions()->dag);
-        const auto & column_name = expr->getColumnName();
-        if (!only_types)
-        {
-            const auto * node = step.actions()->dag.tryFindInOutputs(column_name);
-            if (node && !node->result_type->canBeUsedInBooleanContext())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "{} expression must be boolean, got {}", description, node->result_type->getName());
-        }
-        step.addRequiredOutput(column_name);
-    };
-
-    analyze_boundary(select_query->limitAfter(), "LIMIT AFTER");
-    analyze_boundary(select_query->limitUntil(), "LIMIT UNTIL");
-
-    for (const auto & column : aggregated_columns)
-        step.addRequiredOutput(column.name);
 
     return true;
 }
@@ -2028,14 +2010,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const StorageMetadataPtr & metadata_snapshot,
     bool first_stage_,
     bool second_stage_,
-    bool from_aggregation_stage_,
     bool only_types,
     const FilterDAGInfoPtr & row_policy_info_,
     const FilterDAGInfoPtr & additional_filter,
     const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
-    , from_aggregation_stage(from_aggregation_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
     , has_window(query_analyzer.hasWindow())
     , use_grouping_set_key(query_analyzer.useGroupingSetKey())
@@ -2200,7 +2180,11 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (need_aggregate)
         {
-            query_analyzer.appendGroupBy(chain, only_types || !first_stage);
+            /// TODO correct conditions
+            optimize_aggregation_in_order = context->getSettingsRef()[Setting::optimize_aggregation_in_order]
+                && (!context->getSettingsRef()[Setting::query_plan_aggregation_in_order]) && storage && query.groupBy();
+
+            query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
@@ -2265,6 +2249,17 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 chain.addStep();
             }
         }
+
+        bool join_allow_read_in_order = true;
+        if (hasJoin())
+        {
+            /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
+            join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
+        }
+
+        optimize_read_in_order = settings[Setting::optimize_read_in_order] && (!settings[Setting::query_plan_read_in_order]) && storage && query.orderBy()
+            && !query_analyzer.hasAggregation() && !query_analyzer.hasWindow() && !query.final() && join_allow_read_in_order;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
@@ -2343,21 +2338,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             selected_columns.emplace_back(it.first);
 
         has_order_by = query.orderBy() != nullptr;
-        before_order_by = query_analyzer.appendOrderBy(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
+        before_order_by = query_analyzer.appendOrderBy(
+                chain,
+                only_types || (need_aggregate ? !second_stage : !first_stage),
+                optimize_read_in_order,
+                order_by_elements_actions);
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
             before_limit_by = chain.getLastActions();
-            chain.addStep();
-        }
-
-        /// The range is applied where the second stage ends: on this server when it runs the second stage
-        /// itself, and on the initiator that continues from the remote servers' after-aggregation state.
-        if (query_analyzer.appendLimitRange(chain, only_types || !(second_stage || from_aggregation_stage)))
-        {
-            before_limit_range = chain.getLastActions();
-            limit_range_start_column_name = query.limitAfter() ? query.limitAfter()->getColumnName() : "";
-            limit_range_end_column_name = query.limitUntil() ? query.limitUntil()->getColumnName() : "";
             chain.addStep();
         }
 

@@ -102,35 +102,24 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
-    /// `read_request_map` narrows the part's map, e.g. to the assignment of parallel replicas.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
-        const MarkRangesPtr & read_request_map = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
-        const MarkRangesPtr & read_request_map = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 
     /// Applies the refiner (if any) to ranges cut from a part right before creating a read task.
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
-
-    /// The initial map without the ranges that the refiner has dropped so far. The initial map is `replica_map`
-    /// for a parallel replica's task, or the part's map from the index analysis when `replica_map` is null.
-    MarkRangesPtr getActualReadRequestMap(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & replica_map) const;
-
-    /// The read request maps of the patch parts for `actual_map`. Empty when `actual_map` is the part's map
-    /// from the index analysis, because the task info already holds the patch maps for it.
-    std::vector<MarkRangesPtr> getActualPatchReadRequestMaps(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & actual_map) const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 
@@ -139,27 +128,6 @@ protected:
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
-
-private:
-    /// Cached narrowed maps of a part, so that its tasks share one map until it changes.
-    struct PartReadRequestMaps
-    {
-        /// Held, not only compared, so that a new assignment cannot reuse its address.
-        MarkRangesPtr initial_map;
-        /// Appended as the refiner drops them; each new batch is sorted in place when it is applied.
-        MarkRanges dropped;
-        /// `actual_map` is `initial_map` without the first `dropped_in_map` entries of `dropped`.
-        size_t dropped_in_map = 0;
-        MarkRangesPtr actual_map;
-        /// `actual_patch_maps` come from `patch_maps_source`.
-        MarkRangesPtr patch_maps_source;
-        std::vector<MarkRangesPtr> actual_patch_maps;
-    };
-
-    void recordDroppedRanges(const MergeTreeReadTaskInfo & info, MarkRanges cut, MarkRanges refined) const;
-
-    mutable std::mutex part_read_request_maps_mutex;
-    mutable std::unordered_map<const MergeTreeReadTaskInfo *, PartReadRequestMaps> part_read_request_maps TSA_GUARDED_BY(part_read_request_maps_mutex);
 };
 
 }
