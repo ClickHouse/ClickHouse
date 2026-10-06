@@ -110,19 +110,10 @@ namespace
         const ScramSHA256Credentials * scram_sha256_credentials,
         const AuthenticationData & authentication_method)
     {
-        /// Only the `scram_sha256_password` method stores the salted password which the client proof
-        /// is verified against. Other methods (e.g. `ssh_key`) must not be checked against a SCRAM
-        /// client proof: their password hash is empty, and using it as an HMAC key would throw,
-        /// aborting the whole authentication instead of letting the next method of the user be tried.
-        if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-            return false;
-
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
+        const auto & salt = authentication_method.getSalt();
         const auto & password = authentication_method.getPasswordHashBinary();
-        if (password.empty())
-            return false;
-
         auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
 
         if (computed_client_proof.size() != client_proof.size())
@@ -307,6 +298,11 @@ namespace
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
+                        // Subjects are extracted with their exact bytes, so an embedded NUL byte survives. No valid
+                        // hostname or URI contains one, and '*' must not match a span like "evil\0" in
+                        // "evil\0.corp.example.com", so such a subject never matches a wildcard.
+                        if (certificate_subject.contains('\0'))
+                            continue;
                         // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
                         if (certificate_subject.size() < prefix.size() + suffix.size())
                             continue;

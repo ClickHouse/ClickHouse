@@ -143,8 +143,6 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
-    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
-    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -158,9 +156,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
-    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
-    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
-
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -357,9 +352,7 @@ void ThreadStatus::applyQuerySettings()
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
-
-    if (boundToOSThread())
-        initQueryProfiler();
+    initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -387,15 +380,12 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    if (boundToOSThread())
-        thread_group_->linkThread(thread_id);
+    thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
     try
     {
-        /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
-        /// counters must be reparented after it, or those bytes are reported as this group's.
-        memory_tracker.setParent(&thread_group->memory_tracker);
         performance_counters.setParent(&thread_group->performance_counters);
+        memory_tracker.setParent(&thread_group->memory_tracker);
 
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
@@ -412,10 +402,9 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });
 
-        if (boundToOSThread())
-            initPerformanceCounters();
+        initPerformanceCounters();
 
-        if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
+        if (thread_group->os_threads_nice_value != 0)
         {
             OSThreadNiceValue::set(thread_group->os_threads_nice_value);
         }
@@ -437,11 +426,8 @@ void ThreadStatus::detachFromGroup()
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
-    if (boundToOSThread())
-    {
-        finalizeQueryProfiler();
-        finalizePerformanceCounters();
-    }
+    finalizeQueryProfiler();
+    finalizePerformanceCounters();
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
@@ -452,10 +438,9 @@ void ThreadStatus::detachFromGroup()
     /// total_memory_tracker_sample_probability rather than the query's stale config.
     resolveMemorySampleConfig();
 
-    if (boundToOSThread())
-        thread_group->unlinkThread();
+    thread_group->unlinkThread();
 
-    if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
+    if (thread_group->os_threads_nice_value != 0)
     {
         OSThreadNiceValue::set(0);
     }

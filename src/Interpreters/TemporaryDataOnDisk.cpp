@@ -155,10 +155,6 @@ public:
         distributed_cache_server = DistributedCache::Registry::instance()
                                        .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
                                        .chooseServer(hash.get128());
-
-        /// Both write() and read() require a non-null server for the holder's whole lifetime.
-        if (!distributed_cache_server)
-            DistributedCache::Client::throwNoServerAvailable(DistributedCache::Protocol::RequestType::Write);
     }
 
     ~TemporaryFileInDistributedCache() override

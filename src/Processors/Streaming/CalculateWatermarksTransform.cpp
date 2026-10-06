@@ -17,41 +17,47 @@
 namespace DB
 {
 
-static Field calculateWatermark(const ExpressionActionsPtr & actions, Block data)
+static ColumnPtr calculateWatermarkColumn(const ExpressionActionsPtr & actions, Block data)
 {
     actions->execute(data, data.rows());
-    const auto watermark_column = data.getByPosition(0).column;
-
-    Field min_value;
-    Field max_value;
-    watermark_column->getExtremes(min_value, max_value, 0, data.rows());
-
-    return max_value;
+    return data.getByPosition(0).column->convertToFullColumnIfConst();
 }
 
 CalculateWatermarksTransform::CalculateWatermarksTransform(
-    SharedHeader header_,
+    SharedHeader input_header_,
+    SharedHeader output_header_,
+    std::string event_time_column_,
     ActionsDAG watermark_expression_,
     ContextPtr context_)
-    : IInflatingTransform(header_, header_)
+    : IInflatingTransform(std::move(input_header_), std::move(output_header_))
+    , event_time_column(std::move(event_time_column_))
     , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
 {
 }
 
 void CalculateWatermarksTransform::consume(Chunk chunk)
 {
+    const auto & input_header = getInputPort().getHeader();
     const size_t num_rows = chunk.getNumRows();
-    if (num_rows == 0)
-    {
-        pending_chunks.push(std::move(chunk));
-        return;
-    }
 
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    Field watermark = calculateWatermark(watermark_expression, std::move(block));
+    auto block = input_header.cloneWithColumns(chunk.getColumns());
+    const auto event_time_col = block.getByName(event_time_column).column->convertToFullColumnIfConst();
+    const auto watermark_col = calculateWatermarkColumn(watermark_expression, std::move(block));
 
+    auto columns = chunk.detachColumns();
+    columns.emplace_back(event_time_col);
+    columns.emplace_back(watermark_col);
+    chunk.setColumns(std::move(columns), num_rows);
     pending_chunks.push(std::move(chunk));
-    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(watermark)));
+
+    if (num_rows == 0)
+        return;
+
+    Field min_value;
+    Field max_value;
+    watermark_col->getExtremes(min_value, max_value, 0, num_rows);
+
+    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
 }
 
 bool CalculateWatermarksTransform::canGenerate()

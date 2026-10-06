@@ -16,6 +16,11 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
 }
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 namespace
 {
 
@@ -29,18 +34,35 @@ String describeSet(const FutureSetFromSubquery & future_set)
 
 }
 
-
-std::optional<PreformattedMessage> getReasonSetsCannotBeShipped(const DelayedCreatingSetsStep & step)
+void validateSetsForDistributedPlan(QueryPlan::Node & root)
 {
-    for (const auto & future_set : step.getSets())
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(&root);
+    while (!stack.empty())
     {
-        if (future_set && future_set->hasExternalTable())
-            return PreformattedMessage::create(
-                "make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): "
-                "IN-subquery {}",
-                describeSet(*future_set));
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !node->step)
+            continue;
+
+        if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & future_set : delayed->getSets())
+            {
+                if (future_set && future_set->hasExternalTable())
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "make_distributed_plan does not support sets backed by an external table "
+                        "(`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+            }
+        }
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->getRootNode())
+                stack.push_back(child_plan->getRootNode());
     }
-    return std::nullopt;
 }
 
 PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
@@ -105,22 +127,15 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
     /// values, so task serialization checks it against the actual columns. A truncated set
     /// would change results, so the mode is throw.
     const auto & settings = context->getSettingsRef();
-    /// Default-constructed step settings: this internal `DISTINCT` must not depend on the user's `DISTINCT`
-    /// limits or spill to disk; only the transfer limit applies.
-    DistinctStep::Settings distinct_settings;
-    distinct_settings.set_size_limits = SizeLimits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
+    SizeLimits transfer_limits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
 
     auto header = source_plan.getCurrentHeader();
     source_plan.addStep(
-        std::make_unique<DistinctStep>(header, std::move(distinct_settings), 0, header->getNames(), /*pre_distinct_=*/false));
+        std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// An unsupported set source (e.g. `WITH TOTALS` inside the subquery) builds the set locally
-    /// on the initiator; the flipped settings also skip the conversion below.
-    source_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     source_plan.optimize(optimization_settings);
-    if (optimization_settings.make_distributed_plan)
-        source_plan.convertToDistributed(optimization_settings);
+    source_plan.convertToDistributed(optimization_settings);
 }
 
 }

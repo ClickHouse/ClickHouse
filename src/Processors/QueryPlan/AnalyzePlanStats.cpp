@@ -5,14 +5,8 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinBranchCosts.h>
-#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Common/typeid_cast.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -27,7 +21,7 @@ namespace
 String formatStepMetricValue(const StepMetric & metric)
 {
     if (std::holds_alternative<std::monostate>(metric.value))
-        return String(missingValueText(metric.key));
+        return "not collected";
 
     const MetricFormat format = formatOf(metric.key);
 
@@ -64,8 +58,6 @@ String formatStepMetricValue(const StepMetric & metric)
             return fmt::format("{:.2f}%", numeric);
         case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
-        case MetricFormat::Selectivity:
-            return fmt::format("{:.4g}", numeric);
         case MetricFormat::Raw:
             return {};
     }
@@ -165,7 +157,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -174,7 +166,6 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const Query
     collectIOStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
-    computeJoinBranchCosts(plan);
 }
 
 void AnalyzeStepsStats::collectIOStats(const Processors & processors)
@@ -277,34 +268,6 @@ void AnalyzeStepsStats::computeDistribution(const ElapsedTimesPerStepGroup & ela
     }
 }
 
-void AnalyzeStepsStats::computeJoinBranchCosts(const QueryPlan & plan)
-{
-    CardinalityByJoinStep cardinality_by_join_step;
-    for (const auto & [step, io_stats] : stats_by_step)
-    {
-        const auto * join_step = typeid_cast<const JoinStep *>(step);
-        if (!join_step || !join_step->getJoin())
-            continue;
-
-        StepProcessors step_processors = processors_by_step.at(step);
-
-        auto report = step->getAnalysisReport(step_processors);
-        const auto & table_join = join_step->getJoin()->getTableJoin();
-        cardinality_by_join_step[join_step] = joinMatchedOutputRows(report, io_stats.output_rows, table_join.kind(), table_join.strictness());
-
-        join_raw_reports.emplace(step, std::move(report));
-    }
-
-    const JoinBranchCosts join_branch_costs(plan, cardinality_by_join_step);
-    for (auto & [step, report] : join_raw_reports)
-    {
-        const auto * join_step = typeid_cast<const JoinStep *>(step);
-        MetricGroup cost_group{MetricGroupKey::Cost, {}};
-        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(join_step)));
-        report.push_back(std::move(cost_group));
-    }
-}
-
 StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) const
 {
     StepStatsContext context;
@@ -324,19 +287,11 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    StepAnalysisReport raw_report;
-    if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
-    {
-        raw_report = report_it->second;
-    }
-    else
-    {
-        StepProcessors step_processors;
-        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-            step_processors = processors_it->second;
+    StepProcessors step_processors;
+    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+        step_processors = processors_it->second;
 
-        raw_report = step->getAnalysisReport(step_processors);
-    }
+    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
 
     auto context_for_step = makeContext(step);
     StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);

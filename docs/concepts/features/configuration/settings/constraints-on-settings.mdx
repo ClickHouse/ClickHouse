@@ -93,18 +93,6 @@ is enabled:
 ```
 </Note>
 
-### Do not make `readonly` changeable in read-only mode {#readonly-changeable-in-readonly}
-
-<Warning>
-Keep `readonly` off the `changeable_in_readonly` list in every profile, and remember that profile restrictions apply system-wide, not per-user.
-</Warning>
-
-Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and regain the ability to run the write queries its existing privileges already allow.
-
-This matters everywhere, not just for the profile assigned to the user:
-- Any session can switch to any profile via `SET profile`, since profile selection isn't access-checked (it's only limited by whatever settings constraints are already active).
-- Over HTTP, `GET` requests are forced to `readonly = 2` only when the effective value would otherwise be `0`. So a profile that sets `readonly = 1` but also lets `readonly` be changed in read-only mode defeats that protection — a `GET` request can flip it to `0` and write.
-
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
 If there are multiple profiles active for a user, then constraints are merged. 
@@ -118,12 +106,13 @@ The Merge process depends on `settings_constraints_replace_previous`:
 
 ## Read-only mode {#read-only}
 
-Read-only mode is enabled by the `readonly` setting, which is not to be confused with the `readonly`
-constraint type. When `readonly = 1`, a setting that would otherwise be refused can still be changed if
-a `changeable_in_readonly` constraint allows it. For what the values of the setting mean, see the
-[settings reference](/reference/settings/session-settings/other#readonly); for which classes of query
-each value permits, and for how the HTTP interface sets it, see
-[permissions for queries](/concepts/features/configuration/settings/permissions-for-queries#readonly).
+Read-only mode is enabled by the `readonly` setting which is not to be confused
+with the `readonly` constraint type:
+- `readonly=0`: No read-only restrictions.
+- `readonly=1`: Only read queries are allowed and settings cannot be changed 
+   unless `changeable_in_readonly` is set.
+- `readonly=2`: Only read queries are allowed, but settings can be changed, 
+  except for `readonly` setting itself.
 
 ### Example {#example-read-only}
 

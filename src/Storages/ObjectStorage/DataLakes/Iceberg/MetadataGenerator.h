@@ -44,9 +44,7 @@ public:
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt,
-        SnapshotOperation operation = SnapshotOperation::Append,
-        /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
-        const std::optional<String> & refresh_cursor = std::nullopt);
+        SnapshotOperation operation = SnapshotOperation::Append);
 
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(

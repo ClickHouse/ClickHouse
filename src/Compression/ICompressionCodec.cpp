@@ -1,13 +1,14 @@
 #include <Compression/ICompressionCodec.h>
 
-#include <Compression/CompressionCodecMultiple.h>
+
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <base/unaligned.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
-#include <Common/typeid_cast.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Compression/CompressionCodecMultiple.h>
+
 
 namespace CurrentMetrics
 {
@@ -21,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
@@ -29,18 +31,54 @@ void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
 }
 
-ASTPtr ICompressionCodec::makeCodecDescription(const String & name, const ASTs & arguments)
+void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
 {
-    if (arguments.empty())
-        return make_intrusive<ASTIdentifier>(name);
-    return makeASTFunction(name, arguments);
+    boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
+    result->name = "CODEC";
+
+    /// Special case for codec Multiple, which doesn't have name. It's just list
+    /// of other codecs.
+    if (codec_name.empty())
+    {
+        ASTPtr codec_desc = make_intrusive<ASTExpressionList>();
+        for (const auto & argument : arguments)
+            codec_desc->children.push_back(argument);
+        result->arguments = codec_desc;
+    }
+    else
+    {
+        ASTPtr codec_desc;
+        if (arguments.empty()) /// Codec without arguments is just ASTIdentifier
+            codec_desc = make_intrusive<ASTIdentifier>(codec_name);
+        else /// Codec with arguments represented as ASTFunction
+            codec_desc = makeASTFunction(codec_name, arguments);
+
+        result->arguments = make_intrusive<ASTExpressionList>();
+        result->arguments->children.push_back(codec_desc);
+    }
+
+    result->children.push_back(result->arguments);
+    full_codec_desc = result;
 }
 
-ASTPtr ICompressionCodec::getFullCodecDescription() const
+
+ASTPtr ICompressionCodec::getFullCodecDesc() const
 {
-    if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(this))
-        return multiple->getFullCodecDescription();
-    return makeASTFunction("CODEC", getCodecDescription());
+    if (full_codec_desc == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec description is not prepared");
+
+    return full_codec_desc;
+}
+
+
+ASTPtr ICompressionCodec::getCodecDesc() const
+{
+    auto arguments = getFullCodecDesc()->as<ASTFunction>()->arguments;
+    /// If it has exactly one argument, than it's single codec, return it
+    if (arguments->children.size() == 1)
+        return arguments->children[0];
+    /// Otherwise we have multiple codecs and return them as expression list
+    return arguments;
 }
 
 UInt64 ICompressionCodec::getHash() const
@@ -90,7 +128,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
             "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) for codec '{}'",
             final_decompressed_size,
             decompressed_size,
-            getCodecDescription()->formatForErrorMessage());
+            getCodecDesc()->formatForErrorMessage());
 
     return final_decompressed_size;
 }

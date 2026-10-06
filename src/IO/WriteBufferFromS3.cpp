@@ -18,7 +18,6 @@
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
-#include <Common/getRandomASCIIString.h>
 
 #include <utility>
 
@@ -56,7 +55,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 strict_upload_part_size;
-    extern const S3RequestSettingsString upload_checksum_algorithm;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_factor;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_parts_count_threshold;
 }
@@ -117,7 +115,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , idempotency_id(getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -292,7 +289,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromS3 was canceled. "
+                "WriteBufferFromS3 was canceled."
                 "The file might not be written to S3. "
                 "{}.",
                 getVerboseLogDetails());
@@ -418,15 +415,13 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    req.SetMetadata(metadataWithIdempotencyId());
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
-
-    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     client_ptr->setKMSHeaders(req);
 
@@ -503,19 +498,6 @@ void WriteBufferFromS3::abortMultipartUpload()
     LOG_INFO(log, "Multipart upload has been aborted successfully. {}", getVerboseLogDetails());
 }
 
-std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecksumAlgorithm() const
-{
-    /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`):
-    /// with `HMAC`/`SigV4` they are folded into the signed canonical request and `GCS` rejects the request with
-    /// `SignatureDoesNotMatch`. Fall back to the SDK's `Content-MD5` path, which `GCS` accepts (and which is silently
-    /// dropped under FIPS, leaving the upload with no checksum header - the safe pre-flexible-checksum behavior).
-    /// `GCS` is never an `S3Express` bucket, so this check can short-circuit before the `S3Express` handling.
-    if (client_ptr->isClientForGCS())
-        return std::nullopt;
-
-    return S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket());
-}
-
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -532,13 +514,11 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
-    const auto checksum_algorithm = getUploadChecksumAlgorithm();
-    if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
+    if (client_ptr->isS3ExpressBucket())
     {
-        req.setUploadChecksumAlgorithm(*checksum_algorithm);
-        auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, *checksum_algorithm);
-        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, checksum);
+        auto checksum = S3::RequestChecksum::calculateChecksum(req);
+        S3::RequestChecksum::setRequestChecksum(req, checksum);
         multipart_checksums.push_back(std::move(checksum));
     }
 
@@ -659,7 +639,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
-    req.setIdempotencyId(idempotency_id);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -668,13 +647,12 @@ bool WriteBufferFromS3::completeMultipartUpload()
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
-    const auto checksum_algorithm = getUploadChecksumAlgorithm();
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-        if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-            S3::RequestChecksum::setChecksum(part, *checksum_algorithm, multipart_checksums.at(i));
+        if (!multipart_checksums.empty())
+            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
 
@@ -709,7 +687,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
 
         const auto & error = outcome.GetError();
-
         if (isTransientCompleteMultipartUploadError(error))
         {
             last_error_type = error.GetErrorType();
@@ -742,13 +719,10 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    req.SetMetadata(metadataWithIdempotencyId());
-    req.setIdempotencyId(idempotency_id);
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
-
-    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -762,13 +736,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     client_ptr->setKMSHeaders(req);
 
     return req;
-}
-
-ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
-{
-    auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
-    return metadata;
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
@@ -822,7 +789,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it. A replay of our own write never reaches here.
+                /// not a genuine error — the caller handles it.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

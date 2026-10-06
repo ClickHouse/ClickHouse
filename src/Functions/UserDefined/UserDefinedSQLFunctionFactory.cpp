@@ -71,18 +71,14 @@ namespace
         if (!lambda_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
-        if (lambda_function->name != "lambda")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected lambda expression, got: {}", function->formatForErrorMessage());
-
-        if (!lambda_function->arguments || lambda_function->arguments->children.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
-
         auto & lambda_function_expression_list = lambda_function->arguments->children;
+
+        if (lambda_function_expression_list.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
 
         const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
 
-        if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple"
-            || tuple_function_arguments->parameters)
+        if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
         UnorderedSetWithMemoryTracking<String> arguments;

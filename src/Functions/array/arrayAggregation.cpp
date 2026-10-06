@@ -222,27 +222,7 @@ struct ArrayAggregateImpl
         if (const_column)
         {
             MutableColumnPtr res_column = const_column->getDataColumn().cloneEmpty();
-            const Field field = const_column->getField();
-            UInt64 pos = 0;
-            size_t first_non_empty = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
-                const auto end_of_array = offsets[i];
-                if (pos == end_of_array)
-                {
-                    if (first_non_empty < i)
-                        res_column->insertMany(field, i - first_non_empty);
-                    res_column->insertDefault();
-
-                    first_non_empty = i + 1;
-                }
-
-                pos = end_of_array;
-            }
-
-            if (first_non_empty < offsets.size())
-                res_column->insertMany(field, offsets.size() - first_non_empty);
-
+            res_column->insertMany(const_column->getField(), offsets.size());
             res_ptr = std::move(res_column);
             return;
         }
@@ -342,16 +322,9 @@ struct ArrayAggregateImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                const size_t array_size = offsets[i] - pos;
-
-                if (array_size == 0)
-                {
-                    res[i] = {};
-                    continue;
-                }
-
                 if constexpr (aggregate_operation == AggregateOperation::sum)
                 {
+                    size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
                     res[i] = x * static_cast<ResultType>(array_size);
                 }
@@ -368,6 +341,7 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
+                    size_t array_size = offsets[i] - pos;
                     AggregationType product = x;
 
                     if constexpr (is_decimal<Element>)

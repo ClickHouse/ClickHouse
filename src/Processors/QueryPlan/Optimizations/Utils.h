@@ -76,10 +76,6 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
-/// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
-/// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
-[[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
-
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,

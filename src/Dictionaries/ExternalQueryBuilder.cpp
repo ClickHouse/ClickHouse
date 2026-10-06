@@ -42,7 +42,7 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , quoting_style(quoting_style_)
 {
     // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
-    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes || quoting_style == IdentifierQuotingStyle::DoubleQuotesPostgreSQL)
+    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
         format_settings.values.escape_quote_with_quote = true;
 
     if (table.empty() && query.empty())
@@ -67,10 +67,6 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 
         case IdentifierQuotingStyle::BackticksMySQL:
             writeBackQuotedStringMySQL(s, out);
-            break;
-
-        case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
-            writeDoubleQuotedStringPostgreSQL(s, out);
             break;
     }
 }

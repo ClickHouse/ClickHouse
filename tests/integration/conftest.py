@@ -68,38 +68,8 @@ def tune_local_port_range():
         )
 
 
-def is_xdist_replacement_worker():
-    """True when this worker was spawned to replace one that died mid-run.
-
-    `pytest-xdist` numbers a replacement past the size of the original pool, so `gw8` in a pool of
-    eight (`gw0`..`gw7`) is a replacement. A replacement starts a fresh pytest *session*, which
-    re-runs every session-scoped fixture - and `cleanup_environment` kills every container on the
-    host, including the ones the workers that are still running own. One worker dying, from an OOM
-    kill for instance, would otherwise take the containers of the whole job with it.
-    """
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "")
-    count = os.environ.get("PYTEST_XDIST_WORKER_COUNT", "")
-    if not worker.startswith("gw") or not count.isdigit():
-        return False
-
-    index = worker.removeprefix("gw")
-    if not index.isdigit():
-        return False
-
-    return int(index) >= int(count)
-
-
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
-    if is_xdist_replacement_worker():
-        logging.info(
-            "Worker %s replaces a worker that died, so the containers of the workers which are "
-            "still running are not ours to clean up. Skipping the environment cleanup.",
-            os.environ["PYTEST_XDIST_WORKER"],
-        )
-        yield
-        return
-
     try:
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:

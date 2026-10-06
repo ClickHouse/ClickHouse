@@ -34,12 +34,6 @@ public:
     }
 
     bool readsFromOtherTables() const override { return true; }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = tryGetTargetTable())
-            return {target};
-        return {};
-    }
 
     /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
     /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
@@ -80,8 +74,7 @@ public:
     void alter(
         const AlterCommands & params,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder,
-        DDLGuardPtr & ddl_guard) override;
+        AlterLockHolder & table_lock_holder) override;
 
     /// Truncate target table
     void truncate(

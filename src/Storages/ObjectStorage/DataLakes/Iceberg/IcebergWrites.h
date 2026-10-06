@@ -135,9 +135,7 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {},
-    const std::vector<Int64> & entry_row_counts = {},
-    const std::vector<Int64> & entry_file_counts = {});
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {

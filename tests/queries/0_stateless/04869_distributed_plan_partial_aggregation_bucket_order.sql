@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 SET explain_query_plan_default = 'legacy';
 -- Distributed aggregation rejects a nonzero global GROUP BY limit.
 SET max_rows_to_group_by = 0;

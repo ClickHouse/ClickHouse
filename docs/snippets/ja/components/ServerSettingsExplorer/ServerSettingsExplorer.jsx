@@ -197,13 +197,12 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "default_*",
-      count: 5,
+      count: 4,
       settings: [
         { name: "default_database", path: "/default#default_database", default: "default" },
         { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
         { name: "default_profile", path: "/default#default_profile", default: "default" },
-        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" },
-        { name: "default_session_user", path: "/default#default_session_user", default: "default" }
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
       ],
       children: []
     },
@@ -311,13 +310,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 5,
+      count: 2,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
-        { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
-        { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
-        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
-        { name: "enable_write_through_distributed_cache", path: "/enable#enable_write_through_distributed_cache", default: "0" }
+        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" }
       ],
       children: []
     },
@@ -1057,7 +1053,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 3,
       settings: [
         { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "120" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
         { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []
@@ -1328,8 +1324,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
         { name: "compression", path: "/other#compression" },
-        { name: "config-file", path: "/other#config-file", default: "config.xml" },
         { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
+        { name: "config-file", path: "/other#config-file", default: "config.xml" },
         { name: "core_dump", path: "/other#core_dump" },
         { name: "crash_log", path: "/other#crash_log" },
         { name: "create_union_system_log_tables", path: "/other#create_union_system_log_tables" },
@@ -1536,7 +1532,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "件の設定" : "件の設定"}`
 
     return (
       <div key={key} className="min-w-max">

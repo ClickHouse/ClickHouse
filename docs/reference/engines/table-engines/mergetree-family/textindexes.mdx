@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(regexp[, match_tokens])
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -89,7 +89,6 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -98,7 +97,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             )
 )
 ENGINE = MergeTree
@@ -108,7 +107,7 @@ ORDER BY key
 Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
-- [Map](/reference/data-types/map), either on the `Map` column using the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, or only on the map keys or values using the [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) function, and
+- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions), and
 - [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
@@ -121,7 +120,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(regexp[, match_tokens])
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -129,7 +128,6 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                            | keyValuePairs
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -138,7 +136,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             )
 
 ```
@@ -162,12 +160,9 @@ ALTER TABLE table DROP INDEX text_idx;
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
-- `splitByRegexp(regexp[, match_tokens])` splits strings according to a user-defined regular expression `regexp`.
-  The `regexp` argument is mandatory, for example, `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
-  The optional `match_tokens` argument (`false` by default; `0`/`1` are also accepted) controls what `regexp` represents:
-  - with `match_tokens = false` (the default), `regexp` represents separators: the tokens are the (non-empty) pieces of text between successive matches (same semantics as function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  - with `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded. For example, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexes `hello` and `world` from `tag:hello tag:world`, dropping the `tag:` prefix. Matching uses [RE2](https://github.com/google/re2), the same engine every regex-based function in ClickHouse uses; only the first capture group is ever used, so further groups merely constrain what matches. A capture group that did not participate in the match, or that matched an empty string, contributes no token, and scanning always resumes after the whole match rather than after the captured span (so matches never overlap).
-  With `match_tokens = true`, note that search needles in text search functions are tokenized with the index's own tokenizer, so a plain string needle that does not itself match `regexp` yields no tokens and therefore no results. Needles passed as arrays to text search functions are not tokenized, and are therefore recommended for use with regexp tokenizers.
+- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  The `re` argument is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
   Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
@@ -184,7 +179,6 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
-- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -524,7 +518,7 @@ For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the tex
 Without `support_phrase_search`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `support_phrase_search = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any). This postprocessor support does not extend to the `splitByRegexp` tokenizer: `hasPhrase` on a `splitByRegexp` index combined with a postprocessor is rejected (see footnote ³ below).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-| Function | Supports a preprocessor | Compatible tokenizers⁵ | Supports a postprocessor |
+| Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
 |---|---|---|---|
 | `=` | yes | all | yes |
 | `IN` | yes | all | yes |
@@ -548,20 +542,18 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
-`LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
+`LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+A `%value%` pattern is then a *direct read (without hint)*, while `value%` and `%value` patterns remain a hint, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint for patterns the dictionary scan does not support: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
-Some needles are additionally not eligible, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
 ⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
 The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
-
-⁵ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -593,7 +585,6 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
-- `pfor` - apply differential (delta) coding, followed by PFor bit-packing (each within blocks of fixed size). Like `bitpacking`, but the per-block bit width is chosen to minimise the total size and the values that do not fit are stored separately as patched exceptions, so a single large gap no longer widens the whole block. Blocks whose deltas are all equal collapse to a constant.
 
 The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
@@ -796,7 +787,7 @@ The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensi
 
 Function [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken) matches against a single given token.
 
-Unlike `hasAnyTokens` and `hasAllTokens`, it does not tokenize the search term (it assumes the input is a single token).
+Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
 Example:
 
@@ -902,9 +893,7 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
-The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
-In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
+Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values. The text index is only used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both.
 
 Example:
 
@@ -979,54 +968,19 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 
 As log volume grows, these queries become slow.
 
-The solution is a text index on the [Map](/reference/data-types/map) column.
-Which index to create depends on what you search for: a key together with its value, or keys and values independently.
-
-#### Combined key-value lookups with the `keyValuePairs` tokenizer {#tokenizer-key-value-pairs}
-
-Use the `keyValuePairs` tokenizer on the `Map` column itself when you search for a specific key holding a specific value:
-
-```sql
-ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
-ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
-
--- Finds all error logs:
-SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
-```
-
-The tokenizer combines each `(key, value)` pair of a row into a single token, so the index knows which value belongs to which key.
-The `mapKeys` and `mapValues` indexes described below cannot answer such a query, because they index keys and values independently: they can tell that some attribute of a row has the value `error`, but not that it was the `level` attribute.
-
-A pair is stored as the token `key ‖ value ‖ length(key)`.
-The trailing length keeps the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator such as `key=value`, a key or a value that contains the separator cannot produce a false match.
-The table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) returns the decoded parts of each token in the columns `token_key` and `token_value`.
-
-The following restrictions apply:
-
-- The index must be created on a `Map` whose keys and values are of type `String` or `LowCardinality(String)`.
-  `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
-  `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
-- The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element is answered from the index so far.
-  Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
-- `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
-  Such a predicate falls back to a brute-force scan.
-- If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
-
-#### Key and value search with `mapKeys` and `mapValues` {#text-index-map-keys-and-values}
-
+The solution is creating a text index for the [Map](/reference/data-types/map) keys and values.
 Use [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 Use [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 Example queries:
@@ -1335,7 +1289,6 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
-If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`).
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -1455,8 +1408,6 @@ The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'v
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
-As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
-
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
@@ -1469,12 +1420,6 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
-It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
-
-For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
-
-- The needle contains the letter `k`. `ilike` treats `U+212A KELVIN SIGN` as a `k`, but the dictionary scan compares bytes and would miss a row spelled that way. `U+212A` is the only character that `ilike` folds onto an ASCII letter or digit, so `k` is the only affected needle character.
-- The index preprocessor expression contains `lowerUTF8` or `upperUTF8`. These rewrite non-ASCII characters into ASCII letters (`ß` into `SS`, `ſ` into `S`), which would make the index report rows that `ilike` does not match.
 
 ### Trivial count queries {#count-queries-perf}
 
@@ -1558,7 +1503,6 @@ The text index currently has the following limitations:
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
-The posting list codec is not governed by this version: a part written with `posting_list_codec = 'pfor'` (or the `text_index_posting_list_codec` setting) cannot be read by servers that predate the codec, and neither `text_index_serialization_version` nor `compatibility` prevents it from being used, because a codec named for the index takes precedence over the version preference in the same way `support_phrase_search` does. Do not enable `pfor` until every server that may read the table has been upgraded.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 

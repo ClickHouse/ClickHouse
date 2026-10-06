@@ -4,7 +4,6 @@
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -95,6 +94,7 @@ namespace Setting
     extern const SettingsBool http_allow_table_as_file;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsBool http_x_clickhouse_format_overrides_output_format;
     extern const SettingsString compression;
     extern const SettingsString filter;
     extern const SettingsString format;
@@ -394,20 +394,15 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
-    /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
-    /// `X-ClickHouse-Format` is an alias for the `output_format` setting. They override any matching
-    /// URL parameter (preserving the historical precedence).
-    ///
-    /// `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`: sending this
-    /// header means the client definitely wants the response in that format, so it is an explicit
-    /// override (winning over the query's `FORMAT` clause and the path extension), not a fallback
-    /// used only when nothing else selects a format. It maps to `output_format` and not to the
-    /// bidirectional `format`, because the header has always described the response only: the same
-    /// header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    /// The `X-ClickHouse-Database` header is an alias for the `database` setting. It overrides a
+    /// matching URL parameter (preserving the historical precedence).
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
         settings_changes.setSetting("database", header_value);
-    if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
-        settings_changes.setSetting("output_format", header_value);
+
+    /// The `X-ClickHouse-Format` header is applied below, once the settings from the URL and the user
+    /// profile are in effect: which setting it aliases depends on
+    /// `http_x_clickhouse_format_overrides_output_format`.
+    const String format_header_value = request.get("X-ClickHouse-Format", "");
 
     ContextMutablePtr context;
     {
@@ -480,6 +475,29 @@ void HTTPHandler::processQuery(
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// The `X-ClickHouse-Format` header is an alias for the `output_format` setting, or - when
+    /// `http_x_clickhouse_format_overrides_output_format` is disabled - for the `default_format`
+    /// setting, which is what it meant before 26.8. Either way it overrides the URL parameter of the
+    /// same name (preserving the historical precedence). The choice is read from the context after
+    /// the URL parameters and the user profile have been applied, so the compatibility setting can
+    /// come from either of them.
+    ///
+    /// By default `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`:
+    /// sending this header means the client definitely wants the response in that format, so it is
+    /// an explicit override (winning over the query's `FORMAT` clause and the path extension), not a
+    /// fallback used only when nothing else selects a format. It maps to `output_format` and not to
+    /// the bidirectional `format`, because the header has always described the response only: the
+    /// same header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    if (!format_header_value.empty())
+    {
+        SettingsChanges format_header_changes;
+        format_header_changes.setSetting(
+            context->getSettingsRef()[Setting::http_x_clickhouse_format_overrides_output_format] ? "output_format" : "default_format",
+            format_header_value);
+        context->checkSettingsConstraints(format_header_changes, SettingSource::QUERY);
+        context->applySettingsChanges(format_header_changes);
+    }
 
     const auto & settings = context->getSettingsRef();
 
@@ -761,12 +779,7 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        /// The frames are the same self-describing format as the native protocol's, so the codec comes from
-        /// the same setting. It must not come from the default codec for table data: that one is chosen for
-        /// how data sits on disk, and tying the two together silently changes, on every such change, what
-        /// each `compress=1` client has to be able to decode.
-        used_output.out_compressed_holder
-            = std::make_shared<CompressedWriteBuffer>(*used_output.out, chooseNetworkCompressionCodec(&settings));
+        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
         used_output.out = used_output.out_compressed_holder;
     }

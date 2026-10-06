@@ -1,0 +1,35 @@
+-- plain select
+1	public	public-1
+3	public	public-3
+-- inner
+1	public	public-1
+3	public	public-3
+-- left
+1	1	public-1
+2	0	
+3	3	public-3
+5	0	
+-- left, join_use_nulls
+1	1	public-1
+2	\N	\N
+3	3	public-3
+5	\N	\N
+-- left semi
+1
+3
+-- left anti
+2
+5
+-- join table
+1	public-1
+2	
+3	public-3
+5	
+-- without a policy
+1	public	public-1
+2	hidden	hidden-2
+3	public	public-3
+1	public-1
+2	hidden-2
+3	public-3
+5	

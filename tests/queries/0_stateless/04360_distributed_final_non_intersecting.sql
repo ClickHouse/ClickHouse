@@ -1,4 +1,4 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- Distributed FINAL skips the merge for non-intersecting primary-key ranges. Each table below has one
 -- level>0 (merged, deduplicated) part covering the whole key range plus a small overlapping level-0 part,
 -- so FINAL reads the non-overlapping tail without a merge (only the engine sign/is_deleted filter) and
@@ -10,6 +10,7 @@
 -- splits into the intersecting and non-intersecting lanes this test targets instead of being broadcast.
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_max_rows_to_broadcast = 0, max_final_threads = 1;
+SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_ni_rep;
 CREATE TABLE t_ni_rep (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64, merge_max_block_size = 8192;

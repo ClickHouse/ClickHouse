@@ -70,11 +70,6 @@ SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion
     return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
 }
 
-bool SerializationString::isStringSizesSubcolumn(const SubstreamPath & path)
-{
-    return !path.empty() && (path.back().type == Substream::StringSizes || path.back().type == Substream::InlinedStringSizes);
-}
-
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
