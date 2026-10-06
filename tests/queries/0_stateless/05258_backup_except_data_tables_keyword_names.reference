@@ -1,0 +1,6 @@
+BACKUP DATABASE db EXCEPT DATA FROM TABLES events, `view` TO Memory(\'b\')	1
+BACKUP DATABASE db EXCEPT DATA FROM TABLES events, `view` TO Memory(\'b\')	1
+BACKUP DATABASE db EXCEPT DATA FROM TABLES `DataBase`, a, `dictionary` TO Memory(\'b\')	1
+BACKUP DATABASE db EXCEPT DATA FROM TABLES a, `database`, TABLE db2.t TO Memory(\'b\')	1
+BACKUP ALL EXCEPT DATA FROM TABLES a, `view` TO Memory(\'b\')	1
+BACKUP ALL EXCEPT DATA FROM TABLES db.a, `view`.t TO Memory(\'b\')	1

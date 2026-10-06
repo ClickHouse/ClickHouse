@@ -307,6 +307,14 @@ Block NativeReader::read()
 
                     column.type = header_column.type;
                 }
+                else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
+                {
+                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
+                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header, where the query
+                    /// expects the version of the header. So relabel the column with the header type.
+                    column.column = relabelAggregateStateVersions(column.column, header_column.type);
+                    column.type = header_column.type;
+                }
             }
             else
             {

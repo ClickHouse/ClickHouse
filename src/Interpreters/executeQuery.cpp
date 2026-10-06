@@ -14,6 +14,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
@@ -59,6 +60,8 @@
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -104,6 +107,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsSecrets.h>
 
@@ -212,6 +216,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -841,6 +850,8 @@ static void logQueryFinishImpl(
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
+        /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
+        elem.profile_counters.reset();
     }
 
     if (query_span && query_span->isTraceEnabled())
@@ -1143,13 +1154,6 @@ void logExceptionBeforeStart(
 
 void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    auto field_to_bool = [](const Field & f) -> bool
-    {
-        if (f.getType() == Field::Types::String)
-            return stringToBool(f.safeGet<String>());
-        return f.safeGet<bool>();
-    };
-
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -1160,7 +1164,7 @@ void normalizeAnalyzerSettings(ASTPtr ast)
         {
             for (auto & change : set_query->changes)
             {
-                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !field_to_bool(change.value))
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !SettingFieldBool{change.value}.value)
                     change.value = Field(true);
             }
         }
@@ -2419,7 +2423,8 @@ static BlockIO executeQueryImpl(
             /// applied only to the JSON-deserialization branch — otherwise a session with
             /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
-            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            if (isClickHouseJSONSetEscape(
+                    begin, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -2455,6 +2460,22 @@ static BlockIO executeQueryImpl(
                     settings[Setting::max_ast_elements]);
                 checkASTSizeLimits(*out_ast, settings);
             }
+        }
+        else if (settings[Setting::dialect] == Dialect::logsql && !internal)
+        {
+            /// `ParserLogsQLQuery` handles SET queries internally even when the feature gate is off,
+            /// so that users can recover from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
+            ParserLogsQLQuery parser(
+                settings[Setting::logsql_database],
+                settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column],
+                settings[Setting::logsql_message_column],
+                begin,
+                end,
+                settings[Setting::allow_experimental_logsql_dialect],
+                settings[Setting::max_parser_depth],
+                max_query_size);
+            out_ast = parseLogsQLQuery(parser, begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
@@ -3058,8 +3079,8 @@ static BlockIO executeQueryImpl(
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
-        /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        /// another overflow mode. This is only needed if the query result cache can actually store the result.
+        if (settings[Setting::use_query_cache] && canWriteToQueryResultCache(context) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
             || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
             || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
             || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
@@ -3369,7 +3390,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error, const QueryPipeline & query_pipeline) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3388,6 +3409,13 @@ static BlockIO executeQueryImpl(
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+
+                if (query_pipeline.initialized())
+                {
+                    /// The query may have failed with MEMORY_LIMIT_EXCEEDED, try to preserve original exception
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Process);
+                    logProcessorProfile(context, query_pipeline.getProcessors(), elem.exception_code, elem.exception);
+                }
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-replicated-database, no-shared-merge-tree, no-fasttest
 # no-parallel: the failpoint pauses the loading of outdated parts of every table.
 # no-replicated-database, no-shared-merge-tree: `table_readonly` is a plain MergeTree setting.
 

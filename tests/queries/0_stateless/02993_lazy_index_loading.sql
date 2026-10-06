@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- no-object-storage: remote reads allocate prefetch buffers that can exceed the 200M limit
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, use_primary_key_cache = 0;
 

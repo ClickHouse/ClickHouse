@@ -1,0 +1,10 @@
+-- ATTACH PARTITION FROM a temporary table needs only INSERT on the destination
+OK
+-- REPLACE PARTITION FROM a temporary table still needs ALTER DELETE on the destination
+ACCESS_DENIED
+-- ... and works once ALTER DELETE is granted, without any SELECT grant
+OK
+-- the destination has the attached rows: partition 1 twice, then replaced by a single row
+0	0
+1	101
+2	2
