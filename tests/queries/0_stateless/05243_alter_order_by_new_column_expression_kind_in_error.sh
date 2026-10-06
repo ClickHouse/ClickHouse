@@ -4,6 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: `MODIFY ORDER BY` would change the direction of the forced `DESC` key column first
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # A column added by the same ALTER may not be used in the new sorting key when it has a default expression.
 # The error used to say "default expression" for a MATERIALIZED column too (#117541); it now names the kind.
 # Using a subcolumn of such a column (here an element of a Tuple) is rejected in the same way.
