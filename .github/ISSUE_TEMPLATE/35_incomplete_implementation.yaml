@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > (you don't have to strictly follow this form)
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related issues and implementation work before filing.
   - type: textarea
     attributes:
       label: Company or project name

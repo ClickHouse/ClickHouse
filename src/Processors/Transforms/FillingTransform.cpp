@@ -41,6 +41,7 @@ inline static void logDebug(const char * key, const T & value, const char * sepa
 namespace ErrorCodes
 {
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int LOGICAL_ERROR;
 }
 
 Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description/*, const InterpolateDescription & interpolate_description*/)
@@ -347,8 +348,17 @@ FillingTransform::FillingTransform(
     }
 
     if (interpolate_description)
+    {
         for (const auto & name : interpolate_description->result_columns_order)
             interpolate_column_positions.push_back(header_->getPositionByName(name));
+
+        /// `insertFromFillingRow` pairs the executed expression's output columns with these positions by
+        /// index, so one position per output is what keeps that pairing in range.
+        if (interpolate_column_positions.size() != interpolate_description->actions.getResultColumns().size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Interpolate description has {} result columns, but its expression produces {}",
+                interpolate_column_positions.size(), interpolate_description->actions.getResultColumns().size());
+    }
 
     /// check conflict in positions between interpolate and sorting prefix columns
     if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())

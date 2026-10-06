@@ -1,111 +1,104 @@
 ---
-sidebarTitle: 'GCP Private Service Connect'
-description: 'Establish a secure connection between ClickPipes and a data source hosted on GCP using Private Service Connect (PSC).'
-slug: /integrations/clickpipes/networking/gcp-psc
-title: 'GCP Private Service Connect for ClickPipes'
-doc_type: 'guide'
-keywords: ['gcp psc', 'private service connect', 'ClickPipes security', 'reverse private endpoint', 'private connectivity']
+title: "GCP Private Service Connect for ClickPipes"
+sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
+description: "Establish a secure connection between ClickPipes and a data source hosted on GCP using Private Service Connect (PSC)."
+slug: "/integrations/clickpipes/networking/gcp-psc"
+doc_type: "guide"
+keywords: ["gcp psc", "private service connect", "ClickPipes security", "reverse private endpoint", "private connectivity"]
 integration:
-   - support_level: 'core'
-   - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
 You can use GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) to establish a secure connection between ClickPipes and a data source hosted on GCP. ClickPipes creates a **reverse private endpoint (RPE)** in its VPC and points it at a private endpoint service published for your data source, so traffic is never exposed to the public internet.
 
-<Note>
-GCP PSC connectivity is only available when the ClickPipes service is deployed on GCP. Check the [list of GCP regions where ClickPipes is hosted](/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) before you start.
-</Note>
+<Check>
+  ClickPipes supports **cross-region** PSC connectivity via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). Global access is required for endpoints located in a different region than the region where the ClickPipes infrastructure runs. Check the [ClickPipes GCP region documentation](/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) for more details.
+</Check>
 
 ## Supported patterns {#supported-patterns}
 
-| Pattern                | When it applies | Service attachment |
-| ---------------------- | --------------- | ------------------ |
-| **Native PSC**         | Managed services that automatically publish a PSC service attachment, such as AlloyDB. | Automatically created when you enable PSC on the instance. |
+| Pattern | When it applies | Service attachment |
+| --- | --- | --- |
+| **Native PSC** | Managed services that automatically publish a PSC service attachment (_e.g._ Google Cloud SQL, AlloyDB, Google Cloud Managed Service for Apache Kafka). | Automatically created when you enable PSC on the instance. |
 | **Producer-owned PSC** | Data sources that don't publish a service attachment, such as Postgres on Compute Engine or a managed service reachable only by private IP. | Created and managed by you. |
 
 ## Prerequisites {#prerequisites}
 
-- A ClickHouse Cloud service hosted on GCP, in a [region where ClickPipes is hosted](/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
+- A ClickHouse Cloud service hosted on GCP. ClickPipes runs in the same region as your ClickHouse Cloud service (with [a few exceptions](/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)).
 - IAM rights to enable PSC on your source and manage PSC service attachments (`roles/compute.networkAdmin`).
-- The **ClickPipes consumer project** allowed to connect to your service attachment. For ClickPipes production, this is `clickpipes-production`.
-- The ClickHouse Cloud API key/secret for the organization that owns the service (only required if you provision through Terraform or the API).
+- The **ClickPipes consumer project** allowed to connect to your service attachment (`clickpipes-production`).
+- If you're provisioning ClickPipes programmatically: a ClickHouse Cloud API key for the organization that owns the service.
 
 ## Create the reverse private endpoint {#create-rpe}
 
 To create a RPE, you need the following information for your data source:
 
-- **Service attachment URI**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`, the
-  PSC endpoint published in front of your data source.
-- **Private DNS name**: the hostname your pipe connects to. A PSC endpoint gets a static internal IP
-  with no DNS name attached, so ClickPipes resolves this hostname to that IP for you.
+- **Service attachment URI**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`, the PSC endpoint published in front of your data source.
+- **Private DNS name**: the hostname your pipe connects to. A PSC endpoint gets a static internal IP with no DNS name attached, so ClickPipes resolves this hostname to that IP for you.
 
 <Tabs>
-<Tab title="ClickPipes UI">
+  <Tab title="ClickPipes UI">
+    1. In ClickHouse Cloud, open your service and go to **Data Sources** \> **ClickPipes**.
+    2. Select the data source you want to ingest from.
+    3. Under **Setup your ClickPipe connection**, toggle on **Use secure connection**, then click **\+ Reverse private endpoint** and pick **GCP PSC service attachment**.
+    4. Fill in the **Service attachment URI**, the **Private DNS name**, and a **Description**.
+    5. Click **Create**. The endpoint moves through `Provisioning` → `Ready`. (Native PSC auto-accepts, so you will not see `PendingAcceptance`.)
+  </Tab>
+  <Tab title="Terraform">
+    Custom private DNS mappings are not an attribute of `clickhouse_clickpipes_reverse_private_endpoint` — they are managed by the separate `clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns` resource, which takes a full replacement list of mappings and references the endpoint by ID:
 
-1. In ClickHouse Cloud, open your service and go to **Data Sources** > **ClickPipes**.
-2. Select the data source you want to ingest from.
-3. Under **Setup your ClickPipe connection**, toggle on **Use secure connection**, then click **+ Reverse private endpoint** and pick **GCP PSC service attachment**.
-4. Fill in the **Service attachment URI**, the **Private DNS name**, and a **Description**.
-5. Click **Create**. The endpoint moves through `Provisioning` → `Ready`. (Native PSC auto-accepts, so you will not see `PendingAcceptance`.)
-
-</Tab>
-<Tab title="Terraform">
-
-Custom private DNS mappings are not an attribute of `clickhouse_clickpipes_reverse_private_endpoint` — they are managed by the separate `clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns` resource, which takes a full replacement list of mappings and references the endpoint by ID:
-
-```hcl
-resource "clickhouse_clickpipes_reverse_private_endpoint" "gcp_psc" {
-  service_id             = var.clickhouse_service_id
-  description            = "GCP PSC endpoint"
-  type                   = "GCP_PSC_SERVICE_ATTACHMENT"
-  gcp_service_attachment = "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>"
-}
-
-resource "clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns" "gcp_psc" {
-  service_id                  = var.clickhouse_service_id
-  reverse_private_endpoint_id = clickhouse_clickpipes_reverse_private_endpoint.gcp_psc.id
-
-  mapping = [
-    { private_dns_name = "<PRIVATE_DNS_NAME>" }
-  ]
-}
-```
-
-</Tab>
-<Tab title="API">
-
-```bash
-curl --silent --user $KEY_ID:$KEY_SECRET \
-  -X POST -H "Content-Type: application/json" \
-  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickpipesReversePrivateEndpoints \
-  -d '{
-    "type": "GCP_PSC_SERVICE_ATTACHMENT",
-    "description": "GCP PSC endpoint",
-    "gcpServiceAttachment": "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>",
-    "customPrivateDnsMappings": [
-      { "privateDnsName": "<PRIVATE_DNS_NAME>" }
-    ]
-  }'
-```
-
-</Tab>
+    ```hcl
+    resource "clickhouse_clickpipes_reverse_private_endpoint" "gcp_psc" {
+      service_id             = var.clickhouse_service_id
+      description            = "GCP PSC endpoint"
+      type                   = "GCP_PSC_SERVICE_ATTACHMENT"
+      gcp_service_attachment = "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>"
+    }
+    
+    resource "clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns" "gcp_psc" {
+      service_id                  = var.clickhouse_service_id
+      reverse_private_endpoint_id = clickhouse_clickpipes_reverse_private_endpoint.gcp_psc.id
+    
+      mapping = [
+        { private_dns_name = "<PRIVATE_DNS_NAME>" }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="API">
+    ```bash
+    curl --silent --user $KEY_ID:$KEY_SECRET \
+      -X POST -H "Content-Type: application/json" \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickpipesReversePrivateEndpoints \
+      -d '{
+        "type": "GCP_PSC_SERVICE_ATTACHMENT",
+        "description": "GCP PSC endpoint",
+        "gcpServiceAttachment": "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>",
+        "customPrivateDnsMappings": [
+          { "privateDnsName": "<PRIVATE_DNS_NAME>" }
+        ]
+      }'
+    ```
+  </Tab>
 </Tabs>
 
 ### Custom private DNS names {#custom-private-dns-rules}
 
-Because GCP PSC does not propagate DNS, a custom private DNS mapping is integral to every GCP PSC endpoint — you always supply the source's private DNS name this way, and ClickPipes resolves it to the endpoint's static internal IP.
+Because GCP PSC does not propagate DNS, a custom private DNS mapping is required for every GCP PSC endpoint so ClickPipes can resolve it to the endpoint's static internal IP.
 
-The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) apply — wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. Wildcards are especially useful on GCP: a single mapping such as `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` fronts every broker of a Managed Kafka cluster.
+The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) apply: wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. Wildcards are especially useful, _e.g._ a single mapping such as `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` fronts every broker of a Managed Kafka cluster.
 
 For GCP PSC, only the mapping's `privateDnsName` is used. The `internalDNSName` field is not supported, because a PSC endpoint exposes a static IP with no DNS name to pin to — mappings always resolve to that IP.
 
 ## Approving producer-owned connections {#producer-owned}
 
-For producer-owned PSC, put the ClickPipes consumer project on the service attachment's auto-accept list so the connection is accepted automatically. If you skip that, the RPE sits in `PendingAcceptance` until you approve it manually.
+For producer-owned PSC, append the ClickPipes consumer project (`clickpipes-production`) to the auto-accept list of the service attachment, so the connection is accepted automatically. If you skip that, the RPE sits in `PendingAcceptance` until you approve it manually.
 
-To accept the connection, the service attachment's consumer accept list needs the endpoint's numeric ID-based URI (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). That value is the `endpointWithId` of the pending connection on the service attachment — describe it to find it:
+To accept the connection, the consumer accept list of the service attachment needs the numeric ID-based URI of the endpoint (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). To get the `endpointWithId` value for the pending connection on the service attachment, run:
 
 ```bash
 gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
@@ -115,6 +108,10 @@ gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
 
 Take the `endpointWithId` of the entry whose `status` is `PENDING`, strip the `https://www.googleapis.com/compute/beta/` prefix, and pass the result to `--consumer-accept-list`:
 
+<Danger>
+  `--consumer-accept-list` overwrites the accept list rather than appending the new consumer project to it. If the service attachment already accepts other projects or endpoints, pass all of them in the same command, or the ones you leave out lose access.
+</Danger>
+
 ```bash
 gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
   --region=<REGION> --project=<YOUR_PROJECT_ID> \
@@ -123,32 +120,23 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 ```
 
 <Warning>
-Do not use the `endpoint_id` from the ClickPipes API/Terraform response here — that value is the forwarding-rule *name*, not the numeric ID GCP requires, so the accept list will not match. Always take the numeric ID from the service attachment's pending `endpointWithId`.
-
-`--consumer-accept-list` also overwrites the accept list rather than adding to it. If the service attachment already accepts other projects or endpoints, pass all of them in the same command, or the ones you leave out lose access.
+  Do not use the `endpoint_id` from the ClickPipes API/Terraform response here; that value is the forwarding-rule _name_, not the numeric ID GCP requires, so the accept list will not match. Always take the numeric ID from the pending `endpointWithId` of the service attachment .
 </Warning>
 
 ## Managing reverse private endpoints {#managing-rpes}
 
 You can manage existing reverse private endpoints in the ClickHouse Cloud service settings:
 
-1. On a sidebar find the `Settings` button and click on it.
+1. In the ClickHouse Cloud console sidebar, navigate to `Settings`.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud settings" size="lg" border/>
+Under `ClickPipe reverse private endpoints` , click on `Reverse private endpoints`.
 
-2. Click on `Reverse private endpoints` in a `ClickPipe reverse private endpoints` section.
+Reverse private endpoint extended information is shown in the flyout. From this view, it's possible to delete RPEs: click the `×` on an endpoint and confirm to delete it. Deletion is \*\*permanent\*\* and will break any ClickPipe currently using that endpoint.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud settings" size="md" border/>
+To change an endpoint's custom private DNS mappings, use the [Cloud API](/integrations/clickpipes/programmatic-access/openapi) or [Terraform](/integrations/clickpipes/programmatic-access/terraform). The update replaces the full list of mappings, rather than adding to it.
 
-   Reverse private endpoint extended information is shown in the flyout.
+If an endpoint shows `Rejected` or `Failed`, read the message under its status: it distinguishes a connection the producer rejected from one that was closed or that needs attention. Both usually mean the accept list of the service attachment doesn't include the ClickPipes consumer project. To see the status GCP reports for the endpoint, describe the  `connectedEndpoints` for the service attachment.
 
-   This view is read-only apart from deletion: click the `×` on an endpoint and confirm to delete it. Deletion is permanent and breaks any ClickPipe currently using that endpoint.
+## Known limitations {#limitations}
 
-   To change an endpoint's custom private DNS mappings, use the API or Terraform. The update replaces the full list of mappings rather than adding to it.
-
-If an endpoint shows `Rejected` or `Failed`, read the message under its status: it distinguishes a connection the producer rejected from one that was closed or that needs attention. Both usually mean the service attachment's accept list doesn't include the ClickPipes consumer project. To see the status GCP reports for the endpoint, describe your service attachment's `connectedEndpoints`.
-
-## Limitations {#limitations}
-
-* The RPE endpoint and the service attachment must be in the **same GCP region**. Cross-region PSC via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) is not supported yet. Use [SSH tunneling](/integrations/clickpipes/networking/index#ssh-tunneling) if your source is in another region.
-* A PSC service attachment can only be claimed by one ClickHouse Cloud service at a time; it cannot be reused across multiple services. To move a service attachment to a different service, [Contact ClickHouse support](https://clickhouse.com/support/program) to release the existing claim.
+- A PSC service attachment can only be claimed by one ClickHouse Cloud service at a time; it cannot be reused across multiple services. To move a service attachment to a different service, [Contact ClickHouse support](https://clickhouse.com/support/program) to release the existing claim.

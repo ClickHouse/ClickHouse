@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'はじめに'
+sidebarTitle: '概要'
 description: '外部データソースを ClickHouse Cloud にシームレスに接続できます。'
 slug: /integrations/clickpipes
 title: 'ClickHouse Cloud とのインテグレーション'
@@ -11,38 +11,21 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import ClickPipesConnectors from '/snippets/ja/_clickpipes_connectors.mdx';
 
-<div id="introduction">
-  ## はじめに
+<div id="overview">
+  ## 概要
 </div>
 
-[ClickPipes](/ja/integrations/clickpipes/home) は、多様なデータソースからのデータ取り込みを、数回クリックするだけで簡単に行えるマネージドなインテグレーションプラットフォームです。最も要求の厳しいワークロード向けに設計された、堅牢かつスケーラブルな ClickPipes のアーキテクチャにより、一貫したパフォーマンスと信頼性を実現します。ClickPipes は、長期的なストリーミング用途にも、一回限りのデータロードジョブにも利用できます。
+[ClickPipes](/ja/integrations/clickpipes/home) は、多様なデータソースからのデータ取り込みを、数回クリックするだけで簡単に行えるマネージドなインテグレーションプラットフォームです。最も要求の厳しいワークロード向けに設計された、堅牢かつスケーラブルな ClickPipes のアーキテクチャにより、一貫したパフォーマンスと信頼性を実現します。ClickPipes は、継続的なデータインジェストにも、一回限りのデータロードにも利用できます。
 
-ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
+ClickPipes は、ClickPipes UI を使用してデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/clickpipes_stack.webp" alt="ClickPipes スタック" size="lg" border />
-
-<div id="supported-data-sources">
-  ## サポートされているデータソース
+<div id="clickpipes-connectors">
+  ## コネクタ
 </div>
 
-| 名前                                                                                                                                                                                                                                             | タイプ                                       | ステータス                                     | 説明                                                                                                                                                                           |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka のロゴ" className="integration-table-logo" width="24" height="24" /> [Apache Kafka](/ja/integrations/clickpipes/kafka/index)                                                       | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                    |
-| <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" className="integration-table-logo" width="24" height="24" /> Confluent Cloud                                                                                      | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | 直接インテグレーションを通じて、Confluent と ClickHouse Cloud の連携を最大限に活用できます。                                                                                                                 |
-| <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" className="integration-table-logo" width="24" height="24" /> Redpanda                                                                                               | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                        |
-| <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" className="integration-table-logo" width="24" height="24" /> AWS MSK                                                                                                            | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                        |
-| <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" className="integration-table-logo" width="24" height="24" /> Azure Event Hubs                                                                             | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。詳細については、[Azure Event Hubs よくある質問](/ja/integrations/clickpipes/kafka/faq#azure-eventhubs)を参照してください。 |
-| <img src="/images/integrations/logos/warpstream.svg" alt="WarpStreamのロゴ" className="integration-table-logo" width="24" height="24" /> WarpStream                                                                                               | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                     |
-| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis ロゴ" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/ja/integrations/clickpipes/kinesis/overview)                                 | <Badge color="blue">ストリーミング</Badge>       | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、Amazon Kinesis から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                 |
-| <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub のロゴ" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/ja/integrations/clickpipes/pubsub/overview)                                    | <Badge color="blue">ストリーミング</Badge>       | <Badge color="purple">プライベートプレビュー</Badge> | ClickPipes を設定して、Google Cloud Pub/Sub から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                           |
-| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 のロゴ" className="integration-table-logo" width="24" height="24" /> [Amazon S3](/ja/integrations/clickpipes/object-storage/amazon-s3/overview)                              | <Badge color="orange">オブジェクトストレージ</Badge> | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、オブジェクトストレージから大量のデータを取り込めます。                                                                                                                                 |
-| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud ストレージのロゴ" className="integration-table-logo" width="24" height="24" /> [Google Cloud ストレージ](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview)             | <Badge color="orange">オブジェクトストレージ</Badge> | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、オブジェクトストレージから大量のデータを取り込めます。                                                                                                                                 |
-| <img src="/images/integrations/logos/digitalocean.svg" alt="DigitalOcean ロゴ" className="integration-table-logo" width="24" height="24" /> DigitalOcean Spaces                                                                                  | <Badge color="orange">オブジェクトストレージ</Badge> | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、オブジェクトストレージから大量のデータを取り込みます。                                                                                                                                 |
-| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage のロゴ" className="integration-table-logo" width="24" height="24" /> [Azure Blob Storage](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview) | <Badge color="orange">オブジェクトストレージ</Badge> | <Badge color="green">安定版</Badge>          | ClickPipes を設定して、オブジェクトストレージから大量のデータを取り込みます。                                                                                                                                 |
-| <img src="/images/integrations/logos/postgresql.svg" alt="Postgres のロゴ" className="integration-table-logo" width="24" height="24" /> [Postgres](/ja/integrations/clickpipes/postgres/index)                                                       | <Badge color="purple">DBMS</Badge>        | <Badge color="green">安定版</Badge>          | ClickPipes を設定し、Postgres から ClickHouse Cloud へのデータ取り込みを開始します。                                                                                                                |
-| <img src="/images/integrations/logos/mysql.svg" alt="MySQL ロゴ" className="integration-table-logo" width="24" height="24" /> [MySQL](/ja/integrations/clickpipes/mysql/index)                                                                      | <Badge color="purple">DBMS</Badge>        | <Badge color="yellow">パブリックベータ</Badge>    | ClickPipes を設定し、MySQL から ClickHouse Cloud へのデータ取り込みを開始します。                                                                                                                   |
-| <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB のロゴ" className="integration-table-logo" width="24" height="24" /> [MongoDB](/ja/integrations/clickpipes/mongodb/index)                                                             | <Badge color="purple">DBMS</Badge>        | <Badge color="purple">プライベートプレビュー</Badge> | ClickPipes を設定し、MongoDB から ClickHouse Cloud へのデータ取り込みを開始します。                                                                                                                 |
+<ClickPipesConnectors />
 
 今後、さらに多くのコネクタが ClickPipes に追加される予定です。詳細は、[お問い合わせ](https://clickhouse.com/company/contact?loc=clickpipes)ください。
 

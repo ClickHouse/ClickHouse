@@ -1,0 +1,7 @@
+OK: thread paused on infinite_sleep
+OK: SELECT sleep(0) parked on infinite_sleep
+OK: SYSTEM WAIT FAILPOINT dummy_pausable_failpoint PAUSE
+dummy_pausable_failpoint	0
+infinite_sleep	0
+OK: thread paused again after re-enable
+OK: SELECT sleep(0) parked on re-enabled infinite_sleep

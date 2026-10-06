@@ -85,7 +85,7 @@ You can get a similar result by using the [ternary operator](/reference/function
 - `x` if `x` is finite.
 - `y` if `x` is not finite.
     )"};
-    FunctionDocumentation::Examples examples = {{"Usage example","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf  42"}};
+    FunctionDocumentation::Examples examples = {{"Usage example","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf\t42"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

@@ -1,0 +1,24 @@
+reverse order read, projection step, base table step, base table step without projections
+1
+0
+1
+1
+same rows and same order as reading the table
+1
+ordering by a column outside the projection key
+0
+optimization disabled
+0
+a fixed column in ORDER BY does not dictate the read direction
+1
+DISTINCT in order
+1
+in order read of the projection, projection step
+1
+1
+same rows and same order as reading the table, projection only
+1
+an aliased filter column in a filter step, no projection involved
+1
+same rows and same order as reading the table, aliased filter column
+1

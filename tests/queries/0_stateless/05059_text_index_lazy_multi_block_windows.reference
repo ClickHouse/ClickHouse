@@ -1,0 +1,24 @@
+parts	1
+Ground truth (no index)
+third	66667	6666633333
+third in [100000, 120000)	6666	733256667
+any third seventh	85715	8571471429
+any even rare	100200	10019999800
+all third seventh	9524	952319046
+all even third	33334	3333366666
+all third rare	67	6699933
+all even third seventh	4762	476109522
+Lazy, leapfrog intersection
+third	66667	6666633333
+third in [100000, 120000)	6666	733256667
+any third seventh	85715	8571471429
+any even rare	100200	10019999800
+all third seventh	9524	952319046
+all even third	33334	3333366666
+all third rare	67	6699933
+all even third seventh	4762	476109522
+Lazy, brute-force intersection
+all third seventh	9524	952319046
+all even third	33334	3333366666
+all third rare	67	6699933
+all even third seventh	4762	476109522

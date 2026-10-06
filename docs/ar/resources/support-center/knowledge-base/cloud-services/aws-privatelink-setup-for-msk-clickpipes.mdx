@@ -10,7 +10,9 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
   ## نظرة عامة
 </div>
 
-سيرشدك هذا الدليل إلى كيفية البدء بإعداد **MSK multi-VPC** لاستخدامه مع [ClickPipes Reverse Private Endpoint](/ar/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc).
+سيرشدك هذا الدليل إلى كيفية البدء بإعداد **MSK multi-VPC** لاستخدامه مع [ClickPipes نقطة نهاية خاصة عكسية](/ar/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc).
+
+تمتلك ClickPipes شبكة VPC للعميل وتنشئ اتصال VPC مُدارًا. ولإنشاء اتصال الشبكة، فعّل الاتصال الخاص متعدد VPC على عنقود MSK لديك، وامنح AWS account الخاص بـ ClickPipes تفويضًا في سياسة cluster.
 
 <div id="requirements">
   ## المتطلبات
@@ -22,39 +24,100 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
   ## تمكين اتصال multi-VPC
 </div>
 
-1. انتقل إلى عنقود MSK.
-   * اختر &quot;Clusters&quot; من جزء التنقل الأيسر في Console الخاص بـ Amazon MSK.
-   * حدّد عنقود MSK الذي تريد تهيئته لاتصال multi-VPC.
-2. فعّل MSK اتصال multi-VPC
-   * في علامة التبويب **Connectivity**، ابحث عن قسم **اتصال multi-VPC**.
-   * انقر على **Edit**.
-   * فعّل خيار **Turn-on MSK اتصال multi-VPC**.
-   * اتبع التعليمات
-3. أضف principal الخاص بحساب ClickPipes إلى سياسة العنقود
-   * انتقل إلى علامة التبويب **Configuration**.
-   * انقر على **Edit** في قسم **Cluster policy**.
-   * أدرج `arn:aws:iam::072088201116:root` في **IAM policy**. مثال:
-     ```json
-     {
-         "Version": "2012-10-17",
-         "Statement": [
-             {
-                 "Effect": "Allow",
-                 "Principal": {
-                     "AWS": [
-                         "arn:aws:iam::072088201116:root"
-                     ]
-                 },
-                 "Action": [
-                     "kafka:CreateVpcConnection",
-                     "kafka:GetBootstrapBrokers",
-                     "kafka:DescribeCluster",
-                     "kafka:DescribeClusterV2"
-                 ]
-             }
-         ]
-     }
-     ```
+<Tabs>
+  <Tab title="وحدة تحكم AWS" id="aws-console">
+    1. انتقل إلى عنقود MSK.
+       * اختر &quot;Clusters&quot; من جزء التنقل الأيسر في Console الخاص بـ Amazon MSK.
+       * حدّد عنقود MSK الذي تريد تهيئته لاتصال multi-VPC.
+    2. فعّل اتصال multi-VPC لـ MSK
+       * في علامة التبويب **Connectivity**، ابحث عن قسم **اتصال multi-VPC**.
+       * انقر على **Edit**.
+       * فعّل خيار **Turn-on اتصال multi-VPC لـ MSK**.
+       * اتبع التعليمات
+    3. أضف principal الخاص بحساب ClickPipes إلى سياسة العنقود
+       * انتقل إلى علامة التبويب **Configuration**.
+       * انقر على **Edit** في قسم **Cluster policy**.
+       * أدرج `arn:aws:iam::072088201116:root` في **سياسة IAM**. مثال:
+         ```json
+         {
+             "Version": "2012-10-17",
+             "Statement": [
+                 {
+                     "Effect": "Allow",
+                     "Principal": {
+                         "AWS": [
+                             "arn:aws:iam::072088201116:root"
+                         ]
+                     },
+                     "Action": [
+                         "kafka:CreateVpcConnection",
+                         "kafka:GetBootstrapBrokers",
+                         "kafka:DescribeCluster",
+                         "kafka:DescribeClusterV2"
+                     ],
+                     "Resource": "<MSK_CLUSTER_ARN>"
+                 }
+             ]
+         }
+         ```
+  </Tab>
+
+  <Tab title="Terraform" id="terraform-msk">
+    فعّل طريقة مصادقة MSK لكلٍّ من العنقود واتصال multi-VPC. يستخدم المثال التالي SASL/IAM؛ وبدلًا من ذلك، عيّن `scram = true` لاستخدام SASL/SCRAM.
+
+    ```hcl
+    resource "aws_msk_cluster" "this" {
+      # ... الإعدادات الحالية ...
+
+      client_authentication {
+        sasl {
+          iam = true
+        }
+      }
+
+      broker_node_group_info {
+        # ... الإعدادات الحالية ...
+
+        connectivity_info {
+          vpc_connectivity {
+            client_authentication {
+              sasl {
+                iam = true
+              }
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    خوّل حساب AWS الخاص بـ ClickPipes في سياسة عنقود MSK:
+
+    ```hcl
+    resource "aws_msk_cluster_policy" "clickpipes" {
+      cluster_arn = aws_msk_cluster.this.arn
+
+      policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Sid       = "ClickPipesMultiVpc"
+          Effect    = "Allow"
+          Principal = { AWS = "arn:aws:iam::072088201116:root" }
+          Action = [
+            "kafka:CreateVpcConnection",
+            "kafka:GetBootstrapBrokers",
+            "kafka:DescribeCluster",
+            "kafka:DescribeClusterV2",
+          ]
+          Resource = aws_msk_cluster.this.arn
+        }]
+      })
+    }
+    ```
+
+    إذا كان للعنقود سياسة موجودة بالفعل، فاحتفظ بعباراتها الحالية عند إضافة أذونات ClickPipes.
+  </Tab>
+</Tabs>
 
 <Tip>
   تُمكّن سياسة IAM الخاصة بالعنقود ClickPipes من بدء الاتصال من ClickPipes إلى عنقود MSK الخاص بك.
@@ -62,7 +125,29 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
 </Tip>
 
 <div id="creating-reverse-private-endpoint">
-  ## إنشاء Reverse Private Endpoint
+  ## إنشاء نقطة نهاية خاصة عكسية
 </div>
 
-اتبع خطوات إنشاء Reverse Private Endpoint في [وثائق ClickPipes](/ar/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe).
+<Tabs>
+  <Tab title="ClickPipes UI" id="clickpipes-ui">
+    اتبع خطوات إنشاء نقطة النهاية الخاصة العكسية الواردة في [وثائق ClickPipes](/ar/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe).
+  </Tab>
+
+  <Tab title="Terraform" id="terraform-rpe">
+    أنشئ نقطة النهاية الخاصة العكسية باستخدام [موفر ClickHouse لـ Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint):
+
+    ```hcl
+    resource "clickhouse_clickpipes_reverse_private_endpoint" "msk" {
+      service_id         = var.clickhouse_service_id
+      description        = "MSK multi-VPC reverse private endpoint"
+      type               = "MSK_MULTI_VPC"
+      msk_cluster_arn    = aws_msk_cluster.this.arn
+      msk_authentication = "SASL_IAM" # أو "SASL_SCRAM"
+
+      depends_on = [aws_msk_cluster_policy.clickpipes]
+    }
+    ```
+
+    حقول المورد غير قابلة للتغيير. يؤدي تغيير أي حقل إلى حذف نقطة النهاية الخاصة العكسية وإعادة إنشائها.
+  </Tab>
+</Tabs>

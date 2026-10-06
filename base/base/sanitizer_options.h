@@ -70,12 +70,21 @@ const char * __tsan_default_suppressions()
     /// name would also match this header's file name and the unrelated asynchronous logging queue.
     /// Keep them narrow: a `race:` entry also hides heap-use-after-free reports through the frame
     /// it names.
-    /// The same handoff orders the request: its vptr is written only by the constructor, and the
-    /// payload fields `bytesSize` reads are never assigned after publication. `race_top` matches
-    /// the innermost frame only; the request's other virtual calls are not listed.
+    /// The same handoff orders the request, so reports on the request the dispatch thread just
+    /// popped are not real races either: `KeeperTCPHandler::receiveRequest` writes every payload
+    /// field before publishing the request with `putRequest`, and `getRequestBytesCost` only reads
+    /// the vptr and those fields.
+    ///
+    /// Its entry has to be `race:` rather than `race_top:`. `race_top:` matches the innermost frame
+    /// only, so it covered the vptr read, which is attributed to the call site inside
+    /// `getRequestBytesCost` - and suppressing that just moved the report one frame down, to the
+    /// `path` read inside `bytesSize`, which aborted the Keeper container all the same. `race:`
+    /// matches any frame, so it covers the whole callee subtree. That subtree is only
+    /// `bytesSize`, a read-only size computation, and a use-after-free blinded there still
+    /// surfaces on the next access to the same request in `dispatchThread`.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
-           "race_top:^DB::getRequestBytesCost\n";
+           "race:^DB::getRequestBytesCost\n";
 }
 #endif
 

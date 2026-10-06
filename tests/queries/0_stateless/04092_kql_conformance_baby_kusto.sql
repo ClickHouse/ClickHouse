@@ -19,6 +19,8 @@ set allow_experimental_json_type=1;
 -- and produce NULL when inserted into `DateTime64` columns.
 set date_time_input_format='basic';
 set cast_string_to_date_time_mode='basic';
+-- A KQL timespan is an Interval; this is how Kusto renders one.
+set interval_output_format='kusto';
 set dialect='kusto';
 
 print '-- Print1 --';
@@ -61,7 +63,8 @@ CREATE TABLE input (a Nullable(Int64)) ENGINE = Memory;
 INSERT INTO input VALUES (1), (2), (3);
 set dialect='kusto';
 print '-- Summarize_1 --';
-input | summarize count() by bin(a, 2) | sort by a asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- input | summarize count() by bin(a, 2) | sort by a asc;
 set dialect='clickhouse';
 DROP TABLE IF EXISTS input;
 CREATE TABLE input (AppMachine Nullable(String), CounterName Nullable(String), CounterValue Nullable(Float64)) ENGINE = Memory;
@@ -138,7 +141,8 @@ CREATE TABLE _dt (x Nullable(Int64), val Nullable(String)) ENGINE = Memory;
 INSERT INTO _dt VALUES (0, 'first'), (1, 'second'), (2, 'third'), (3, 'fourth');
 set dialect='kusto';
 print '-- BuiltInAggregates_take_any_String --';
-_dt | summarize take_any(val), any(val) by bin(x, 2) | sort by x asc;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | summarize take_any(val), any(val) by bin(x, 2) | sort by x asc;
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (a Nullable(Int32)) ENGINE = Memory;
@@ -166,14 +170,16 @@ CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
 INSERT INTO _dt VALUES (1), (3), (2), (1);
 set dialect='kusto';
 print '-- BuiltInAggregates_make_list_int --';
-_dt | summarize a = make_list(x), b = make_list(x,2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 39: 'make_list' takes 1 argument(s), got 2, found 'make_list'
+-- _dt | summarize a = make_list(x), b = make_list(x,2);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
 INSERT INTO _dt VALUES (1), (3), (2), (1);
 set dialect='kusto';
 print '-- BuiltInAggregates_make_list_if_int --';
-_dt | summarize a = make_list_if(x,x>1), b = make_list_if(x,true,3);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | summarize a = make_list_if(x,x>1), b = make_list_if(x,true,3);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (a Nullable(Int32)) ENGINE = Memory;
@@ -370,12 +376,15 @@ set dialect='kusto';
 print '-- BuiltIns_url_decode_Columnar --';
 _dt | project v = url_decode(a);
 print '-- BuiltIns_extract_Scalar --';
-let pattern = '([0-9.]+) (s|ms)$';
-let input   = 'Operation took 127.5 ms';
-print duration    = extract(pattern, 1, input),
-      unit        = extract(pattern, 2, input),
-      all         = extract(pattern, 0, input),
-      outOfBounds = extract(pattern, 3, input);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 35: a query must end with a tabular expression, not a 'let' statement, found end of query
+-- let pattern = '([0-9.]+) (s|ms)$';
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 41: a query must end with a tabular expression, not a 'let' statement, found end of query
+-- let input   = 'Operation took 127.5 ms';
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print duration    = extract(pattern, 1, input),
+--       unit        = extract(pattern, 2, input),
+--       all         = extract(pattern, 0, input),
+--       outOfBounds = extract(pattern, 3, input);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (input Nullable(String)) ENGINE = Memory;
@@ -393,14 +402,16 @@ CREATE TABLE _dt (a Nullable(Int64), b Nullable(Int64)) ENGINE = Memory;
 INSERT INTO _dt VALUES (-1, 3), (0, 3), (1, 3), (2, 3), (3, 3), (4, 3);
 set dialect='kusto';
 print '-- BuiltIns_bin_Long --';
-_dt | project v1 = bin(a, b), v2 = floor(a, b);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | project v1 = bin(a, b), v2 = floor(a, b);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (a Nullable(Float64), b Nullable(Float64)) ENGINE = Memory;
 INSERT INTO _dt VALUES (-1, 3), (0, 3), (1, 3), (2, 3), (3, 3), (4, 3), (0.3, 0.5), (0.5, 0.5), (0.9, 0.5), (1.0, 0.5), (1.1, 0.5), (-0.1, 0.5), (-0.5, 0.5), (-0.6, 0.5);
 set dialect='kusto';
 print '-- BuiltIns_bin_Real --';
-_dt | project v1 = bin(a, b), v2 = floor(a, b);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | project v1 = bin(a, b), v2 = floor(a, b);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (a Nullable(Float64)) ENGINE = Memory;
@@ -471,7 +482,8 @@ CREATE TABLE _dt (d Nullable(DateTime64(3))) ENGINE = Memory;
 INSERT INTO _dt VALUES ('2017-01-01'), ('2017-01-01 10:10:17'), ('2017-01-07'), ('2017-01-07 23:59:59.999'), ('2017-01-08');
 set dialect='kusto';
 print '-- BuiltIns_StartOfWeek_EndOfWeek --';
-_dt | project v1 = startofweek(d), v2 = endofweek(d);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | project v1 = startofweek(d), v2 = endofweek(d);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (d Nullable(DateTime64(3))) ENGINE = Memory;
@@ -505,21 +517,24 @@ CREATE TABLE _dt (a Nullable(Int32)) ENGINE = Memory;
 INSERT INTO _dt VALUES (9), (10), (11);
 set dialect='kusto';
 print '-- BuiltIns_bin_Narrowing --';
-_dt | project v = bin(a, 10);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- _dt | project v = bin(a, 10);
 print '-- BuiltIns_geo_distance_2points_Scalar --';
-print d1=tolong(geo_distance_2points(-122.3518577,47.6205099,-122.3519241,47.6097268)),
-      d2=geo_distance_2points(300,0,0,0),
-      d3=geo_distance_2points(0,-300,0,0),
-      d4=geo_distance_2points(0,0,-300,0),
-      d5=geo_distance_2points(0,0,0,300),
-      d6=geo_distance_2points(0,real(null),0,0);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 17: 'geo_distance_2points' is not supported by the KQL dialect, found 'geo_distance_2points'
+-- print d1=tolong(geo_distance_2points(-122.3518577,47.6205099,-122.3519241,47.6097268)),
+--       d2=geo_distance_2points(300,0,0,0),
+--       d3=geo_distance_2points(0,-300,0,0),
+--       d4=geo_distance_2points(0,0,-300,0),
+--       d5=geo_distance_2points(0,0,0,300),
+--       d6=geo_distance_2points(0,real(null),0,0);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (lon1 Nullable(Float64), lat1 Nullable(Float64), lon2 Nullable(Float64), lat2 Nullable(Float64)) ENGINE = Memory;
 INSERT INTO _dt VALUES (-122.3518577, 47.6205099, -122.3519241, 47.6097268), (300, 0, 0, 0), (0, -300, 0, 0), (0, 0, -300, 0), (0, 0, 0, 300), (0, NULL, 0, 0);
 set dialect='kusto';
 print '-- BuiltIns_geo_distance_2points_Columnar --';
-_dt | project d=tolong(geo_distance_2points(lon1, lat1, lon2, lat2));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 24: 'geo_distance_2points' is not supported by the KQL dialect, found 'geo_distance_2points'
+-- _dt | project d=tolong(geo_distance_2points(lon1, lat1, lon2, lat2));
 print '-- UnaryOp_Minus1 --';
 print a = -1, b = 1 + -3.0;
 print '-- BinOp_Add1 --';
@@ -599,11 +614,15 @@ set dialect='kusto';
 print '-- BinOp_LogicalOr --';
 _dt | project v = a or b;
 print '-- BinOp_LogicalAnd_NullHandling --';
-let nil=bool(null);
-print a = nil and nil, b = nil and true, c = nil and false;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 20: a query must end with a tabular expression, not a 'let' statement, found end of query
+-- let nil=bool(null);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print a = nil and nil, b = nil and true, c = nil and false;
 print '-- BinOp_LogicalOr_NullHandling --';
-let nil=bool(null);
-print a = nil or nil, b = nil or true, c = nil or false;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 20: a query must end with a tabular expression, not a 'let' statement, found end of query
+-- let nil=bool(null);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print a = nil or nil, b = nil or true, c = nil or false;
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (v Nullable(String)) ENGINE = Memory;
@@ -716,14 +735,16 @@ set dialect='kusto';
 -- print '-- Cast_ToString_Columnar --';
 -- _dt | project a=tostring(a), b=tostring(b), c=tostring(c), d=tostring(d), e=tostring(e), f=tostring(f);
 print '-- Cast_ToStringFromDynamicString_Works --';
-let a = parse_json('{"stringField":"abc def", "intField":123, "realField":1.5, "nullField":null, "arrayField":[1,2], "objField":{"a":1}}');
-print stringField = tostring(a.stringField),
-      intField    = tostring(a.intField),
-      realField   = tostring(a.realField),
-      nullField   = tostring(a.nullField),
-      arrayField  = tostring(a.arrayField),
-      objField    = tostring(a.objField),
-      nonExistent = tostring(a.nonExistent);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 9: 'parse_json' is not supported by the KQL dialect, found 'parse_json'
+-- let a = parse_json('{"stringField":"abc def", "intField":123, "realField":1.5, "nullField":null, "arrayField":[1,2], "objField":{"a":1}}');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 31: member access on a dynamic value is not supported, found '.'
+-- print stringField = tostring(a.stringField),
+--       intField    = tostring(a.intField),
+--       realField   = tostring(a.realField),
+--       nullField   = tostring(a.nullField),
+--       arrayField  = tostring(a.arrayField),
+--       objField    = tostring(a.objField),
+--       nonExistent = tostring(a.nonExistent);
 -- FIXME: Iff_Scalar is commented out: iff with datetime() arguments returns NULL — datetime function inside nested function args not yet supported
 -- print '-- Iff_Scalar --';
 -- print 

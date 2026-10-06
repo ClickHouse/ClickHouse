@@ -2,12 +2,12 @@
 -- silently disable itself for `FINAL` + descending order.
 --
 -- `wouldReadInOrderBeUseful` matches the storage's sorting key against the
--- requested sort description and mirrors the FINAL-time gating of
+-- requested sort description but is unaware of FINAL-time gating in
 -- `ReadFromMergeTree::requestReadingInOrder`, which rejects
--- `direction != 1 && query_info.isFinal()`. If the probe ignored that gate,
--- the deferral would fire, the second pass would still reject the read, and
--- both optimizations would be lost. This test pins the relevant settings on
--- and checks that an inner `Sort + Limit` is injected.
+-- `direction != 1 && query_info.isFinal()`. Without the FINAL+descending gate
+-- in `topKThroughJoin`, the deferral would fire, the second pass would still
+-- reject the read, and both optimizations would be lost. This test pins the
+-- relevant settings on and checks that an inner `Sort + Limit` is injected.
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
@@ -29,7 +29,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -45,7 +45,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k ASC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -58,14 +58,14 @@ FROM ( EXPLAIN actions = 0
 SELECT 'result_final_desc' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 
 SELECT 'result_final_asc' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k ASC LIMIT 10
-    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 

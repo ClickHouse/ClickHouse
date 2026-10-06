@@ -346,12 +346,18 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
 </div>
 
 <AccordionGroup>
-  <Accordion title="ClickHouse Cloud는 identity-provider-initiated 로그인을 지원합니까?">
+  <Accordion title="ClickHouse Cloud는 IdP(Identity Provider) 시작 로그인을 지원합니까?">
     아니요. 서비스 제공자 시작 흐름만 지원합니다. 사용자는 `https://console.clickhouse.cloud`로 이동해 이메일을 입력하면 IdP(Identity Provider)로 리디렉션됩니다. 사용자가 URL을 기억할 필요가 없도록 북마크나 직접 링크(`https://console.clickhouse.cloud/?connection={organizationid}`)를 설정하세요.
   </Accordion>
 
   <Accordion title="여러 조직에서 SAML SSO를 어떻게 사용합니까?">
-    ClickHouse Cloud는 조직별로 별도의 connection을 사용하는 다중 조직 SSO를 지원합니다. 각 조직에 로그인할 때는 직접 링크(`https://console.clickhouse.cloud/?connection={organizationid}`)를 사용하고, 다른 조직에 로그인하기 전에 현재 조직에서 먼저 로그아웃하세요. 사용자가 `https://console.clickhouse.cloud`에서 이메일을 입력할 때 해당 도메인의 사용자가 자동으로 특정 조직으로 연결되지 않도록 하려면, 이 동작을 제거해 달라고 지원 티켓을 제출하세요.
+    ClickHouse Cloud는 조직별로 별도의 연결을 사용하는 다중 조직 SSO를 지원합니다.
+
+    각 조직에 처음 로그인할 때는 해당 조직의 직접 링크(`https://console.clickhouse.cloud/?connection={organizationId}`)를 사용해야 합니다. 이 첫 로그인으로 해당 조직에 계정이 Provisioning됩니다. 조직에서 SCIM이 활성화되어 있다면 계정이 이미 Provisioning되어 있으므로 이 단계를 건너뛸 수 있습니다.
+
+    이후 로그인할 때는 SAML 조직 중 아무 조직에나 로그인하세요. 다른 SAML 조직은 Console 사이드바의 조직 전환기에서 사용할 수 있으며, 하나를 선택하면 해당 조직의 SSO를 통해 로그인됩니다.
+
+    사용자가 `https://console.clickhouse.cloud`에서 이메일을 입력할 때 해당 도메인의 사용자가 자동으로 특정 조직으로 연결되지 않도록 하려면, 이 동작을 제거해 달라고 지원 티켓을 제출하세요.
   </Accordion>
 
   <Accordion title="같은 사용자에 대해 여러 계정이 표시되는 이유는 무엇입니까?">

@@ -10,3 +10,4 @@
 10. clickhouse-client (no --chime), slow query (~6s > default 5s threshold), pty stderr: BEL
 11. clickhouse-client --chime 1, slow query then error, pty stderr: BEL
 12. clickhouse-client --chime (implicit value), slow query (~6s > default 5s threshold), pty stderr: BEL
+13. clickhouse-client --chime 1, slow query then error, stale server-side progress, pty stderr: BEL

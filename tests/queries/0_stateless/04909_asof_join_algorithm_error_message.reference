@@ -1,0 +1,8 @@
+-- enable_analyzer = 1
+error code NOT_IMPLEMENTED: yes
+names the setting: yes
+names the algorithm that was tried: yes
+names the JOIN strictness: yes
+names the JOIN kind: yes
+names the JOIN as a whole: yes
+prints the unusable uppercase spelling: no

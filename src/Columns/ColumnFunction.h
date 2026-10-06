@@ -76,6 +76,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
     }
 
+    bool hasOnlyTypeDefaults() const override { return false; }
+
     void insert(const Field &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
@@ -115,11 +117,6 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
-    }
-
-    void skipSerializedInArena(ReadBuffer &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;

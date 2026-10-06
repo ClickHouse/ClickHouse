@@ -283,7 +283,7 @@ SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))
 ```
 
 ```response title=Response
-([1, 2], [2, 2])
+([1,2],[2,2])
 ```
 
 ## mapAll {#mapAll}
@@ -464,6 +464,71 @@ SELECT mapContainsKeyLike(a, 'a%') FROM tab;
 └─────────────────────────────┘
 ```
 
+## mapContainsKeyValue {#mapContainsKeyValue}
+
+Introduced in: v26.9.0
+
+Returns whether the map contains an entry with the given key and value.
+
+For arguments that are not `NULL` this is
+`arrayExists((k, v) -> k = key AND v = value, mapKeys(map), mapValues(map))`.
+A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`, rather than
+comparing as unknown the way `=` does.
+
+All entries are considered, unlike `map[key] = value`, which compares only the value of the first
+occurrence of `key`.
+
+A [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
+tokenizer answers this function from the index.
+
+**Syntax**
+
+```sql
+mapContainsKeyValue(map, key, value)
+```
+
+**Arguments**
+
+- `map` — The map to search. [`Map(K, V)`](/reference/data-types/map)
+- `key` — The key to search for. Type must match the key type of the map. [`Any`](/reference/data-types/index)
+- `value` — The value to search for. Type must match the value type of the map. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+Returns `1` if the map contains an entry with the key and the value, `0` if not. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v1')
+```
+
+```response title=Response
+1
+```
+
+**Key and value of different entries**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v2')
+```
+
+```response title=Response
+0
+```
+
+**Repeated key**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2'), map('k', 'v1', 'k', 'v2')['k'] = 'v2'
+```
+
+```response title=Response
+1	0
+```
+
 ## mapContainsValue {#mapContainsValue}
 
 Introduced in: v25.6.0
@@ -533,10 +598,10 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 ```
 
 ```response title=Response
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
 ```
 
 ## mapExists {#mapExists}
@@ -734,7 +799,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 ```
 
 ```response title=Response
-{1:('a', 1), 2:('b', 2), 3:('c', 3)}
+{1:('a',1),2:('b',2),3:('c',3)}
 ```
 
 ## mapKeys {#mapKeys}
@@ -878,7 +943,7 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 ```
 
 ```response title=Response
-{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}
+{1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
 **With mapped arrays**
@@ -888,7 +953,7 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 ```
 
 ```response title=Response
-([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])
+([1,2,3,4,5],[11,22,0,44,0])
 ```
 
 ## mapReverseSort {#mapReverseSort}
@@ -998,7 +1063,7 @@ SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt3
 ```
 
 ```response title=Response
-([1, 2], [-1, 0])
+([1,2],[-1,0])
 ```
 
 ## mapUpdate {#mapUpdate}

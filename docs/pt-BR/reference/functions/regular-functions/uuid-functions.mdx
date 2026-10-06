@@ -251,7 +251,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -299,7 +299,7 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 ```
 
 ```response title=Response
-6832626394434895872
+6832626392367104000
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -635,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 * `epoch` — Opcional. Epoch do Snowflake ID em milissegundos desde 1970-01-01. O padrão é 0 (1970-01-01). Para a epoch do Twitter/X (2015-01-01), informe 1288834974657. [`UInt*`](/pt-BR/reference/data-types/int-uint)
-* `time_zone` — Opcional. [Timezone](/pt-BR/reference/settings/server-settings/settings/other#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
+* `time_zone` — Opcional. [fuso horário](/pt-BR/reference/settings/server-settings/settings/other#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -650,9 +650,9 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 ```
 
 ```response title=Response
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
 ```
 
 <div id="toUUIDOrDefault">
@@ -753,7 +753,7 @@ SELECT
 
 ```response title=Response
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
 ```
 

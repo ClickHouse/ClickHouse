@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- derivative from 03457_move_global_in_to_prewhere
 
 DROP TABLE IF EXISTS 04028_data;
@@ -21,3 +22,5 @@ SELECT key, length(val) FROM (
     SELECT * FROM 04028_data WHERE key GLOBAL IN (04028_filter)
 )
 ORDER BY key;
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;

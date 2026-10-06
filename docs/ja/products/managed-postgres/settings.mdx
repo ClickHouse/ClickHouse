@@ -40,3 +40,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 設定パラメーターへの変更は、通常 1 分以内にインスタンスに保存されます。一部のパラメーターは、反映するためにデータベースの再起動が必要です。これらの変更は次回の再起動後に適用されます。再起動は **Service actions** ツールバーから手動でトリガーできます。
 
 設定パラメーターについては、公式の[ドキュメント](https://www.postgresql.org/docs/current/runtime-config.html)を参照してください。設定可能なパラメーターの一覧は、近日中に拡充される予定です。それまでの間、現在サポートされていないパラメーターの追加を希望する場合は、[support](https://clickhouse.com/support/program) までお問い合わせください。
+
+<div id="scheduled-upgrades">
+  ## スケジュールされたアップグレード
+</div>
+
+**Configuration** セクションでは、PostgreSQL のマイナーバージョンアップグレード、マネージドサービスの機能更新、オペレーティングシステムのパッチといったプラットフォームメンテナンスをインスタンスに適用するタイミングも管理できます。**Scheduled upgrades** サブセクションで **Configure schedule** を選択し、2 時間の UTC 時間枠と、必要に応じてアップグレードを適用できる曜日を指定します。
+
+利用可能な時間枠、およびスケジュールの対象範囲と対象外については、[スケジュールされたアップグレード](/ja/products/managed-postgres/upgrades#scheduled-upgrades)を参照してください。

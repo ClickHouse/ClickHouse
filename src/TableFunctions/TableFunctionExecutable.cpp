@@ -50,10 +50,16 @@ public:
 
     bool hasStaticStructure() const override { return true; }
 
+    /// Every read runs the script again, and its output is not guaranteed to be the same.
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return "Executable"; }
+
+    /// `executable` runs a server-side script.
+    bool requiresTableEngineGrant() const override { return true; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 

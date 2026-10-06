@@ -1,31 +1,113 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Registro de cambios de Cloud - 2026'
-description: 'Registro de cambios de ClickHouse Cloud que describe las novedades de cada versión de ClickHouse Cloud'
+title: 'Cloud changelog - 2026'
+description: 'Changelog de ClickHouse Cloud con descripciones de las novedades de cada versión de ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud']
+keywords: ['changelog', 'notas de la versión', 'actualización', 'nuevas características', 'cambios en cloud']
 rss: true
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Además de este registro de cambios de ClickHouse Cloud, consulta la página de [Cloud Compatibility](/es/products/cloud/guides/cloud-compatibility).
+Además de este changelog de ClickHouse Cloud, consulta la página de [compatibilidad con Cloud](/es/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-09-22">
+  Las actualizaciones de esta semana amplían el alcance de compliance de ClickHouse Cloud a nuevas regiones de APAC, añaden enrutamiento con reconocimiento de réplicas en beta pública e incorporan nuevas capacidades para metrics, compute y dbt. Las cells reguladas por HIPAA y PCI ya están disponibles en AWS Seúl y Sídney; los clientes elegibles pueden evaluar workloads de metrics compatibles con Prometheus y On-Demand Compute; y ClickHouse está disponible a través de dbt Core v2 y dbt Platform.
+
+  ## Security
+
+  ### Compatibilidad con HIPAA y PCI en AWS Seúl y Sídney
+
+  Las cells reguladas por HIPAA y PCI ya están disponibles en las regiones AWS Seúl (`ap-northeast-2`) y AWS Sídney (`ap-southeast-2`). Selecciona HIPAA o PCI al crear el servicio para ejecutar workloads que cumplan con la normativa en estas regiones; consulta la [descripción general de compliance](/es/products/cloud/reference/security/compliance-overview#hipaa-since-2024) y las [regiones compatibles](/es/products/cloud/reference/supported-regions) para más detalles.
+
+  ## Nuevas funcionalidades
+
+  ### Enrutamiento con reconocimiento de réplicas ya en beta pública
+
+  [Enrutamiento con reconocimiento de réplicas](/es/products/cloud/features/infrastructure/replica-aware-routing) está disponible en beta pública para clientes Enterprise, con soporte para despliegues nativos de ClickHouse Cloud y BYOC. Una vez habilitado en tu cuenta, puedes activarlo directamente desde la configuración de tu servicio. Consulta el [anuncio](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+  ### Compatibilidad con PromQL en vista previa privada
+
+  Ahora puedes almacenar metrics de Prometheus en el motor de tablas `TimeSeries` y consultarlas con PromQL directamente contra tu ClickHouse servicio, sin necesidad de transpilador ni proxy, de modo que los colectores existentes, los paneles de Grafana y las herramientas de Prometheus siguen funcionando sin cambios. Escribe con Prometheus remote-write v1 y lee mediante la Prometheus HTTP API, o ejecuta PromQL desde una sesión SQL usando las funciones de tabla `prometheusQuery` y `prometheusQueryRange`. Disponible para clientes seleccionados de ClickHouse Cloud y BYOC a través de la [lista de espera de vista previa privada](https://clickhouse.com/cloud/promql-support-waitlist) en AWS, GCP y Azure. Consulta la [documentación de la interfaz de Prometheus](/es/concepts/features/interfaces/prometheus) y el [anuncio](https://clickhouse.com/blog/introducing-promql).
+
+  ### On-Demand Compute ya en vista previa privada
+
+  On-Demand Compute permite que las consultas `SELECT` elegibles e intensivas en compute aprovechen workers adicionales de ClickHouse a través de tu servicio y endpoint existentes, sin necesidad de redimensionar ni aprovisionar recursos extra. Tú decides qué consultas se acogen a esta opción mediante la configuración de consulta, mientras tu servicio sigue encargándose de la autenticación, la planificación, la coordinación y los resultados; internamente introduce un cost-based optimizer y ejecución de consultas en múltiples etapas. Resulta adecuado para lecturas ad hoc pesadas y ocasionales, escaneos grandes, joins y agregaciones sobre datos de `SharedMergeTree`, Apache Iceberg o Delta Lake. Está disponible para clientes seleccionados a través de la [lista de espera de vista previa privada](https://clickhouse.com/cloud/on-demand-compute-waitlist). Consulta la [documentación de On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) y el [anuncio](https://clickhouse.com/blog/on-demand-compute).
+
+  ## Integraciones
+
+  ### ClickHouse adapter para dbt v2 y ClickHouse en dbt Platform
+
+  Ahora puedes ejecutar dbt contra ClickHouse sobre el nuevo motor Core v2 basado en Rust con el adaptador dbt v2, disponible en beta pública. ClickHouse también está disponible por primera vez como conexión en dbt Platform (Studio, jobs y entornos), en beta privada y habilitado por cuenta. El adaptador v1 existente (`dbt-clickhouse`) sigue recibiendo mantenimiento completo en paralelo. Consulta [dbt Core](https://github.com/dbt-labs/dbt), el [pull request del adaptador dbt-clickhouse](https://github.com/ClickHouse/dbt-clickhouse/pull/739) y el [pull request de la documentación de dbt Platform](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+</Update>
+
+<Update label="8 de septiembre de 2026">
+  Esta semana trae mejoras de seguridad e integración de datos listas para production a ClickHouse Cloud. La autenticación con JWT ya está disponible de forma general para los servicios Enterprise, y el connector de CDC de MySQL para ClickPipes ha pasado a GA con snapshots más rápidos, valores predeterminados más seguros y mejor observabilidad.
+
+  ### La autenticación con JWT para servicios de ClickHouse ya está disponible de forma general
+
+  Ahora puede autenticarse en su ClickHouse servicio mediante JWT emitidos por su propio identity provider, incluidos Okta, Auth0, Microsoft Entra ID, Keycloak o cualquier provider que publique un JWKS endpoint. La autenticación con JWT le permite gobernar el access a través de su identity provider existente, con caducidad de tokens aplicada por políticas, lo que elimina la necesidad de contraseñas de ClickHouse independientes y de secretos compartidos que rotar. Esta funcionalidad está disponible en el Enterprise plan para servicios que ejecutan ClickHouse 26.4 o posterior. Configúrela desde **Service → Settings → Security → JWT authentication**. Consulte la [guía de configuración de la autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+
+  ### El connector de CDC de MySQL para ClickPipes ya está disponible de forma general
+
+  El connector de CDC de MySQL para ClickPipes ya está listo para production. Esta versión añade snapshots paralelos automáticos, que permiten cargas iniciales hasta 27× más rápidas, junto con valores predeterminados más seguros para despliegues en production, incluida la replicación basada en GTID y un binlog retention period mínimo de 72 horas. Las nuevas métricas de utilización de recursos y de retraso también facilitan la supervisión de los pipelines. El connector está disponible para todos los clientes de ClickHouse Cloud a través de la ClickPipes UI, OpenAPI y Terraform. Consulte la [documentación del ClickPipe para MySQL](/es/integrations/clickpipes/mysql) y el [anuncio de la versión GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
+</Update>
+
+<Update label="31 de agosto de 2026">
+  Esta semana amplía el alcance global de ClickHouse Cloud con nuevas regiones de AWS en Taipéi y Malasia, añade compatibilidad con Global Access para Private Service Connect y facilita a los usuarios de SAML el cambio entre organizaciones.
+
+  ### Nuevas regiones de AWS: Taipéi y Malasia
+
+  ClickHouse Cloud ya está disponible en AWS Taipéi (`ap-east-2`) y AWS Malasia (`ap-southeast-5`). Ambas están configuradas como Private Regions con compatibilidad con ClickPipes. Consulte la [documentación de regiones compatibles](/es/cloud/reference/supported-regions) y las [consideraciones sobre Private Regions](/es/cloud/reference/supported-regions#private-regions) para obtener más detalles.
+
+  ### ClickPipes: Private Service Connect admite Global Access
+
+  ClickPipes ahora admite Global Access para conexiones privadas **cross-region** mediante Private Service Connect (PSC). Cuando está habilitado, ClickPipes puede conectarse a un endpoint de PSC en una región distinta de la región de GCP donde se ejecuta el servicio, incluidas regiones que no son compatibles de forma nativa con ClickHouse Cloud (*por ejemplo*, `asia-northeast3` (Seúl)).
+
+  ### Cambie entre organizaciones SAML
+
+  Los usuarios de SAML que pertenecen a varias organizaciones SAML ahora pueden cambiar directamente entre ellas desde el selector de organizaciones, que los vuelve a autenticar en segundo plano. Ya no es necesario guardar en marcadores la URL de cada organización ni cerrar sesión y volver a iniciarla manualmente; basta con guardar en marcadores su organización principal y cambiar desde allí. Esto cubre el cambio de SAML a SAML; el cambio existente entre organizaciones que no usan SAML no cambia.
+</Update>
+
+<Update label="17 de agosto de 2026">
+  Las actualizaciones de esta semana amplían el alcance de la plataforma y mejoran la visibilidad operativa. Managed Postgres ya está disponible en GCP para determinados socios de diseño, los recursos de ClickStack se pueden administrar mediante el proveedor oficial de Terraform y las nuevas notificaciones de facturación avisan a los clientes con antelación antes de que los créditos caduquen o se interrumpa el servicio. También hemos mejorado el tracing de ClickHouse Agents y la experiencia de inicio de sesión con SAML.
+
+  ### Managed Postgres ya está disponible en GCP
+
+  [ClickHouse Cloud Managed Postgres](/es/products/managed-postgres/overview) ya está disponible en GCP para determinados socios de diseño en todas las regiones públicas de GCP, con `us-west1` como primera región privada. Esto amplía Managed Postgres a los clientes que desarrollan en GCP, con una vista previa privada prevista para 2026-08.
+
+  ### Administre los recursos de ClickStack con Terraform
+
+  La compatibilidad con ClickStack ya está disponible en beta a través de la versión 3.25.0 del proveedor oficial de Terraform [`ClickHouse/clickhouse`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). Los equipos pueden crear, actualizar, importar y eliminar dashboards, alertas, fuentes, búsquedas guardadas, conexiones y webhooks mediante el flujo de trabajo estándar de `terraform plan` y `terraform apply`. La integración admite tanto Managed ClickStack como implementaciones autohospedadas.
+
+  ### Nuevas notificaciones de facturación para créditos y pagos
+
+  Las notificaciones de facturación ahora se administran mediante el Centro de notificaciones de ClickHouse Cloud y se envían a través de la consola, el correo electrónico y Slack. Los clientes reciben avisos anticipados cuando los créditos prepagados o de prueba están a punto de caducar o agotarse, así como notificaciones cuando se añaden créditos, cambian los métodos de pago o una cuenta entra en un período de gracia por falta de pago. Esto proporciona más tiempo para renovar, añadir créditos o resolver problemas de pago antes de que se interrumpa el servicio.
+
+  ### Abra las trazas de sesiones de Langfuse desde ClickHouse Agents
+
+  Los administradores de la organización ahora pueden abrir la sesión de Langfuse correspondiente directamente desde un chat de [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index) e inspeccionar las trazas de toda la conversación. Esto facilita la investigación del comportamiento de los agentes y la depuración de ejecuciones de varios pasos. Esta mejora está disponible en Beta pública para los chats creados recientemente.
+
+  ### Las redirecciones SAML ayudan a evitar cuentas duplicadas
+
+  Cuando un usuario intenta iniciar sesión con Google o Microsoft mientras SAML está configurado para su organización, ClickHouse Cloud ahora lo redirige al flujo de inicio de sesión SAML adecuado. Esto ayuda a evitar que los usuarios creen accidentalmente una organización independiente cuando pretendían acceder a una cuenta existente.
+</Update>
 
 <Update label="13 de julio de 2026">
-  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de almacenamiento de objetos.
+  Las actualizaciones de esta semana incluyen el enrutamiento persistente a réplicas mediante HTTPS estándar, fechas de inicio de período de facturación personalizadas y nuevos controles de carga inicial para ClickPipes de almacenamiento de objetos.
 
-  ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
+  ### Enrutamiento persistente a réplicas mediante HTTPS (vista previa privada)
 
-  Ahora puedes fijar las consultas a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con alcance de session, como las tablas temporales, y ayuda a que las consultas repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/products/cloud/features/infrastructure/replica-aware-routing).
+  Ahora puede fijar las consultas a una réplica específica mediante HTTPS estándar añadiendo un parámetro `?session_id=` a la URL normal de su servicio, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con ámbito de sesión, como las tablas temporales, y ayuda a que las consultas repetidas accedan a cachés locales de la réplica ya calentadas. Se está implementando en vista previa privada para todos los clientes Enterprise y, previa solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulte la documentación sobre [enrutamiento con reconocimiento de réplicas](/es/products/cloud/features/infrastructure/replica-aware-routing).
 
-  ### Fechas de inicio personalizadas para el período de facturación
+  ### Fechas de inicio de período de facturación personalizadas
 
-  Ahora puedes solicitar un cambio en la fecha de facturación de tu organización, es decir, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes natural. Abre un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC, y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
+  Ahora puede solicitar un cambio en la fecha de facturación de su organización, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes calendario. Abra un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
 
-  ### Omitir la carga inicial para los ClickPipes de almacenamiento de objetos
+  ### Omitir la carga inicial para ClickPipes de almacenamiento de objetos
 
-  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
+  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Iniciar después de**, que omite los archivos hasta una clave de objeto determinada, incluida esta, y **Omitir carga inicial**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de objetos nuevos. Anteriormente, un pipe nuevo siempre realizaba un backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no se puede activar posteriormente. Disponible en la UI, la API de Cloud y Terraform v3.18.0 y versiones posteriores.
 </Update>
 
 <Update label="30 de junio de 2026">

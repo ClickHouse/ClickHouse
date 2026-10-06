@@ -7,13 +7,13 @@ Float NaN, rewrite
 Float NaN, no rewrite
 []
 Date attr vs DateTime constant, rewrite - plan
-SELECT groupArray(__table1.id) AS `groupArray(id)`\nFROM default.data_date_attr AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'dict_date_attr\')\n    WHERE equals(d, toDateTime(\'2025-01-01 12:00:00\'))\n))\nSETTINGS optimize_inverse_dictionary_lookup = 1
+SELECT groupArray(__table1.id) AS `groupArray(id)`\nFROM default.data_date_attr AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'default.dict_date_attr\')\n    WHERE equals(d, toDateTime(\'2025-01-01 12:00:00\'))\n))\nSETTINGS optimize_inverse_dictionary_lookup = 1
 Date attr vs DateTime constant, rewrite
 []
 Date attr vs DateTime constant, no rewrite
 []
 Decimal attr vs Float constant, rewrite - plan
-SELECT groupArray(__table1.id) AS `groupArray(id)`\nFROM default.data_decimal_attr AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'dict_decimal_attr\')\n    WHERE equals(p, toFloat64(1.234))\n))\nSETTINGS optimize_inverse_dictionary_lookup = 1
+SELECT groupArray(__table1.id) AS `groupArray(id)`\nFROM default.data_decimal_attr AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'default.dict_decimal_attr\')\n    WHERE equals(p, toFloat64(1.234))\n))\nSETTINGS optimize_inverse_dictionary_lookup = 1
 Decimal attr vs Float constant, rewrite
 []
 Decimal attr vs Float constant, no rewrite

@@ -6,6 +6,8 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -59,6 +61,15 @@ private:
         chassert(wrapped_column);
     }
 
+    /// Empty receiving BLOB carrying only the nested template column; the BLOB bytes, row count and
+    /// from_blob_task are filled in later by SerializationDetached during deserialization.
+    explicit ColumnBLOB(ColumnPtr wrapped_column_)
+        : rows(0)
+        , wrapped_column(std::move(wrapped_column_))
+    {
+        chassert(wrapped_column);
+    }
+
     // Only needed to make compiler happy.
     [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
@@ -80,6 +91,11 @@ public:
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
 
+    /// Set after the raw BLOB is read so that `size()` reports the number of rows in the block.
+    void setRows(size_t rows_) { rows = rows_; }
+    /// Install the task that reconstructs the original column from the BLOB (used later by `convertFrom`).
+    void setFromBLOBTask(FromBLOB task) { from_blob_task = std::move(task); }
+
     const ColumnPtr & getWrappedColumn() const
     {
         chassert(wrapped_column);
@@ -98,6 +114,8 @@ public:
         return from_blob_task(blob);
     }
 
+    ColumnPtr convertToFullColumnIfDetached() const override { return convertFrom(); }
+
     /// Creates serialized and compressed blob from the source column.
     static void toBLOB(
         BLOB & blob,
@@ -108,6 +126,14 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
+        /// The type announced on the wire gets the state version of a versioned aggregate function
+        /// derived from the negotiated revision (see the comment in `NativeWriter::write`), and the
+        /// reader parses the payload according to the announced type. Derive the version the same way
+        /// here, or the payload would be written with the version resolved from the local type
+        /// and lose sync with the announcement.
+        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+        setVersionToAggregateFunctions(
+            wrapped_column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
             *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
@@ -117,7 +143,7 @@ public:
     /// Decompresses and deserializes the blob into the source column.
     static ColumnPtr fromBLOB(
         const BLOB & blob,
-        ColumnPtr nested,
+        MutableColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
         const FormatSettings * format_settings)
@@ -125,7 +151,7 @@ public:
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
+        NativeReader::readData(*nested_serialization, *nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
         return nested;
     }
 
@@ -149,6 +175,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
+    bool hasOnlyTypeDefaults() const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -162,7 +189,6 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
@@ -209,8 +235,7 @@ private:
     /// Compressed and serialized representation of the wrapped column.
     BLOB blob;
 
-    /// Always set
-    const size_t rows;
+    size_t rows;
     ColumnPtr wrapped_column;
 
     /// Set only in cast of "from" conversion

@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 ClickHouse server が上の図に示した 4 行のサンプル insert (たとえば [INSERT INTO ステートメント](/ja/reference/statements/insert-into) 経由) を処理すると、いくつかのステップが実行されます。
 
-① **ソート**: 行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+<Steps>
+  <Step title="ソート">
+    行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+  </Step>
 
-② **分割**: ソート済みのデータはカラムごとに分割されます。
+  <Step title="分割">
+    ソート済みのデータはカラムごとに分割されます。
+  </Step>
 
-③ **圧縮**: 各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  <Step title="圧縮">
+    各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  </Step>
 
-④ **ディスクへの書き込み**: 圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  <Step title="ディスクへの書き込み">
+    圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  </Step>
+</Steps>
 
 テーブルで使用しているエンジンによっては、ソートとあわせて追加の変換が行われる[場合があります](/ja/reference/settings/session-settings)。
 

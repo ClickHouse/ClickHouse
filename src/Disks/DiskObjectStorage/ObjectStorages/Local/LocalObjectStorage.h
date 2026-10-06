@@ -67,7 +67,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -95,6 +97,8 @@ public:
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     void removeObject(const StoredObject & object) const;

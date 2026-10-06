@@ -47,25 +47,47 @@ It is normally unnecessary to override a write format, but the methods in `click
 | Float32               | float                   |                   |                                                                                                             |
 | Float64               | float                   |                   |                                                                                                             |
 | Decimal               | decimal.Decimal         |                   |                                                                                                             |
+| Interval*             | int                     |                   | Values are signed 64-bit counts in the interval type's unit.                                                |
 | String                | str or bytes            |                   | A column must consistently contain text or bytes.                                                           |
 | FixedString           | bytes                   | string            | String values are padded with zero bytes. Empty bytes are written as all zero bytes.                        |
 | Enum[8,16]            | str or int              |                   | Insert labels as strings or their underlying integer values.                                                |
-| Date                  | datetime.date           | int               | Integer values are interpreted as days since 1970-01-01.                                                    |
-| Date32                | datetime.date           | int               | Integer values are interpreted as signed day offsets.                                                       |
+| Date                  | datetime.date or datetime.datetime | int      | Integer values are interpreted as days since 1970-01-01.                                                    |
+| Date32                | datetime.date or datetime.datetime | int      | Integer values are interpreted as signed day offsets.                                                       |
 | DateTime              | datetime.datetime       | int               | Integer values are interpreted as epoch seconds.                                                            |
 | DateTime64            | datetime.datetime       | int               | Integer values are interpreted as ticks at the column precision.                                            |
 | Time                  | datetime.timedelta      | int, string, time | Integer values are interpreted as seconds.                                                                  |
-| Time64                | datetime.timedelta      | int, string, time | Integer values are interpreted as ticks at the column precision.                                            |
+| Time64                | datetime.timedelta      | int, string, time | Scales 0 through 9 are supported. Integer values are interpreted as ticks at the column precision. NumPy timedelta values and DataFrame inserts work at every scale. Python time types are limited to microseconds. |
 | IPv4                  | `ipaddress.IPv4Address` | string            | Properly formatted strings can be inserted as IPv4 addresses                                                |
 | IPv6                  | `ipaddress.IPv6Address` | string            | Properly formatted strings can be inserted as IPv6 addresses                                                |
-| Tuple                 | dict or tuple           |                   |                                                                                                             |
-| Map                   | dict                    |                   |                                                                                                             |
+| Tuple                 | dict or tuple           |                   | Use `()` for `Tuple()`.                                                                                    |
+| Map                   | dict                    |                   | The `pairs` read format doesn't change insert inputs. Use Arrow to round trip duplicate keys without loss.    |
 | Nested                | Sequence[dict]          |                   |                                                                                                             |
 | UUID                  | uuid.UUID               | string            | Properly formatted strings can be inserted as ClickHouse UUIDs                                              |
 | JSON                  | dict                    | string            | Dictionaries and JSON object strings are supported. The legacy `Object('json')` type is not supported.      |
 | Variant               | object                  |                   | Values use native member serialization. Use `clickhouse_connect.datatypes.dynamic.typed_variant` when Python types are ambiguous. |
 | Dynamic               | object                  |                   | Values are currently inserted through their String representation.                                          |
+| MultiPoint            | Sequence[tuple]         |                   | Each point is a 2-tuple. Inserting MultiPoint values requires ClickHouse 26.8 or later.                       |
+| Geometry              | tuple or list           |                   | Point values are 2-tuples. Wrap list-based values, including MultiPoint, with `typed_variant` to select a geometry member. |
 | QBit                  | Sequence[float]         |                   | NumPy is used automatically for faster bit transposition when installed.                                    |
+
+#### Date and Date32 values {#date-and-date32-values}
+
+Native inserts accept mixed Python `date` and `datetime` values in a `Date` or `Date32` column. A `datetime` contributes its own calendar date, as returned by `.date()`, without timezone conversion. This also applies inside `Nullable`, `Array`, `Tuple`, and `LowCardinality` columns.
+
+```python
+from datetime import date, datetime, timedelta, timezone
+
+value = datetime(2024, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=14)))
+client.command("CREATE TABLE event_dates (event_date Date) ENGINE Memory")
+client.insert("event_dates", [[value], [date(2024, 1, 2)]])
+
+result = client.query("SELECT event_date FROM event_dates ORDER BY event_date")
+assert result.result_rows == [(date(2024, 1, 1),), (date(2024, 1, 2),)]
+```
+
+This applies to Python objects, including Pandas `object` columns. Timezone-aware Pandas `datetime64` columns use the UTC calendar date. To preserve the original calendar dates, convert these values to Python `date` objects before insertion. NumPy `datetime64` values have no timezone metadata.
+
+Datetime query parameters follow the [binding rules](/integrations/language-clients/python/driver-api#parameters-argument). An aware `datetime` is converted to the server timezone before formatting for a `Date` or `Date32` value, which can change the calendar date. Pass `value.date()` explicitly when an insert and a bound parameter must use the same calendar date.
 
 ### Specialized insert methods {#specialized-insert-methods}
 

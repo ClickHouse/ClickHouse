@@ -20,14 +20,20 @@ Essas configurações configuram o servidor ClickHouse e são geradas automatica
 
 Controla se o usuário pode alterar configurações relacionadas aos diferentes níveis de recursos.
 
-* `0` - São permitidas alterações em qualquer configuração (experimental, beta, produção).
-* `1` - São permitidas apenas alterações em configurações de recursos beta e de produção. Alterações em configurações experimentais são rejeitadas.
-* `2` - São permitidas apenas alterações em configurações de recursos de produção. Alterações em configurações experimentais ou beta são rejeitadas.
+* `0` - São permitidas alterações em qualquer configuração (experimental, prévia privada, beta, produção).
+* `1` - São permitidas apenas alterações em configurações de recursos de prévia privada, beta e produção. Alterações em configurações experimentais são rejeitadas.
+* `2` - São permitidas apenas alterações em configurações de recursos beta e de produção. Alterações em configurações experimentais ou de prévia privada são rejeitadas.
+* `3` - São permitidas apenas alterações em configurações de produção. Alterações em configurações experimentais, de prévia privada ou beta são rejeitadas.
 
-Isso equivale a definir uma restrição readonly em todos os recursos `EXPERIMENTAL` / `BETA`.
+Isso equivale a definir uma restrição readonly em todos os recursos `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
 
 <Note>
   Um valor de `0` significa que todas as configurações podem ser alteradas.
+</Note>
+
+<Note>
+  Anteriormente, `2` significava &quot;somente configurações de produção&quot;. Agora, também permite configurações beta; portanto, uma configuração
+  que fixava `2` para permitir apenas configurações de produção deve usar `3`.
 </Note>
 
 <div id="allow_impersonate_user">

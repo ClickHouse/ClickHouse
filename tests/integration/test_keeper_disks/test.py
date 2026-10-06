@@ -58,6 +58,7 @@ def stop_clickhouse(cluster, node, cleanup_disks):
 
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"])
+    node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/data"])
 
     # Wipe everything, including any leftover "tmp_" markers, so the bucket is clean.
     s3_objects = list_s3_objects(cluster, prefix="", exclude_tmp=False)

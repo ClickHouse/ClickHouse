@@ -24,6 +24,23 @@ Estas opciones de configuración están disponibles en [system.merge&#95;tree&#9
 Solo disponible en ClickHouse Cloud. Tamaño máximo total de las partes que se van a precalentar en la
 caché durante la fusión.
 
+<div id="merge_use_batch_sorting_queue">
+  ## merge_use_batch_sorting_queue
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para usar la cola de ordenación por lotes en fusiones ordinarias de `MergeTree`."}]}]} />
+
+Use la cola de ordenación por lotes para reducir la sobrecarga por fila de la cola al fusionar flujos ordenados.
+
+Solo se aplica a las fusiones que no modifican filas, es decir, a `MergeTree`
+sin modificaciones (modo de fusión `Ordinary`). No tiene efecto en los motores con
+semántica de fusión, como `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
+`GraphiteMergeTree` y `VersionedCollapsingMergeTree`, que siguen usando la
+cola predeterminada independientemente de esta configuración.
+
 <div id="merge_workload">
   ## merge_workload
 </div>

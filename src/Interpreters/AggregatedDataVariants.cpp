@@ -56,6 +56,10 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    /// `init` also reinitializes a table after an external-aggregation flush, so preserve
+    /// whether the heap rejected anything before the old method is replaced.
+    top_k_heap_ever_rejected = topKHeapEverRejected();
+
     switch (type_)
     {
         case Type::EMPTY:
@@ -93,6 +97,41 @@ size_t AggregatedDataVariants::size() const
     }
 }
 
+bool AggregatedDataVariants::topKHeapEverRejected() const
+{
+    if (top_k_heap_ever_rejected)
+        return true;
+
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.everRejected();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
+bool AggregatedDataVariants::topKHeapInactive() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.frozen || (NAME)->top_k_heap.shouldFreeze();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);
@@ -114,6 +153,9 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
     aggregates_pool = nullptr;
     aggregator = nullptr;
     type = Type::EMPTY;
+    restricted_to_kept_keys = false;
+    kept_keys_seed = nullptr;
+    kept_keys_rebuild_in_progress = false;
 }
 
 size_t AggregatedDataVariants::allocatedBytes() const
@@ -222,6 +264,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 #define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            (NAME ## _two_level)->top_k_heap = std::move((NAME)->top_k_heap); \
             (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;
@@ -245,6 +288,40 @@ bool AggregatedDataVariants::isLowCardinality() const
 
         APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
     #undef M
+        default:
+            return false;
+    }
+}
+
+bool AggregatedDataVariants::isSerialized() const
+{
+    switch (type)
+    {
+        case Type::serialized:
+        case Type::nullable_serialized:
+        case Type::prealloc_serialized:
+        case Type::nullable_prealloc_serialized:
+        case Type::serialized_two_level:
+        case Type::nullable_serialized_two_level:
+        case Type::prealloc_serialized_two_level:
+        case Type::nullable_prealloc_serialized_two_level:
+        case Type::serialized_hash64:
+        case Type::nullable_serialized_hash64:
+        case Type::prealloc_serialized_hash64:
+        case Type::nullable_prealloc_serialized_hash64:
+        case Type::serialized_void:
+        case Type::nullable_serialized_void:
+        case Type::prealloc_serialized_void:
+        case Type::nullable_prealloc_serialized_void:
+        case Type::serialized_void_two_level:
+        case Type::nullable_serialized_void_two_level:
+        case Type::prealloc_serialized_void_two_level:
+        case Type::nullable_prealloc_serialized_void_two_level:
+        case Type::serialized_void_hash64:
+        case Type::nullable_serialized_void_hash64:
+        case Type::prealloc_serialized_void_hash64:
+        case Type::nullable_prealloc_serialized_void_hash64:
+            return true;
         default:
             return false;
     }

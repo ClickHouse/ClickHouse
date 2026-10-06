@@ -18,6 +18,12 @@ namespace DB::ErrorCodes
     extern const int MEMORY_RESERVATION_KILLED;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryReservationApproved;
+    extern const Metric MemoryReservationDemand;
+}
+
 struct SpaceSharedTest : public ResourceTestBase
 {
     SpaceSharedScheduler scheduler;
@@ -213,6 +219,113 @@ TEST(SchedulerSpaceShared, ReservationWithMemoryTracker)
         tracker.adjustWithUntrackedMemory(-4000);
         EXPECT_EQ(tracker.get(), 0);
     }
+}
+
+
+/// Regression test: an increase issued while a decrease is still in flight must be sized against
+/// the post-decrease allocation. It used to be sized against the current allocation, so the
+/// approved total ended short by exactly the in-flight decrease and the sync waited forever.
+TEST(SchedulerSpaceShared, IncreaseWhileDecreaseIsInFlight)
+{
+    SpaceSharedTest t;
+
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 1000000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceLink link;
+    link.allocation_queue = queue;
+
+    /// Reads the aggregate on the scheduler thread, where it may be safely accessed.
+    auto allocated_of = [&](ISpaceSharedNode * node) -> ResourceCost
+    {
+        std::promise<ResourceCost> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue.enqueue([&] { p.set_value(node->allocated); });
+        return f.get();
+    };
+
+    MemoryTracker tracker;
+    {
+        MemoryReservation res(link, "res", 100);
+        tracker.adjustWithUntrackedMemory(800);
+        res.syncWithMemoryTracker(&tracker);
+        EXPECT_EQ(allocated_of(queue), 800);
+
+        // Hold the scheduler thread so that the following requests stay in flight.
+        std::promise<void> unblock;
+        t.scheduler.event_queue.enqueue([f = unblock.get_future().share()] { f.get(); });
+
+        tracker.adjustWithUntrackedMemory(-500); // 300
+        res.syncWithMemoryTracker(&tracker); // enqueues a decrease of 500 and returns without waiting
+
+        ResourceCost demand = CurrentMetrics::get(CurrentMetrics::MemoryReservationDemand);
+        tracker.adjustWithUntrackedMemory(700); // 1000
+        std::thread grow([&] { res.syncWithMemoryTracker(&tracker); });
+        // Make sure the increase is enqueued while the decrease is still in flight
+        while (CurrentMetrics::get(CurrentMetrics::MemoryReservationDemand) == demand)
+            std::this_thread::yield();
+
+        unblock.set_value();
+        grow.join(); // used to hang forever: 800 - 500 + (1000 - 800) < 1000
+
+        // Both requests approved: the allocation converges to the actual usage
+        while (allocated_of(queue) != 1000)
+            std::this_thread::yield();
+
+        tracker.adjustWithUntrackedMemory(-1000);
+    }
+    EXPECT_EQ(allocated_of(queue), 0);
+}
+
+
+/// The sync must not return while the usage is covered only by capacity that an in-flight decrease
+/// is about to release: once the decrease is approved, that capacity may be granted to another
+/// workload. It used to return without waiting whenever the usage was below the current allocation.
+TEST(SchedulerSpaceShared, SyncWaitsForPostDecreaseCoverage)
+{
+    SpaceSharedTest t;
+
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 1000000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceLink link;
+    link.allocation_queue = queue;
+
+    MemoryTracker tracker;
+    MemoryReservation res(link, "res", 100);
+    tracker.adjustWithUntrackedMemory(800);
+    res.syncWithMemoryTracker(&tracker); // allocated == 800
+
+    // Hold the scheduler thread so that the following requests stay in flight.
+    std::promise<void> unblock;
+    t.scheduler.event_queue.enqueue([f = unblock.get_future().share()] { f.get(); });
+
+    tracker.adjustWithUntrackedMemory(-500); // 300
+    res.syncWithMemoryTracker(&tracker); // enqueues a decrease of 500 and returns without waiting
+
+    ResourceCost demand = CurrentMetrics::get(CurrentMetrics::MemoryReservationDemand);
+    ResourceCost approved = CurrentMetrics::get(CurrentMetrics::MemoryReservationApproved);
+    tracker.adjustWithUntrackedMemory(300); // 600: covered by the current 800, but not by 800 - 500
+    std::thread grow([&]
+    {
+        res.syncWithMemoryTracker(&tracker);
+        // The compensating increase (+300) must be approved by the time the sync returns;
+        // the decrease (-500) may or may not be. No change at all means the sync did not wait.
+        ResourceCost diff = CurrentMetrics::get(CurrentMetrics::MemoryReservationApproved) - approved;
+        EXPECT_TRUE(diff == 300 || diff == -200) << diff;
+    });
+    // Make sure the increase is enqueued while the decrease is still in flight
+    while (CurrentMetrics::get(CurrentMetrics::MemoryReservationDemand) == demand)
+        std::this_thread::yield();
+
+    unblock.set_value();
+    grow.join();
+
+    tracker.adjustWithUntrackedMemory(-600);
 }
 
 

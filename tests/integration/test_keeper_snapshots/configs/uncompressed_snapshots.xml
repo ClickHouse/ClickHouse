@@ -1,0 +1,7 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <compress_snapshots_with_zstd_format>false</compress_snapshots_with_zstd_format>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>

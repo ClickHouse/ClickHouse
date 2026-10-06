@@ -66,3 +66,8 @@ SELECT COLUMNS(i, j, k) APPLY sum()\nFROM columns_transformers
 SELECT\n    i,\n    j,\n    COLUMNS(i, j, k) APPLY toFloat64(),\n    COLUMNS(i, j) EXCEPT i\nFROM columns_transformers
 [110]	[9]	[173.5]
 SELECT COLUMNS(i, j, k) APPLY quantiles(0.5)\nFROM columns_transformers
+SELECT t_matcher.COLUMNS(\'^b\')\nFROM t_matcher
+SELECT t_matcher.COLUMNS(b_x, b_y)\nFROM t_matcher
+SELECT t_matcher.COLUMNS(\'^b\') APPLY toString()\nFROM t_matcher
+SELECT t_matcher.COLUMNS(b_x, b_y) APPLY toString()\nFROM t_matcher
+SELECT * EXCEPT \'^b\'\nFROM t_matcher

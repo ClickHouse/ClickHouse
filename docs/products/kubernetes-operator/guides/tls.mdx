@@ -46,8 +46,7 @@ webhook rejects a cluster that enables TLS without it, and rejects `required: tr
 unless `enabled: true`.
 </Note>
 
-<Steps>
-<Step title="Bootstrap a CA with cert-manager" id="step-1-ca">
+## Step 1 — Bootstrap a CA with cert-manager {#step-1-ca}
 
 The most reproducible setup is a self-signed CA that then signs the server
 certificate. This gives you a stable `ca.crt` that clients can trust.
@@ -94,8 +93,7 @@ In production, replace the self-signed bootstrap with your real issuer (a
 corporate CA, Vault, ACME, etc.). Only Step 2 changes — the cluster wiring is
 identical.
 
-</Step>
-<Step title="Issue the server certificate" id="step-2-cert">
+## Step 2 — Issue the server certificate {#step-2-cert}
 
 Request a leaf certificate from the CA issuer. The `dnsNames` must cover how
 clients address the pods. The operator creates a single **headless** Service named
@@ -136,8 +134,7 @@ kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'ke
 # ["ca.crt","tls.crt","tls.key"]
 ```
 
-</Step>
-<Step title="Enable TLS on the cluster" id="step-3-enable">
+## Step 3 — Enable TLS on the cluster {#step-3-enable}
 
 Point the cluster at the Secret:
 
@@ -181,8 +178,7 @@ even when TLS is off, so toggling `tls.enabled` later never collides with a
 [Configuration → `additionalPorts`](/products/kubernetes-operator/guides/configuration#additional-ports).
 </Note>
 
-</Step>
-<Step title="Connect over TLS" id="step-4-connect">
+## Step 4 — Connect over TLS {#step-4-connect}
 
 With `required: true`, clients must use the secure ports and trust the CA. Address
 a specific replica pod through the headless Service (or your own `ClusterIP`
@@ -211,9 +207,6 @@ Pull `ca.crt` straight from the Secret for local testing:
 kubectl -n <namespace> get secret clickhouse-cert \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 ```
-
-</Step>
-</Steps>
 
 ## Encrypting Keeper traffic {#keeper-tls}
 
@@ -288,7 +281,7 @@ spec:
 
 The merge is per-key: only the values you set are replaced, and the generated keys you
 omit (certificate paths, CA configuration) are preserved. See the
-[`openSSL` server settings](/reference/settings/server-settings/settings/other#openssl)
+[`openSSL` server settings](/reference/settings/server-settings/settings#openssl)
 for the available options, and
 [Configuration → Embedded extra configuration](/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 for how `extraConfig` is merged.
@@ -322,4 +315,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 - [Configuration → TLS/SSL configuration](/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — field reference
 - [Configuration → `additionalPorts`](/products/kubernetes-operator/guides/configuration#additional-ports) — reserved ports
 - [API Reference → ClusterTLSSpec](/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-- [`openSSL` server settings](/reference/settings/server-settings/settings/other#openssl) — TLS options you can override via `extraConfig`
+- [`openSSL` server settings](/reference/settings/server-settings/settings#openssl) — TLS options you can override via `extraConfig`

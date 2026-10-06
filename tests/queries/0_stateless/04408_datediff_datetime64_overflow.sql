@@ -10,6 +10,7 @@ SELECT age('hour', toDateTime64(0, 0, 'UTC'), reinterpret(9223372036854775807, '
 SELECT dateDiff('minute', toDateTime64(0, 0, 'UTC'), reinterpret(9223372036854775807, 'DateTime64(0)'), 'UTC');
 
 -- toRelativeHourNum / toRelativeMinuteNum standard precision. A fractional-offset time zone
--- forces the slow code path even for a positive argument.
+-- forces the slow code path even for a positive argument. The standard-precision result is
+-- UInt32 and now saturates for out-of-range arguments (kept monotonic for primary-key pruning).
 SELECT toRelativeHourNum(reinterpret(9223372036854775807, 'DateTime64(0)'), 'Asia/Kolkata');
 SELECT toRelativeMinuteNum(reinterpret(9223372036854775807, 'DateTime64(0)'), 'Asia/Kolkata');

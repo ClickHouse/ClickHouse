@@ -1,9 +1,12 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Macros.h>
 #include <Core/Field.h>
 
@@ -31,8 +34,11 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
+    /// The function is `SELECT substitution FROM system.macros WHERE macro = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
         return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
     }
 
@@ -87,6 +93,8 @@ REGISTER_FUNCTION(GetMacro)
 Returns the value of a macro from the server configuration file.
 Macros are defined in the [`<macros>`](/reference/settings/server-settings/settings/other#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
 If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
+
+Requires the `SELECT` privilege on `system.macros`, just like reading that table.
 )";
     FunctionDocumentation::Syntax syntax = "getMacro(name)";
     FunctionDocumentation::Arguments arguments = {

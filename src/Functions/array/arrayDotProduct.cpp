@@ -469,9 +469,9 @@ REGISTER_FUNCTION(ArrayDotProduct)
     FunctionDocumentation::Description description = R"(
 Returns the dot product of two arrays.
 
-:::note
+<Note>
 The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
     FunctionDocumentation::Arguments arguments = {
@@ -482,18 +482,18 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
         = {R"(
 The dot product of the two vectors.
 
-:::note
+<Note>
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
 Two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
-:::
+</Note>
 
 )",
            {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples
-        = {{"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
+        = {{"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32\tUInt16"},
            {"Tuple example",
             "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);",
-            "32    Float64"}};
+            "32\tFloat64"}};
     FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

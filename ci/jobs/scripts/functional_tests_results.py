@@ -23,6 +23,13 @@ _clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
 STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
 GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
 MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
+HUNG_CHECK_EXIT_CODE = _clickhouse_test_globals["HUNG_CHECK_EXIT_CODE"]
+
+# Synthetic leaf names for an aborted run, keyed by exit code. The liveness name
+# claims only what its probe establishes - the check failed - because the check
+# also fails on a non-200 *response*.
+ABORTED_RUN_DEFAULT_LEAF = "Server died"
+ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
 
 # Exit codes that mean the run was aborted mid-flight, so per-test results
 # (if any) are incomplete and we cannot trust which test "caused" the
@@ -49,15 +56,28 @@ MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
 # `MAX_FAILURES_EXIT_CODE` is likewise excluded: the run stopped early because
 # too many tests failed, but the server is alive and those failures are real
 # and already attributed - so they must be reported as FAIL, not "Server died".
-ABORTED_RUN_EXIT_CODES = frozenset(
+# `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
+# for the other members, so the same demotion applies; only the synthetic leaf's
+# name differs.
+#
+# Kept as its own set because, unlike the in-band codes, these establish only
+# that the run was killed, never by whom.
+KILLED_BY_SIGNAL_EXIT_CODES = frozenset(
     {
-        STOP_TESTING_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
         -signal.SIGKILL,  # -9
     }
 )
+
+# Derived so the two sets cannot drift apart.
+ABORTED_RUN_EXIT_CODES = (
+    frozenset({STOP_TESTING_EXIT_CODE, HUNG_CHECK_EXIT_CODE})
+    | KILLED_BY_SIGNAL_EXIT_CODES
+)
+
+KILLED_BY_SIGNAL_RESULT_NAME = "Test command killed by signal"
 
 NO_TESTS_SIGN = "No tests were run"
 NO_TESTS_FILTERED_OUT_SIGN = (
@@ -234,8 +254,8 @@ class FTResultsProcessor:
         test_results = s.test_results
 
         if s.no_tests_run and allow_no_tests and not s.hung:
-            # The job was given an explicit list of tests (flaky, targeted or
-            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # The job was given an explicit list of tests (a flaky or targeted
+            # check), and `clickhouse-test` explicitly proved it
             # filtered every one of them out - e.g. all are tagged `no-tsan` in a
             # TSan job. A generic "No tests were run" banner is not sufficient:
             # it is also printed after runner-level failures before the first test.
@@ -255,40 +275,62 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
+        elif (
+            runner_exit_code in KILLED_BY_SIGNAL_EXIT_CODES
+            and s.failed == 0
+            and s.unknown == 0
+        ):
+            # Gate on the counters: `NOT_FAILED` rows are invisible to
+            # `is_failure`. ERROR goes on the leaf only, where the bugfix
+            # inverter reads it - an ERROR aggregate disables coverage collection.
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    KILLED_BY_SIGNAL_RESULT_NAME,
+                    Result.Status.ERROR,
+                    info=f"The test command exited with {runner_exit_code} (killed by "
+                    "signal) and no test was reported as failed, so the cause could "
+                    "not be attributed. Check the server log for a crash.",
+                )
+            )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
-                # Multiple tests failed when the server died - this is a parallel
-                # run where we can't tell which test (if any) caused the crash.
+                # Multiple tests failed before the run was aborted - this is a
+                # parallel run where we can't tell which test (if any) caused it.
                 # Mark them all as UNKNOWN so they don't pollute failure reports.
-                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
-                # entry added from the server log.
+                # The actual failure is captured by the synthetic leaf below and
+                # by the LOGICAL_ERROR entries added from the server log.
                 for result in failed_results:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
-                # Exactly one FAIL was captured before the server died. The
-                # runner may still have been parallel (`--jobs` is always
-                # passed), so this is best-effort attribution of the culprit,
-                # not proof of a single-test sequential run. Demote it to
-                # ERROR so a test that merely witnessed the server death is
-                # not reported as an ordinary test failure - except in bugfix
-                # validation, where the job runs only the PR's own changed
-                # tests: a server death while they run is the expected
-                # reproduction of the bug regardless of which of them got its
-                # FAIL printed first, so keep the FAIL for
+                # Exactly one FAIL was captured before the abort. The runner may
+                # still have been parallel (`--jobs` is always passed), so this
+                # is best-effort attribution of the culprit, not proof of a
+                # single-test sequential run. Demote it to ERROR so a test that
+                # merely witnessed the abort is not reported as an ordinary test
+                # failure - except in bugfix validation, where the job runs only
+                # the PR's own changed tests: a server death or hang while they
+                # run is the expected reproduction of the bug regardless of
+                # which of them got its FAIL printed first, so keep the FAIL for
                 # `invert_bugfix_validation_status` instead of tripping its
                 # fail-closed ERROR guard and reporting the run inconclusive
                 # (#105789). This matches the >1-failed path (UNKNOWN rows +
-                # flipped `Server died` row), which already validates the
+                # flipped synthetic row), which already validates the
                 # parallel-crash case. Accepted tradeoff:
                 # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
                 # 128+SIGKILL from an OOM of the runner), so in bugfix
-                # validation such a death with a single failed test reads as
+                # validation such an abort with a single failed test reads as
                 # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR
-            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+            leaf = (
+                ABORTED_RUN_LIVENESS_LEAF
+                if runner_exit_code == HUNG_CHECK_EXIT_CODE
+                else ABORTED_RUN_DEFAULT_LEAF
+            )
+            test_results.append(Result(leaf, Result.Status.FAIL, info=leaf))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run

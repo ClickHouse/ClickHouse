@@ -62,6 +62,9 @@ public:
 
     const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
 
+    /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
+    bool hasStreamsFanOut() const { return streams_fan_out; }
+
     QueryPlanStepPtr clone() const override;
 
 private:

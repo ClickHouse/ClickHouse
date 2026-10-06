@@ -31,8 +31,12 @@
 #include <memory>
 #include <atomic>
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <random>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -164,6 +168,12 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
+
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void exists(
         const String & path,
@@ -351,6 +361,14 @@ private:
     ThreadReference send_thread;
     ThreadReference receive_thread;
 
+    /// Exceptions from session cleanup are logged only after all pending callbacks have run.
+    /// Contexts are string literals and remain valid until deferred logging.
+    std::mutex deferred_exceptions_mutex;
+    std::vector<std::pair<std::exception_ptr, std::string_view>> deferred_exceptions;
+
+    void deferException(std::exception_ptr exception, std::string_view context) noexcept;
+    void logDeferredExceptions() noexcept;
+
     LoggerPtr log;
 
     void connect(
@@ -401,6 +419,10 @@ private:
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
+
+    bool resolveSystemLogs();
+    enum class SystemLogsState { Unresolved, InProgress, Resolved };
+    std::atomic<SystemLogsState> system_logs_state{SystemLogsState::Unresolved};
 
     std::atomic<int64_t> last_zxid_seen;
 

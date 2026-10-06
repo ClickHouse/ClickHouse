@@ -7,13 +7,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
-if [ -z ${ENABLE_ANALYZER+x} ]; then
-    ENABLE_ANALYZER=0
-fi
 
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *
@@ -129,13 +126,15 @@ FROM
 run_query "$query"
 
 echo "-- WHERE with arrayJoin(): do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
+# the WHERE is not fused into the ARRAY JOIN for serialized plans, keep one plan shape for both modes
 query="SELECT DISTINCT *
 FROM
 (
     SELECT DISTINCT ['Istanbul', 'Berlin', 'Bensheim'] AS cities
 )
 WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']
-ORDER BY cities"
+ORDER BY cities
+SETTINGS query_plan_fuse_filter_into_array_join = 0"
 run_query "$query"
 
 echo "-- GROUP BY before DISTINCT with on the same columns => remove DISTINCT"

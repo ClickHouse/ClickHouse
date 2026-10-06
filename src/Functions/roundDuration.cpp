@@ -14,22 +14,26 @@ struct RoundDurationImpl
 
     static ResultType apply(A x)
     {
-        return x < 1 ? 0
-            : (x < 10 ? 1
-            : (x < 30 ? 10
-            : (x < 60 ? 30
-            : (x < 120 ? 60
-            : (x < 180 ? 120
-            : (x < 240 ? 180
-            : (x < 300 ? 240
-            : (x < 600 ? 300
-            : (x < 1200 ? 600
-            : (x < 1800 ? 1200
-            : (x < 3600 ? 1800
-            : (x < 7200 ? 3600
-            : (x < 18000 ? 7200
-            : (x < 36000 ? 18000
-            : 36000))))))))))))));
+        /// Branch-free check to enable auto-vectorization.
+        /// The predicate is `!(x < c)` rather than `x >= c` so that a NaN argument, for which every
+        /// comparison is false, accumulates every delta and yields the largest duration.
+        UInt32 result = 0;
+        result += !(x < 1) ? 1 : 0;
+        result += !(x < 10) ? 9 : 0;
+        result += !(x < 30) ? 20 : 0;
+        result += !(x < 60) ? 30 : 0;
+        result += !(x < 120) ? 60 : 0;
+        result += !(x < 180) ? 60 : 0;
+        result += !(x < 240) ? 60 : 0;
+        result += !(x < 300) ? 60 : 0;
+        result += !(x < 600) ? 300 : 0;
+        result += !(x < 1200) ? 600 : 0;
+        result += !(x < 1800) ? 600 : 0;
+        result += !(x < 3600) ? 1800 : 0;
+        result += !(x < 7200) ? 3600 : 0;
+        result += !(x < 18000) ? 10800 : 0;
+        result += !(x < 36000) ? 18000 : 0;
+        return static_cast<ResultType>(result);
     }
 
 #if USE_EMBEDDED_COMPILER

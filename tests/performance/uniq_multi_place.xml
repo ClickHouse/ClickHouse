@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <group_by_two_level_threshold>0</group_by_two_level_threshold>
+        <group_by_two_level_threshold_bytes>0</group_by_two_level_threshold_bytes>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>function</name>
+            <values>
+                <value>uniq</value>
+                <value>uniqCombined</value>
+                <value>uniqCombined64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>groups</name>
+            <values>
+                <value>64</value>
+                <value>128</value>
+                <value>256</value>
+                <value>512</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Interleave groups so each row accesses a different state. Each group gets enough
+         distinct values to exercise both hash tables and the transition to HyperLogLog. -->
+    <query>SELECT number % {groups} AS k, {function}(number) FROM numbers({groups} * 16384) GROUP BY k FORMAT Null</query>
+</test>

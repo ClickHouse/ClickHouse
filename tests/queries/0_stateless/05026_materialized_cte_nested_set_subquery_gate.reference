@@ -1,0 +1,21 @@
+-- nested IN over Distributed, empty middle table
+0
+-- nested IN over Distributed, populated middle table
+1
+-- same shape over a local table
+0
+1
+-- PREWHERE over an empty Distributed table, CTE declared after its reader
+0
+-- without the in-with-subqueries index path
+0
+-- without a local replica preference
+0
+-- GLOBAL IN, and a GLOBAL JOIN reading the CTE
+1
+3	1
+1
+-- the primary key still prunes granules under the gate
+1	1
+-- and it does not prune when the in-with-subqueries index path is off
+0	0

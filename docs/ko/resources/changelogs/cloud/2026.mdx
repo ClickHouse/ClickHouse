@@ -2,34 +2,116 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 변경 로그 - 2026'
-description: '각 ClickHouse Cloud 릴리스의 새로운 내용을 설명하는 ClickHouse Cloud 변경 로그입니다'
+description: '각 ClickHouse Cloud 릴리스의 새로운 기능을 설명하는 ClickHouse Cloud 변경 로그'
 doc_type: 'changelog'
-keywords: ['변경 로그', '릴리스 노트', '업데이트', '새 기능', 'Cloud 변경 사항']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 Cloud 변경 로그와 함께 [Cloud Compatibility](/ko/products/cloud/guides/cloud-compatibility) 페이지도 확인하십시오.
+이 ClickHouse Cloud 변경 로그와 함께 [Cloud 호환성](/ko/products/cloud/guides/cloud-compatibility) 페이지도 참고하십시오.
+
+<Update label="2026-09-22">
+  이번 주 업데이트에서는 ClickHouse Cloud의 컴플라이언스 적용 범위를 새로운 APAC 리전으로 확장하고, Replica-aware 라우팅을 공개 베타로 추가했으며, 메트릭, 컴퓨트, dbt와 관련된 새로운 기능을 선보입니다. HIPAA 및 PCI 규제 대응 셀이 이제 AWS 서울과 시드니에서 제공됩니다. 또한 대상 고객은 Prometheus 호환 메트릭 워크로드와 On-Demand Compute를 평가해 볼 수 있으며, ClickHouse는 dbt Core v2 및 dbt Platform을 통해 사용할 수 있습니다.
+
+  ## 보안
+
+  ### AWS 서울 및 시드니의 HIPAA 및 PCI 지원
+
+  HIPAA 및 PCI 규제 대응 셀이 이제 AWS 서울(`ap-northeast-2`) 및 AWS 시드니(`ap-southeast-2`) 리전에서 제공됩니다. 해당 리전에서 컴플라이언스를 준수하는 워크로드를 실행하려면 서비스 생성 시 HIPAA 또는 PCI를 선택하십시오. 자세한 내용은 [컴플라이언스 개요](/ko/products/cloud/reference/security/compliance-overview#hipaa-since-2024) 및 [지원 리전](/ko/products/cloud/reference/supported-regions)을 참고하십시오.
+
+  ## 새로운 기능
+
+  ### Replica-aware 라우팅 공개 베타 제공
+
+  [Replica-aware 라우팅](/ko/products/cloud/features/infrastructure/replica-aware-routing)이 Enterprise 고객을 대상으로 공개 베타로 제공되며, 네이티브 ClickHouse Cloud 및 BYOC 배포를 지원합니다. 계정에서 활성화된 후에는 서비스 설정에서 바로 켤 수 있습니다. [발표 내용](https://clickhouse.com/blog/replica-aware-routing-public-beta)을 참고하십시오.
+
+  ### PromQL 지원 비공개 프리뷰
+
+  이제 Prometheus 메트릭을 `TimeSeries` 테이블 엔진에 저장하고 ClickHouse 서비스에 대해 PromQL로 직접 쿼리할 수 있습니다. 트랜스파일러나 프록시가 필요 없으므로 기존 수집기, Grafana 대시보드, Prometheus 도구를 변경 없이 그대로 사용할 수 있습니다. Prometheus remote-write v1으로 쓰고 Prometheus HTTP API를 통해 읽거나, `prometheusQuery` 및 `prometheusQueryRange` 테이블 함수를 사용해 SQL 세션에서 PromQL을 실행할 수 있습니다. AWS, GCP, Azure에서 [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/promql-support-waitlist)을 통해 선정된 ClickHouse Cloud 및 BYOC 고객에게 제공됩니다. [Prometheus 인터페이스 문서](/ko/concepts/features/interfaces/prometheus) 및 [발표 내용](https://clickhouse.com/blog/introducing-promql)을 참고하십시오.
+
+  ### On-Demand Compute 비공개 프리뷰 제공
+
+  On-Demand Compute를 사용하면 대상이 되는 컴퓨트 집약적 `SELECT` 쿼리가 기존 서비스와 엔드포인트를 통해 추가 ClickHouse 워커를 활용할 수 있으며, 리사이징이나 별도의 프로비저닝이 필요하지 않습니다. 쿼리 설정을 통해 개별 쿼리 단위로 적용할 수 있으며, 인증, 계획 수립, 조정, 결과 처리는 서비스가 계속 담당합니다. 내부적으로는 비용 기반 옵티마이저와 다단계 쿼리 실행을 도입했습니다. 간헐적으로 발생하는 대규모 애드혹 읽기, 대용량 스캔, `SharedMergeTree`, Apache Iceberg 또는 Delta Lake 데이터에 대한 조인 및 집계에 적합합니다. [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/on-demand-compute-waitlist)을 통해 선정된 고객에게 제공됩니다. [On-Demand Compute 문서](/ko/products/cloud/features/infrastructure/on-demand-compute) 및 [발표 내용](https://clickhouse.com/blog/on-demand-compute)을 참고하십시오.
+
+  ## 통합
+
+  ### dbt v2용 ClickHouse 어댑터 및 dbt Platform의 ClickHouse
+
+  이제 공개 베타로 제공되는 dbt v2 어댑터를 사용해 새로운 Rust 기반 Core v2 엔진에서 ClickHouse를 대상으로 dbt를 실행할 수 있습니다. 또한 ClickHouse를 dbt Platform(Studio, 작업, 환경)의 연결로 처음 사용할 수 있게 되었으며, 비공개 베타로 계정별로 활성화됩니다. 기존 v1 어댑터(`dbt-clickhouse`)도 병행하여 계속 완전하게 유지 관리됩니다. [dbt Core](https://github.com/dbt-labs/dbt), [dbt-clickhouse 어댑터 풀 리퀘스트](https://github.com/ClickHouse/dbt-clickhouse/pull/739), [dbt Platform 문서 풀 리퀘스트](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)를 참고하십시오.
+</Update>
+
+<Update label="2026-09-08">
+  이번 주에는 ClickHouse Cloud에 프로덕션 환경에 바로 사용할 수 있는 보안 및 데이터 통합 개선 사항이 추가되었습니다. JWT authentication이 Enterprise 서비스에서 일반 제공되며, ClickPipes용 MySQL CDC 커넥터는 더 빠른 스냅샷, 더 안전한 기본값, 향상된 관측성과 함께 일반 제공 단계로 전환되었습니다.
+
+  ### ClickHouse 서비스용 JWT authentication 일반 제공 시작
+
+  이제 Okta, Auth0, Microsoft Entra ID, Keycloak 등 JWKS 엔드포인트를 게시하는 모든 프로바이더를 포함해, 사용자가 직접 운영하는 IdP(Identity Provider)에서 발급한 JWT로 ClickHouse 서비스에 인증할 수 있습니다. JWT authentication을 사용하면 기존 IdP(Identity Provider)를 통해 액세스를 관리하고 정책으로 토큰 만료를 적용할 수 있어, 별도의 ClickHouse 비밀번호나 교체가 필요한 공유 시크릿을 없앨 수 있습니다. 이 기능은 ClickHouse 26.4 이상을 실행하는 서비스에서 Enterprise plan으로 사용할 수 있습니다. **Service → Settings → Security → JWT authentication**에서 구성하십시오. [JWT authentication 설정 가이드](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)를 참조하십시오.
+
+  ### ClickPipes용 MySQL CDC 커넥터 일반 제공 시작
+
+  ClickPipes용 MySQL CDC 커넥터가 이제 프로덕션 환경에서 사용할 수 있습니다. 이번 릴리스에서는 자동 병렬 스냅샷이 추가되어 초기 적재 속도가 최대 27배 빨라졌으며, GTID 기반 복제와 최소 72시간의 binlog 보존 기간을 포함해 프로덕션 배포에 더 안전한 기본값이 적용되었습니다. 또한 새로운 리소스 사용량 및 지연 지표를 통해 파이프라인을 더 쉽게 모니터링할 수 있습니다. 이 커넥터는 ClickPipes UI, OpenAPI, Terraform을 통해 모든 ClickHouse Cloud 고객에게 제공됩니다. [MySQL ClickPipes 문서](/ko/integrations/clickpipes/mysql)와 [일반 제공 릴리스 안내](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)를 참조하십시오.
+</Update>
+
+<Update label="2026-08-31">
+  이번 주에는 타이베이와 말레이시아의 새로운 AWS 리전으로 ClickHouse Cloud의 글로벌 지원 범위를 확장하고, Private Service Connect에 Global Access 지원을 추가했으며, SAML 사용자가 조직 간에 더 쉽게 전환할 수 있도록 했습니다.
+
+  ### 새로운 AWS 리전: 타이베이 및 말레이시아
+
+  이제 ClickHouse Cloud를 AWS Taipei(`ap-east-2`) 및 AWS Malaysia(`ap-southeast-5`)에서 사용할 수 있습니다. 두 리전 모두 ClickPipes를 지원하는 프라이빗 리전으로 구성되었습니다. 자세한 내용은 [지원 리전 문서](/ko/cloud/reference/supported-regions) 및 [프라이빗 리전 고려 사항](/ko/cloud/reference/supported-regions#private-regions)을 참조하십시오.
+
+  ### ClickPipes: Private Service Connect에서 Global Access 지원
+
+  이제 ClickPipes는 Private Service Connect(PSC)를 사용하는 **크로스 리전** 프라이빗 연결에 대해 Global Access를 지원합니다. 활성화하면 ClickPipes는 서비스가 실행 중인 GCP 리전과 다른 리전에 있는 PSC 엔드포인트에 연결할 수 있으며, ClickHouse Cloud에서 네이티브로 지원되지 않는 리전(*예:* `asia-northeast3`(서울))도 포함됩니다.
+
+  ### SAML 조직 간 전환
+
+  여러 SAML 조직에 속한 SAML 사용자는 이제 조직 전환기에서 직접 조직 간에 전환할 수 있으며, 이 과정에서 백그라운드로 다시 인증됩니다. 더 이상 각 조직의 URL을 북마크하거나 수동으로 로그아웃했다가 다시 로그인할 필요가 없습니다. 기본 조직을 북마크한 후 거기서 전환하면 됩니다. 이는 SAML 조직 간 전환에 적용되며, 기존의 비SAML 조직 전환 방식은 변경되지 않습니다.
+</Update>
+
+<Update label="2026년 08월 17일">
+  이번 주 업데이트로 플랫폼 지원 범위가 확대되고 운영 가시성이 개선되었습니다. Managed Postgres가 이제 일부 디자인 파트너를 대상으로 GCP에서 제공되며, 공식 Terraform 프로바이더를 통해 ClickStack 리소스를 관리할 수 있습니다. 또한 새로운 청구 알림을 통해 크레딧 만료 또는 서비스 중단 전에 미리 알림을 받을 수 있습니다. ClickHouse Agents의 추적 기능과 SAML 로그인 환경도 개선했습니다.
+
+  ### Managed Postgres, 이제 GCP에서 제공
+
+  [ClickHouse Cloud Managed Postgres](/ko/products/managed-postgres/overview)는 이제 모든 퍼블릭 GCP 리전에서 일부 디자인 파트너를 대상으로 제공되며, 첫 번째 프라이빗 리전은 `us-west1`입니다. 이를 통해 GCP에서 서비스를 구축하는 고객도 Managed Postgres를 사용할 수 있으며, 2026-08에 비공개 프리뷰를 제공할 예정입니다.
+
+  ### Terraform으로 ClickStack 리소스 관리
+
+  이제 공식 [`ClickHouse/clickhouse` Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha) 버전 3.25.0에서 베타로 ClickStack을 지원합니다. 팀은 표준 `terraform plan` 및 `terraform apply` 워크플로를 사용하여 대시보드, 알림, 소스, 저장된 검색, 연결 및 웹훅을 생성, 업데이트, 가져오기, 제거할 수 있습니다. 이 통합은 관리형 ClickStack과 자체 호스팅 배포를 모두 지원합니다.
+
+  ### 크레딧 및 결제를 위한 새로운 청구 알림
+
+  이제 청구 알림은 ClickHouse Cloud Notification Center를 통해 관리되며 콘솔, 이메일, Slack으로 전달됩니다. 선불 또는 평가판 크레딧이 곧 만료되거나 소진될 때뿐 아니라 크레딧이 추가되거나 결제 수단이 변경되거나 계정이 미납 유예 기간에 들어갈 때도 고객에게 알림이 제공됩니다. 이를 통해 서비스가 중단되기 전에 갱신하거나 크레딧을 추가하거나 결제 문제를 해결할 시간을 더 확보할 수 있습니다.
+
+  ### ClickHouse Agents에서 Langfuse 세션 추적 열기
+
+  이제 조직 관리자는 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents/index) 채팅에서 해당 Langfuse 세션을 직접 열고 전체 대화의 추적을 확인할 수 있습니다. 이를 통해 에이전트 동작을 조사하고 여러 단계로 이루어진 실행을 디버깅하기가 쉬워집니다. 이 개선 사항은 새로 생성된 채팅에 대해 공개 베타로 제공됩니다.
+
+  ### SAML 리디렉션으로 중복 계정 생성 방지
+
+  조직에 SAML이 구성된 상태에서 사용자가 Google 또는 Microsoft로 로그인하려고 하면, ClickHouse Cloud는 이제 올바른 SAML 로그인 흐름으로 리디렉션합니다. 이를 통해 기존 계정에 액세스하려던 사용자가 실수로 별도의 조직을 생성하는 일을 방지할 수 있습니다.
+</Update>
 
 <Update label="2026년 07월 13일">
-  이번 주 업데이트에는 일반 HTTPS를 통한 sticky 레플리카 라우팅, 사용자 지정 청구 주기 시작일, 그리고 객체 스토리지 ClickPipes를 위한 새로운 초기 적재 제어 기능이 포함됩니다.
+  이번 주 업데이트에는 일반 HTTPS를 통한 고정 레플리카 라우팅, 사용자 정의 청구 주기 시작일, 객체 스토리지 ClickPipes의 새로운 초기 적재 제어 기능이 포함됩니다.
 
-  ### HTTPS를 통한 sticky 레플리카 라우팅 (비공개 프리뷰)
+  ### HTTPS를 통한 고정 레플리카 라우팅(비공개 프리뷰)
 
-  이제 일반 서비스 URL에 `?session_id=` 매개변수를 추가하면 별도의 hostname이나 DNS 변경 없이 표준 HTTPS를 통해 쿼리를 특정 레플리카에 고정할 수 있습니다. 이를 통해 임시 테이블과 같은 세션 범위 객체를 여러 쿼리에서 계속 사용할 수 있으며, 반복되는 쿼리가 예열된 레플리카 로컬 캐시를 활용하는 데도 도움이 됩니다. 이 기능은 모든 Enterprise 고객에게 비공개 프리뷰로 순차 배포되고 있으며, Scale 고객은 요청 시 사용할 수 있습니다. 기존의 하위 도메인 기반 라우팅도 계속 작동하지만, 최종적으로는 이 방식으로 이전될 예정입니다. 자세한 내용은 [Replica-aware 라우팅](/ko/products/cloud/features/infrastructure/replica-aware-routing) 문서를 참조하십시오.
+  이제 일반 서비스 URL에 `?session_id=` 매개변수를 추가하면 특수 호스트 이름이나 DNS 변경 없이 표준 HTTPS를 통해 쿼리를 특정 레플리카에 고정할 수 있습니다. 이를 통해 임시 테이블과 같은 세션 범위 객체를 여러 쿼리에서 계속 사용할 수 있으며, 반복 쿼리가 워밍업된 레플리카 로컬 캐시를 활용하도록 지원합니다. 이 기능은 모든 Enterprise 고객에게 비공개 프리뷰로 순차 제공되며, Scale 고객은 요청 시 이용할 수 있습니다. 기존의 하위 도메인 기반 라우팅도 계속 작동하지만, 궁극적으로 이 방식으로 이전될 예정입니다. 자세한 내용은 [레플리카 인식 라우팅](/ko/products/cloud/features/infrastructure/replica-aware-routing) 문서를 참조하십시오.
 
-  ### 사용자 지정 청구 주기 시작일
+  ### 사용자 정의 청구 주기 시작일
 
-  이제 조직의 청구일, 즉 각 청구 주기가 시작되는 월별 날짜의 변경을 요청할 수 있습니다. 예를 들어 인보이스를 달력 월 기준에 맞출 수 있습니다. 원하는 날짜를 기재하여 지원 티켓을 열어 주십시오. 청구일은 UTC 기준으로 적용되며, 각 인보이스에는 청구일부터 다음 달 같은 날짜 직전까지의 사용량이 포함됩니다.
+  이제 매월 청구 주기가 시작되는 날인 조직의 청구일 변경을 요청할 수 있습니다. 예를 들어 인보이스를 달력상의 월과 맞출 수 있습니다. 원하는 날짜를 지정하여 지원 티켓을 여십시오. 청구일은 UTC를 기준으로 적용되며, 각 인보이스는 청구일부터 다음 달 같은 날 직전까지의 사용량을 포함합니다.
 
   ### 객체 스토리지 ClickPipes의 초기 적재 건너뛰기
 
-  이제 객체 스토리지 [ClickPipes](/ko/integrations/clickpipes/home) (S3, GCS, Azure Blob Storage)에서는 파이프를 생성할 때 초기 적재를 제어하는 두 가지 방법을 제공합니다. **Start after**는 지정된 객체 키까지의 파일(해당 키 포함)을 건너뛰고, **Skip initial load**는 기존 파일을 완전히 건너뛰고 새 객체 알림만 처리합니다. 이전에는 새 파이프가 항상 해당 경로의 모든 파일을 backfill했습니다. 이 두 옵션은 서로 함께 사용할 수 없으며, 특정 파이프에 대해 영구적으로 적용됩니다. 건너뛴 backfill은 나중에 다시 트리거할 수 없습니다. UI, Cloud API, Terraform v3.18.0 이상에서 사용할 수 있습니다.
+  객체 스토리지 [ClickPipes](/ko/integrations/clickpipes/home)(S3, GCS 및 Azure Blob Storage)는 이제 파이프를 생성할 때 초기 적재를 제어하는 두 가지 방법을 제공합니다. **Start after**는 지정한 객체 키까지의 파일을 포함해 건너뛰며, **Skip initial load**는 기존 파일을 모두 건너뛰고 새 객체 알림만 처리합니다. 이전에는 새 파이프가 경로의 모든 파일을 항상 백필했습니다. 두 옵션은 특정 파이프에서 상호 배타적이며 영구적입니다. 건너뛴 백필은 나중에 실행할 수 없습니다. UI, Cloud API 및 Terraform v3.18.0 이상에서 사용할 수 있습니다.
 </Update>
 
 <Update label="2026년 06월 30일">
-  이번 주 업데이트에는 Postgres 및 ClickHouse internals를 위한 새로운 관측성 기능, Kafka exactly-once 전달을 포함한 ClickPipes 제어 기능 확장, 그리고 Azure Marketplace BYOC, 공식 Airflow 프로바이더, ClickHouse Agents 업데이트 등 여러 플랫폼 추가 사항이 포함됩니다.
+  이번 주 업데이트에는 Postgres 및 ClickHouse internals를 위한 새로운 관측성 기능, Kafka exactly-once 전달을 포함한 ClickPipes 제어 기능 확장, 그리고 Azure 마켓플레이스 BYOC, 공식 Airflow 프로바이더, ClickHouse Agents 업데이트 등 여러 플랫폼 추가 사항이 포함됩니다.
 
   ### ClickPipes의 Kafka exactly-once 전달
 
@@ -47,15 +129,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   이제 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents/index)는 대화를 정리하기 위한 Chat Projects, token 및 context-window 사용량을 보여주는 context usage gauge, agent가 작성한 스킬, 그리고 ClickHouse 모범 사례 스킬 번들을 지원합니다. 이번 릴리스에는 설정, 탐색, 단축키, 고정 기능에 대한 개선 사항도 포함됩니다.
 
-  ### Azure Marketplace의 ClickHouse BYOC
+  ### Azure 마켓플레이스의 ClickHouse BYOC
 
-  이제 ClickHouse [Bring Your Own Cloud](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)가 Azure Marketplace에 등록되어, 고객은 Private Offer를 통해 구매하고 Azure account를 통해 청구되는 BYOC를 배포할 수 있습니다. 플랫폼 측에는 Azure BYOC marketplace listing 및 product ID에 대한 청구 지원도 추가되었습니다.
+  이제 ClickHouse [Bring Your Own Cloud](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)가 Azure 마켓플레이스에 등록되어, 고객은 Private Offer를 통해 구매하고 Azure account를 통해 청구되는 BYOC를 배포할 수 있습니다. 플랫폼 측에는 Azure BYOC 마켓플레이스 listing 및 product ID에 대한 청구 지원도 추가되었습니다.
 
   ### 공식 ClickHouse Airflow 프로바이더
 
   이제 ClickHouse용 공식 Apache Airflow 프로바이더를 PyPI에서 사용할 수 있으며 Airflow registry에도 등록되어, ClickHouse로 데이터를 보내고 가져오는 데 기존 community plugin에 의존하던 방식을 대체합니다.
 
-  ### 청구 가시성 및 marketplace 개선 사항
+  ### 청구 가시성 및 마켓플레이스 개선 사항
 
   이제 청구에는 셀프서비스 credit 이력 테이블, 사용 및 만료 금액을 보여주는 prepaid summary, 그리고 GCP MPPO 이메일 지원이 포함됩니다.
 </Update>

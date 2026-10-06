@@ -234,7 +234,6 @@ def test_backup_table_AzureBlobStorage():
 
 def test_create_table():
     password = new_password()
-    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_sas_conn_string = f"{azure_conn_string};SharedAccessSignature={password}"
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -264,7 +263,6 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         "S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
         "S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         "S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -374,7 +372,6 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')"),
             generate_create_table_numbered("(x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')"),
-            generate_create_table_numbered("(`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'"),
             # due to sensitive data substitution the query will be normalized, so not "settings" but "SETTINGS"
@@ -396,8 +393,8 @@ def test_create_table():
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '[HIDDEN]', 'CSV')"),
-            generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'"),
-            generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'"),
+            generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://[HIDDEN]@'"),
+            generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://[HIDDEN]@domain.com'"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')"),
@@ -405,12 +402,12 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x"),
             generate_create_table_numbered("(`x` int) ENGINE = JDBC('[HIDDEN]', 'mydb', 'mytable')"),
             generate_create_table_numbered("(`x` int) ENGINE = ODBC('[HIDDEN]', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')"),
+            generate_create_table_numbered("(`x` int) ENGINE = JDBC('[HIDDEN]', 'mydb', 'mytable')"),
+            generate_create_table_numbered("(`x` int) ENGINE = ODBC('[HIDDEN]', 'mydb', 'mytable')"),
             generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
             generate_create_table_numbered("(`x` int) ENGINE = ODBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')"),
+            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
+            generate_create_table_numbered("(`x` int) ENGINE = ODBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
             generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', external_table = '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]', external_table = '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = NATS SETTINGS nats_url = 'localhost:4222', nats_subjects = 'subject', nats_format = 'JSONEachRow', nats_token = '[HIDDEN]'"),
@@ -444,6 +441,7 @@ def test_create_database():
             f"Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '{password}'))",
             "DNS_ERROR",
         ),
+        f"URL('https://username:{password}@localhost:11111/x/')",
     ]
 
     def make_test_case(i):
@@ -472,6 +470,7 @@ def test_create_database():
             "CREATE DATABASE database3 ENGINE = S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')",
             # "CREATE DATABASE database4 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
             "CREATE DATABASE database4 ENGINE = Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '[HIDDEN]'))",
+            "CREATE DATABASE database5 ENGINE = URL('https://username:[HIDDEN]@localhost:11111/x/')",
         ],
         must_not_contain=[password],
     )
@@ -654,12 +653,12 @@ def test_table_functions():
             "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
             "CREATE TABLE tablefunc50 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
             "CREATE TABLE tablefunc51 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc52 (`x` int) AS jdbc('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc53 (`x` int) AS odbc('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc52 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc53 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
             "CREATE TABLE tablefunc54 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
             "CREATE TABLE tablefunc55 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
+            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
             "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
@@ -1054,6 +1053,62 @@ def test_database_backup_engine_s3():
 
     node.query("DROP DATABASE IF EXISTS backup_db_s3_1")
     node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
+
+
+def test_database_backup_engine_azure_display_surfaces():
+    """A live `Backup` database over an `AzureBlobStorage` locator: `account_key` must not reach
+    `SHOW CREATE DATABASE` or `system.databases.engine_full`. Only `S3` locators are reconstructed
+    argument by argument, so an Azure one keeps its engine name and arity and hides every argument."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    # A backup destination is write-once and the container is emptied only when the cluster starts,
+    # so give every run its own blob path: a repeat inside one session hits BACKUP_ALREADY_EXISTS.
+    blob = "db_backup_azure_surfaces_" + "".join(
+        random.choice(string.ascii_lowercase) for _ in range(8)
+    )
+    locator = (
+        f"AzureBlobStorage('{azure_storage_account_url}', '{cluster.azurite_container}', "
+        f"'{blob}', '{azure_account_name}', '{azure_account_key}')"
+    )
+    masked_locator = (
+        "AzureBlobStorage('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')"
+    )
+    surfaces = [
+        "SHOW CREATE DATABASE backup_db_azure_view",
+        "SELECT engine_full FROM system.databases WHERE name = 'backup_db_azure_view'",
+    ]
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("CREATE DATABASE backup_db_azure_src")
+    node.query(
+        "CREATE TABLE backup_db_azure_src.t (x int) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO backup_db_azure_src.t SELECT * FROM numbers(10)")
+    node.query(f"BACKUP DATABASE backup_db_azure_src TO {locator} FORMAT Null")
+    node.query(
+        f"CREATE DATABASE backup_db_azure_view ENGINE = Backup('backup_db_azure_src', {locator})"
+    )
+
+    # TSVRaw so the locator is compared as written rather than through TSV escaping.
+    for surface in surfaces:
+        shown = node.query(f"{surface} FORMAT TSVRaw")
+        assert masked_locator in shown, shown
+        assert azure_account_key not in shown, shown
+
+    # The key is in the locator, so its absence above is masking rather than an argument that the
+    # regenerated definition never carried.
+    for surface in surfaces:
+        shown = node.query(f"{surface} {show_secrets}=1 FORMAT TSVRaw")
+        assert azure_account_key in shown, shown
+
+    # The masked surfaces belong to a working database, not to one that failed to open.
+    assert node.query("SELECT count() FROM backup_db_azure_view.t") == "10\n"
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
 
 
 def test_backup_table_azure_named_collection():

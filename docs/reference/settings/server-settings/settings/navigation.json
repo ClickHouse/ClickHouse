@@ -101,6 +101,7 @@
     "reference/settings/server-settings/settings/query",
     "reference/settings/server-settings/settings/query-cache-max",
     "reference/settings/server-settings/settings/query-condition",
+    "reference/settings/server-settings/settings/reader-executor",
     "reference/settings/server-settings/settings/remote",
     "reference/settings/server-settings/settings/replicated-fetches",
     "reference/settings/server-settings/settings/s3",

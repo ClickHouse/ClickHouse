@@ -246,9 +246,9 @@ Decodes XML entities in a string to their corresponding characters.
         "Usage example",
         "SELECT decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')",
         R"(
-┌─decodeXMLCom⋯;/tag&gt;')─┐
-│ <tag>Hello & World</tag> │
-└──────────────────────────┘
+┌─decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')─┐
+│ <tag>Hello & World</tag>                                       │
+└────────────────────────────────────────────────────────────────┘
         )"
     }
     };

@@ -23,6 +23,7 @@
 #endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
 
 
@@ -46,6 +47,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -74,8 +76,14 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
     if (dictionary_structure.id)
     {
-        if (validate_id_type && dictionary_structure.id->type->getTypeId() != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", dictionary_structure.id->type->getFamilyName());
+        if (validate_id_type)
+        {
+            /// A simple key is always materialized as `UInt64`, so a `LowCardinality` wrapper around it is equivalent.
+            const auto & id_type = removeLowCardinality(dictionary_structure.id->type);
+
+            if (id_type->getTypeId() != TypeIndex::UInt64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", id_type->getFamilyName());
+        }
 
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     }
@@ -328,9 +336,9 @@ void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
+void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, alter_context, lock_holder);
+    IStorage::alter(params, alter_context, lock_holder, ddl_guard);
 
     if (location == Location::Custom)
         return;
@@ -374,6 +382,20 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+
+            /// The overrides of stored keys of a named collection need the same privilege as in table engines.
+            /// The dictionary is loaded later with the global context, so the user's privileges are checked here.
+            Poco::Util::AbstractConfiguration::Keys source_keys;
+            abstract_dictionary_configuration->keys("dictionary.source", source_keys);
+            if (source_keys.empty() || source_keys.size() > 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected one or two child elements in the source of dictionary {}",
+                    dictionary_id.getNameForLogs());
+            /// The source type is chosen as in `DictionarySourceFactory::create`.
+            const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+            checkNamedCollectionOverridesInDictionarySource(
+                *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")

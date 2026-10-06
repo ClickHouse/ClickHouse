@@ -5,12 +5,12 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -70,6 +70,9 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
     /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
@@ -82,6 +85,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -94,9 +98,12 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
 
     struct SharedData
     {
@@ -132,13 +139,19 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
     static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+
+    /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
+    /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
+    static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
+    bool isNested() const { return parent != nullptr; }
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -167,7 +180,7 @@ private:
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 
-    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
@@ -180,8 +193,9 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    /// Linux's PID (or TGID) (the same id is shown by ps util)
-    const UInt64 thread_id = 0;
+    static constexpr UInt64 NO_OS_THREAD = 0;
+
+    const UInt64 thread_id = NO_OS_THREAD;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -265,8 +279,17 @@ protected:
 
     LoggerPtr log = nullptr;
 
+private:
+    explicit ThreadStatus(UInt64 thread_id_);
+
+    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
+    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
+
 public:
-    explicit ThreadStatus();
+    struct NoOSThreadTag {};
+
+    ThreadStatus();
+    explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -320,6 +343,7 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 

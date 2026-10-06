@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Introduzido em: v20.1.0
 
-Semelhante a [`quantileExact`](/pt-BR/reference/functions/aggregate-functions/quantileExact), esta função calcula o [quantil](https://en.wikipedia.org/wiki/Quantile) exato de uma sequência numérica de dados.
+Semelhante a [`quantileExact`](/pt-BR/reference/functions/aggregate-functions/quantileExact), esta função calcula o [quantil](https://en.wikipedia.org/wiki/Quantile) exato de uma sequência de dados numéricos.
 
 Esta função é equivalente a [`quantileExact`](/pt-BR/reference/functions/aggregate-functions/quantileExact), mas usa o método inclusivo para calcular quantis, conforme descrito no [método R-7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
@@ -65,7 +65,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
 
 ```response title=Response
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                                 0.9 │                                 8.1 │
+│                  0.8999999999999999 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
 ```
 

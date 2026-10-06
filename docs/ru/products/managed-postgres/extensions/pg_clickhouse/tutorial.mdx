@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка сторонних данных', 'pg_clickhouse', 'расширение', 'руководство', 'такси']
 ---
 
-<div id="overview">
-  ## Обзор
-</div>
+## Обзор {#overview}
 
 Это руководство следует [руководству по ClickHouse], но все запросы в нем выполняются через
 pg&#95;clickhouse.
 
-<div id="start-clickhouse">
-  ## Запустите ClickHouse
-</div>
+Выберите способ настройки `pg_clickhouse`:
+
+* [Из консоли](#from-console), если вы используете ClickHouse Managed Postgres.
+* [Из PSQL](#from-psql), если вы самостоятельно устанавливаете и настраиваете
+  расширение.
+
+## Запустите ClickHouse {#start-clickhouse}
 
 Сначала создайте базу данных ClickHouse, если у вас её ещё нет. Быстро начать
 можно с Docker-образа:
@@ -26,9 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-<div id="create-a-table">
-  ## Создайте таблицу
-</div>
+## Создайте таблицу {#create-a-table}
 
 Давайте воспользуемся [руководством по ClickHouse], чтобы создать простую базу данных с набором данных о такси в Нью-Йорке:
 
@@ -92,9 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-<div id="add-the-data-set">
-  ## Добавьте набор данных
-</div>
+## Добавьте набор данных {#add-the-data-set}
 
 Затем импортируйте данные:
 
@@ -163,9 +161,40 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-<div id="install-pg_clickhouse">
-  ### Установите pg_clickhouse
-</div>
+## Через консоль {#from-console}
+
+Если вы используете ClickHouse Managed Postgres, вы можете настроить
+`pg_clickhouse` и подключиться к сервису ClickHouse через консоль ClickHouse Cloud.
+Откройте сервис Managed Postgres, выберите **Настройки** и найдите раздел
+**ClickHouse integration**. Нажмите **Включить pg&#95;clickhouse**.
+
+В форме настройки укажите имя внешнего сервера. Выберите сервис ClickHouse,
+базу данных и пользователя для подключения. Введите пароль ClickHouse, затем
+выберите базу данных Postgres и целевую схему, в которую нужно импортировать
+таблицы ClickHouse. Нажмите **Подключить**, чтобы создать внешний сервер и
+импортировать схему.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+
+После завершения настройки консоль отобразит подтверждение, а внешний сервер
+появится в списке серверов.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Список внешних серверов с подключением pg_clickhouse для taxi" size="lg" border />
+
+Теперь вы можете открыть **SQL консоль** Postgres и выполнять запросы к импортированным таблицам:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+Чтобы выполнить примеры с данными такси из этого руководства, выберите базу данных ClickHouse `taxi`
+и импортируйте её в целевую схему `taxi`.
+
+## Из PSQL {#from-psql}
+
+### Установите pg_clickhouse {#install-pg_clickhouse}
 
 Соберите и установите pg&#95;clickhouse из [PGXN] или [GitHub]. Либо запустите
 Docker-контейнер с [образом pg&#95;clickhouse], который просто добавляет
@@ -176,9 +205,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-<div id="connect-pg_clickhouse">
-  ### Подключение pg_clickhouse
-</div>
+### Подключение pg_clickhouse {#connect-pg_clickhouse}
 
 Теперь подключитесь к Postgres:
 
@@ -322,9 +349,7 @@ Postgres возвращается только одна строка. Чтобы
 Обратите внимание, что &quot;Foreign Scan&quot; находится в корне плана, то есть
 весь запрос был отправлен в ClickHouse.
 
-<div id="analyze-the-data">
-  ## Проанализируйте данные
-</div>
+## Проанализируйте данные {#analyze-the-data}
 
 Выполните несколько запросов, чтобы проанализировать данные. Ознакомьтесь со следующими примерами или попробуйте собственный SQL-запрос.
 
@@ -480,9 +505,7 @@ Postgres возвращается только одна строка. Чтобы
   Time: 17.450 ms
   ```
 
-<div id="create-a-dictionary">
-  ## Создайте словарь
-</div>
+## Создайте словарь {#create-a-dictionary}
 
 Создайте словарь, связанный с таблицей в вашем сервисе ClickHouse. Таблица и
 словарь основаны на CSV-файле, который содержит по одной строке для каждого
@@ -509,7 +532,7 @@ Postgres возвращается только одна строка. Чтобы
    его данными из CSV-файла в S3:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -520,71 +543,69 @@ Postgres возвращается только одна строка. Чтобы
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  Значение `LIFETIME`, равное 0, отключает автоматические обновления, чтобы избежать
-  лишнего трафика к нашему S3 бакету. В других случаях вы можете настроить его
-  иначе. Подробнее см. в разделе [Обновление данных словаря с помощью
-  LIFETIME](/ru/reference/statements/create/dictionary/lifetime).
-</Note>
+   <Note>
+     Значение `LIFETIME`, равное 0, отключает автоматические обновления, чтобы избежать
+     лишнего трафика к нашему S3 бакету. В других случаях вы можете настроить его
+     иначе. Подробнее см. в разделе [Обновление данных словаря с помощью
+     LIFETIME](/ru/reference/statements/create/dictionary/lifetime).
+   </Note>
 
-2. Теперь импортируйте его:
+   2. Теперь импортируйте его:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. Убедитесь, что запрос к нему выполняется:
+   3. Убедитесь, что запрос к нему выполняется:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. Отлично. Теперь используйте функцию `dictGet`, чтобы получить
-   название боро в запросе. Этот запрос суммирует количество поездок на такси
-   по каждому боро, которые заканчиваются либо в аэропорту LaGuardia, либо в JFK:
+   4. Отлично. Теперь используйте функцию `dictGet`, чтобы получить
+      название боро в запросе. Этот запрос суммирует количество поездок на такси
+      по каждому боро, которые заканчиваются либо в аэропорту LaGuardia, либо в JFK:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-Этот запрос подсчитывает количество поездок на такси по каждому боро, которые заканчиваются
-в аэропорту Ла-Гуардия или JFK. Обратите внимание, что довольно много поездок, в которых
-район посадки неизвестен.
+   Этот запрос подсчитывает количество поездок на такси по каждому боро, которые заканчиваются
+   в аэропорту Ла-Гуардия или JFK. Обратите внимание, что довольно много поездок, в которых
+   район посадки неизвестен.
 
-<div id="perform-a-join">
-  ## Выполните JOIN
-</div>
+## Выполните JOIN {#perform-a-join}
 
 Напишите несколько запросов, объединяющих `taxi_zone_dictionary` с таблицей
 `trips`.
@@ -616,32 +637,32 @@ Postgres возвращается только одна строка. Чтобы
    Time: 48.449 ms
    ```
 
-<Note>
-  Обратите внимание: результат приведённого выше запроса `JOIN` совпадает с
-  результатом запроса `dictGet` выше (за исключением того, что значения `Unknown`
-  в него не входят). Фактически ClickHouse вызывает функцию `dictGet` для
-  словаря `taxi_zone_dictionary`, но синтаксис `JOIN` более привычен для
-  SQL-разработчиков.
-</Note>
+   <Note>
+     Обратите внимание: результат приведённого выше запроса `JOIN` совпадает с
+     результатом запроса `dictGet` выше (за исключением того, что значения `Unknown`
+     в него не входят). Фактически ClickHouse вызывает функцию `dictGet` для
+     словаря `taxi_zone_dictionary`, но синтаксис `JOIN` более привычен для
+     SQL-разработчиков.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. Этот запрос возвращает строки для 1000 поездок с самыми большими
    чаевыми, а затем выполняет JOIN каждой строки со словарём:
@@ -661,7 +682,7 @@ Postgres возвращается только одна строка. Чтобы
   следует извлекать только те столбцы, которые действительно нужны.
 </Note>
 
-[ClickHouse tutorial]: /get-started/quickstarts/tutorial "руководство по ClickHouse"
+[ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "Данные о такси Нью-Йорка"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "Клиентские приложения PostgreSQL: psql"
 

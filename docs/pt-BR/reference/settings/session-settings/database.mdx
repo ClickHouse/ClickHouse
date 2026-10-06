@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="database">
+  ## database
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração que especifica o banco de dados atual da consulta. Substitui o tratamento especial do parâmetro de URL `database` da interface HTTP e do cabeçalho `X-ClickHouse-Database`."}]}]} />
+
+Define o banco de dados atual da consulta — o banco de dados no qual nomes de tabelas não qualificados são resolvidos — com o mesmo efeito de `USE <database>`. Ao contrário da instrução `USE`, esta é uma configuração de sessão comum: como qualquer outra configuração, aceita um valor sem validá-lo, e um banco de dados desconhecido só é informado quando a configuração entra em vigor (quando uma consulta é executada), e não no momento do `SET`. Segue o contrato de privilégios do banco de dados padrão fornecido pelo cliente (que ela generaliza), e não o de `USE`: selecionar o banco de dados atual não requer o privilégio `SHOW_DATABASES`, enquanto o acesso às tabelas nele contidas é verificado normalmente. Usada como destino do parâmetro de URL `database` da interface HTTP e do cabeçalho `X-ClickHouse-Database`.
+
 <div id="database_atomic_wait_for_drop_and_detach_synchronously">
   ## database_atomic_wait_for_drop_and_detach_synchronously
 </div>

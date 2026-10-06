@@ -24,7 +24,7 @@
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
@@ -32,7 +32,6 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -385,19 +384,18 @@ private:
             sinks.emplace_back(std::move(sink));
         }
 
-        auto process_list_element = helper.context->getProcessListElement();
-        PipelineExecutor executor(processors, process_list_element);
-
-        auto read_progress_callback = std::make_unique<ReadProgressCallback>();
-        read_progress_callback->setProgressCallback(helper.context->getProgressCallback());
-        read_progress_callback->setQuota(helper.context->getQuota());
+        QueryPipeline pipeline(QueryPlanResourceHolder{}, processors);
+        pipeline.setNumThreads(num_threads);
+        pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
+        pipeline.setProcessListElement(helper.context->getProcessListElement());
+        pipeline.setProgressCallback(helper.context->getProgressCallback());
+        pipeline.setQuota(helper.context->getQuota());
         /// Carry the query hash so this dictionary scan's `read_rows`/`read_bytes` are accounted to the
         /// query's own bucket under a `KEYED BY normalized_query_hash` quota, not the shared hash-0 one.
-        read_progress_callback->setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
-        read_progress_callback->setProcessListElement(process_list_element);
-        executor.setReadProgressCallback(std::move(read_progress_callback));
+        pipeline.setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
 
-        executor.execute(num_threads, settings[Setting::use_concurrency_control]);
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
 
         size_t matched_rows = 0;
         for (const auto & sink : sinks)

@@ -23,6 +23,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 متاح فقط في ClickHouse Cloud. الحد الأقصى لإجمالي حجم الأجزاء التي تُستخدم للتسخين المسبق لذاكرة التخزين المؤقت أثناء الدمج.
 
+<div id="merge_use_batch_sorting_queue">
+  ## merge_use_batch_sorting_queue
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لاستخدام قائمة انتظار الفرز الدفعي في عمليات دمج `MergeTree` العادية."}]}]} />
+
+استخدم قائمة انتظار الفرز الدفعي لتقليل الحمل الزائد لقائمة الانتظار لكل صف عند دمج التدفقات المرتبة.
+
+ينطبق فقط على عمليات الدمج التي لا تغيّر الصفوف، أي عمليات دمج `MergeTree`
+البسيطة (وضع الدمج `Ordinary`). ولا يؤثر في المحركات التي تتضمن دلالات
+أثناء الدمج، مثل `ReplacingMergeTree` و`CollapsingMergeTree` و
+`SummingMergeTree` و`AggregatingMergeTree` و`CoalescingMergeTree` و
+`GraphiteMergeTree` و`VersionedCollapsingMergeTree`، إذ تواصل استخدام
+قائمة الانتظار الافتراضية بغض النظر عن هذا الإعداد.
+
 <div id="merge_workload">
   ## merge_workload
 </div>

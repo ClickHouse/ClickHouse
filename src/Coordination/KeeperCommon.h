@@ -112,6 +112,15 @@ void moveFileBetweenDisks(
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
 
+/// Coarse admission classification for the memory soft limit: does this request plausibly
+/// increase the amount of data Keeper stores?
+///
+/// This is deliberately coarse. It is evaluated in the dispatcher, before the request enters
+/// Raft, where znode states are not available - so it cannot compute a real allocation delta,
+/// and request byte counts have no defined relationship to storage growth. It only gets the
+/// sign right. Computing the true delta needs the storage state and is tracked separately.
+bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request);
+
 /// Callback invoked by KeeperDispatcher to deliver responses to clients.
 /// Must be safe for concurrent invocation: setResponse (from responseThread) and
 /// finishSession (from dead session cleaner) may invoke copies of the same callback

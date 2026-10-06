@@ -60,27 +60,10 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::Finished;
     }
 
-    if (!all_outputs_processed)
-    {
-        auto output_it = outputs.begin();
-        bool can_push = false;
-        /// A finished output never becomes pushable again, so waiting for one would wedge the
-        /// pipeline forever. `work` already skips them; `prepare` must agree.
-        bool has_pending_output = false;
-        for (size_t i = 0; i < output_size; ++i, ++output_it)
-        {
-            if (was_output_processed[i] || output_it->isFinished())
-                continue;
+    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
+    if (has_output_chunks && !pushOutputChunks())
+        return Status::PortFull;
 
-            if (output_it->canPush())
-                can_push = true;
-            else
-                has_pending_output = true;
-        }
-        if (!can_push && has_pending_output)
-            return Status::PortFull;
-        return Status::Ready;
-    }
     /// Try get chunk from input.
 
     if (input.isFinished())
@@ -96,17 +79,20 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::NeedData;
 
     chunk = input.pull();
-    has_data = true;
-    was_output_processed.assign(outputs.size(), false);
+    was_output_processed.assign(output_size, false);
 
     return Status::Ready;
 }
 
 void ScatterByPartitionTransform::work()
 {
-    if (all_outputs_processed)
-        generateOutputChunks();
-    all_outputs_processed = true;
+    generateOutputChunks();
+    has_output_chunks = true;
+}
+
+bool ScatterByPartitionTransform::pushOutputChunks()
+{
+    bool all_outputs_processed = true;
 
     size_t chunk_number = 0;
     for (auto & output : outputs)
@@ -118,6 +104,8 @@ void ScatterByPartitionTransform::work()
         if (was_processed)
             continue;
 
+        /// A finished output never becomes pushable again, so waiting for one would wedge the
+        /// pipeline forever.
         if (output.isFinished())
             continue;
 
@@ -138,11 +126,12 @@ void ScatterByPartitionTransform::work()
         was_processed = true;
     }
 
-    if (all_outputs_processed)
-    {
-        has_data = false;
-        output_chunks.clear();
-    }
+    if (!all_outputs_processed)
+        return false;
+
+    has_output_chunks = false;
+    output_chunks.clear();
+    return true;
 }
 
 void ScatterByPartitionTransform::generateOutputChunks()

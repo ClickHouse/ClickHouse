@@ -39,8 +39,7 @@ SELECT count() > 0 FROM (
     WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
-             query_plan_optimize_join_order_limit = 0, optimize_move_to_prewhere = 0,
-             query_plan_optimize_prewhere = 0
+             query_plan_optimize_join_order_limit = 0, optimize_move_to_prewhere = 0
 ) WHERE position(explain, 'AND column: equals(__table2.enabled, 1_Bool)_0') > 0;
 
 -- The rename above is printed by `FilterStep::describeActions`, which splits a clone of the DAG and
@@ -57,7 +56,7 @@ SELECT max(toUInt32OrZero(extract(explain, 'FilterTransform[^0-9]+([0-9]+)'))) >
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
              query_plan_optimize_join_order_limit = 0, optimize_move_to_prewhere = 0,
-             query_plan_optimize_prewhere = 0, max_threads = 1
+             max_threads = 1
 );
 
 SELECT 'right join, left-side ON condition repeated in WHERE';
@@ -173,7 +172,7 @@ SELECT mt1.id, mt2.reviewer
 FROM mt1 LEFT JOIN mt2 ON mt1.id = mt2.id AND mt2.enabled = true
 WHERE mt1.grp = 10 AND mt2.reviewer = 100 AND mt2.enabled = true
 ORDER BY mt1.id
-SETTINGS join_use_nulls = 1, final = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+SETTINGS join_use_nulls = 1, final = 1, optimize_move_to_prewhere = 0,
          query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 DROP TABLE t1;

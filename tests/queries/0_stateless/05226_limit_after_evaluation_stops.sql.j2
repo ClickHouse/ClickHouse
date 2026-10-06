@@ -1,0 +1,53 @@
+-- Row six starts a chunk at each block size, and row nine belongs to a later chunk.
+{% for block_size in [1, 2, 3] %}
+SET max_block_size = {{ block_size }};
+SELECT 'max_block_size = {{ block_size }}';
+
+-- Once the range starts, an unshared stateful end predicate runs without the start expression.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6) UNTIL rowNumberInAllBlocks() >= 10);
+
+-- Shared state advances once per chunk across the switch to end-only evaluation.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (rowNumberInAllBlocks() = 6) UNTIL rowNumberInAllBlocks() >= 10);
+
+-- The same transition works when the boundary expressions have no input columns.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(rowNumberInAllBlocks() >= 3) + (rowNumberInAllBlocks() = 0)
+     UNTIL rowNumberInAllBlocks() >= 10);
+
+-- A non-deterministic end expression also stops needing the start expression after the starting chunk.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6)
+     UNTIL throwIf(rand() > 4294967295) + (number = 10));
+
+-- An end predicate containing a lambda preserves its state across evaluation stages.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6)
+     UNTIL arrayExists(x -> x + rowNumberInAllBlocks() >= 20, [number]));
+
+-- A numeric cap or an immediate end match stops evaluation of both boundaries on later chunks.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT 1 AFTER throwIf(number >= 9) + (number = 6) UNTIL rowNumberInAllBlocks() >= 10);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6) UNTIL rowNumberInAllBlocks() = 6);
+{% endfor %}
+
+-- The whole starting chunk still evaluates both boundaries, including rows after the start match.
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6) UNTIL rowNumberInAllBlocks() >= 10)
+SETTINGS max_block_size = 12; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+-- Repeated ranges keep evaluating starts in later chunks so that each match can open a new range.
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(number >= 9) + (number = 6) ALL UNTIL rowNumberInAllBlocks() >= 10)
+SETTINGS max_block_size = 3; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

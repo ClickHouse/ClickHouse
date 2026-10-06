@@ -12,7 +12,7 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', '외부 데이터 래퍼', 'pg_click
 </div>
 
 pg&#95;clickhouse는 [외부 데이터 래퍼]를 포함해 ClickHouse 데이터베이스에서 원격 쿼리 실행을 지원하는 PostgreSQL 확장 기능입니다. PostgreSQL 13 이상과
-ClickHouse 23 이상을 지원합니다.
+ClickHouse 23.3 이상을 지원합니다.
 
 <div id="getting-started">
   ## 시작하기
@@ -148,10 +148,6 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
   `none`, `lz4`, 또는 `zstd` 중 하나를 사용할 수 있습니다. 기본값은 `lz4`입니다. `http driver`에서는 무시됩니다.
 * `dbname`: 연결 시 사용할 ClickHouse 데이터베이스입니다. 기본값은
   `default`입니다.
-* `fetch_size`: HTTP streaming에 사용할 대략적인 바이트 단위 배치 크기입니다. 배치는
-  행 경계에서 분할됩니다. 기본값은 `50000000`(50 MB)입니다. `0`으로 설정하면
-  streaming이 비활성화되고 전체 응답이 버퍼에 저장됩니다. 외부 테이블은 이
-  값을 재정의할 수 있습니다.
 * `host`: ClickHouse 서버의 호스트 이름입니다. 기본값은 `localhost`입니다;
 * `port`: ClickHouse 서버에 연결할 때 사용할 포트입니다. 기본값은
   다음과 같습니다:
@@ -244,7 +240,7 @@ DROP USER MAPPING FOR CURRENT_USER SERVER taxi_srv;
   ### IMPORT FOREIGN SCHEMA
 </div>
 
-[IMPORT FOREIGN SCHEMA]를 사용하면 ClickHouse 데이터베이스에 정의된 모든 테이블을 PostgreSQL 스키마로 외부 테이블로 가져올 수 있습니다:
+[IMPORT FOREIGN SCHEMA]를 사용하면 ClickHouse 데이터베이스에 정의된 모든 테이블을 PostgreSQL 스키마의 외부 테이블로 가져올 수 있습니다:
 
 ```sql
 CREATE SCHEMA taxi;
@@ -318,7 +314,7 @@ CREATE FOREIGN TABLE acts (
     sign       smallint
 ) SERVER taxi_srv OPTIONS(
     table_name 'acts'
-    engine 'CollapsingMergeTree'
+    engine 'CollapsingMergeTree(sign)'
 );
 ```
 
@@ -326,9 +322,6 @@ CREATE FOREIGN TABLE acts (
 
 * `database`: 원격 데이터베이스의 이름입니다. 기본값은 외부 서버에
   정의된 데이터베이스입니다.
-* `fetch_size`: HTTP streaming에 사용할 대략적인 배치 크기(바이트)입니다. 서버 수준의
-  `fetch_size`를 재정의합니다. 기본값은 `50000000`(50 MB)입니다. `0`으로 설정하면
-  streaming이 비활성화되고 전체 응답이 버퍼링됩니다.
 * `table_name`: 원격 테이블의 이름입니다. 기본값은 외부 테이블에
   지정된 이름입니다.
 * `engine`: ClickHouse 테이블에 사용되는 [테이블 엔진]입니다.
@@ -588,6 +581,83 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
 Postgres로 다시 가져와야 하는 행 수를 1000개(전체)에서
 각 노드당 1개씩인 단 8개로 줄입니다.
 
+<div id="partitioned-tables">
+  ### 파티션 테이블
+</div>
+
+PostgreSQL [파티션 테이블]은 로컬 파티션과 ClickHouse를 기반으로 하는 외부
+파티션을 함께 사용할 수 있습니다. 일반적으로 오래된 데이터는 ClickHouse로
+오프로드하고, 최근 데이터는 PostgreSQL에 유지합니다:
+
+```sql
+CREATE TABLE events (id int, ts date, val int, amt float8)
+    PARTITION BY RANGE (ts);
+
+-- 2023 data lives on ClickHouse
+CREATE FOREIGN TABLE events_2023 PARTITION OF events
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+    SERVER ch_svr OPTIONS (table_name 'events');
+
+-- 2024 data stays local
+CREATE TABLE events_2024 PARTITION OF events
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+```
+
+로컬 파티션에서 외부 파티션으로 데이터를 이동하는 방법은
+[offload-partition.sql] 예시를 참조하십시오.
+
+로컬 및 외부 파티션 모두에 걸친 집계에는 [파티션별
+집계]가 필요하며, PostgreSQL에서는 기본적으로 비활성화되어 있습니다:
+
+```pgsql
+SET enable_partitionwise_aggregate = on;
+```
+
+`enable_partitionwise_aggregate`를 활성화하면 PostgreSQL은 `Append` 아래에서 *부분
+집계*를 수행한 후, 위의 *최종 집계*에서 이를 결합하여 결과를 생성합니다. pg&#95;clickhouse는 외부 파티션의 부분 집계를
+ClickHouse로 푸시다운합니다:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       SELECT count(*), sum(val), min(ts), max(ts) FROM events;
+                                                       QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: count(*), sum(events.val), min(events.ts), max(events.ts)
+   ->  Append
+         ->  Foreign Scan
+               Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
+               Relations: Aggregate on (events_2023 events)
+               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
+         ->  Partial Aggregate
+               Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
+               ->  Seq Scan on public.events_2024 events_1
+                     Output: events_1.val, events_1.ts
+```
+
+<div id="when-partial-aggregates-push-down">
+  #### 부분 집계가 푸시다운되는 경우
+</div>
+
+PostgreSQL은 부분 집계를 *전이 상태*로 나타내며, 최종 처리 단계에서 이를
+여러 파티션에 걸쳐 결합합니다. pg&#95;clickhouse는 파티션의 부분 집계를
+ClickHouse 값으로 표현할 수 있을 때만 푸시다운할 수 있습니다.
+
+* 전이 상태가 이미 최종 값인 **분해 가능한 집계 함수**는 직접 푸시다운됩니다.
+  여기에는 `count`, `sum`, `min`, `max`, `bool_and`/`every`,
+  `bool_or`, `bit_and`, `bit_or`, `bit_xor`가 포함됩니다.
+* **정수에 대한 `avg`**는 `{count, sum}` 상태를 배열로 푸시다운합니다.
+* **부동 소수점에 대한 `avg`, `var_pop`, `var_samp`, `stddev_pop`, `stddev_samp`**는
+  `{N, sum, 제곱 편차의 합}` 상태를 배열로 푸시다운합니다.
+
+`FILTER (WHERE …)`는 이러한 집계 함수와 함께 푸시다운됩니다.
+
+<div id="when-they-fall-back">
+  #### 폴백되는 경우
+</div>
+
+전이 상태가 PostgreSQL의 불투명한 `internal` 유형인 집계 함수는 이식 가능한 표현이 없으므로, 외래 파티션에서 해당 행을 가져와 로컬에서 집계합니다. 여기에는 `numeric`에 대한 모든 집계와 `avg(bigint)`, `avg(interval)`이 포함됩니다. `DISTINCT`, 순서 집합 및 가변 인수 집계 함수도 폴백됩니다.
+
 <div id="prepare-execute-deallocate">
   ### PREPARE, EXECUTE, DEALLOCATE
 </div>
@@ -618,14 +688,6 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
  2025-12-13 |              195
 (5 rows)
 ```
-
-<Warning>
-  매개변수화된 실행을 사용하면 25.8 이전 버전의 ClickHouse에서는 [http driver](#create-server)가
-  DateTime 시간대를 올바르게 변환하지 못합니다. 이는 [해당 버그]가 [수정]되기 전까지의
-  문제입니다. PostgreSQL은 `PREPARE`를 사용하지 않더라도 경우에 따라 매개변수화된 쿼리 계획을
-  사용할 수 있다는 점에 유의하십시오. 정확한 시간대 변환이 필요한 쿼리에서 25.8 이상으로
-  업그레이드할 수 없다면, 대신 [binary driver](#create-server)를 사용하십시오.
-</Warning>
 
 pg&#95;clickhouse는 평소와 같이 집계를 푸시다운하며, 이는
 [EXPLAIN](#explain) 상세 출력에서 확인할 수 있습니다:
@@ -734,8 +796,16 @@ pg&#95;clickhouse 매개변수를 설정해야 할 때입니다.
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-기본값은 `join_use_nulls 1, group_by_use_nulls 1, final 1`입니다. ClickHouse 서버의 설정을
-사용하려면 빈 문자열로 설정하십시오.
+기본값은
+
+```
+join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
+```
+
+빈 문자열로 설정하면 ClickHouse 서버&#39;s 설정으로 폴백됩니다 —
+단, pushdown의 정확성은 이러한 기본값 중 일부에 따라 달라집니다.
+외부 조인의 `join_use_nulls` 및 `IN` 계열의 `transform_null_in`
+([IN 및 NULL 의미 체계](#in-and-null-semantics) 참조).
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -748,7 +818,7 @@ SET pg_clickhouse.session_settings = '';
 SET pg_clickhouse.session_settings = 'join_algorithm grace_hash\,hash';
 ```
 
-또는 공백과 쉼표를 이스케이프하지 않으려면 작은따옴표로 묶인 값을 사용할 수 있습니다. 이중따옴표를 두 번 사용할 필요를 피하려면 [달러 인용] 사용을 고려하십시오:
+또는 공백과 쉼표를 이스케이프하지 않으려면 작은따옴표로 묶인 값을 사용할 수 있습니다. 이중 따옴표를 사용하지 않으려면 [달러 인용] 사용을 고려하십시오:
 
 ```sql
 SET pg_clickhouse.session_settings = $$join_algorithm 'grace_hash,hash'$$;
@@ -891,6 +961,11 @@ PostgreSQL 컬럼 타입으로 첫 번째 타입을 사용하고, 추가 타입�
 | UInt8      | smallint         |                           |
 | UUID       | uuid             |                           |
 
+모든 컬럼은 `text`, `varchar` 또는 다른 문자열 타입으로도 읽을 수 있습니다. 값은
+먼저 위의 PostgreSQL 타입으로 변환된 후 해당 타입의 출력 함수를 통해 렌더링됩니다.
+bigint 최댓값을 초과하는 UInt64 값은 여전히 오류가 발생하므로, 이러한 값은
+ClickHouse `toString()` 함수를 사용해 렌더링하십시오.
+
 추가 참고 사항과 세부 내용은 아래에서 설명합니다.
 
 <div id="bytea">
@@ -903,59 +978,59 @@ PostgreSQL의 [TEXT]에 매핑하고, 바이너리 데이터를 사용하는 경
 [BYTEA]에 매핑하십시오. 예시:
 
 ```sql
--- String 컬럼을 가진 ClickHouse 테이블을 생성합니다.
-SELECT clickhouse_raw_query($$
+-- Create ClickHouse table with String columns.
+CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String
     ) ENGINE = MergeTree ORDER BY (c1);
 $$);
 
--- BYTEA 컬럼을 가진 외부 테이블을 생성합니다.
+-- Create foreign table with BYTEA columns.
 CREATE FOREIGN TABLE bytes (
     c1 int,
     c2 BYTEA,
     c3 BYTEA
 ) SERVER ch_srv OPTIONS( table_name 'bytes' );
 
--- 외부 테이블에 바이너리 데이터를 삽입합니다.
+-- Insert binary data into the foreign table.
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
   FROM generate_series(1, 4) n;
 
--- 결과를 조회합니다.
+-- View the results.
 SELECT * FROM bytes;
 ```
 
 마지막 `SELECT` 쿼리의 출력 결과는 다음과 같습니다:
 
 ```pgsql
-c1 |                             c2                             |                 c3
+ c1 |                             c2                             |                 c3
 ----+------------------------------------------------------------+------------------------------------
   1 | \x1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | \xae3b28cde02542f81acce8783245430d
   2 | \x5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | \x23e7c6cacb8383f878ad093b0027d72b
   3 | \x53ac2c1fa83c8f64603fe9568d883331007d6281de330a4b5e728f9e | \x7e969132fc656148b97b6a2ee8bc83c1
   4 | \x4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | \x8ef30f44c65480d12b650ab6b2b04245
-(4 행)
+(4 rows)
 ```
 
 ClickHouse 컬럼에 nul 바이트가 포함된 경우, [TEXT] 컬럼을 사용하는 외부 테이블은 올바른 값을 출력하지 않습니다:
 
 ```sql
--- TEXT 컬럼으로 외부 테이블을 생성합니다.
+-- Create foreign table with TEXT columns.
 CREATE FOREIGN TABLE texts (
     c1 int,
     c2 TEXT,
     c3 TEXT
 ) SERVER ch_srv OPTIONS( table_name 'bytes' );
 
--- 바이너리 데이터를 16진수로 인코딩합니다.
+-- Encode binary data as hex.
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER BY c1;
 ```
 
 출력 결과:
 
 ```pgsql
-c1 |                          encode                          |              encode
+ c1 |                          encode                          |              encode
 ----+----------------------------------------------------------+----------------------------------
   1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
   2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b
@@ -969,13 +1044,13 @@ c1 |                          encode                          |              enc
 [TEXT] 컬럼에 이진 값을 삽입하면 예상대로 성공적으로 작동합니다:
 
 ```sql
--- 텍스트 컬럼을 통해 삽입:
+-- Insert via text columns:
 TRUNCATE texts;
 INSERT INTO texts
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
   FROM generate_series(1, 4) n;
 
--- 데이터를 조회합니다.
+-- View the data.
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER BY c1;
 ```
 
@@ -1002,7 +1077,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   2 | \x5c783566366539653132636438353932373132653633383031366634623161326537333233306565343064623439386330663062316463383431 | \x5c783233653763366361636238333833663837386164303933623030323764373262
   3 | \x5c783533616332633166613833633866363436303366653935363864383833333331303037643632383164653333306134623565373238663965 | \x5c783765393639313332666336353631343862393762366132656538626338336331
   4 | \x5c783465336332653463623735343261343531373361386461633933396464633462633735323032653334326562633736396230663564613266 | \x5c783865663330663434633635343830643132623635306162366232623034323435
-(4 행)
+(4 rows)
 ```
 
 <Tip>
@@ -1024,6 +1099,14 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   #### `clickhouse_raw_query`
 </div>
 
+<Warning>
+  Deprecated: `clickhouse_raw_query()`는 지원 중단 경고를 발생시키며 다음
+  릴리스에서 제거됩니다. 행을 읽으려면 [`clickhouse_query`](#clickhouse_query)를
+  사용하고, 반환값이 없는 SQL 문을 실행하려면 [`clickhouse_perform`](#clickhouse_perform)을
+  사용하십시오. 둘 다 임시 연결 문자열 대신 구성된 서버의 드라이버, 자격 증명,
+  데이터베이스 및 연결 캐시를 재사용합니다.
+</Warning>
+
 ```sql
 SELECT clickhouse_raw_query(
     'CREATE TABLE t1 (x String) ENGINE = Memory',
@@ -1031,17 +1114,24 @@ SELECT clickhouse_raw_query(
 );
 ```
 
-HTTP 인터페이스를 통해 ClickHouse 서비스에 연결하여 단일
-쿼리를 실행한 후 연결을 종료합니다. 선택적인 두 번째 인수는
+ClickHouse 서비스에 연결하여 단일 쿼리를 실행한 후 연결을 종료합니다. 선택적인 두 번째 인수는
 기본값이 `host=localhost port=8123`인 연결 문자열을 지정합니다. 지원되는 연결
 매개변수는 다음과 같습니다.
 
+* `driver`: 사용할 연결 드라이버로, &quot;http&quot; 또는 &quot;binary&quot; 중 하나이며 기본값은
+  &quot;http&quot;입니다.
 * `host`: 연결할 호스트입니다. 필수입니다.
-* `port`: 연결할 HTTP 포트입니다. `host`가
-  ClickHouse Cloud 호스트가 아닌 경우 기본값은 `8123`이고, ClickHouse Cloud 호스트인 경우 기본값은 `8443`입니다.
+* `port`: 연결할 포트입니다. &quot;http&quot; 드라이버의 기본값은 `8123`이고,
+  &quot;binary&quot; 드라이버의 기본값은 `9000`입니다. `host`가 ClickHouse Cloud 호스트인 경우 각각
+  `8443` 또는 `9440`으로 변경됩니다.
 * `dbname`: 연결할 데이터베이스의 이름입니다.
 * `username`: 연결에 사용할 사용자 이름입니다. 기본값은 `default`입니다.
 * `password`: 인증에 사용할 비밀번호입니다. 기본값은 비밀번호 없음입니다.
+
+두 드라이버 모두 탭으로 구분된 행(null은 `\N`)을 반환하지만, 값별
+표현 방식은 다릅니다. &quot;http&quot; 드라이버는 ClickHouse&#39;s 자체 TSV
+포맷을 그대로 반환하는 반면, &quot;binary&quot; 드라이버는 각 값을
+PostgreSQL 출력 함수에 전달합니다.
 
 기본적으로 이 함수에 대해 `EXECUTE` 권한을 가진 역할은 없습니다. 따라서 정당한 이유로 ad-hoc ClickHouse
 쿼리를 실행해야 하는 역할(예: 전용 ClickHouse 관리자 역할)에만 [GRANT]로
@@ -1069,11 +1159,84 @@ SELECT clickhouse_raw_query(
 (1 row)
 ```
 
+<div id="clickhouse_server_version">
+  #### `clickhouse_server_version`
+</div>
+
+```sql
+SELECT clickhouse_server_version('taxi_srv');
+```
+
+지정한 외부 서버의 ClickHouse 서버 버전을 `major.minor.patch` 형식으로 반환합니다. 필요한 경우 서버&#39;s 옵션과 현재 사용자의 사용자 매핑을 사용하여 연결합니다:
+
+```sql
+ clickhouse_server_version
+---------------------------
+ 25.8.1
+(1 row)
+```
+
+네이티브 프로토콜 연결 핸드셰이크에서 버전을 가져오거나, HTTP를 통해 단일 `SELECT version()` 쿼리로 가져온 뒤 연결이 유지되는 동안 캐시합니다.
+
+<div id="clickhouse_query">
+  #### `clickhouse_query`
+</div>
+
+```sql
+SELECT * FROM clickhouse_query(
+    'server',
+    'SELECT id, name, salary FROM remote_table WHERE salary > 50000'
+) AS ch(id int, name text, salary numeric);
+```
+
+이미 구성된 외부 서버에서 쿼리를 실행하고, 각 ClickHouse 결과 컬럼을
+컬럼 정의 목록에 지정된 PostgreSQL 타입에 매핑하여 해당 행을 릴레이션으로 반환합니다. 서버의 `driver`,
+자격 증명, 데이터베이스, 연결 캐시를 재사용합니다.
+
+첫 번째 인수는 [CREATE SERVER]로 생성한 서버 이름입니다. 컬럼 정의 목록
+(`AS name(col type, ...)`)은 필수입니다. PostgreSQL은 행을 가져오기 전에 결과 구조를 알아야 하며,
+이 구조는 쿼리가 반환하는 컬럼과 일치해야 합니다. 값은 외부 테이블 컬럼과 동일한 방식으로
+ClickHouse에서 선언된 타입으로 변환됩니다. DDL처럼 결과를 반환하지 않는 SQL 문은
+선언할 항목이 없으므로, 대신
+[`clickhouse_perform`](#clickhouse_perform)을 사용하여 실행하십시오.
+
+기본적으로 어떤 역할에도 `EXECUTE` 권한이 없습니다. 역할이
+이 함수를 사용할 수 있도록 `GRANT`하십시오.
+
+```sql
+GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO ch_admin;
+```
+
+<div id="clickhouse_perform">
+  #### `clickhouse_perform`
+</div>
+
+```sql
+CALL clickhouse_perform(
+    'server',
+    'CREATE TABLE remote_table (id Int32) ENGINE = MergeTree ORDER BY id'
+);
+```
+
+이미 구성된 외부 서버에 대해 SQL 문을 실행하고
+결과는 모두 버립니다. DDL처럼 행을 반환하지 않아
+[`clickhouse_query`](#clickhouse_query)에서 선언할 결과 구조가 없는 SQL 문에 사용하십시오. 서버는
+`clickhouse_query`와 동일한 방식으로 확인하며, 해당 함수의 `driver`,
+자격 증명, 데이터베이스 및 연결 캐시를 재사용합니다.
+
+프로시저이므로 `SELECT`가 아닌 [CALL]로 호출해야 하며, 행을 반환하지
+않습니다. 기본적으로 어떤 역할에도 `EXECUTE` 권한이 없습니다. 프로시저 사용을 허용하려면 역할에
+`GRANT`하십시오.
+
+```sql
+GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
+```
+
 <div id="pushdown-functions">
   ### 푸시다운 함수
 </div>
 
-`pg_clickhouse`는 조건식(`HAVING` 및 `WHERE` 절)에 사용되는 PostgreSQL 내장 함수 일부를 ClickHouse로 푸시다운합니다. 이 함수 집합은 다음과 같이 ClickHouse의 대응 함수에 매핑됩니다:
+pg&#95;clickhouse는 조건식(`HAVING` 및 `WHERE` 절)에 사용되는 PostgreSQL 내장 함수 일부를 ClickHouse로 푸시다운합니다. 이 함수 집합은 다음과 같이 ClickHouse의 대응 함수에 매핑됩니다:
 
 * `abs`: [abs](/ko/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/ko/reference/functions/regular-functions/math-functions#factorial)
@@ -1108,11 +1271,16 @@ SELECT clickhouse_raw_query(
 * `extract(field FROM source)`: 매핑은 `date_part`와 동일합니다
 * `date(timestamp)` &amp; `date(timestamptz)`: [toDate](/ko/reference/functions/regular-functions/type-conversion-functions#toDate)
   (CH 별칭 `date`로 다시 표현됨)
-* `array_position`: [indexOf](/ko/reference/functions/regular-functions/array-functions#indexOf)
+* `array_position`: [indexOf](/ko/reference/functions/regular-functions/array-functions#indexOf)와
+  `0`을 `NULL`로 변환하는 [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif), 그리고
+  검색 시작 인덱스를 지정하는 세 번째 인수가 있을 때
+  [arraySlice](reference/functions/regular-functions/array-functions#arraySlice)를 사용합니다. 현재 `nan`은 [일치하지 않습니다](https://github.com/ClickHouse/ClickHouse/issues/113169)
 * `array_cat`: [arrayConcat](/ko/reference/functions/regular-functions/array-functions#arrayConcat)
 * `array_append`: [arrayPushBack](/ko/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/ko/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/ko/reference/functions/regular-functions/array-functions#arrayRemove)
+* `cardinality`: [length](reference/functions/regular-functions/array-functions#length)
+* `array_length(array, 1)`: `nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`: [length](/ko/reference/functions/regular-functions/array-functions#length)
 * `array_to_string`: [arrayStringConcat](/ko/reference/functions/regular-functions/array-functions#arrayStringConcat)
 * `string_to_array`: [splitByString](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByString)
@@ -1124,8 +1292,8 @@ SELECT clickhouse_raw_query(
 * `array_sample`: [arrayRandomSample](/ko/reference/functions/regular-functions/array-functions#arrayRandomSample)
 * `array_sort`: [arraySort](/ko/reference/functions/regular-functions/array-functions#arraySort) / [arrayReverseSort](/ko/reference/functions/regular-functions/array-functions#arrayReverseSort)
 * `btrim`: [trimBoth](/ko/reference/functions/regular-functions/string-functions#trimboth)
-* `ltrim`: [ltrim](/ko/reference/functions/regular-functions/string-functions#ltrim)
-* `rtrim`: [rtrim](/ko/reference/functions/regular-functions/string-functions#rtrim)
+* `ltrim`: [trimLeft](/ko/reference/functions/regular-functions/string-functions#trimLeft)
+* `rtrim`: [trimRight](/ko/reference/functions/regular-functions/string-functions#trimRight)
 * `concat_ws`: [concatWithSeparator](/ko/reference/functions/regular-functions/string-functions#concatwithseparator)
 * `lower(text)`: [lowerUTF8](/ko/reference/functions/regular-functions/string-functions#lowerutf8)
 * `upper(text)`: [upperUTF8](/ko/reference/functions/regular-functions/string-functions#upperutf8)
@@ -1144,12 +1312,21 @@ SELECT clickhouse_raw_query(
 * `regexp_replace`: [replaceRegexpOne](/ko/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) 또는 `g` 플래그가 있으면 [replaceRegexpOne](/ko/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)
 * `regexp_split_to_array`: [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/ko/reference/functions/regular-functions/hash-functions#MD5)
+* `fmt`가 대소문자를 구분하지 않는 string constant인 경우의 `encode(bytea, fmt)`:
+  * `encode(bytea, 'hex')`: [hex](/ko/reference/functions/regular-functions/encoding-functions#hex)
+    PostgreSQL이 소문자 hex를 생성하므로 [lower](/ko/reference/functions/regular-functions/string-functions#lower)로
+    감쌉니다.
+  * `encode(bytea, 'base64')`: [base64Encode](/ko/reference/functions/regular-functions/encoding-functions#base64encode)
+    PostgreSQL의 MIME(RFC 2045) 형식에 따라 76자마다 삽입되는 줄 바꿈을 재현하기 위해 [replaceRegexpAll](/ko/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)로
+    감쌉니다.
+  * `encode(bytea, 'base64url')` (PostgreSQL 19+): [base64URLEncode](/ko/reference/functions/regular-functions/encoding-functions#base64urlencode),
+    padding 없이 PostgreSQL의 RFC 4648 URL 알파벳과 일치합니다.
 * `json_extract_path_text`: [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `json_extract_path`: [toJSONString](/ko/reference/functions/regular-functions/json-functions#toJSONString) + [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path_text`: [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path`: [toJSONString](/ko/reference/functions/regular-functions/json-functions#toJSONString) + [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `bit_count(bytea)`: [bitCount](/ko/reference/functions/regular-functions/bit-functions#bitcount)
-* `to_timestamp(float8)`: [fromUnixTimestamp](/ko/reference/functions/regular-functions/date-time-functions#fromUnixTimestamp)
+* `to_timestamp(float8)`: [toDateTime64](/ko/reference/functions/regular-functions/type-conversion-functions#todatetime64)
 * `to_char(timestamp[tz], fmt)`: [formatDateTime](/ko/reference/functions/regular-functions/date-time-functions#formatDateTime)
   `fmt`가 모든 키워드에 대해
   ClickHouse에 정확히 대응하는 값이 있는 string constant인 경우입니다. 지원되는 키워드는 호환성
@@ -1191,11 +1368,41 @@ SELECT clickhouse_raw_query(
 * `->>` (JSON/JSONB 요소를 텍스트로 추출): [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (JSON/JSONB 요소 추출): [toJSONString](/ko/reference/functions/regular-functions/json-functions#toJSONString) + [서브컬럼 구문](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
+<div id="in-and-null-semantics">
+  ### IN 및 NULL 의미 체계
+</div>
+
+ClickHouse는 `IN`을 2값 논리로 평가합니다. 즉, NULL이 관련된 경우에도 프로브에서
+일치 항목을 찾지 못하면 `0`을 반환하는 반면 PostgreSQL은
+NULL을 반환합니다. PostgreSQL 의미 체계를 보존하기 위해 pg&#95;clickhouse는 상수 목록 또는 배열에 대한 `IN`
+계열(`IN`, `NOT IN`, `= ANY`, `= ALL`,
+`<> ANY`, `<> ALL`)을 무조건 푸시다운합니다. 프로브나 배열 원소가 NULL일 수 없음을
+증명할 수 있으면 네이티브 또는 저비용 형식을 사용하고, 그렇지 않으면 런타임에 NULL 값을 확인하는
+보호된 `CASE` 형식을 사용합니다. 이를 통해 `SELECT` 목록이나
+`GROUP BY`와 같은 값 위치를 비롯한 모든 컨텍스트에서 PostgreSQL의 정확한 3값 결과(TRUE, FALSE, NULL)를
+계산합니다.
+
+널 허용 컬럼에 대한 `NOT IN (SELECT ...)` 필터도 푸시다운되며,
+PostgreSQL 동작을 유지하도록 보정 가드가 추가된 형태로 역파싱됩니다. 즉, NULL을 포함하는 Set은
+모든 행을 제외하고, NULL 프로브는 빈 Set에 대해서만 통과합니다. `NOT NULL` 선언으로
+불필요함을 증명할 수 있으면 각 가드는 생략됩니다. 위의 배열 형식과 달리 이 가드는 일반 필터 조건(또는
+`NOT` 아래)에서만 적용됩니다. 값 위치의 `IN (SELECT ...)` 및 그룹화되거나 집계된 하위 쿼리
+본문은 여전히 푸시다운하지 않습니다. 컬럼을 `NOT NULL`로 선언하면 더 저렴한
+가드 없는 형식을 전송할 수 있으므로 푸시다운을 극대화할 수 있습니다. [IMPORT FOREIGN SCHEMA]는
+`Nullable`이 아닌 ClickHouse 컬럼에 대해 이를 자동으로 수행합니다. 이 증명은 NULL이 아닌 상수,
+`NOT NULL` 컬럼 및 이들에 대한 기본 산술 연산(`+`, `-`, `*`, 단항 `-`)을 대상으로 합니다.
+
+이 규칙은 ClickHouse의 기본값인 `transform_null_in = 0`을 전제합니다. pg&#95;clickhouse는
+ClickHouse 서버 프로필이 이 값을 암묵적으로 변경하지 못하도록
+[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) 매개변수의
+기본값을 통해 모든 쿼리에 이를 설정합니다.
+`transform_null_in = 1`로 설정하면 푸시다운된 모든 `IN`의 의미 체계가 깨집니다.
+
 <div id="custom-functions">
   ### 사용자 지정 함수
 </div>
 
-`pg_clickhouse`로 생성된 이러한 사용자 지정 함수는 PostgreSQL에 대응하는 기능이 없는 일부 ClickHouse 함수에 대해 원격 쿼리 푸시다운을 제공합니다. 이 함수들 중 하나라도 pushdown되지 않으면 예외를 발생시킵니다.
+pg&#95;clickhouse로 생성된 이러한 사용자 지정 함수는 PostgreSQL에 대응하는 기능이 없는 일부 ClickHouse 함수에 대해 원격 쿼리 푸시다운을 제공합니다. 이 함수들 중 하나라도 pushdown되지 않으면 예외를 발생시킵니다.
 
 * [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
 
@@ -1210,8 +1417,9 @@ pg&#95;clickhouse는 일부 핵심 확장 기능과 서드파티 확장 기능�
   #### re2
 </div>
 
-모든 [re2 확장 기능] 함수는 ClickHouse 함수에 1:1로 푸시다운됩니다:
+모든 [re2 확장 기능] 연산자 및 함수는 ClickHouse 함수에 1:1로 푸시다운됩니다:
 
+* `@~` → [match](/ko/reference/functions/regular-functions/string-search-functions#match)
 * `re2match` → [match](/ko/reference/functions/regular-functions/string-search-functions#match)
 * `re2extract` → [extract](/ko/reference/functions/regular-functions/string-search-functions#extract)
 * `re2extractall` → [extractAll](/ko/reference/functions/regular-functions/string-search-functions#extractAll)
@@ -1262,6 +1470,7 @@ pg&#95;clickhouse는 호환되는 데이터 타입에 대해서는 `CAST(x AS bi
 
 다음 PostgreSQL 집계 함수는 ClickHouse로 푸시다운됩니다.
 
+* [any&#95;value](/ko/reference/functions/aggregate-functions/any)
 * [array&#95;agg](/ko/reference/functions/aggregate-functions/groupArray)
 * [avg](/ko/reference/functions/aggregate-functions/avg)
 * [bit&#95;and](/ko/reference/functions/aggregate-functions/groupBitAnd)
@@ -1270,16 +1479,23 @@ pg&#95;clickhouse는 호환되는 데이터 타입에 대해서는 `CAST(x AS bi
 * [bool&#95;and / every](/ko/reference/functions/aggregate-functions/groupBitAnd)
 * [bool&#95;or](/ko/reference/functions/aggregate-functions/groupBitOr)
 * [count](/ko/reference/functions/aggregate-functions/count)
+* [corr](/ko/reference/functions/aggregate-functions/corr)
+* [covarpop](/ko/reference/functions/aggregate-functions/covarPop)
+* [covarsamp](/ko/reference/functions/aggregate-functions/covarSamp)
 * [min](/ko/reference/functions/aggregate-functions/min)
 * [max](/ko/reference/functions/aggregate-functions/max)
+* [stddev&#95;pop](/ko/reference/functions/aggregate-functions/stddevPop)
+* [stddev&#95;samp / stddev](/ko/reference/functions/aggregate-functions/stddevSamp)
 * [string&#95;agg](/ko/reference/functions/aggregate-functions/groupConcat)
 * [sum](/ko/reference/functions/aggregate-functions/sum)
+* [var&#95;op](/ko/reference/functions/aggregate-functions/varPop)
+* [var&#95;samp /variance](/ko/reference/functions/aggregate-functions/varSamp)
 
 <div id="custom-aggregates">
   ### 사용자 지정 집계 함수
 </div>
 
-`pg_clickhouse`가 생성한 이러한 사용자 지정 집계 함수는 PostgreSQL에
+pg&#95;clickhouse가 생성한 이러한 사용자 지정 집계 함수는 PostgreSQL에
 대응하는 기능이 없는 일부 ClickHouse 집계 함수에 대해 원격 쿼리 푸시다운을
 제공합니다. 이 함수들 중 하나라도 푸시다운할 수 없으면 예외를
 발생시킵니다.
@@ -1315,32 +1531,52 @@ SELECT quantile(0.25)(a) FROM t1;
 기본값이 아닌 `ORDER BY` 접미사 `DESC` 및 `NULLS FIRST`는 지원되지 않으며, 사용하면 오류가 발생합니다.
 
 * `percentile_cont(double)`: [quantile](/ko/reference/functions/aggregate-functions/quantile)
+* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
+* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
+* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
+
+<div id="custom-ordered-set-aggregates">
+  ### 사용자 정의 정렬된 집합 집계 함수
+</div>
+
+pg&#95;clickhouse에서 생성된 이러한 사용자 정의 [정렬된 집합 집계 함수]는 일부 ClickHouse [매개변수화된 집계
+함수]에 대한 원격 쿼리 푸시다운을 제공합니다. 이러한 함수 중 푸시다운할 수 없는 함수가 있으면 예외가
+발생합니다.
+
 * `quantile(double)`: [quantile](/ko/reference/functions/aggregate-functions/quantile)
 * `quantileExact(double)`: [quantileExact](/ko/reference/functions/aggregate-functions/quantileExact)
+
+<div id="custom-ordered-set-aggregates">
+  ### 사용자 정의 정렬된 집합 집계 함수
+</div>
+
+pg&#95;clickhouse에서 제공하는 이러한 사용자 정의 [정렬된 집합 집계 함수]는 일부 ClickHouse [매개변수화된 집계 함수]에 대한 원격 쿼리 푸시다운을 지원합니다. 이 함수들을 푸시다운할 수 없으면 예외가 발생합니다.
+
+* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
 <div id="pushdown-window-functions">
   ### 푸시다운 윈도우 함수
 </div>
 
-다음 PostgreSQL [윈도우 함수]는 `OVER
-(PARTITION BY ... ORDER BY ...)` 절과 함께 ClickHouse로 푸시다운되며, 해당하는 경우 프레임 사양도 함께 푸시다운됩니다.
+다음 PostgreSQL [윈도우 함수]는 해당되는 경우 프레임 사양을 포함한 `OVER
+(PARTITION BY ... ORDER BY ...)` 절과 함께 ClickHouse로 푸시다운됩니다.
 
-* [row&#95;number](/ko/reference/functions/window-functions/index#row_number)
-* [rank](/ko/reference/functions/window-functions/index#rank)
-* [dense&#95;rank](/ko/reference/functions/window-functions/index#dense_rank)
-* [ntile](/ko/reference/functions/window-functions/index#ntile)
-* [cume&#95;dist](/ko/reference/functions/window-functions/index#cume_dist)
-* [percent&#95;rank](/ko/reference/functions/window-functions/index#percent_rank)
-* [lead](/ko/reference/functions/window-functions/index#lead)
-* [lag](/ko/reference/functions/window-functions/index#lag)
-* [first&#95;value](/ko/reference/functions/window-functions/index#first_value)
-* [last&#95;value](/ko/reference/functions/window-functions/index#last_value)
-* [nth&#95;value](/ko/reference/functions/window-functions/index#nth_value)
+* [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
+* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
+* [dense&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
+* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
+* [cume&#95;dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
+* [percent&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
+* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
+* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
+* [first&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
+* [last&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
+* [nth&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
 * `min` / `max` (`OVER` 절 사용)
 
 순위 함수(`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist`,
-`percent_rank`)는 ClickHouse가 이러한 함수에서 프레임 사양을 허용하지 않으므로,
-푸시다운할 때 프레임 절을 생략합니다.
+`percent_rank`)는 ClickHouse에서 이러한 함수의 프레임 사양을 허용하지 않으므로 푸시다운 시 프레임 절을 생략합니다.
 
 <div id="compatibility-notes">
   ## 호환성 관련 참고 사항
@@ -1510,6 +1746,8 @@ ClickHouse의 지정자 접두사(prefix)를 이스케이프하기 위해 `%%`�
 
 [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html "PostgreSQL 문서: CREATE SERVER"
 
+[CALL]: https://www.postgresql.org/docs/current/sql-call.html "PostgreSQL 문서: CALL"
+
 [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html "PostgreSQL 문서: ALTER SERVER"
 
 [DROP SERVER]: https://www.postgresql.org/docs/current/sql-dropserver.html "PostgreSQL 문서: DROP SERVER"
@@ -1540,6 +1778,12 @@ ClickHouse의 지정자 접두사(prefix)를 이스케이프하기 위해 `%%`�
 
 [SELECT]: https://www.postgresql.org/docs/current/sql-select.html "PostgreSQL 문서: SELECT"
 
+[partitioned table]: https://www.postgresql.org/docs/current/ddl-partitioning.html "PostgreSQL 문서: 테이블 파티셔닝"
+
+[partitionwise aggregation]: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-ENABLE-PARTITIONWISE-AGGREGATE "PostgreSQL 문서: enable_partitionwise_aggregate"
+
+[offload-partition.sql]: https://github.com/ClickHouse/pg_clickhouse/blob/main/doc/offload-partition.sql
+
 [PREPARE]: https://www.postgresql.org/docs/current/sql-prepare.html "PostgreSQL 문서: PREPARE"
 
 [EXECUTE]: https://www.postgresql.org/docs/current/sql-execute.html "PostgreSQL 문서: EXECUTE"
@@ -1562,42 +1806,42 @@ ClickHouse의 지정자 접두사(prefix)를 이스케이프하기 위해 `%%`�
 
 [ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
 
-[Parametric aggregate functions]: /reference/functions/aggregate-functions/parametric-functions
+[parametric aggregate functions]: /reference/functions/aggregate-functions/parametric-functions
 
-[ClickHouse settings]: /reference/settings/session-settings "ClickHouse Docs: 세션 설정"
+[ClickHouse settings]: /reference/settings/session-settings "ClickHouse 문서: 세션 설정"
 
-[dollar quoting]: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING "PostgreSQL Docs: 달러 인용 문자열 상수"
+[dollar quoting]: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING "PostgreSQL 문서: 달러 인용 문자열 상수"
 
-[PREPARE notes]: https://www.postgresql.org/docs/current/sql-prepare.html#SQL-PREPARE-NOTES "PostgreSQL Docs: PREPARE 참고 사항"
+[PREPARE notes]: https://www.postgresql.org/docs/current/sql-prepare.html#SQL-PREPARE-NOTES "PostgreSQL 문서: PREPARE 참고 사항"
 
-[query parameters]: /guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse "ClickHouse Docs: ClickHouse에서 prepared statement의 대안"
+[query parameters]: /guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse "ClickHouse 문서: ClickHouse에서 prepared statement의 대안"
 
 [underlying bug]: https://github.com/ClickHouse/ClickHouse/issues/85847 "ClickHouse/ClickHouse#85847 multipart form의 일부 쿼리가 설정을 읽지 못함"
 
 [fixed]: https://github.com/ClickHouse/ClickHouse/pull/85570 "ClickHouse/ClickHouse#85570 multipart를 사용하는 HTTP 수정"
 
-[BYTEA]: https://www.postgresql.org/docs/current/datatype-binary.html "PostgreSQL Docs: 바이너리 데이터 타입"
+[BYTEA]: https://www.postgresql.org/docs/current/datatype-binary.html "PostgreSQL 문서: 바이너리 데이터 타입"
 
-[GRANT]: https://www.postgresql.org/docs/current/sql-grant.html "PostgreSQL Docs: GRANT"
+[GRANT]: https://www.postgresql.org/docs/current/sql-grant.html "PostgreSQL 문서: GRANT"
 
-[String]: /reference/data-types/string "ClickHouse Docs: String"
+[String]: /reference/data-types/string "ClickHouse 문서: String"
 
-[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "PostgreSQL Docs: 문자 데이터 타입"
+[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "PostgreSQL 문서: 문자 데이터 타입"
 
-[window functions]: https://www.postgresql.org/docs/current/functions-window.html "PostgreSQL Docs: 윈도우 함수"
+[window functions]: https://www.postgresql.org/docs/current/functions-window.html "PostgreSQL 문서: 윈도우 함수"
 
-[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "PostgreSQL Docs: POSIX 정규식"
+[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "PostgreSQL 문서: POSIX 정규식"
 
-[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "PostgreSQL Docs: ARE 내장 옵션 문자"
+[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "PostgreSQL 문서: ARE 내장 옵션 문자"
 
 [RE2]: https://github.com/google/re2/wiki/Syntax "RE2 구문"
 
 [re2 extension]: https://github.com/ClickHouse/pg_re2 "pg_re2: RE2를 사용하는 ClickHouse 호환 정규식 함수"
 
-[intarray]: https://www.postgresql.org/docs/current/intarray.html "PostgreSQL Docs: intarray"
+[intarray]: https://www.postgresql.org/docs/current/intarray.html "PostgreSQL 문서: intarray"
 
-[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "PostgreSQL Docs: fuzzystrmatch"
+[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "PostgreSQL 문서: fuzzystrmatch"
 
-[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "PostgreSQL Docs: 데이터 타입 서식 함수"
+[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "PostgreSQL 문서: 데이터 타입 서식 함수"
 
-[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "ClickHouse Docs: formatDateTime"
+[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "ClickHouse 문서: formatDateTime"

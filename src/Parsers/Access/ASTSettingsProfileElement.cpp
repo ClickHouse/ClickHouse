@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Core/SettingsSecrets.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -77,21 +78,31 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 
     formatSettingName(setting_name, ostr);
 
+    const auto render = [&](const Field & field)
+    {
+        if (!settings.show_secrets)
+        {
+            if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, field))
+                return *masked;
+        }
+        return applyVisitor(FieldVisitorToString{}, field);
+    };
+
     if (value)
     {
-        ostr << " = " << applyVisitor(FieldVisitorToString{}, *value);
+        ostr << " = " << render(*value);
     }
 
     if (min_value)
     {
         ostr << " MIN "
-                      << applyVisitor(FieldVisitorToString{}, *min_value);
+                      << render(*min_value);
     }
 
     if (max_value)
     {
         ostr << " MAX "
-                      << applyVisitor(FieldVisitorToString{}, *max_value);
+                      << render(*max_value);
     }
 
     if (writability)
@@ -116,6 +127,16 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 }
 
 
+bool ASTSettingsProfileElement::hasSecretParts() const
+{
+    const auto is_secret = [this](const Field & field)
+    { return CoreSettings::renderSecretSettingValue(setting_name, field).has_value(); };
+
+    return (value && is_secret(*value)) || (min_value && is_secret(*min_value)) || (max_value && is_secret(*max_value))
+        || std::any_of(disallowed_values.begin(), disallowed_values.end(), is_secret);
+}
+
+
 bool ASTSettingsProfileElements::empty() const
 {
     for (const auto & element : elements)
@@ -132,6 +153,12 @@ size_t ASTSettingsProfileElements::getNumberOfSettings() const
 size_t ASTSettingsProfileElements::getNumberOfProfiles() const
 {
     return std::count_if(elements.begin(), elements.end(), [](const auto & element){ return !element->parent_profile.empty(); });
+}
+
+
+bool ASTSettingsProfileElements::hasSecretParts() const
+{
+    return std::any_of(elements.begin(), elements.end(), [](const auto & element) { return element->hasSecretParts(); });
 }
 
 
@@ -198,6 +225,12 @@ ASTPtr ASTAlterSettingsProfileElements::clone() const
         res->drop_settings = boost::static_pointer_cast<ASTSettingsProfileElements>(drop_settings->clone());
 
     return res;
+}
+
+/// `drop_settings` carries setting names only.
+bool ASTAlterSettingsProfileElements::hasSecretParts() const
+{
+    return (add_settings && add_settings->hasSecretParts()) || (modify_settings && modify_settings->hasSecretParts());
 }
 
 void ASTAlterSettingsProfileElements::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
