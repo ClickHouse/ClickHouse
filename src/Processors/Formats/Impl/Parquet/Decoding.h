@@ -149,7 +149,7 @@ struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
     virtual bool isTrivial() const { return false; }
-    /// If true, the output is ColumnUInt64 with the sizes of the strings, so decoders don't need to copy them.
+    /// If true, the output is ColumnUInt64 with the sizes of the strings.
     virtual bool isSizesOnly() const { return false; }
 
     /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
@@ -319,7 +319,6 @@ struct TrivialStringConverter : public StringConverter
 
 /// Input physical type: BYTE_ARRAY.
 /// Output column type: UInt64, the sizes of the strings (the `.size` subcolumn of a String column).
-/// No Field conversion: statistics describe the strings, not their sizes.
 struct StringSizesConverter : public StringConverter
 {
     bool isSizesOnly() const override { return true; }

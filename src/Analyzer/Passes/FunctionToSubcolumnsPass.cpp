@@ -71,8 +71,7 @@ struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
-    /// Columns and subcolumns the storage admits in PREWHERE (empty if it has no PREWHERE or admits
-    /// all of them), for the String size rewrites of a tuple-element-only storage.
+    /// PREWHERE columns of the storage, empty if it has no PREWHERE or admits all columns.
     std::optional<NameSet> prewhere_columns;
 };
 
@@ -1233,9 +1232,7 @@ bool storageAllowsTransformer(
     if (function_name == "tupleElement")
         return isTuple(removeNullable(type.getPtr()));
 
-    /// `length`, `empty` and `notEmpty` of a `String` read `s.size`. A storage evaluating PREWHERE in its
-    /// format reader lists `s.size` among its PREWHERE columns when the format decodes it from the string
-    /// lengths without materializing the strings (Parquet) and `s` is read from the file.
+    /// A storage lists `s.size` among its PREWHERE columns only if its format reads it without the strings.
     if (type.getTypeId() != TypeIndex::String || (function_name != "length" && function_name != "empty" && function_name != "notEmpty"))
         return false;
     if (!answers.prewhere_columns)

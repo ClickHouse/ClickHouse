@@ -262,7 +262,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 if (sizes_pos && !options.string_sizes_columns.contains(sample_block->getByPosition(*sizes_pos).name))
                     sizes_pos.reset();
             }
-            /// Only the sizes are requested, see TraversalNode::string_sizes.
             const bool string_sizes = !pos && sizes_pos;
             if (string_sizes)
                 std::swap(pos, sizes_pos);
@@ -292,7 +291,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
                 if (string_sizes)
                 {
-                    /// Read it as String; the end of this function decides how to get the sizes.
                     node.string_sizes = true;
                     node.type_hint = std::make_shared<DataTypeString>();
                     outer_type_hint = nullptr;
@@ -396,8 +394,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (also_sizes_idx_in_output_block.has_value())
     {
-        /// Both `x` and `x.size` are requested (e.g. `x.size` in PREWHERE and `x` after it): read the
-        /// column a second time for the sizes, so that each one can be read in its own step.
+        /// Both `x` and `x.size` are requested: read the column a second time for the sizes.
         const OutputColumnInfo & output = output_columns.at(node.output_idx.value());
         if (!output.is_primitive)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading column {} together with its sizes is not supported", node.getNameForLogging());
@@ -437,7 +434,6 @@ void SchemaConverter::makeStringSizesOutput(size_t output_idx)
     if (primitive && primitive->decoder.string_converter && primitive->decoder.string_converter->isTrivial()
         && !primitive->output_nullable && !output.needs_cast)
     {
-        /// The column is read as the raw strings: decode only their lengths.
         primitive->decoder.string_converter = std::make_shared<StringSizesConverter>();
         primitive->decoded_type = std::make_shared<DataTypeUInt64>();
         primitive->output_type = primitive->decoded_type;
@@ -446,7 +442,6 @@ void SchemaConverter::makeStringSizesOutput(size_t output_idx)
     }
     else
     {
-        /// Read the column as String (converted if needed) and output the sizes of the strings.
         output.output_type = std::make_shared<DataTypeString>();
         output.needs_cast = !output.output_type->equals(*output.input_type);
         output.string_sizes_from_strings = true;

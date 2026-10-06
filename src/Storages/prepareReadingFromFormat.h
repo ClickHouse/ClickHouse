@@ -38,11 +38,9 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
-        /// The requested `x.size` columns that are the sizes of the String column `x` of the file,
-        /// read by the format itself (see `filterTupleColumnsToRead`). Any other column is read by its name.
+        /// Requested `x.size` columns that are the sizes of the String column `x`; others are read by name.
         NameSet string_sizes_columns;
-        /// The serialization version of the step serializing this struct (`ReadFromObjectStorage`) from which
-        /// `string_sizes_columns` is written. The step registers it.
+        /// `ReadFromObjectStorage` step serialization version from which `string_sizes_columns` is written.
         static constexpr UInt64 STEP_VERSION_WITH_STRING_SIZES_COLUMNS = 1;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
@@ -97,8 +95,7 @@ namespace DB
     /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
     /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
     /// this bool instead of adding another one.
-    /// With `read_string_sizes` (and `supports_tuple_elements`), `s.size` of the columns returned by
-    /// `getStringColumnsWithNativeSizes` is requested from the format as is.
+    /// With `read_string_sizes`, `s.size` of `getStringColumnsWithNativeSizes` columns is requested as is.
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
@@ -108,9 +105,8 @@ namespace DB
         const PrepareReadingFromFormatHiveParams & hive_parameters = {},
         bool read_string_sizes = false);
 
-    /// The `String` columns whose `.size` subcolumn a format with `supports_tuple_elements` reads from the
-    /// file: the file holds the column (no default expression, not a hive partition column), and no
-    /// column is named `<name>.size` up to case.
+    /// String columns whose `.size` the format reads from the file: no default expression, not a hive
+    /// partition column, and no column named `<name>.size` up to case.
     NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata, const NameSet & hive_partition_columns);
 
     /// Returns columns_to_read from file.

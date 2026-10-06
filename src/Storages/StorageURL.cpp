@@ -1741,8 +1741,6 @@ std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
-    /// `s.size` is read by the format from the string lengths, so `length(s)`, `empty(s)` and `s != ''`
-    /// can be rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE.
     if (supports_prewhere)
         for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns_to_read_from_file_path.getNameSet()))
             names.insert(name + ".size");

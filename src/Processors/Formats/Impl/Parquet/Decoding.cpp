@@ -478,7 +478,6 @@ struct PlainStringDecoder : public PageDecoder
     {
         if (converter->isSizesOnly())
         {
-            /// Only the sizes of the strings are needed (`s.size`), don't copy the strings.
             auto & sizes = assert_cast<ColumnUInt64 &>(col).getData();
             size_t prev_size = sizes.size();
             sizes.resize(prev_size + num_values);

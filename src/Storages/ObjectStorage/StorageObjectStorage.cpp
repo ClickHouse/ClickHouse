@@ -479,9 +479,7 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & hive_partition_columns = hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path;
     auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns);
-    /// `s.size` is read by the format from the string lengths, so `length(s)`, `empty(s)` and `s != ''`
-    /// can be rewritten to it (optimize_functions_to_subcolumns) and evaluated in PREWHERE. A data lake
-    /// may also hold files in formats that cannot read it.
+    /// A data lake may hold files in formats that cannot read `s.size`.
     if (supports_prewhere && !configuration->isDataLakeConfiguration())
         for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns.getNameSet()))
             names.insert(name + ".size");

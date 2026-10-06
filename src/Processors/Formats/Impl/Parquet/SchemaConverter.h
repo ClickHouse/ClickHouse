@@ -89,8 +89,7 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
-        /// A String column requested as its `.size` subcolumn (e.g. `length(s)` rewritten to `s.size`
-        /// by optimize_functions_to_subcolumns): output only the sizes of the strings.
+        /// A String column requested as its `.size` subcolumn: output only the sizes of the strings.
         bool string_sizes = false;
 
         /// These are assigned by the callee.
@@ -148,7 +147,6 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
-    /// Makes the output column produce the sizes of the strings (see TraversalNode::string_sizes).
     void makeStringSizesOutput(size_t output_idx);
 
     void processPrimitiveColumn(

@@ -208,9 +208,8 @@ Names filterTupleColumnsToRead(
             && column_info.type->getTypeId() == TypeIndex::String
             && string_columns_with_native_sizes.contains(column_to_read.getNameInStorage()))
         {
-            /// The sizes of a String column, e.g. `length(s)` rewritten to `s.size`. The format reads it
-            /// natively (Parquet decodes it from the string lengths without materializing the strings).
-            /// It is enumerated as a stream only together with virtual streams, so add it directly.
+            /// The sizes of a String column, read by the format itself. `StringSizes` is enumerated as
+            /// a stream only together with virtual streams, so add it directly.
             column_info.path.push_back(ISerialization::Substream::StringSizes);
             column_info.type = std::make_shared<DataTypeUInt64>();
             column_info.is_string_sizes = true;
@@ -286,8 +285,7 @@ Names filterTupleColumnsToRead(
         ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
         bool ancestor_requested = false;
         const auto & column_info = columns_info[idx];
-        /// `s.size` is read separately even if `s` is requested too: it may be needed in an earlier
-        /// PREWHERE step than `s`.
+        /// `s.size` is read apart from `s`: it may be needed in an earlier PREWHERE step.
         for (size_t prefix_len = 0; prefix_len < column_info.path.size() && !column_info.is_string_sizes; ++prefix_len)
         {
             String ancestor_name = column_to_read.getNameInStorage();
