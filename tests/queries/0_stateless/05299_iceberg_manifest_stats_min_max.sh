@@ -58,7 +58,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 
-# Without statistics `ie_join` takes the first two conditions in syntax order (a1 < b1, a2 < b2).
+# Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 echo '--- T1: ie_join keys chosen by the min/max from the manifests'
 ${CLICKHOUSE_CLIENT} ${PINS} ${IE_JOIN} --query "
     SELECT extract(explain, 'Conditions: .*') FROM (EXPLAIN actions = 1
@@ -81,13 +81,13 @@ DC_NDV=$(${CLICKHOUSE_CLIENT} --query "
     SELECT greatest(least(intDiv(sum(column_sizes[5]), 8), 1000), 1)
     FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'nf'")
 
-# Bounds as MergeTree basic statistics keep them: Date32 in days (18262 = 2020-01-01), DateTime64(6) in seconds.
-# NDV: n 99 by range (75 true), dc column_sizes / 8, s half the rows (1000 true), ts range in ticks clamped to rows.
+# Expect NDV k 1000, d 365, n 99 (75 true) by range, dc column_sizes / 8, s 10% of rows, ts range clamped to rows;
+# n is NULL every 4th row (0.25); bounds as MergeTree keeps them: Date32 in days (18262 = 2020-01-01), ts in seconds.
 echo '--- T2: rows, then NDV [min, max, NULL fraction] per column'
 relation_a "SELECT a.n, a.d, a.ts, a.dc, a.s FROM nf AS a JOIN dim10 AS d ON a.k = d.k" \
     | sed "s/__table1\.dc: ${DC_NDV} /__table1.dc: <column_sizes \/ 8> /"
 
-# 2000 of the 4000 rows count as NULLs; the range 3999 of c is clamped to the 2000 non-NULL rows.
+# Expect c 2000, null 0.5: 2000 of the 4000 rows count as NULLs, and the range 3999 is clamped to the 2000 others.
 echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
 relation_a "SELECT a.c FROM nu AS a JOIN dim10 AS d ON a.k = d.k"
 

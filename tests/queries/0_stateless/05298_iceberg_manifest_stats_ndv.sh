@@ -3,7 +3,7 @@
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
 # Issue 120440: the NDV of an Iceberg read with `use_iceberg_manifest_column_statistics`, by the first rule applying:
-# 1. identity partition values, 2. `max - min + 1` of integer bounds, 3. `column_sizes` / type width, 4. a type guess.
+# 1. identity partition values, 2. `max - min + 1` of integer bounds, 3. `column_sizes` / type width, 4. 10% of rows.
 # Each join with a MergeTree table of 10 (or 1) keys estimates `rows * rows_dim / max(ndv, ndv_dim)`.
 # - T1: rule 1 on an identity partition.
 # - T2: rule 1 over the files left after partition pruning.
@@ -83,26 +83,32 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT arraySort(groupArray((upper(file_format), mapContains(column_sizes, 2)))) FROM system.iceberg_files
     WHERE database = currentDatabase() AND table = 'mx'"
 
+# Expect 20000: 100000 rows over 5 partition values, so 20000 rows have r = 0, the one key of dim1.
 echo '--- T1: rule 1, identity partition: 5 values'
 labels "SELECT count() FROM fp JOIN dim1 AS d ON fp.r = d.k" ${ON}
+# Expect ~~20000: the 2 remaining partitions hold 40000 rows, so 40000 * 1 / 2; a filter makes it imprecise.
 echo '--- T2: rule 1 after partition pruning: 2 values in the remaining files'
 labels "SELECT count() FROM fp JOIN dim1 AS d ON fp.r = d.k WHERE fp.r IN (0, 1000)" ${ON}
+# Expect 10000: 30000 rows over 3 partition values, so 10000 rows have d = 2.25, the one key of dim1.
 echo '--- T3: rule 1, decimal partition: 3 values'
 labels "SELECT count() FROM fd JOIN dim1 AS d ON fd.d = d.kd" ${ON}
 
 T4="SELECT count() FROM f JOIN dim10 AS d ON f.dense = d.k"
+# Expect 400: dense is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.
 echo '--- T4: rule 2, dense integer: range 2500'
 labels "${T4}" ${ON}
+# Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.
 echo '--- T5: use_iceberg_manifest_column_statistics = 0'
 labels "${T4}" ${NO_COLUMN_STATS}
+# Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.
 echo '--- T6: use_statistics = 0'
 labels "${T4}" ${NO_STATS}
 
-# The range of the sparse values is far above the rows, so the NDV is the rows (2500 true).
+# Expect 10: the range is far above the rows, so the NDV is the 100000 rows (2500 true): 100000 * 10 / 100000.
 echo '--- T7: rule 2, sparse integer: range clamped to the rows'
 labels "SELECT count() FROM f JOIN dim10 AS d ON f.sparse = d.k" ${ON}
 
-# Rule 3 divides the Parquet column chunk size of `dc` (field id 3), which depends on the encoder.
+# Expect 100000 * 10 / (column_sizes of dc / 8); the size depends on the Parquet encoder, so it is read from the table.
 echo '--- T8: rule 3, Decimal(18, 2): ResultRows from column_sizes / 8'
 EXPECTED=$(${CLICKHOUSE_CLIENT} --query "
     SELECT toUInt64(1 / greatest(least(intDiv(sum(column_sizes[3]), 8), 100000), 10) * 100000 * 10)
@@ -110,11 +116,13 @@ EXPECTED=$(${CLICKHOUSE_CLIENT} --query "
 ACTUAL=$(labels "SELECT count() FROM f JOIN dim10 AS d ON f.dc = d.kd" ${ON} | grep 'ResultRows')
 if [ "${ACTUAL}" = "ResultRows: ${EXPECTED}" ]; then echo "as expected"; else echo "${ACTUAL}, expected ${EXPECTED}"; fi
 
-# The guess for `String` is half the rows (2500 true).
-echo '--- T9: rule 4, String: half the rows'
+# Expect 100: the guess is 10% of the 100000 rows (2500 true), as for MergeTree without `uniq`: 100000 * 10 / 10000.
+echo '--- T9: rule 4, String: 10% of the rows'
 labels "SELECT count() FROM f JOIN dim10 AS d ON f.s = d.ks" ${ON}
-echo '--- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 30% of the rows'
+# Expect 100: the Avro file has no column_sizes and Float64 no bounds, so 10% of 2000 rows: 2000 * 10 / 200.
+echo '--- T10: no column_sizes in the Avro file and no bounds for Float64: rule 4, 10% of the rows'
 labels "SELECT count() FROM mx AS t JOIN dim10 AS d ON t.f = d.kf" ${ON}
+# Expect 20: k is 0..499 written as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if bounds were lost).
 echo '--- T11: k Int32, then Int64, then renamed to kk: range 1000'
 labels "SELECT count() FROM pr AS t JOIN dim10 AS d ON t.kk = d.k" ${ON}
 

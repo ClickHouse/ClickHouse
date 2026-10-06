@@ -11,7 +11,7 @@ __table1.d: 365 [min 18262, max 18626]
 __table1.dc: <column_sizes / 8> [min '0', max '249.75']
 __table1.k: 1000 [min 0, max 999]
 __table1.n: 99 [min 1, max 99, null 0.25]
-__table1.s: 500
+__table1.s: 100
 __table1.ts: 1000 [min '1577836800', max '1577837799']
 --- T3: a file before ADD COLUMN and an all-NULL file, then values
 a: 4000 rows
