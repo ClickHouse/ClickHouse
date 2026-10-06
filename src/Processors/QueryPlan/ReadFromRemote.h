@@ -55,7 +55,6 @@ public:
 
     bool hasSerializedPlan() const;
 
-    /// Whether the shards send totals.
     bool hasTotals() const;
 
 private:
