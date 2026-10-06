@@ -78,3 +78,7 @@ u.log	43
 -- a symbolic link out of the directory renamed over the read name: a hard link of the file reads on
 e.log	50
 f.log	51
+-- with a glob, the read name is removed: a hard link that the glob excludes reads on
+app.log	1
+app.log	2
+app.log.1	3

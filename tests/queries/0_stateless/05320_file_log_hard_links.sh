@@ -4,7 +4,8 @@
 # in one pass, and when one name of a file is removed it reports the file's other names as removed and added again.
 
 # A FileLog file with several names in the directory (hard links, symbolic links) is read once, under one of
-# its names, and keeps being read from the same position whichever of its names it is read under.
+# its names, and keeps being read from the same position whichever of its names it is read under, also under
+# a name that the glob of the path excludes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
@@ -245,7 +246,21 @@ mv "${d3}/tmp.sym" "${d3}/e.log"
 printf '51\n' >> "${d3}/f.log"
 read_until file_log_symlink 51
 
+echo '-- with a glob, the read name is removed: a hard link that the glob excludes reads on'
+d4=${logs_dir}/d4
+printf '1\n' > "${d4}/app.log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_glob (id UInt64) ENGINE = FileLog('${d4}/*.log', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_glob
+sync_watch file_log_glob "${d4}/app.log"
+ln "${d4}/app.log" "${d4}/app.log.1"
+printf '2\n' >> "${d4}/app.log"
+read_until file_log_glob 2
+rm "${d4}/app.log"
+printf '3\n' >> "${d4}/app.log.1"
+read_until file_log_glob 3
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob"
 rm -rf "${logs_dir}"
