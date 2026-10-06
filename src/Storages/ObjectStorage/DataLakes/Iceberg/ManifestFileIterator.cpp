@@ -320,7 +320,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+    const Int32 manifest_schema_id
+        = manifest_format_version == 1 && (!schema_object->has(f_schema_id) || schema_object->isNull(f_schema_id))
+        ? 0
+        : schema_object->getValue<Int32>(f_schema_id);
+    schema_object->set(f_schema_id, manifest_schema_id);
 
     schema_processor.addIcebergTableSchema(
         schema_object,
