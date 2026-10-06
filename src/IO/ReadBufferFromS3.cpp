@@ -21,6 +21,7 @@
 #include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
+#include <charconv>
 #include <cstdint>
 #include <utility>
 
@@ -66,6 +67,8 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int UNEXPECTED_END_OF_FILE;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
 }
 
 namespace
@@ -87,6 +90,27 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_begin <= inner_end);
     chassert(inner_begin >= outer_begin);
     chassert(inner_end <= outer_end);
+}
+
+/// A response without a `Content-Range: bytes <first>-<last>/<size>` header is the whole object, i.e. starts at 0.
+void checkReturnedRangeStart(const Aws::S3::Model::GetObjectResult & result, size_t offset, const String & bucket, const String & key)
+{
+    const String & content_range = result.GetContentRange();
+    std::string_view range = content_range;
+    size_t start = 0;
+    if (range.starts_with("bytes "))
+    {
+        range.remove_prefix(std::string_view("bytes ").size());
+        size_t first = 0;
+        const auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), first);
+        if (ec == std::errc() && ptr != range.data() + range.size() && *ptr == '-')
+            start = first;
+    }
+
+    if (start != offset)
+        throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+            "S3 returned the range '{}' instead of one starting at the requested offset {}. Bucket: {}, Key: {}",
+            content_range, offset, bucket, key);
 }
 
 }
@@ -156,14 +180,8 @@ bool ReadBufferFromS3::nextImpl()
                 "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired. This error happened for S3 disk");
         });
 
-        if (impl->isResultReleased())
+        if (impl->isResultReleased() && !read_until_position)
         {
-            if (read_until_position)
-            {
-                LOG_TRACE(
-                    log, "Impl was released, but expected read range is not finished. "
-                    "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
-            }
             stop_reason = fmt::format(
                 "Connection was released (read offset: {}/{}, release reason: {})",
                 offset.load(), read_until_position.load(), release_reason);
@@ -196,6 +214,7 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     bool next_result = false;
+    bool reopen = false;
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
@@ -205,9 +224,10 @@ bool ReadBufferFromS3::nextImpl()
 
         try
         {
+            const bool new_request = !impl;
             if (!impl)
             {
-                impl = initialize(attempt);
+                impl = initialize(attempt, reopen);
 
                 if (use_external_buffer)
                 {
@@ -224,6 +244,22 @@ bool ReadBufferFromS3::nextImpl()
 
             /// Try to read a next portion of data.
             next_result = impl->next();
+
+            /// The right bound is set locally and the layers above take it as the length of the data, so a response that
+            /// ends before it is continued at once, and a new request that delivers nothing is a failed attempt.
+            if (!next_result && read_until_position && offset < read_until_position)
+            {
+                reopen = true;
+                if (new_request)
+                    throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                        "Premature end of the response from S3 at offset {} while reading until position {}. Bucket: {}, Key: {}",
+                        offset.load(), read_until_position.load(), bucket, key);
+
+                resetWorkingBuffer();
+                impl.reset();
+                continue;
+            }
+
             break;
         }
         catch (...)
@@ -272,6 +308,8 @@ bool ReadBufferFromS3::nextImpl()
     if (use_external_buffer)
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    if (read_until_position && offset + static_cast<off_t>(working_buffer.size()) > read_until_position)
+        working_buffer.resize(static_cast<size_t>(read_until_position - offset));
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
@@ -548,7 +586,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     return false;
 }
 
-std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
+std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt, bool reopen)
 {
     stop_reason = "";
     release_reason = "";
@@ -589,6 +627,8 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
 
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
+    if (reopen)
+        checkReturnedRangeStart(read_result, offset, bucket, key);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
