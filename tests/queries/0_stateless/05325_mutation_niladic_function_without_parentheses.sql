@@ -51,15 +51,10 @@ SYSTEM STOP REPLICATION QUEUES t_nested;
 ALTER TABLE t_nested DELETE WHERE toDateTime(d) < now; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_nested DELETE WHERE notEmpty(today);
 
-SELECT 'replaced with the value on the initiator';
+SELECT 'replaced with the value on the initiator when written with parentheses';
 SET mutations_execute_nondeterministic_on_initiator = 1;
-ALTER TABLE t_guard DELETE WHERE d < CURRENT_DATE AND k = 100;
-ALTER TABLE t_guard DELETE WHERE d < (today AS today) AND k = 101;
-ALTER TABLE t_guard UPDATE v = toUnixTimestamp(now) WHERE k = 102;
-ALTER TABLE t_guard DELETE WHERE d < (today AS t1) AND t1 > '2000-01-01' AND k = 103;
-ALTER TABLE t_guard DELETE WHERE d < (today() AS t0) AND t0 > '2000-01-01' AND k = 104;
-ALTER TABLE t_guard DELETE WHERE d IN toDate(today) AND k = 105;
-ALTER TABLE t_guard DELETE WHERE (k AS today) = 106 AND arrayExists(x -> (today AS today) > 0, [k]);
+ALTER TABLE t_guard DELETE WHERE d < CURRENT_DATE() AND k = 100;
+ALTER TABLE t_guard DELETE WHERE d < CURRENT_DATE AND k = 101; -- { serverError BAD_ARGUMENTS }
 SYSTEM SYNC REPLICA t_guard PULL;
 SELECT replaceRegexpAll(command, '\\d{5,}', 'N') FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_guard' ORDER BY mutation_id;
@@ -80,18 +75,13 @@ WHERE database = currentDatabase() AND table = 't_bound' ORDER BY mutation_id;
 
 SELECT 'a column added, renamed or dropped by the same query';
 SET mutations_sync = 2, enable_shared_storage_snapshot_in_query = 1;
-CREATE TABLE t_alter (d Date, k UInt64, v1 UInt64 DEFAULT 0, v2 UInt64 DEFAULT 0, v3 UInt64 DEFAULT 0, v4 UInt64 DEFAULT 0, v5 UInt64 DEFAULT 0, v6 UInt64 DEFAULT 0, x UInt64 DEFAULT 1, y UInt64 DEFAULT 1)
+CREATE TABLE t_alter (d Date, k UInt64, v1 UInt64 DEFAULT 0, v2 UInt64 DEFAULT 0, x UInt64 DEFAULT 1)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_alter', 'r1') ORDER BY k;
 INSERT INTO t_alter (d, k) VALUES ('2000-01-01', 1);
 ALTER TABLE t_alter ADD COLUMN today Date DEFAULT '2000-01-01', UPDATE v1 = 7 WHERE today = '2000-01-01';
-ALTER TABLE t_alter ADD COLUMN z UInt8, UPDATE v2 = 8 WHERE d < CURRENT_DATE;
-ALTER TABLE t_alter RENAME COLUMN x TO now, UPDATE v3 = 9 WHERE now = 1;
-ALTER TABLE t_alter DROP COLUMN today, UPDATE v4 = 10 WHERE d < today;
-ALTER TABLE t_alter RENAME COLUMN now TO w, UPDATE v5 = 11 WHERE toUnixTimestamp(now) > 0;
-ALTER TABLE t_alter RENAME COLUMN y TO now, DROP COLUMN now, UPDATE v6 = 12 WHERE toUnixTimestamp(now) > 0;
-SELECT k, v1, v2, v3, v4, v5, v6 FROM t_alter;
-SELECT replaceRegexpAll(command, '\\d{5,}', 'N') FROM system.mutations
-WHERE database = currentDatabase() AND table = 't_alter' AND command LIKE '%UPDATE%' ORDER BY mutation_id;
+ALTER TABLE t_alter RENAME COLUMN x TO now, UPDATE v2 = 8 WHERE now = 1;
+ALTER TABLE t_alter DROP COLUMN today, UPDATE v1 = 9 WHERE d < today; -- { serverError BAD_ARGUMENTS }
+SELECT k, v1, v2 FROM t_alter;
 
 DROP TABLE t_prune SYNC;
 DROP TABLE t_guard SYNC;

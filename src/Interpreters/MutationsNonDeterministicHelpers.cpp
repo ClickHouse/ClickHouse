@@ -2,28 +2,18 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MutationCommands.h>
-#include <Analyzer/Utils.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -140,8 +130,6 @@ public:
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
         {
             auto literal = make_intrusive<ASTLiteral>(std::move(field));
-            literal->alias = function.alias;
-            literal->setPreferAliasToColumnName(function.preferAliasToColumnName());
             ast = addTypeConversionToAST(std::move(literal), type->getName());
         }
     }
@@ -149,178 +137,9 @@ public:
 
 using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteNonDeterministicConstFunctionsMatcher, true>;
 
-bool isSubquery(const IAST & ast)
-{
-    return ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>();
 }
 
-ASTFunction * tryGetLambda(IAST & ast)
-{
-    auto * function = ast.as<ASTFunction>();
-    if (function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
-        return function;
-    return nullptr;
-}
-
-/// A lambda and a subquery have their own scope of aliases, but the alias of such a node belongs to the enclosing one.
-void collectAliases(IAST & ast, NameSet & aliases)
-{
-    if (auto alias = ast.tryGetAlias(); !alias.empty())
-        aliases.insert(std::move(alias));
-
-    if (tryGetLambda(ast) || isSubquery(ast))
-        return;
-
-    for (const auto & child : ast.children)
-        collectAliases(*child, aliases);
-}
-
-class NiladicFunctionCallsMaker
-{
-public:
-    NiladicFunctionCallsMaker(
-        const ColumnsDescription & table_columns_,
-        const NameSet & new_column_names_,
-        const NameSet & dropped_column_names_,
-        const ContextPtr & context_,
-        NameSet aliases)
-        : table_columns(table_columns_), new_column_names(new_column_names_), dropped_column_names(dropped_column_names_), context(context_)
-    {
-        bound_names.push_back({{}, std::move(aliases)});
-    }
-
-    /// `ast` is in an expression position.
-    void rewrite(ASTPtr & ast)
-    {
-        const String alias = ast->tryGetAlias();
-        if (!alias.empty())
-            aliases_in_definition.emplace_back(alias, bound_names.size() - 1);
-        SCOPE_EXIT({
-            if (!alias.empty())
-                aliases_in_definition.pop_back();
-        });
-
-        if (const auto * identifier = ast->as<ASTIdentifier>())
-        {
-            if (!identifier->isShort() || isBound(identifier->name()))
-                return;
-
-            auto resolver = FunctionFactory::instance().tryGet(identifier->name(), context);
-            if (!resolver || !resolver->allowsOmittingParentheses())
-                return;
-
-            auto function = makeASTFunction(identifier->name());
-            function->setAlias(identifier->tryGetAlias());
-            ast = std::move(function);
-        }
-        else if (auto * lambda = tryGetLambda(*ast))
-        {
-            auto & arguments = lambda->arguments->children;
-            Scope scope;
-            if (const auto * parameters = arguments[0]->as<ASTFunction>(); parameters && parameters->arguments)
-            {
-                for (const auto & parameter : parameters->arguments->children)
-                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
-                        scope.parameters.insert(parameter_identifier->name());
-            }
-            collectAliases(*arguments[1], scope.aliases);
-
-            bound_names.push_back(std::move(scope));
-            rewrite(arguments[1]);
-            bound_names.pop_back();
-        }
-        else if (auto * function = ast->as<ASTFunction>())
-        {
-            if (!function->arguments)
-                return;
-
-            auto & arguments = function->arguments->children;
-            size_t size = arguments.size();
-            /// The right side of `IN` may be a table function, whose arguments are not resolved this way.
-            if (isNameOfInFunction(function->name) && size >= 2)
-            {
-                const auto * right_function = arguments[1]->as<ASTFunction>();
-                if (right_function && !FunctionFactory::instance().has(right_function->name)
-                    && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
-                    size = 1;
-            }
-
-            for (size_t i = 0; i < size; ++i)
-                rewrite(arguments[i]);
-        }
-        else if (ast->as<ASTAssignment>() || ast->as<ASTExpressionList>())
-        {
-            for (auto & child : ast->children)
-                rewrite(child);
-        }
-    }
-
-private:
-    struct Scope
-    {
-        NameSet parameters;
-        NameSet aliases;
-    };
-
-    const ColumnsDescription & table_columns;
-    const NameSet & new_column_names;
-    const NameSet & dropped_column_names;
-    ContextPtr context;
-    std::vector<Scope> bound_names;
-    /// An alias is not visible inside its own expression: the alias and the index of its scope in `bound_names`.
-    std::vector<std::pair<String, size_t>> aliases_in_definition;
-
-    bool isBound(const String & name) const
-    {
-        if (new_column_names.contains(name))
-            return true;
-        if (!dropped_column_names.contains(name) && (table_columns.has(name) || isPrefixOfArrayColumn(name)))
-            return true;
-
-        for (size_t i = 0; i < bound_names.size(); ++i)
-        {
-            if (bound_names[i].parameters.contains(name))
-                return true;
-            if (bound_names[i].aliases.contains(name)
-                && std::ranges::find(aliases_in_definition, std::pair{name, i}) == aliases_in_definition.end())
-                return true;
-        }
-        return false;
-    }
-
-    /// As in the analyzer, `n` is a Nested only when a column `n.<...>` is an `Array`.
-    bool isPrefixOfArrayColumn(const String & name) const
-    {
-        const String prefix = name + ".";
-        for (const auto & column : table_columns)
-            if (column.name.starts_with(prefix) && typeid_cast<const DataTypeArray *>(column.type.get()))
-                return true;
-        return false;
-    }
-};
-
-/// Written without parentheses, `now`, `today` or `CURRENT_DATE` is a call of the function unless a column of the table,
-/// a lambda parameter or an alias binds the name. Makes such calls explicit (`today` -> `today()`).
-void makeNiladicFunctionCallsExplicit(
-    ASTs & expressions,
-    const ColumnsDescription & table_columns,
-    const ContextPtr & context,
-    const NameSet & new_column_names = {},
-    const NameSet & dropped_column_names = {})
-{
-    NameSet aliases;
-    for (const auto & expression : expressions)
-        collectAliases(*expression, aliases);
-
-    NiladicFunctionCallsMaker maker(table_columns, new_column_names, dropped_column_names, context, std::move(aliases));
-    for (auto & expression : expressions)
-        maker.rewrite(expression);
-}
-
-}
-
-FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
-    const MutationCommand & command, ContextPtr context, const ColumnsDescription * table_columns)
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
 {
     FirstNonDeterministicFunctionMatcher::Data finder_data{context, {}};
 
@@ -329,27 +148,22 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
         case MutationCommand::UPDATE:
         {
             auto alter = command.ast();
-            ASTs expressions{alter->update_assignments->clone(), alter->predicate->clone()};
-            if (table_columns)
-                makeNiladicFunctionCallsExplicit(expressions, *table_columns, context);
-
-            FirstNonDeterministicFunctionFinder(finder_data).visit(expressions[0]);
+            auto update_assignments_ast = alter->update_assignments->clone();
+            FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.result.nondeterministic_function_name)
                 return finder_data.result;
 
-            FirstNonDeterministicFunctionFinder(finder_data).visit(expressions[1]);
+            ASTPtr predicate_ast(alter->predicate);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }
 
         case MutationCommand::DELETE:
         {
             auto alter = command.ast();
-            ASTs expressions{alter->predicate->clone()};
-            if (table_columns)
-                makeNiladicFunctionCallsExplicit(expressions, *table_columns, context);
-
-            FirstNonDeterministicFunctionFinder(finder_data).visit(expressions[0]);
+            ASTPtr predicate_ast(alter->predicate);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }
 
@@ -360,12 +174,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
     return {};
 }
 
-ASTPtr replaceNonDeterministicToScalars(
-    const ASTAlterCommand & alter_command,
-    ContextPtr context,
-    const ColumnsDescription * table_columns,
-    const NameSet & new_column_names,
-    const NameSet & dropped_column_names)
+ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::mutations_execute_subqueries_on_initiator] && !settings[Setting::mutations_execute_nondeterministic_on_initiator])
@@ -419,22 +228,6 @@ ASTPtr replaceNonDeterministicToScalars(
 
     if (settings[Setting::mutations_execute_nondeterministic_on_initiator])
     {
-        if (table_columns)
-        {
-            ASTs expressions;
-            for (IAST * expression : {new_alter_command.update_assignments, new_alter_command.predicate})
-                if (expression)
-                    expressions.push_back(expression->ptr());
-
-            makeNiladicFunctionCallsExplicit(expressions, *table_columns, context, new_column_names, dropped_column_names);
-
-            if (new_alter_command.predicate && expressions.back().get() != new_alter_command.predicate)
-            {
-                remove_child(new_alter_command.children, new_alter_command.predicate);
-                new_alter_command.predicate = new_alter_command.children.emplace_back(expressions.back()).get();
-            }
-        }
-
         ExecuteNonDeterministicConstFunctionsVisitor::Data data{context, settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
