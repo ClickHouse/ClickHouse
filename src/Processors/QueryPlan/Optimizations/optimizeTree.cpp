@@ -612,6 +612,11 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
+
+            /// Runs after read-in-order set the input order on the reading step (ancestor sorting is visited
+            /// before its reading descendant).
+            if (optimization_settings.read_in_order_skip_offset)
+                optimizeSkipOffsetForReadInOrder(stack);
         });
 
     /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the

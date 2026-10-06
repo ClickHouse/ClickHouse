@@ -1,0 +1,29 @@
+blockSize under LIMIT/OFFSET, disabled
+3	1
+4	1
+blockSize under LIMIT/OFFSET, enabled
+3	1
+4	1
+blockSize under a pure OFFSET, disabled
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+blockSize under a pure OFFSET, enabled
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+plain projection, enabled
+3
+4
+read_rows per query
+block_size_disabled	5
+block_size_enabled	5
+plain_enabled	2

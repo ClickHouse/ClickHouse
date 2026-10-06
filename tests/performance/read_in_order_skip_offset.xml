@@ -1,0 +1,18 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>skip_offset</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t_read_in_order_skip_offset (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key</create_query>
+    <fill_query>INSERT INTO t_read_in_order_skip_offset SELECT number, number FROM numbers(50000000)</fill_query>
+
+    <query>SELECT value FROM t_read_in_order_skip_offset ORDER BY key LIMIT 100 OFFSET 45000000 SETTINGS query_plan_optimize_read_in_order_skip_offset = {skip_offset} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_read_in_order_skip_offset</drop_query>
+</test>
