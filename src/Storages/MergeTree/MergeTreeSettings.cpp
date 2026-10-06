@@ -2141,11 +2141,9 @@ expired, and such a partition does not count towards
 `max_partitions_per_insert_block`. Such an insert is not registered for
 deduplication, the same as a block which `optimize_on_insert` merges to nothing.
 
-For the engines which merge rows (`ReplacingMergeTree`, `SummingMergeTree`,
-`CollapsingMergeTree`, etc.) the rule is applied to the rows produced by
-merging the inserted block, as a TTL merge applies it to the merged rows, so
-only when the block is merged on insert (see the query-level setting
-`optimize_on_insert`).
+The setting applies only to a table whose merging mode is ordinary, such as
+`MergeTree`. An engine which merges rows on insert, such as `ReplacingMergeTree`,
+does not apply it.
 
 This is useful when backfilling historical data into a table with a short TTL:
 the expired rows would otherwise create one part per partition which only waits

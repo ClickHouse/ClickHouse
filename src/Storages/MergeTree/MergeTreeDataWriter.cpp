@@ -93,7 +93,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool apply_ttl_delete_on_insert;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -942,23 +941,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         perm_ptr = &perm;
     }
 
-    /// For the merging engines the expired rows are removed only after the rows are merged, so a row which
-    /// is already expired still takes part in the merge, as it would in a TTL merge.
     if (optimize_on_insert)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
-
-        if ((*data_settings)[MergeTreeSetting::apply_ttl_delete_on_insert] && metadata_snapshot->hasRowsTTL())
-        {
-            size_t rows_before = block.rows();
-            removeRowsExpiredByTTL(context, *metadata_snapshot, block);
-            if (block.rows() != rows_before)
-            {
-                minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-                minmax_idx->update(block, minmax_columns);
-            }
-        }
     }
 
     ColumnsStatistics statistics;

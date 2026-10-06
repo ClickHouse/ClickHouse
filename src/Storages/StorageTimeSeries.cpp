@@ -1428,7 +1428,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 An external table can also be used as the [recent samples](#recent-samples-table) target (the `RECENT SAMPLES my_recent_samples_table` clause).
 Such a table must have the same columns as an external samples table, and it must retain at least
 [recent_samples_ttl_seconds](#settings) seconds of data, which is the user's responsibility.
-An external recent samples table receives every inserted sample, including the samples older than its retention; a MergeTree-family external table with a `TTL ... DELETE` rule can drop such samples on insert with the MergeTree setting `apply_ttl_delete_on_insert`.
+An external recent samples table receives every inserted sample, including the samples older than its retention; an ordinary `MergeTree` external table with a `TTL ... DELETE` rule can drop such samples on insert with the MergeTree setting `apply_ttl_delete_on_insert`.
 
 The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metric families table](#metric-families-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
