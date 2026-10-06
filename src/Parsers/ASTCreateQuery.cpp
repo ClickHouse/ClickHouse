@@ -142,8 +142,7 @@ void ASTStorage::writeJSON(WriteBuffer & out) const
 
 void ASTStorage::readJSON(const Poco::JSON::Object & json)
 {
-    /// The engine's kind comes from its position, as in `ParserStorage`: `TABLE_ENGINE` here, re-marked `DATABASE_ENGINE` by
-    /// `ASTCreateQuery::readJSON`. The payload's kind is dropped first: a rejected statement is logged as raw text with its secrets.
+    /// The engine's kind is positional (`ParserStorage`). The payload's kind is dropped unchecked: a rejected query is logged unmasked.
     Poco::JSON::Object storage_json(json);
     if (const auto engine_json = json.getObject("engine"))
     {
