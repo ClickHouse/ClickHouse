@@ -46,7 +46,7 @@ public:
         Poco::JSON::Object::Ptr metadata_content) const override;
 
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,
@@ -73,6 +73,9 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
+
+    /// Delta tables only: Iceberg tables get write credentials from the Iceberg REST catalog.
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.
@@ -154,8 +157,11 @@ private:
         const Poco::JSON::Object::Ptr & table_json,
         TableMetadata & result) const;
 
-    /// Asks the catalog for temporary read credentials for Delta tables.
-    std::shared_ptr<IStorageCredentials> getDeltaCredentials(const std::string & table_id, StorageType storage_type) const;
+    /// Asks the catalog for temporary credentials for Delta tables, `operation` is `READ` or `READ_WRITE`.
+    std::shared_ptr<IStorageCredentials> getDeltaCredentials(
+        const std::string & table_id, StorageType storage_type, const std::string & operation) const;
+
+    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation);
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;

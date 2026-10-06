@@ -82,10 +82,11 @@ After which the `times` table contains the records from each file it loaded:
 ```
 
 A [CREATE TABLE] may also derive its columns, and load its rows, from such a
-URL:
+URL (beware: this public data file holds 41m rows):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -161,6 +162,13 @@ simplest way to install it is via the [lib.chdb.io] shell script:
 
 ```sh
 curl -sL https://lib.chdb.io | bash
+```
+
+On macOS you may need to sign the library before building the extension:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
 ```
 
 To statically compile [chDB] into the helper app, set the following variables
@@ -244,6 +252,12 @@ You need to run the test suite using a super user, such as the default
 
 ``` sh
 make installcheck PGUSER=postgres
+```
+
+To disable the `file://` scheme in the `COPY` hook, define `NO_FILE_SCHEME`:
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 To install the extension in a custom prefix on PostgreSQL 18 or later, pass
