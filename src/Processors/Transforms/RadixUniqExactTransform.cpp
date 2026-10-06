@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
@@ -699,7 +700,14 @@ void RadixUniqExactRouteTransform::work()
         return;
     }
 
-    const auto column = current_chunk.getColumns()[key_position]->convertToFullIfWrapped();
+    ColumnPtr column = current_chunk.getColumns()[key_position];
+    /// Only the values of a sparse column are routed: the default value is at position 0, followed by the other ones.
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
+    {
+        const auto & values = column_sparse->getValuesPtr();
+        column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
+    }
+    column = column->convertToFullIfWrapped();
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
         state->route(stream, column_nullable->getNestedColumn(), column_nullable->getNullMapData().data());
     else

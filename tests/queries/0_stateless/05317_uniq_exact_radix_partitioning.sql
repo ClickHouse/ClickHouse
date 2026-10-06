@@ -27,6 +27,15 @@ SELECT 'repeated UInt64', uniqExact(toUInt64(number % 70000)) FROM numbers_mt(20
 SELECT 'repeated UInt32', uniqExact(toUInt32(number % 140000)) FROM numbers_mt(2000000);
 SELECT 'repeated String', uniqExact(toString(number % 40000)) FROM numbers_mt(1000000);
 
+-- Only the values of a sparse column that differ from the default one are routed, and the default one if there are such rows.
+DROP TABLE IF EXISTS t_radix_uniq_sparse;
+CREATE TABLE t_radix_uniq_sparse (x UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_radix_uniq_sparse SELECT if(number % 4 = 0, number + 1, 0), if(number % 4 = 0, toString(number), '') FROM numbers(400000);
+SELECT 'sparse', uniqExact(x) FROM t_radix_uniq_sparse;
+SELECT 'sparse String', uniqExact(s) FROM t_radix_uniq_sparse;
+SELECT 'sparse without defaults', uniqExact(x) FROM t_radix_uniq_sparse WHERE x != 0;
+DROP TABLE t_radix_uniq_sparse;
+
 SELECT 'empty', uniqExact(number) FROM numbers_mt(400000) WHERE number > 1e9;
 SELECT 'empty result for empty set', uniqExact(number) FROM numbers_mt(400000) WHERE number > 1e9 SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 SELECT 'only NULLs', uniqExact(if(number % 4 = 0, NULL, toInt64(number))) FROM numbers_mt(400000) WHERE number % 4 = 0 SETTINGS empty_result_for_aggregation_by_empty_set = 1;
