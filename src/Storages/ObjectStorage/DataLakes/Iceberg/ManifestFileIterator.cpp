@@ -333,7 +333,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     else
     {
         Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
         const Int32 embedded_schema_id
             = manifest_format_version == 1 && (!schema_object->has(f_schema_id) || schema_object->isNull(f_schema_id))
             ? 0
