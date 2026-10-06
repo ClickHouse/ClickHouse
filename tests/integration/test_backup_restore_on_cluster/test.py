@@ -1279,6 +1279,51 @@ def test_shutdown_waits_for_backup():
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
 
 
+def test_shutdown_waits_for_backup_that_arrives_during_shutdown():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (3)")
+    node2.query("INSERT INTO tbl VALUES (5)")
+
+    # Holds node2's part of the backup after its query is running and before the backup is registered,
+    # so the graceful restart below begins inside that window. The restart clears the failpoint.
+    node2.query("SYSTEM ENABLE FAILPOINT backups_delay_before_registering_operation")
+
+    backup_name = new_backup_name()
+
+    id = node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+    ).split("\t")[0]
+
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.processes WHERE query_kind = 'Backup' AND NOT is_initial_query",
+        "1",
+    )
+
+    node2.restart_clickhouse(kill=False)
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'CREATING_BACKUP'",
+        "",
+        retry_count=100,
+    )
+
+    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
+    assert status == "BACKUP_CREATED"
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA tbl")
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+
+
 def test_replicated_table_after_alters():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("

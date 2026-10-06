@@ -601,7 +601,8 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    void killAllQueries();
+    /// With except_backups_and_restores, BACKUP and RESTORE queries are not cancelled.
+    void killAllQueries(bool except_backups_and_restores = false);
 };
 
 }

@@ -469,6 +469,7 @@ namespace ServerSetting
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
     extern const ServerSettingsString webassembly_udf_engine;
     extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
+    extern const ServerSettingsBool shutdown_wait_backups_and_restores;
 }
 
 namespace FailPoints
@@ -1070,7 +1071,20 @@ struct ContextSharedPart : boost::noncopyable
         /// (1) Disable future dictionary queries.
         /// (2) Make sure all the currently running dictionary queries are killed.
         /// (3) Join the dictionary queries' threads.
+        /// The DDL worker and the backups worker are drained between (1) and (3), because both can create dictionaries.
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        process_list.killAllQueries(
+            /* except_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
+
+        /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
+        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
+        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
+        SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
+
+        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog,
+        /// and before joining the dictionaries loader threads, because a restore can create a dictionary.
+        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
+
         process_list.killAllQueries();
         SHUTDOWN(log, "dictionaries loader threads", external_dictionaries_loader, joinLoadingThreads());
 
@@ -1079,14 +1093,6 @@ struct ContextSharedPart : boost::noncopyable
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
-
-        /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
-        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
-        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
-        SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
-
-        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
-        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
