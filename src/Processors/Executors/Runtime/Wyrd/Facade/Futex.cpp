@@ -16,9 +16,9 @@ namespace DB::Runtime::Wyrd
 
 void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_location location)
 {
-    if (address.load(location) == value)
+    if (address.load(std::memory_order::seq_cst, location) == value)
         futexWait(&address, location);
-    value = address.load(location);
+    value = address.load(std::memory_order::seq_cst, location);
 }
 
 void futexWakeOne(Atomic<UInt32> & address, std::source_location location)
@@ -39,7 +39,7 @@ void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_locati
 {
     injectFault("futex::waitFetch", location);
     if (spuriousFailure(location))
-        value = address.load(location);
+        value = address.load(std::memory_order::seq_cst, location);
     else
         DB::futexWaitFetch(address.underlying(), value);
 }

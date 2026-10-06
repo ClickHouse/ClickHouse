@@ -32,62 +32,62 @@ public:
     Atomic(const Atomic &) = delete;
     Atomic & operator=(const Atomic &) = delete;
 
-    T load(std::source_location location = std::source_location::current()) const
+    T load(std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) const
     {
         injectFault("atomic::load", location);
-        T result = impl.load();
+        T result = impl.load(order);
         return result;
     }
 
-    void store(T desired, std::source_location location = std::source_location::current())
+    void store(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::store", location);
-        impl.store(desired);
+        impl.store(desired, order);
     }
 
-    T exchange(T desired, std::source_location location = std::source_location::current())
+    T exchange(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::exchange", location);
-        T result = impl.exchange(desired);
+        T result = impl.exchange(desired, order);
         return result;
     }
 
-    bool compare_exchange_weak(T & expected, T desired, std::source_location location = std::source_location::current())
+    bool compare_exchange_weak(T & expected, T desired, std::memory_order success = std::memory_order::seq_cst, std::memory_order failure = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::compare_exchange_weak", location);
-        bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired);
+        bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired, success, failure);
         if (!result)
-            expected = impl.load();
+            expected = impl.load(failure);
         return result;
     }
 
-    bool compare_exchange_strong(T & expected, T desired, std::source_location location = std::source_location::current())
+    bool compare_exchange_strong(T & expected, T desired, std::memory_order success = std::memory_order::seq_cst, std::memory_order failure = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::compare_exchange_strong", location);
-        bool result = impl.compare_exchange_strong(expected, desired);
+        bool result = impl.compare_exchange_strong(expected, desired, success, failure);
         return result;
     }
 
-    T fetch_add(T delta, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
+    T fetch_add(T delta, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
     {
         injectFault("atomic::fetch_add", location);
-        T result = impl.fetch_add(delta);
+        T result = impl.fetch_add(delta, order);
         return result;
     }
 
-    T fetch_sub(T delta, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
+    T fetch_sub(T delta, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
     {
         injectFault("atomic::fetch_sub", location);
-        T result = impl.fetch_sub(delta);
+        T result = impl.fetch_sub(delta, order);
         return result;
     }
 
 #if defined(WYRD_SIMULATION)
 
-    void wait(T old, std::source_location location = std::source_location::current())
+    void wait(T old, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::wait", location);
-        while (impl.load() == old)
+        while (impl.load(order) == old)
             futexWait(this, location);
     }
 
@@ -105,10 +105,10 @@ public:
 
 #else
 
-    void wait(T old, std::source_location location = std::source_location::current())
+    void wait(T old, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::wait", location);
-        impl.wait(old);
+        impl.wait(old, order);
     }
 
     void notify_one(std::source_location location = std::source_location::current())
