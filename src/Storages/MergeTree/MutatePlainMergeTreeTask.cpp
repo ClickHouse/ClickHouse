@@ -53,6 +53,11 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
+    /// `KILL MUTATION` cancels only the entries already in the merge list, and this task took its commands when it
+    /// was selected. Check after the insert: a kill that comes later finds the entry.
+    if (!storage.areMutationsRegistered(merge_mutate_entry->mutation_ids))
+        (*merge_list_entry)->is_cancelled = true;
+
     stopwatch = std::make_unique<Stopwatch>();
 
     const auto & mutation_ids = merge_mutate_entry->mutation_ids;
