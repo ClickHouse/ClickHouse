@@ -63,8 +63,7 @@ SELECT trim(explain) FROM (
 SELECT groupArray(k) = range(500) FROM (
     SELECT l.k AS k FROM t2 AS l LEFT JOIN t2 AS r ON l.n = r.n ORDER BY l.k
 ) SETTINGS enable_analyzer = 1, join_algorithm = 'partial_merge', max_threads = 1,
-           optimize_read_in_order = 1, query_plan_read_in_order = 1,
-           query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false';
+           optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false';
 
 DROP TABLE t1;
 DROP TABLE t2;
