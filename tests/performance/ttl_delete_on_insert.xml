@@ -8,7 +8,7 @@
         <async_insert>0</async_insert>
     </settings>
 
-    <create_query>
+    <create_query do_not_check_in_pr="123922">
         CREATE TABLE ttl_delete_on_insert (ts DateTime, payload UInt64)
         ENGINE = MergeTree ORDER BY payload
         TTL ts + INTERVAL 1 DAY
