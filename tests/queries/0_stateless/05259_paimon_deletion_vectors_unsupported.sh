@@ -69,6 +69,35 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path = '/cli
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_dv;"
 
+# A reader that already consumed snapshot 2 reaches snapshot 3, the compaction that added the deletion vector.
+# The writer's commit of snapshot 3 is replayed by copying its snapshot file and the LATEST hint.
+RESUMED_TABLE="${DATA_DIR}/dv_resumed"
+cp -r "${DV_TABLE}" "${RESUMED_TABLE}"
+rm "${RESUMED_TABLE}/snapshot/snapshot-3"
+printf '2' > "${RESUMED_TABLE}/snapshot/LATEST"
+
+${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine 1 -q "
+    DROP TABLE IF EXISTS t_dv_resumed;
+    CREATE TABLE t_dv_resumed ENGINE = PaimonLocal('${RESUMED_TABLE}')
+    SETTINGS
+        paimon_incremental_read = 1,
+        paimon_keeper_path = '/clickhouse/tables/{database}/t_dv_resumed',
+        paimon_replica_name = '{replica}';"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_dv_resumed;"
+
+cp "${DV_TABLE}/snapshot/snapshot-3" "${DV_TABLE}/snapshot/LATEST" "${RESUMED_TABLE}/snapshot/"
+
+out=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_dv_resumed;" 2>&1)
+echo "$out" | grep -q 'deletion vectors are not applied' \
+    && echo "$out" | grep -q 'NOT_IMPLEMENTED' \
+    && echo "RESUMED THROWS"
+
+# The watermark stays at the consumed snapshot 2.
+${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/${CLICKHOUSE_DATABASE}/t_dv_resumed' AND name = 'committed_snapshot';"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_dv_resumed;"
+
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM paimonLocal('${DATA_DIR}/paimon_no_partition');"
 
 rm -rf "${DATA_DIR}"

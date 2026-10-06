@@ -833,6 +833,8 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
 
         if (skip_compact && state->isCompact())
         {
+            /// The watermark moves past a skipped compaction, which can add deletion vectors.
+            checkNoDeletionVectors(snapshot_id);
             LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
             continue;
         }
