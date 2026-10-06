@@ -128,6 +128,14 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         }
     }
 
+    /// `fsync_backup_files = DEFAULT` names the setting too, although its change was dropped above.
+    if (query.settings)
+    {
+        const auto & default_settings = query.settings->as<const ASTSetQuery &>().default_settings;
+        if (std::ranges::find(default_settings, "fsync_backup_files") != default_settings.end())
+            res.fsync_backup_files_specified = true;
+    }
+
     if (query.base_backup_name)
         res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
