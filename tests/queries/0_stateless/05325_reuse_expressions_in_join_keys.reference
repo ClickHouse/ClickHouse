@@ -133,3 +133,12 @@
 1
 1000	5369050530052646273
 1000	5369050530052646273
+30. not reused: a constant that compares equal but is a different value
+2
+1
+1	-0	0
+2	0	0
+3	1.5	1.5
+1	-0	0
+2	0	0
+3	1.5	1.5

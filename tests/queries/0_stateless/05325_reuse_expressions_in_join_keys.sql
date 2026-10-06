@@ -29,6 +29,8 @@ DROP TABLE IF EXISTS rn;
 DROP TABLE IF EXISTS lm;
 DROP TABLE IF EXISTS ldt;
 DROP TABLE IF EXISTS rdt;
+DROP TABLE IF EXISTS lz;
+DROP TABLE IF EXISTS rz;
 
 CREATE TABLE l (id UInt64, k UInt64, s String, d DateTime64(6, 'UTC'), j JSON) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE r (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
@@ -57,6 +59,10 @@ CREATE TABLE ldt (id UInt64, dd Date) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ldt VALUES (1, '2106-02-07'), (2, '2026-01-01');
 CREATE TABLE rdt (t DateTime) ENGINE = MergeTree ORDER BY t;
 INSERT INTO rdt VALUES (4294967295), ('2026-01-01 23:59:59');
+CREATE TABLE lz (id UInt64, x Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lz VALUES (1, -0.), (2, 0.), (3, 1.5);
+CREATE TABLE rz (v String) ENGINE = MergeTree ORDER BY v;
+INSERT INTO rz VALUES ('0'), ('1.5');
 
 CREATE TABLE ln (id UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ln SELECT number, if(number % 5 = 0, NULL, number % 7) FROM numbers(100);
@@ -401,6 +407,16 @@ SELECT count(), sum(cityHash64(*)) FROM (SELECT a.id, a.ks, r.id FROM (SELECT id
     ASOF JOIN r ON toString(rand(toString(a.k)) % 1) = r.v AND a.id + rand(toString(a.k)) % 1 >= r.id)
     SETTINGS query_plan_merge_expressions = 0;
 
+SELECT '30. not reused: a constant that compares equal but is a different value';
+SELECT countIf(explain ILIKE '%FUNCTION plus(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.y, rz.v FROM (SELECT id, x, x + -0. AS y FROM lz) AS a JOIN rz ON toString(a.x + 0.) = rz.v);
+SELECT countIf(explain ILIKE '%FUNCTION plus(%') FROM (EXPLAIN actions = 1, compact = 0
+    SELECT a.id, a.y, rz.v FROM (SELECT id, x, x + 0. AS y FROM lz) AS a JOIN rz ON toString(a.x + 0.) = rz.v);
+SELECT a.id, toString(a.y), rz.v FROM (SELECT id, x, x + -0. AS y FROM lz) AS a JOIN rz ON toString(a.x + 0.) = rz.v
+    ORDER BY a.id;
+SELECT a.id, toString(a.y), rz.v FROM (SELECT id, x, x + -0. AS y FROM lz) AS a JOIN rz ON toString(a.x + 0.) = rz.v
+    ORDER BY a.id SETTINGS query_plan_merge_expressions = 0;
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE lg;
@@ -411,3 +427,5 @@ DROP TABLE rn;
 DROP TABLE lm;
 DROP TABLE ldt;
 DROP TABLE rdt;
+DROP TABLE lz;
+DROP TABLE rz;

@@ -1216,7 +1216,14 @@ bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
     const IColumn & b_inner = b->getDataColumn();
     if (typeid(a_inner) != typeid(b_inner))
         return false;
-    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0;
+    if (a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) != 0)
+        return false;
+    /// `compareAt` also equates values that functions can tell apart: `0.` and `-0.`, NaNs with different bits
+    SipHash a_hash;
+    a_inner.updateHashWithValue(0, a_hash);
+    SipHash b_hash;
+    b_inner.updateHashWithValue(0, b_hash);
+    return a_hash.get128() == b_hash.get128();
 }
 
 bool isConstant(const ActionsDAG::Node & n)
