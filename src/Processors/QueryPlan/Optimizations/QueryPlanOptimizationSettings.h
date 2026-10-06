@@ -196,11 +196,6 @@ struct QueryPlanOptimizationSettings
     size_t max_bytes_for_lazy_final = 0;
     float min_filtered_ratio_for_lazy_final = 0;
 
-    /// Vector-search-related settings
-    size_t max_limit_for_vector_search_queries;
-    bool vector_search_with_rescoring;
-    VectorSearchFilterStrategy vector_search_filter_strategy;
-
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;

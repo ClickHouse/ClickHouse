@@ -34,6 +34,7 @@
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsBool vector_search_use_quantized_codes;
 }
@@ -154,7 +155,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     /// Number of rows the final top-k needs (includes any OFFSET).
     const size_t n = limit_step->getLimitForSorting();
-    if (n == 0 || n > settings.max_limit_for_vector_search_queries)
+    if (n == 0 || n > read_step->getContext()->getSettingsRef()[Setting::max_limit_for_vector_search_queries].value)
         return false;
 
     /// The inner shortlist LimitStep is plain. WITH TIES (rows tied with the boundary distance) and read-till-end

@@ -105,7 +105,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_top_k_dynamic_filtering_for_variable_length_types;
-    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
@@ -138,7 +137,6 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_filter_min_probe_rows;
     extern const SettingsBool join_runtime_filter_size_from_hash_table_stats;
     extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 max_bytes_for_lazy_final;
@@ -154,7 +152,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
-    extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
 }
@@ -343,10 +340,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
     max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
     min_filtered_ratio_for_lazy_final = from[Setting::min_filtered_ratio_for_lazy_final];
-
-    max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
-    vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
-    vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

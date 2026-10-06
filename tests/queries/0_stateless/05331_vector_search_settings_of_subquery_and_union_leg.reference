@@ -1,0 +1,42 @@
+-- A1 trailing clause of a single SELECT: exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+-- A2 clause of a subquery in FROM: exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+-- A3 clause of the first leg of a UNION ALL: exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+-- A4 clause of both legs of a UNION ALL in FROM: exact distances
+1	0	0.10000002384185791
+1	1	0.2999999523162842
+2	0	0.10000002384185791
+2	1	0.2999999523162842
+-- A5 trailing clause of a UNION ALL still covers the first leg: exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+-- B1 max_limit_for_vector_search_queries of a subquery: no index, exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+2	2.879236054492939
+-- B2 same with rescoring: all 3 rows
+0	0.10000002384185791
+1	0.2999999523162842
+2	2.879236054492939
+-- A6 session setting reaches a subquery: exact distances
+0	0.10000002384185791
+1	0.2999999523162842
+-- A7 clause of a subquery turns rescoring off: the index-only plan is used
+1
+-- C1 prefilter as the trailing clause of a single SELECT
+10
+11
+12
+-- C2 prefilter as the clause of a subquery in FROM
+10
+11
+12
+-- D1 the subquery uses the quantized shortlist
+1
+-- D2 max_limit_for_vector_search_queries of the subquery disables it
+1

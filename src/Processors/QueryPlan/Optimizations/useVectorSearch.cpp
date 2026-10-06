@@ -4,11 +4,13 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -22,6 +24,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
+    extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool vector_search_with_rescoring;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -49,7 +58,7 @@ namespace DB::QueryPlanOptimizations
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we check that the table has a vector similarity index built on vec or an expression based
 ///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -135,7 +144,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (read_from_mergetree_step->getRowLevelFilter())
         additional_filters_present = true;
 
-    if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
+    /// A SETTINGS clause of a subquery or of a UNION ALL leg is only in the context of its read step.
+    const Settings & read_settings = read_from_mergetree_step->getContext()->getSettingsRef();
+
+    if (additional_filters_present && read_settings[Setting::vector_search_filter_strategy].value == VectorSearchFilterStrategy::PREFILTER)
         return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search
 
     /// Extract N
@@ -148,7 +160,7 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         return no_layers_updated;
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (n > settings.max_limit_for_vector_search_queries)
+    if (n > read_settings[Setting::max_limit_for_vector_search_queries].value)
         return no_layers_updated;
 
     /// Not 100% sure but other sort types are likely not what we want
@@ -430,11 +442,12 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    bool optimize_plan = !settings.vector_search_with_rescoring;
+    const bool with_rescoring = read_from_mergetree_step->getContext()->getSettingsRef()[Setting::vector_search_with_rescoring];
+    bool optimize_plan = !with_rescoring;
     /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
     /// vector row hints only describe the original candidates and must not filter
     /// rows added for the final merge.
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
+    bool apply_row_filter_for_rescoring = with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
