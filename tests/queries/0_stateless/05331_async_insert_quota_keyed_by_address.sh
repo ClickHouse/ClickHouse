@@ -12,21 +12,24 @@ U1="u1_$D"; Q1="q1_$D"
 U2="u2_$D"; Q2="q2_$D"
 U3A="u3a_$D"; Q3A="q3a_$D"
 U3B="u3b_$D"; Q3B="q3b_$D"
+U4="u4_$D"; Q4="q4_$D"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $U1, $U2, $U3A, $U3B"
-    ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS $Q1, $Q2, $Q3A, $Q3B"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $U1, $U2, $U3A, $U3B, $U4"
+    ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS $Q1, $Q2, $Q3A, $Q3B, $Q4"
 }
 cleanup
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64, s String) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t2 (x UInt64, s String) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t3 (x UInt64, s String) ENGINE = MergeTree ORDER BY x"
-${CLICKHOUSE_CLIENT} -q "CREATE USER $U1, $U2, $U3A, $U3B IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t4 (x UInt64, s String) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} -q "CREATE USER $U1, $U2, $U3A, $U3B, $U4 IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT INSERT, SELECT ON $D.t1 TO $U1"
 ${CLICKHOUSE_CLIENT} -q "GRANT INSERT ON $D.t2 TO $U2"
 ${CLICKHOUSE_CLIENT} -q "GRANT INSERT ON $D.t3 TO $U3A, $U3B"
+${CLICKHOUSE_CLIENT} -q "GRANT INSERT ON $D.t4 TO $U4"
 
 ASYNC="async_insert=1&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_min_ms=50&async_insert_max_data_size=100000000&async_insert_max_query_number=1000&async_insert_deduplicate=0"
 WAIT="$ASYNC&wait_for_async_insert=1&async_insert_busy_timeout_max_ms=100"
@@ -54,6 +57,15 @@ ${CLICKHOUSE_CLIENT} -q "SELECT x, s FROM t1 ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT countIf(quota_key = '0.0.0.0' OR (queries > 0) != (written_bytes > 0)), countIf(written_bytes > 0) > 0
     FROM system.quotas_usage WHERE quota_name = '$Q1'"
+
+echo "--- KEYED BY client_key, ip_address"
+${CLICKHOUSE_CLIENT} -q "CREATE QUOTA $Q4 KEYED BY client_key, ip_address FOR INTERVAL 100 YEAR MAX written_bytes = 1000000000 TO $U4"
+# Without a client key the quota is keyed by the client address, with one by the key.
+http_insert "$U4" "" "$WAIT" "INSERT INTO t4 VALUES (1, 'no key')"
+http_insert "$U4" "" "$WAIT&quota_key=tenant_$D" "INSERT INTO t4 VALUES (2, 'key')"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT countIf(quota_key = '0.0.0.0' OR (queries > 0) != (written_bytes > 0)), countIf(quota_key = 'tenant_$D' AND written_bytes > 0)
+    FROM system.quotas_usage WHERE quota_name = '$Q4'"
 
 echo "--- KEYED BY forwarded_ip_address"
 # Room for one row of 316 bytes per client.

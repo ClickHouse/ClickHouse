@@ -5,6 +5,10 @@ OK
 2	http
 3	select
 0	1
+--- KEYED BY client_key, ip_address
+OK
+OK
+0	1
 --- KEYED BY forwarded_ip_address
 OK
 QUOTA_EXCEEDED
