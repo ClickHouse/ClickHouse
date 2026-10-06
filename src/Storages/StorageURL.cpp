@@ -1778,7 +1778,6 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
-    /// Only removes PREWHERE inputs that the steps above do not use (see `removeUnusedPrewhereInputsFromFormatInfo`).
     bool canRemoveUnusedColumns() const override
     {
         return canRemoveUnusedPrewhereInputsFromFormatInfo(info, query_info.row_level_filter);

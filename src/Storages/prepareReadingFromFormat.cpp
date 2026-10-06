@@ -330,7 +330,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 namespace
 {
 
-/// Names of the pass-through PREWHERE inputs that `removeUnusedPrewhereInputsFromFormatInfo` may remove from `info`.
 NameSet getRemovablePrewhereInputs(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter)
 {
     NameSet removable;
