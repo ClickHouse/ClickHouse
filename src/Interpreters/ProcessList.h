@@ -211,7 +211,6 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
-    /// `Context::isDDLOrOnClusterInternal` of the query context: the query is run by the DDL worker.
     const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
@@ -603,8 +602,7 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    /// With except_ddl_backups_and_restores, BACKUP and RESTORE queries run by the DDL worker
-    /// (the per-host parts of ON CLUSTER operations) are not cancelled.
+    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
     void killAllQueries(bool except_ddl_backups_and_restores = false);
 };
 

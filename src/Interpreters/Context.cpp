@@ -1081,8 +1081,7 @@ struct ContextSharedPart : boost::noncopyable
         /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
         SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
 
-        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog,
-        /// and before joining the dictionaries loader threads, because a restore can create a dictionary.
+        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         process_list.killAllQueries();
