@@ -60,6 +60,14 @@ SELECT countIf(position(explain, '_distance') > 0) > 0 FROM (
     SELECT id, d FROM (SELECT id, L2Distance(vec, [1.0, 0.0]) AS d FROM tab ORDER BY d LIMIT 2
         SETTINGS vector_search_with_rescoring = 0));
 
+SELECT '-- A8 clause of the first leg of a UNION ALL turns rescoring off: the index-only plan is used';
+SELECT countIf(position(explain, '_distance') > 0) > 0 FROM (
+    EXPLAIN header = 1
+    SELECT id, L2Distance(vec, [1.0, 0.0]) AS d FROM tab ORDER BY d LIMIT 2
+        SETTINGS vector_search_with_rescoring = 0
+    UNION ALL
+    SELECT toInt32(0), toFloat32(0) WHERE 0);
+
 SET vector_search_with_rescoring = 0;
 
 DROP TABLE tab;
@@ -88,6 +96,16 @@ SETTINGS vector_search_filter_strategy = 'prefilter';
 SELECT '-- C2 prefilter as the clause of a subquery in FROM';
 SELECT id FROM (SELECT id FROM tab_filter WHERE date = '2025-01-03' AND attr2 >= 1008
     ORDER BY L2Distance(vec, [1.0, 1.0]) LIMIT 3 SETTINGS vector_search_filter_strategy = 'prefilter');
+
+SET vector_search_filter_strategy = 'prefilter';
+
+SELECT '-- C3 postfilter as the clause of a subquery in FROM under a session prefilter: the vector index is used';
+SELECT countIf(explain LIKE '%vector_similarity%') > 0 FROM (
+    EXPLAIN indexes = 1
+    SELECT id FROM (SELECT id FROM tab_filter WHERE date = '2025-01-03' AND attr2 >= 1008
+        ORDER BY L2Distance(vec, [1.0, 1.0]) LIMIT 3 SETTINGS vector_search_filter_strategy = 'postfilter'));
+
+SET vector_search_filter_strategy = 'auto';
 
 DROP TABLE tab_filter;
 

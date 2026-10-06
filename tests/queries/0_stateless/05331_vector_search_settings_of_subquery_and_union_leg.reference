@@ -28,6 +28,8 @@
 1	0.2999999523162842
 -- A7 clause of a subquery turns rescoring off: the index-only plan is used
 1
+-- A8 clause of the first leg of a UNION ALL turns rescoring off: the index-only plan is used
+1
 -- C1 prefilter as the trailing clause of a single SELECT
 10
 11
@@ -36,6 +38,8 @@
 10
 11
 12
+-- C3 postfilter as the clause of a subquery in FROM under a session prefilter: the vector index is used
+1
 -- D1 the subquery uses the quantized shortlist
 1
 -- D2 max_limit_for_vector_search_queries of the subquery disables it
