@@ -16,7 +16,7 @@ struct TestParams
     std::optional<UInt64> seed = std::nullopt;
     SimulationParams simulation{};
     AdversaryParams adversary{};
-    std::chrono::seconds watchdog{60};
+    std::chrono::seconds watchdog_timeout{60};
 };
 
 /// Runs a test body under the runtime of the wyrd.

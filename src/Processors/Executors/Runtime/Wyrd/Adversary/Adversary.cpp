@@ -79,7 +79,7 @@ void Adversary::threadEnter()
 
 void Adversary::threadFault()
 {
-    if (randomEventEvery(params.suspend_freq))
+    if (randomEventEvery(params.suspend_one_in))
         suspendThisThread();
     else
         maybeYield();
@@ -87,7 +87,7 @@ void Adversary::threadFault()
 
 bool Adversary::threadSpuriousFailure()
 {
-    if (!randomEventEvery(params.spurious_failure_every))
+    if (!randomEventEvery(params.spurious_failure_one_in))
         return false;
 
     spurious_failure_count.fetch_add(1);
@@ -106,7 +106,7 @@ void Adversary::threadLeaveLockFreeScope()
 
 void Adversary::threadProgress()
 {
-    if (suspended_count.load() > 0 && randomEventEvery(params.resume_freq))
+    if (suspended_count.load() > 0 && randomEventEvery(params.resume_one_in))
         resumeRandomThread();
 }
 
@@ -127,7 +127,7 @@ void Adversary::suspendThisThread()
         std::lock_guard lock(mutex);
 
         size_t suspended_now = suspended_count.load();
-        if (suspended_now >= params.suspended_threads_limit)
+        if (suspended_now >= params.max_suspended_threads)
             return;
         if (suspended_now + 1 >= thread_count.load())
             return;
@@ -161,7 +161,7 @@ void Adversary::resumeRandomThread()
 
 void Adversary::maybeYield()
 {
-    if (randomEventEvery(params.yield_freq))
+    if (randomEventEvery(params.yield_one_in))
     {
         std::this_thread::yield();
         yield_count.fetch_add(1);

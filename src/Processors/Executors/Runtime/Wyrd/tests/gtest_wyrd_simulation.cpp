@@ -115,7 +115,7 @@ TEST(Wyrd, SimulationReportsAnExceptionFromAThread)
 TEST(Wyrd, SimulationStopsAtTheStepLimit)
 {
     SimulationParams params;
-    params.step_limit = 50;
+    params.max_steps = 50;
 
     SimulationResult result = Simulation(params).run(
         []
@@ -132,7 +132,7 @@ TEST(Wyrd, SimulationStopsAtTheStepLimit)
 TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 {
     SimulationParams params;
-    params.step_limit = 1000;
+    params.max_steps = 1000;
     params.seed = 43;
 
     bool done = false;
@@ -153,8 +153,8 @@ TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 {
     SimulationParams params;
-    params.hold_every = 1;
-    params.held_threads_limit = 2;
+    params.lock_free_suspend_one_in = 1;
+    params.max_suspended_threads = 2;
 
     SimulationResult result = Simulation(params).run(
         []
@@ -221,8 +221,8 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     {
         SimulationParams params;
         params.seed = seed;
-        params.hold_every = 1;
-        params.time_slice = 1;
+        params.lock_free_suspend_one_in = 1;
+        params.max_syncs_before_preempt = 1;
         SimulationResult result = Simulation(params).run(block_on_a_lock_free_peer);
         if (result.status == SimulationResult::Status::Deadlock)
         {
@@ -235,7 +235,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     EXPECT_TRUE(found);
 }
 
-WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_every = 1})
+WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_one_in = 1})
 {
     Atomic<int> value{0};
     int expected = 0;

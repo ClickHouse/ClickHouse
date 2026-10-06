@@ -73,7 +73,7 @@ SimulationResult::Status Simulation::runLoop()
         if (!next)
             return alive == 0 ? SimulationResult::Status::Ok : SimulationResult::Status::Deadlock;
 
-        if (steps >= params.step_limit)
+        if (steps >= params.max_steps)
             return SimulationResult::Status::StepLimit;
 
         ++steps;
@@ -119,7 +119,7 @@ void Simulation::createThread(std::function<void()> user_body)
         }
     };
 
-    threads.push_back(std::make_unique<SimulatedThread>(next_thread_id++, params.stack_size, std::move(guarded_body)));
+    threads.push_back(std::make_unique<SimulatedThread>(next_thread_id++, params.fiber_stack_size, std::move(guarded_body)));
     ++alive;
     scheduler.onRunnable(threads.back().get());
 }
@@ -183,7 +183,7 @@ void Simulation::spawn(std::function<void()> body, std::source_location location
 bool Simulation::spuriousFailure(std::source_location location)
 {
     traceEvent("spuriousFailure", location);
-    return randomEventEvery(params.spurious_failure_every);
+    return randomEventEvery(params.spurious_failure_one_in);
 }
 
 void Simulation::enterLockFreeScope(std::source_location location)

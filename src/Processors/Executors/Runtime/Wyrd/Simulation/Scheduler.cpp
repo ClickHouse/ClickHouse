@@ -35,7 +35,7 @@ SimulatedThread * Scheduler::pickNext()
             return nullptr;
 
         current_thread = popRandom(runnable_threads);
-        current_thread_slice_left = 1 + randomNumber() % params.time_slice;
+        current_thread_slice_left = 1 + randomNumber() % params.max_syncs_before_preempt;
     }
     return current_thread;
 }
@@ -44,16 +44,16 @@ bool Scheduler::shouldHold() const
 {
     if (!contains(threads_in_lock_free_scope, current_thread))
         return false;
-    if (held_threads.size() >= params.held_threads_limit)
+    if (held_threads.size() >= params.max_suspended_threads)
         return false;
     if (std::ranges::none_of(runnable_threads, [this](const SimulatedThread * thread) { return contains(threads_in_lock_free_scope, thread); }))
         return false;
-    return randomEventEvery(params.hold_every);
+    return randomEventEvery(params.lock_free_suspend_one_in);
 }
 
 bool Scheduler::shouldWakeSpuriously() const
 {
-    return randomEventEvery(params.spurious_wakeup_every);
+    return randomEventEvery(params.spurious_wakeup_one_in);
 }
 
 void Scheduler::onSync()
@@ -111,7 +111,7 @@ void Scheduler::onProgress()
         return;
 
     ++progress_streak;
-    if (progress_streak >= params.progress_to_resume)
+    if (progress_streak >= params.resume_after_progress_hints)
     {
         moveRandom(held_threads, runnable_threads);
         progress_streak = 0;

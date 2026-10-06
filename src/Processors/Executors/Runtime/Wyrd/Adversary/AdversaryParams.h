@@ -7,11 +7,11 @@ namespace DB::Runtime::Wyrd
 
 struct AdversaryParams
 {
-    size_t yield_freq = 10;
-    size_t spurious_failure_every = 11;
-    size_t suspend_freq = 10;
-    size_t suspended_threads_limit = 2;
-    size_t resume_freq = 5;
+    size_t yield_one_in = 10;
+    size_t spurious_failure_one_in = 11;
+    size_t suspend_one_in = 10;
+    size_t max_suspended_threads = 2;
+    size_t resume_one_in = 5;
     bool pin_to_single_core = true;
 };
 
