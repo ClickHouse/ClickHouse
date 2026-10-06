@@ -166,6 +166,8 @@ public:
 
     virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
+    virtual void setExplicitMetadataFilePath(const String & /*path*/) {}
+
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
@@ -309,7 +311,12 @@ public:
         return nullptr;
     }
 
-    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(
+        ObjectStoragePtr /*object_storage*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }

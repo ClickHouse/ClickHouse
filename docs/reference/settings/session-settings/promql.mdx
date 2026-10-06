@@ -28,11 +28,11 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 
 **Aliases**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "The setting was renamed. The previous name is `evaluation_time`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "The setting was renamed. The previous name is `evaluation_time`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}]}]}/>
 
-Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+Sets the evaluation time to be used with promql dialect, as a Unix timestamp in seconds with an optional fraction. 'auto' means the current time.
 
 ## promql_table {#promql_table}
 

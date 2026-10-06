@@ -1,0 +1,23 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>8192</max_block_size>
+    </settings>
+
+    <create_query>
+        CREATE TABLE json_compact_shared_path_cache (id UInt64, j JSON(max_dynamic_paths = 0))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 1,
+            min_bytes_for_wide_part = '1G', write_marks_for_substreams_in_compact_parts = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO json_compact_shared_path_cache
+        SELECT number, toJSONString(map('a', number, 'b', number + 1)) FROM numbers(8192)
+    </fill_query>
+
+    <!-- Reading both the parent and shared paths must not scan earlier granules again. -->
+    <query>SELECT j, j.a, j.b FROM json_compact_shared_path_cache FORMAT Null</query>
+    <query>SELECT j.a, j.b FROM json_compact_shared_path_cache FORMAT Null</query>
+
+    <drop_query>DROP TABLE json_compact_shared_path_cache</drop_query>
+</test>
