@@ -127,6 +127,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(order_id, order-id);
 DEFINE_ICEBERG_FIELD_ALIAS(default_sort_order_id, default-sort-order-id);
 DEFINE_ICEBERG_FIELD_ALIAS(sort_orders, sort-orders);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
+DEFINE_ICEBERG_FIELD_ALIAS(null_order, null-order);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_transform, transform);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
