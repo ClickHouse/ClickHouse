@@ -2,6 +2,7 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 
@@ -46,9 +47,9 @@ WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
     EXPECT_EQ(ring.size(), 0u);
 }
 
-WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce)
+WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
 {
-    constexpr UInt32 total = 300;
+    constexpr UInt32 total = 20;
     constexpr UInt32 thieves = 3;
     constexpr UInt32 batch = 4;
 
@@ -64,31 +65,44 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce)
         1,
         [&](size_t)
         {
+            Wyrd::LockFreeScope scope;
             for (auto & state : states)
             {
                 while (!ring.push(taskFor(state)))
+                {
                     if (auto task = ring.pop())
                         take(*task);
+                    Wyrd::progress();
+                }
+                Wyrd::progress();
 
                 if (Wyrd::randomNumber() % 2 == 0)
+                {
                     if (auto task = ring.pop())
                         take(*task);
+                    Wyrd::progress();
+                }
             }
 
             while (auto task = ring.pop())
+            {
                 take(*task);
+                Wyrd::progress();
+            }
             owner_done.store(true);
         });
     race.add(
         thieves,
         [&](size_t)
         {
+            Wyrd::LockFreeScope scope;
             std::array<Task, batch> grabbed{};
             while (true)
             {
                 const UInt32 count = ring.grab(grabbed);
                 for (UInt32 offset = 0; offset < count; ++offset)
                     take(grabbed[offset]);
+                Wyrd::progress();
 
                 if (count == 0 && owner_done.load())
                     return;
