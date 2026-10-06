@@ -139,8 +139,21 @@ std::optional<bool> tryGetConstantTruthOfLowCardinalityFilter(const IColumn & co
 
     const auto & key_values = uint8_keys->getData();
     TruthOfKeyTable truth_of_key(key_values.size());
+    UInt8 dict_seen = 0;
     for (size_t i = 0; i < key_values.size(); ++i)
+    {
         truth_of_key[i] = key_values[i] && !(key_null_map && (*key_null_map)[i]);
+        dict_seen |= static_cast<UInt8>(1 << truth_of_key[i]);
+    }
+
+    /// Every dictionary entry already agrees on the truth value (e.g. the typical `s IN ('z')`
+    /// with `'z'` absent from the whole column, where the dictionary holds only `false`): the
+    /// block is constant regardless of which entries its indexes actually reference, without
+    /// scanning a single one of them.
+    if (dict_seen == 1)
+        return false;
+    if (dict_seen == 2)
+        return true;
 
     const IColumn & indexes = column_lc->getIndexes();
     UInt8 seen = 0;
