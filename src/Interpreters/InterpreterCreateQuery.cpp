@@ -2383,7 +2383,9 @@ void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & 
     }
     catch (...)
     {
-        /// Fail-close: do not leave a table without the hidden objects of its indexes.
+        /// Fail-close: do not leave a table without the hidden objects of its indexes. The synchronous drop waits until
+        /// nothing references the table, so the reference held here must be released first.
+        table.reset();
         dropVectorSimilarityIvfInnerObjects(table_id, *metadata, getContext());
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext()->getGlobalContext(), getContext(), table_id,
             /*sync=*/ true, /*ignore_sync_setting=*/ false, /*need_ddl_guard=*/ true);

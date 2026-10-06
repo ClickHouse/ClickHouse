@@ -21,8 +21,6 @@ SELECT 'Centroids table';
 SELECT name, type FROM system.columns
 WHERE database = currentDatabase() AND startsWith(table, '_ivf_quantizer_')
 ORDER BY position;
-SELECT name, type_full FROM system.data_skipping_indices
-WHERE database = currentDatabase() AND startsWith(table, '_ivf_quantizer_');
 
 SELECT 'Centroids dictionary';
 SELECT key.names, key.types, attribute.names, attribute.types FROM system.dictionaries

@@ -567,16 +567,23 @@ void createVectorSimilarityIvfInnerObjects(
         const StorageID centroids_table_id = getVectorSimilarityIvfCentroidsTableID(table_id, index.name);
         const StorageID centroids_dictionary_id = getVectorSimilarityIvfCentroidsDictionaryID(table_id, index.name);
 
+        /// The HNSW index speeds up the search over many centroids. Without USearch, the centroids are scanned.
+#if USE_USEARCH
+        const String hnsw_index = fmt::format(
+            ", INDEX vec_hnsw vec TYPE vector_similarity('hnsw', {}, {}, 'f32', 64, 256)",
+            quoteString(arguments.distance_function), arguments.dimensions);
+#else
+        const String hnsw_index;
+#endif
+
         /// One partition per level, since HNSW is built per part. Rows are ordered by parent, so the children of the chosen
         /// centroids are read by primary key. Centroids are wide, hence the small granularity.
         executeInternalQuery(fmt::format(
             "CREATE TABLE {} "
             "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, radius Float32, "
-            "generation UInt32, generation_size UInt32, "
-            "INDEX vec_hnsw vec TYPE vector_similarity('hnsw', {}, {}, 'f32', 64, 256)) "
+            "generation UInt32, generation_size UInt32{}) "
             "ENGINE = {} PARTITION BY level ORDER BY (level, parent, cid) SETTINGS index_granularity = 256",
-            centroids_table_id.getFullTableName(), quoteString(arguments.distance_function), arguments.dimensions,
-            centroids_engine), context);
+            centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), context);
 
         executeInternalQuery(fmt::format(
             "CREATE DICTIONARY {} "
