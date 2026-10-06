@@ -351,15 +351,45 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
     # and a backup on it is reached only through them: after a power loss the uploaded objects can
     # survive while the metadata pointing at them is gone. fsync_backup_files must therefore fsync
     # the metadata file of every written backup file plus the .backup manifest, and their directories.
+    node = cluster.instances["node"]
+
+    # The oracle is exact rather than a lower bound: a plain backup writes one data file per entry it
+    # actually stored plus the .backup manifest, so FileSync must equal num_entries + 1, which fails if
+    # any single metadata file is left unsynced. num_entries, not num_files: num_files also counts the
+    # entries that were skipped (e.g. as empty), and a file that is never written is never synced.
+    def assert_every_file_synced(backup_events):
+        num_entries = int(
+            node.query(
+                f"SELECT num_entries FROM system.backups"
+                f" WHERE query_id = '{backup_events['query_id']}'"
+            ).strip()
+        )
+        assert backup_events["FileSync"] == num_entries + 1, (num_entries, backup_events)
+        # The directory count follows the part layout, so it is only bounded here; the archive arm
+        # below pins an exact count.
+        assert backup_events["DirectorySync"] >= 1, backup_events
+
+    # An archive (`.tar`: zip is rejected on object storage) is packed into one file written directly
+    # into the disk root, so exactly one metadata file and one metadata directory are synced.
+    def assert_archive_synced(backup_events):
+        assert backup_events["FileSync"] == 1, backup_events
+        assert backup_events["DirectorySync"] == 1, backup_events
+
     backup_events, _ = check_backup_and_restore(
         cluster,
         "default",
         f"Disk('disk_s3', '{new_backup_name()}')",
         backup_settings={"fsync_backup_files": 1},
     )
-    # At least one data file and the manifest: a manifest-only sync would read 1.
-    assert backup_events["FileSync"] >= 2, backup_events
-    assert backup_events["DirectorySync"] >= 1, backup_events
+    assert_every_file_synced(backup_events)
+
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}.tar')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert_archive_synced(backup_events)
 
     # The opt-out issues no sync of either kind, so the counts above are attributable to the setting.
     backup_events, _ = check_backup_and_restore(
@@ -391,8 +421,7 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
         f"Disk('disk_s3_encrypted', '{new_backup_name()}')",
         backup_settings={"fsync_backup_files": 1},
     )
-    assert backup_events["FileSync"] >= 2, backup_events
-    assert backup_events["DirectorySync"] >= 1, backup_events
+    assert_every_file_synced(backup_events)
 
     # That wrapper keeps its files under `encrypted/` inside disk_s3 but leaves a path that already
     # starts with that prefix alone, so a backup named `encrypted/...` must not have the prefix
@@ -403,8 +432,7 @@ def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
         f"Disk('disk_s3_encrypted', 'encrypted/{new_backup_name()}')",
         backup_settings={"fsync_backup_files": 1},
     )
-    assert backup_events["FileSync"] >= 2, backup_events
-    assert backup_events["DirectorySync"] >= 1, backup_events
+    assert_every_file_synced(backup_events)
 
 
 @pytest.mark.parametrize(
