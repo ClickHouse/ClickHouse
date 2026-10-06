@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-old-analyzer
+-- Tags: no-parallel, no-old-analyzer, no-fasttest
 -- no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
