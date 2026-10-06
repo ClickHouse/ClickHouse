@@ -77,81 +77,72 @@ std::optional<Task> LocalTasks::pop()
     const UInt32 new_head = head.load() - 1;
     head.store(new_head);
 
-    Wyrd::SpinWait spin_wait;
     UInt64 word = bounds.load();
-    while (true)
+    const auto [tail, taken] = unpackBounds(word);
+    const Int32 available = signedDifference(new_head, taken);
+    if (available < 0)
     {
-        const auto [tail, taken] = unpackBounds(word);
-        const Int32 below = signedDifference(new_head, taken);
-        if (below < 0)
+        /// No tasks left.
+        head.store(new_head + 1);
+        return std::nullopt;
+    }
+    else if (available > 0)
+    {
+        /// Pop was committed with store.
+        return getSlot(buffer, new_head);
+    }
+    else
+    {
+        /// Some thief is working with a smaller segment.
+        if (tail != taken)
+            return getSlot(buffer, new_head);
+
+        /// Need to synchronize with the thief - it may started the stealing overlapping with new_head.
+        if (bounds.compare_exchange_strong(word, packBounds({taken + 1, taken + 1})))
         {
-            /// No tasks left.
             head.store(new_head + 1);
-            return std::nullopt;
-        }
-        else if (below > 0)
-        {
-            /// Pop was committed with store.
             return getSlot(buffer, new_head);
         }
-        else
-        {
-            /// Some thief is working with a smaller segment.
-            if (tail != taken)
-                return getSlot(buffer, new_head);
 
-            /// Need to synchronize with the thief - it may started the stealing overlapping with new_head.
-            if (bounds.compare_exchange_weak(word, packBounds({taken + 1, taken + 1})))
-            {
-                head.store(new_head + 1);
-                return getSlot(buffer, new_head);
-            }
-        }
-
-        spin_wait.spin();
+        /// Thief locked last task.
+        head.store(new_head + 1);
+        return std::nullopt;
     }
 }
 
 UInt32 LocalTasks::grab(std::span<Task> out)
 {
-    Wyrd::SpinWait spin_wait;
     UInt64 word = bounds.load();
 
     /// Try lock steal range.
-    UInt32 first = 0;
-    UInt32 end = 0;
-    while (true)
-    {
-        const auto [tail, taken] = unpackBounds(word);
-        if (tail != taken)
-            return 0;
+    const auto [tail, taken] = unpackBounds(word);
+    if (tail != taken)
+        return 0;
 
-        const Int32 available = signedDifference(head.load(), taken);
-        if (available <= 0)
-            return 0;
+    const Int32 available = signedDifference(head.load(), tail);
+    if (available <= 0)
+        return 0;
 
-        const UInt32 count = std::min<UInt32>(static_cast<UInt32>(out.size()), available - available / 2);
-        first = taken;
-        end = taken + count;
-        if (bounds.compare_exchange_weak(word, packBounds({first, end})))
-            break;
+    const UInt32 count = std::min<UInt32>(static_cast<UInt32>(out.size()), available - available / 2);
+    if (!bounds.compare_exchange_strong(word, packBounds({tail, tail + count})))
+        return 0;
 
-        spin_wait.spin();
-    }
+    UInt32 grab_begin = tail;
+    UInt32 grab_end = tail + count;
 
+    /// Lower the range end: between the head read above and the claim, pop may have taken slots
     const UInt32 head_now = head.load();
-    if (signedDifference(end, head_now) > 0)
+    if (signedDifference(grab_end, head_now) > 0)
     {
-        end = signedDifference(head_now, first + 1) > 0 ? head_now : first + 1;
-        bounds.store(packBounds({first, end}));
+        grab_end = signedDifference(head_now, grab_begin + 1) > 0 ? head_now : grab_begin + 1;
+        bounds.store(packBounds({grab_begin, grab_end}));
     }
 
-    for (UInt32 index = first; index != end; ++index)
-        out[index - first] = getSlot(buffer, index);
+    for (UInt32 index = grab_begin; index != grab_end; ++index)
+        out[index - grab_begin] = getSlot(buffer, index);
 
-    bounds.store(packBounds({end, end}));
-
-    return end - first;
+    bounds.store(packBounds({grab_end, grab_end}));
+    return grab_end - grab_begin;
 }
 
 UInt32 LocalTasks::size() const

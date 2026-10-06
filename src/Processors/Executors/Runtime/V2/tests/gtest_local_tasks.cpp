@@ -84,9 +84,11 @@ WYRD_TEST(LocalTasks, FullRingRefusesPushUntilGrab)
 
 WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 3 })
 {
-    constexpr UInt32 total = 20;
+    constexpr UInt32 total = 64;
     constexpr UInt32 thieves = 3;
     constexpr UInt32 batch = 4;
+    constexpr UInt32 owner_pops_one_in = 4;
+    constexpr UInt32 min_successful_grabs = 4;
 
     std::vector<ProcessorState> states(total);
     std::vector<Wyrd::Atomic<UInt32>> taken(total);
@@ -94,6 +96,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
 
     LocalTasks ring;
     Wyrd::Atomic<bool> owner_done{false};
+    Wyrd::Atomic<UInt32> successful_grabs{0};
 
     Wyrd::Race race;
     race.add(
@@ -111,7 +114,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
                 }
                 Wyrd::progress();
 
-                if (Wyrd::randomNumber() % 2 == 0)
+                if (Wyrd::randomNumber() % owner_pops_one_in == 0)
                 {
                     if (auto task = ring.pop())
                         take(*task);
@@ -137,6 +140,8 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
                 const UInt32 count = ring.grab(grabbed);
                 for (UInt32 offset = 0; offset < count; ++offset)
                     take(grabbed[offset]);
+                if (count > 0)
+                    successful_grabs.fetch_add(1);
                 Wyrd::progress();
 
                 if (count == 0 && owner_done.load())
@@ -146,6 +151,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
     race.run();
 
     EXPECT_EQ(ring.size(), 0u);
+    EXPECT_GE(successful_grabs.load(), min_successful_grabs);
     for (UInt32 index = 0; index < total; ++index)
         EXPECT_EQ(taken[index].load(), 1u) << "task " << index;
 }
