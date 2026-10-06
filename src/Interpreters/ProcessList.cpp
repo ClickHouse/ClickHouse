@@ -936,7 +936,7 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 }
 
 
-void ProcessList::killAllQueries(bool except_backups_and_restores)
+void ProcessList::killAllQueries(bool except_non_initial_backups_and_restores)
 {
     std::vector<QueryStatusPtr> cancelled_processes;
 
@@ -952,8 +952,9 @@ void ProcessList::killAllQueries(bool except_backups_and_restores)
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
-            if (except_backups_and_restores
-                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore))
+            if (except_non_initial_backups_and_restores
+                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore)
+                && process->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
                 continue;
 
             cancelled_processes.push_back(process);

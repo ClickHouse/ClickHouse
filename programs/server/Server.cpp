@@ -3829,7 +3829,7 @@ try
 
             /// Wait for unfinished backups and restores.
             /// This must be done after closing listening sockets (no more socket-delivered backups/restores) but before ProcessList::killAllQueries
-            /// (because unless shutdown_wait_backups_and_restores is set, killAllQueries() will cancel all running backups/restores).
+            /// (because killAllQueries() will cancel all running backups/restores).
             bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
@@ -3846,10 +3846,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
-            /// In wait mode backups and restores are left to BackupsWorker::shutdown(), which waits for them.
+            /// In wait mode the parts of ON CLUSTER backups and restores sent by other hosts are left to BackupsWorker::shutdown().
+            /// An initial one that missed the wait above is cancelled: its own part needs this host's DDL worker, stopped before that.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries(
-                    /* except_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
+                    /* except_non_initial_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();

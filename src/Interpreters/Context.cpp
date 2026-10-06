@@ -1074,7 +1074,7 @@ struct ContextSharedPart : boost::noncopyable
         /// The DDL worker and the backups worker are drained between (1) and (3), because both can create dictionaries.
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         process_list.killAllQueries(
-            /* except_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
+            /* except_non_initial_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
 
         /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
         /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
