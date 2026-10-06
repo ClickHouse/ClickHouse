@@ -19,13 +19,17 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.tbl_05331 (id UInt32, s String) ENGINE = Mer
 INSERT INTO ${CLICKHOUSE_DATABASE}.tbl_05331 VALUES (1, 'a');
 "
 
+# Each `COPY ... FROM STDIN` gets an invocation of its own, so that end of input terminates the
+# data: a `psql` that forwards the `\.` marker to the server instead of consuming it would hand
+# the server a row that is not data.
 psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet 2>&1 <<'EOF2'
 COPY tbl_05331 FROM STDIN;
 2	b
-\.
+EOF2
+
+psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet 2>&1 <<'EOF2'
 COPY tbl_05331 (id, s) FROM STDIN WITH (FORMAT csv);
 3,c
-\.
 EOF2
 
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${CLICKHOUSE_DATABASE}.tbl_05331 FINAL"
