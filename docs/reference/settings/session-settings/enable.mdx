@@ -403,6 +403,16 @@ The downside is potentially higher memory usage.
 
 Enables the `Quantized` compression codec.
 
+## enable_reads_from_columns_cache {#enable_reads_from_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control reading from columns cache"}]}]}/>
+
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+
 ## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -587,6 +597,16 @@ Disabled by default.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Enable vertical final by default again after fixing bug"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Use vertical final by default"}]}]}/>
 
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
+
+## enable_writes_to_columns_cache {#enable_writes_to_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control writing to columns cache"}]}]}/>
+
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 
 ## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 

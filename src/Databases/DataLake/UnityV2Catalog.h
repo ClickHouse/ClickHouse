@@ -45,6 +45,10 @@ public:
         const String & table_location,
         Poco::JSON::Object::Ptr metadata_content) const override;
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -74,6 +78,9 @@ public:
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
+    /// Delta tables only: Iceberg tables get write credentials from the Iceberg REST catalog.
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.
     bool isTransactional() const override { return true; }
@@ -91,6 +98,13 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
+
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
 
 private:
     const std::string base_url_str;
@@ -154,8 +168,11 @@ private:
         const Poco::JSON::Object::Ptr & table_json,
         TableMetadata & result) const;
 
-    /// Asks the catalog for temporary read credentials for Delta tables.
-    std::shared_ptr<IStorageCredentials> getDeltaCredentials(const std::string & table_id, StorageType storage_type) const;
+    /// Asks the catalog for temporary credentials for Delta tables, `operation` is `READ` or `READ_WRITE`.
+    std::shared_ptr<IStorageCredentials> getDeltaCredentials(
+        const std::string & table_id, StorageType storage_type, const std::string & operation) const;
+
+    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation);
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;

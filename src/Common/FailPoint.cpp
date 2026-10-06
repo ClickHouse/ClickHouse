@@ -272,6 +272,7 @@ static struct InitFiu
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
+    REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
@@ -408,6 +409,8 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_removed_from_disk_set) \
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_local_logs_preprocessing_wait) \
+    REGULAR(keeper_never_pause_appending_entries) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
