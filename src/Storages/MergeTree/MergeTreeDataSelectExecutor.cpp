@@ -2050,7 +2050,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
         parts = std::make_shared<const RangesInDataParts>();
     }
-    /// A deserialized distributed read still needs a step when this replica's snapshot is empty;
+    /// A deserialized bucketed read still needs a step when this replica's snapshot is empty;
     /// initializePipeline resolves it to an empty read, or to a retryable divergence error when the
     /// coordinator pinned bucket marks to parts this replica does not have.
     else if (parts->empty() && !query_info.isStream() && !build_empty_step_for_distributed_read)

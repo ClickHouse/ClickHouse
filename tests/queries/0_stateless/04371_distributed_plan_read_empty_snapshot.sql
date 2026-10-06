@@ -17,9 +17,10 @@ DROP TABLE IF EXISTS t_dp_empty_snapshot;
 CREATE TABLE t_dp_empty_snapshot (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 INSERT INTO t_dp_empty_snapshot SELECT number FROM numbers(100000);
 
+-- The failpoint is in the replica deserializer, so keep reads off the stateless-worker read step.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_default_reader_bucket_count = 3, distributed_plan_max_rows_to_broadcast = 0,
-    max_rows_to_group_by = 0;
+    max_rows_to_group_by = 0, distributed_plan_prefer_replicas_over_workers = 1;
 
 -- Without the fault the bucketed read works normally.
 SELECT sum(x) FROM t_dp_empty_snapshot;
@@ -58,9 +59,9 @@ DROP TABLE t_dp_empty_snapshot_final;
 
 -- Non-bucketed read shipped in a distributed fragment: when the distributed axis is an exchange above
 -- the read (here a global aggregation over a small FINAL read that is not itself range-split into
--- buckets), the leaf ReadFromMergeTree ships with distributed_read_bucket_count == 0. readFromParts must
--- still build a real (empty) step on an empty local snapshot; returning null crashed the generic plan
--- deserializer with a SIGSEGV. A non-bucketed read is not pinned to coordinator-selected parts, so an
+-- buckets), the leaf ReadFromMergeTree ships with distributed_read_bucket_count == 0. Deserialization
+-- must still return a step (an empty read) on an empty local snapshot; returning null crashed the generic
+-- plan deserializer with a SIGSEGV. A non-bucketed read is not pinned to coordinator-selected parts, so an
 -- empty snapshot is legitimately zero local rows (no divergence contract), not NO_SUCH_DATA_PART.
 DROP TABLE IF EXISTS t_dp_empty_snapshot_small;
 -- Only 50 rows: one mark regardless of granularity, so this read is never bucketed. Pin the granularity

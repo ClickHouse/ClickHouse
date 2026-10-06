@@ -7145,14 +7145,12 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr,
-        /// Unconditional: a read shipped in a distributed fragment always needs a step even on an empty
-        /// snapshot, and it is not always bucketed (the distributed axis can be an exchange above it).
-        /*build_empty_step_for_distributed_read*/ true);
+        /*build_empty_step_for_distributed_read*/ distributed_read_bucket_count > 0);
 
     /// `readFromParts` builds no step when the local snapshot has no parts. `MergeTreeDataSelectExecutor::read`
     /// turns that into an empty plan, so rebuild it as an empty read here too: the caller dereferences the step,
-    /// and the `allow_query_condition_cache` bit only matters for a read that exists. A bucketed read keeps
-    /// failing below, because its exchange contract has not been checked against an empty replica.
+    /// and the `allow_query_condition_cache` bit only matters for a read that exists. A bucketed read always
+    /// gets a step, so `initializePipeline` checks its buckets against this replica's empty snapshot.
     if (!step && !distributed_read_bucket_count)
         return std::make_unique<ReadNothingStep>(ctx.output_header);
 
