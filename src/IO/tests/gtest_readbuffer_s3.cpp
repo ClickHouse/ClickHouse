@@ -833,6 +833,108 @@ TEST_F(ReadBufferFromS3Test, LongerResponseIsCutAtTheRightBound)
     EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0}));
 }
 
+TEST_F(ReadBufferFromS3Test, PositionedReadChecksTheReturnedRangeStart)
+{
+    const auto data = makeObject(100);
+    auto read_at = [&](bool ignore_range, size_t range_begin) -> BoundedReadResult
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), ignore_range);
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), range_begin, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return result;
+    };
+
+    /// A `Range`-ignoring endpoint answers with the object from byte 0, which is a correct answer only at offset 0.
+    const auto refused = read_at(/*ignore_range=*/true, /*range_begin=*/40);
+    ASSERT_TRUE(refused.error_code.has_value());
+    EXPECT_EQ(*refused.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+
+    const auto at_zero = read_at(/*ignore_range=*/true, /*range_begin=*/0);
+    ASSERT_FALSE(at_zero.error_code.has_value()) << *at_zero.error_code;
+    EXPECT_EQ(at_zero.data, data.substr(0, 16));
+
+    const auto ranged = read_at(/*ignore_range=*/false, /*range_begin=*/40);
+    ASSERT_FALSE(ranged.error_code.has_value()) << *ranged.error_code;
+    EXPECT_EQ(ranged.data, data.substr(40, 16));
+}
+
+TEST_F(ReadBufferFromS3Test, UnboundedReadAfterASeekChecksTheReturnedRangeStart)
+{
+    const auto data = makeObject(100);
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), /*ignore_range=*/true);
+        const auto result = readWithRightBound(client, /*read_until_position=*/0, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_TRUE(result.error_code.has_value());
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+        EXPECT_TRUE(result.data.empty());
+    }
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data);
+        const auto result = readWithRightBound(client, /*read_until_position=*/0, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data.substr(40));
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40}));
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, ContentRangeHeaderIsParsed)
+{
+    const auto data = makeObject(100);
+    /// Every request is answered with the 16 bytes at `body_begin` and the given `Content-Range`.
+    auto read_at = [&](size_t range_begin, size_t body_begin, const std::string & content_range) -> BoundedReadResult
+    {
+        const auto client = std::make_shared<ClientFake>();
+        std::vector<std::shared_ptr<StringHTTPBasicStreamBuf>> bodies;
+        client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
+        {
+            bodies.push_back(std::make_shared<StringHTTPBasicStreamBuf>(data.substr(body_begin, 16)));
+            Aws::Http::HeaderValueCollection headers{{"content-range", content_range}};
+            auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>(
+                "test response stream", std::make_shared<CountedSession>(), bodies.back().get()));
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), std::move(headers));
+            return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
+        };
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), range_begin, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return result;
+    };
+
+    /// The range unit is case-insensitive.
+    const auto mixed_case = read_at(/*range_begin=*/40, /*body_begin=*/40, "Bytes 40-55/100");
+    ASSERT_FALSE(mixed_case.error_code.has_value()) << *mixed_case.error_code;
+    EXPECT_EQ(mixed_case.data, data.substr(40, 16));
+
+    /// A header that does not parse is not taken as a range starting at 0.
+    const auto malformed = read_at(/*range_begin=*/0, /*body_begin=*/40, "bytes=40-55/100");
+    ASSERT_TRUE(malformed.error_code.has_value()) << malformed.data;
+    EXPECT_EQ(*malformed.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+}
+
 TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembledThroughFilesystemCache)
 {
     DB::ServerUUID::setRandomForUnitTests();

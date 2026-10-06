@@ -19,6 +19,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <base/sleep.h>
 
 #include <charconv>
@@ -92,15 +93,18 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_end <= outer_end);
 }
 
-/// A response without a `Content-Range: bytes <first>-<last>/<size>` header is the whole object, i.e. starts at 0.
+/// A response without a `Content-Range` header is the whole object, i.e. starts at 0. A header that is not
+/// `bytes <first>-<last>/<size>` matches no offset.
 void checkReturnedRangeStart(const Aws::S3::Model::GetObjectResult & result, size_t offset, const String & bucket, const String & key)
 {
+    constexpr std::string_view unit = "bytes ";
     const String & content_range = result.GetContentRange();
-    std::string_view range = content_range;
-    size_t start = 0;
-    if (range.starts_with("bytes "))
+    std::optional<size_t> start;
+    if (content_range.empty())
+        start = 0;
+    else if (std::string_view range = content_range; equalsCaseInsensitive(range.substr(0, unit.size()), unit))
     {
-        range.remove_prefix(std::string_view("bytes ").size());
+        range.remove_prefix(unit.size());
         size_t first = 0;
         const auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), first);
         if (ec == std::errc() && ptr != range.data() + range.size() && *ptr == '-')
@@ -360,6 +364,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         try
         {
             result = sendRequest(attempt, range_begin, range_begin + n - 1);
+            checkReturnedRangeStart(*result, range_begin, bucket, key);
             std::istream & istr = result->GetBody();
 
             bool cancelled = false;
@@ -626,8 +631,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
 
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
-    if (read_until_position)
-        checkReturnedRangeStart(read_result, offset, bucket, key);
+    checkReturnedRangeStart(read_result, offset, bucket, key);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
