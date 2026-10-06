@@ -171,10 +171,11 @@
     M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.", ValueType::Number) \
+    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
@@ -531,6 +532,10 @@
     M(MarkCacheEvictedBytes, "Number of bytes evicted from the mark cache.", ValueType::Bytes) \
     M(MarkCacheEvictedMarks, "Number of marks evicted from the mark cache.", ValueType::Number) \
     M(MarkCacheEvictedFiles, "Number of mark files evicted from the mark cache.", ValueType::Number) \
+    M(ColumnsCacheHits, "Number of times a deserialized column was found in the columns cache.", ValueType::Number) \
+    M(ColumnsCacheMisses, "Number of times a deserialized column was not found in the columns cache.", ValueType::Number) \
+    M(ColumnsCacheEvictedBytes, "Number of bytes evicted from the columns cache.", ValueType::Bytes) \
+    M(ColumnsCacheEvictedEntries, "Number of entries evicted from the columns cache.", ValueType::Number) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
@@ -948,7 +953,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time", ValueType::Microseconds) \
     M(FilesystemCacheReserveAttempts, "Filesystem cache space reservation attempt", ValueType::Number) \
-    M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts.", ValueType::Number) \
+    M(FilesystemCacheReserveAheadRetries, "Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size", ValueType::Number) \
+    M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).", ValueType::Number) \
     M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time", ValueType::Microseconds) \
     M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time", ValueType::Microseconds) \
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \

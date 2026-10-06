@@ -2861,6 +2861,13 @@ private:
 
 }
 
+std::optional<UInt64> Aggregator::getPeakMemoryUsage() const
+{
+    if (!memory_tracker)
+        return std::nullopt;
+    return std::max<Int64>(memory_tracker->getPeak(), 0);
+}
+
 template <typename Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     AggregatedDataVariants & data_variants,

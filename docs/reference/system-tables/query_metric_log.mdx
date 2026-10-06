@@ -187,6 +187,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
 - `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/reference/data-types/int-uint)) — Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.
+- `ProfileEvent_TextIndexPatternBypassCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 - `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the text index.
 - `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.
 - `ProfileEvent_QueryConditionCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.
@@ -518,6 +519,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/reference/data-types/int-uint)) — Number of marks evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of mark files evicted from the mark cache.
+- `ProfileEvent_ColumnsCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was found in the columns cache.
+- `ProfileEvent_ColumnsCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was not found in the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of entries evicted from the columns cache.
 - `ProfileEvent_LoadedPrimaryIndexFiles` ([UInt64](/reference/data-types/int-uint)) — Number of primary index files loaded.
 - `ProfileEvent_LoadedPrimaryIndexRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
 - `ProfileEvent_LoadedPrimaryIndexBytes` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
@@ -1546,6 +1551,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetTopKSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
 - `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read
 - `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
@@ -1599,6 +1605,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits
 - `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/reference/data-types/int-uint)) — Number of granules examined for read time pruning by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/reference/data-types/int-uint)) — Number of granules pruned at read time by JOIN Runtime Filters
+- `ProfileEvent_RuntimeFilterLookupsBeforeBuildFinished` ([UInt64](/reference/data-types/int-uint)) — Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
 - `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
 - `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.

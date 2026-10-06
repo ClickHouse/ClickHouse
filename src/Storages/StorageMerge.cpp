@@ -25,11 +25,10 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -330,7 +329,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 storage_id.getNameForLogs());
 
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
-        auto structure = table_metadata->getColumns();
+        const auto & structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -504,71 +503,6 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 namespace
 {
 
-/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
-/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
-/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
-bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
-{
-    if (from.equals(to))
-        return true;
-
-    const WhichDataType which_from(from);
-    const WhichDataType which_to(to);
-
-    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
-    /// mapping is the identity: the target must agree on the values AND be wide enough not to
-    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
-    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
-    {
-        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
-        {
-            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
-                return true;
-        }
-        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
-            return true;
-    }
-
-    /// Widening an integer keeps the order when the signedness is preserved or the target is
-    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
-    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
-    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
-    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
-    if (which_from.isInteger() && which_to.isInteger()
-        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
-        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
-            || !to.isValueRepresentedByUnsignedInteger()))
-        return true;
-
-    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
-    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
-    /// side; it never nests, so the stripped side is not `LowCardinality` again.
-    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
-    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
-    if (from_lc || to_lc)
-        return conversionPreservesOrder(
-            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
-
-    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
-    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
-    /// then has to become a concrete one and NULL placement changes.
-    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
-    {
-        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
-        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
-    }
-
-    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
-    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
-    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
-    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
-    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
-    if (from_array && to_array)
-        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
-
-    return false;
-}
-
 /// The column a child table should be read through to serve `column_name`, a name the child cannot
 /// resolve on its own. A subcolumn of a column whose type differs between the child and the `Merge`
 /// table exists only in the `Merge` type: `Merge` derives `seed Variant(String, UInt8)` from children
@@ -594,6 +528,15 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     }
 
     return {};
+}
+
+/// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
+/// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
+bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
+{
+    const auto & type = column.getTypeInStorage();
+    return !type->getCustomSerialization()
+        || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
 }
 
 }
@@ -1552,6 +1495,24 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     auto * modified_query_node = modified_query->as<QueryNode>();
 
+    /// An `ARRAY JOIN` result column is produced above the table, so a filter over it is not a filter
+    /// over the table's own columns, and the child must not be asked to read it: `StorageMerge` reads
+    /// its children with `FetchColumns` and performs the array join on the initiator, where the filter
+    /// is applied. Replacing the join tree below rewires every column sourced from the `ARRAY JOIN`
+    /// node onto the child table expression, which makes such a filter indistinguishable from a filter
+    /// over the child's own columns, so drop those filters here, while the columns still point at the
+    /// `ARRAY JOIN` node. Filters over the table's columns are unaffected: they were rewired onto the
+    /// child table expression by the replacement above and are kept.
+    if (join_tree_type == QueryTreeNodeType::ARRAY_JOIN)
+    {
+        if (modified_query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getPrewhere(), replacement_table_expression, context);
+        if (modified_query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getWhere(), replacement_table_expression, context);
+    }
+
     // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
     modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
     modified_query_node = modified_query->as<QueryNode>();
@@ -1687,7 +1648,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
-        auto storage_columns = storage_snapshot_->metadata->getColumns();
+        const auto & storage_columns = storage_snapshot_->metadata->getColumns();
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         for (const auto & column_name : required_column_names)
@@ -1737,7 +1698,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
             /// A subcolumn of a missing column is the subcolumn of the column's default: `x.null` of a NULL is 1.
             Field default_value = merge_column->type->getDefault();
-            if (merge_column->isSubcolumn())
+            if (merge_column->isSubcolumn() && isSubcolumnOfDefaultValue(*merge_column))
             {
                 const auto & type_in_storage = merge_column->getTypeInStorage();
                 auto subcolumn = type_in_storage->getSubcolumn(
@@ -2513,7 +2474,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
             if (!current_header.has(column.name) && !merge_columns.has(column.name))
             {
                 auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
-                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage()))
+                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage())
+                    && isSubcolumnOfDefaultValue(*merge_column))
                 {
                     column_to_fill = NameAndTypePair(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
                     has_subcolumns_of_missing_columns = true;

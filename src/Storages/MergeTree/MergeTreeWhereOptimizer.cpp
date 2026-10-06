@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -108,16 +109,7 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
 
 bool typeContainsFloat(const DataTypePtr & type)
 {
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
