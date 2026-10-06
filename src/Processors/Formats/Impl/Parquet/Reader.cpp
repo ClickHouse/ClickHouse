@@ -1009,7 +1009,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
         if (row_group.need_to_process && row_blocks_to_read)
         {
-            /// Query condition cache: skip the row group if none of its row blocks may match.
             size_t first_block = candidate.start_global_row_idx / rows_per_row_block;
             size_t last_block = (candidate.start_global_row_idx + size_t(meta->num_rows) - 1) / rows_per_row_block;
             bool any_block_matches = false;
@@ -2417,7 +2416,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
         if (row_blocks_to_read && row_group.need_to_process)
         {
-            /// Query condition cache: only the row blocks that may hold a matching row.
             const size_t group_start = row_group.start_global_row_idx;
             const size_t group_end = group_start + size_t(row_group.meta->num_rows);
             const size_t last_block = (group_end - 1) / rows_per_row_block;

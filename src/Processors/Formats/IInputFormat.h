@@ -136,18 +136,13 @@ public:
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
-    /// The query condition cache can also describe a file in row blocks: consecutive ranges of
-    /// QUERY_CONDITION_CACHE_ROWS_PER_BLOCK rows, numbered from the first row of the file. This is finer
-    /// than buckets (e.g. Parquet row groups), so a repeated selective query can skip the parts of a
-    /// bucket that hold no matching row.
+    /// Query condition cache row blocks: consecutive ranges of this many rows, numbered from the first row of the file.
     static constexpr size_t QUERY_CONDITION_CACHE_ROWS_PER_BLOCK = 8192;
 
-    /// After the whole file was read: for each row block, whether any of its rows passed the filter
-    /// the format applied. `nullopt` if the format can't tell.
+    /// After the whole file was read: whether each row block had a row passing the format's filter. `nullopt` if unknown.
     virtual std::optional<std::vector<bool>> getMatchedRowBlocks() const { return std::nullopt; }
 
-    /// Read only the row blocks marked `true` (a verdict of the query condition cache for this exact
-    /// file version and condition). Must be called before the first `read`. Formats may ignore it.
+    /// Read only the row blocks marked `true`. Must be called before the first `read`. Formats may ignore it.
     virtual void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> /*row_blocks*/) {}
 
 protected:

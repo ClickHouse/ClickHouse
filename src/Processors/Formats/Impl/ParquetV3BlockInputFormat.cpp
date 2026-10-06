@@ -100,12 +100,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->reader.rows_per_row_block = QUERY_CONDITION_CACHE_ROWS_PER_BLOCK;
-            /// Row-block verdicts describe the rows that pass the filter, which isn't known for a lazy
-            /// materialization read (it reads chosen rows only).
+            /// A lazy materialization read reads chosen rows only, so which rows pass the filter is unknown there.
             reader->reader.track_matched_row_blocks = format_filter_info->condition_hash.has_value() && !format_filter_info->rows_to_read;
             if (row_blocks_to_read)
             {
-                /// The verdict is keyed by the file version, so it should always describe this file.
                 size_t total_rows = 0;
                 for (const auto & row_group : reader->reader.file_metadata.row_groups)
                     total_rows += size_t(std::max<Int64>(row_group.num_rows, 0));
