@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
 
@@ -24,7 +23,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
             "The rule type. Possible values: RuleTypeAll = 0 - default, with regex, compatible with old scheme; "
             "RuleTypePlain = 1 - plain metrics, with regex, compatible with old scheme; "
             "RuleTypeTagged = 2 - tagged metrics, with regex, compatible with old scheme; "
-            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
+            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
         {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
         {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
         {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
@@ -53,7 +52,11 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
+            const auto & table = iterator->table();
+            if (!table)
+                continue;
+
+            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
             if (!table_data)
                 continue;
 

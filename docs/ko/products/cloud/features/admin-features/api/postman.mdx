@@ -29,7 +29,7 @@ Postman 애플리케이션은 웹 브라우저에서 사용할 수 있으며, �
 <Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="워크스페이스 만들기" border />
 
 <div id="create-a-collection">
-  ### Collection 생성
+  ### 컬렉션 생성
 </div>
 
 * 왼쪽 상단 메뉴에서 &quot;Explore&quot; 아래의 &quot;Import&quot;를 클릭합니다:
@@ -40,9 +40,9 @@ Postman 애플리케이션은 웹 브라우저에서 사용할 수 있으며, �
 
 <Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="API URL 입력" border />
 
-* API 주소 &quot;https://api.clickhouse.cloud/v1&quot;을 입력하고 &#39;Enter&#39;를 누릅니다:
+* API 주소 &quot;https://api.clickhouse.cloud/v1&quot;를 입력하고 &#39;Enter&#39;를 누릅니다:
 
-* &quot;Import&quot; 버튼을 클릭하여 &quot;Postman Collection&quot;을 선택합니다:
+* &quot;Import&quot; 버튼을 클릭한 다음 &quot;Postman Collection&quot;을 선택합니다:
 
 <Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border />
 
@@ -107,15 +107,15 @@ Postman 애플리케이션은 웹 브라우저에서 사용할 수 있으며, �
 </div>
 
 * `organizationid` 폴더 아래에서 &quot;GET 조직 세부 정보&quot;로 이동합니다:
-* 가운데 프레임 메뉴의 Params 아래에서 `organizationid`가 필요합니다.
+* 가운데 프레임 메뉴의 Params 아래에서 `organizationid`를 입력해야 합니다.
 
 <Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="조직 세부 정보 조회 테스트" border />
 
-* 이 값을 중괄호로 감싼 `orgid` 값 `{{orgid}}`로 수정합니다(앞서 이 값을 설정했다면 해당 값이 포함된 메뉴가 표시됩니다):
+* 이 값을 중괄호로 감싼 `orgid` 값인 `{{orgid}}`로 수정합니다(앞서 이 값을 설정했다면 해당 값이 포함된 메뉴가 표시됩니다):
 
 <Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="테스트 제출" border />
 
-* &quot;Save&quot; 버튼을 누른 후 화면 오른쪽 상단의 파란색 &quot;Send&quot; 버튼을 누릅니다.
+* &quot;Save&quot; 버튼을 누른 후, 화면 오른쪽 상단의 파란색 &quot;Send&quot; 버튼을 누릅니다.
 
 <Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="반환 값" border />
 
@@ -131,4 +131,4 @@ Postman 애플리케이션은 웹 브라우저에서 사용할 수 있으며, �
 
 <Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="서비스 목록" border />
 
-* 반환된 결과에는 서비스 목록과 각 서비스의 세부 정보가 &quot;status&quot;: 200과 함께 표시되어야 합니다. (&quot;status&quot; 400이 표시되고 서비스 정보가 없으면 구성이 올바르지 않은 것입니다.)
+* 반환된 결과에는 &quot;status&quot;: 200과 함께 서비스 목록 및 각 서비스의 세부 정보가 표시되어야 합니다. (&quot;status&quot; 400이 표시되고 서비스 정보가 없으면 구성이 올바르지 않은 것입니다.)

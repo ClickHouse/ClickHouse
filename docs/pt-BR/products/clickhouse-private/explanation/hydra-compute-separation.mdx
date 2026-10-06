@@ -1,0 +1,59 @@
+---
+noindex: true
+title: "Hydra: Separação de processamento"
+sidebarTitle: "Separação de processamento do Hydra"
+description: "Este documento explica o Hydra, o recurso de separação de processamento para clusters ClickHouse Private."
+---
+
+Este documento explica o Hydra, o recurso de separação de processamento para clusters ClickHouse Private.
+
+<div id="what-is-hydra">
+  ## O que é Hydra?
+</div>
+
+O Hydra permite criar **vários grupos de nós dentro de um único cluster lógico do ClickHouse**, em que cada grupo de nós pode ter:
+
+* Um número diferente de nós
+* Diferentes alocações de recursos (CPU, memória)
+* Um endpoint de rede separado
+
+Isso permite executar workloads diferentes (por exemplo, analytics pesadas vs. dashboards mais leves) sobre o mesmo conjunto de dados, sem que esses workloads concorram pelos mesmos recursos de compute.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+O Hydra faz a separação de processamento enquanto mantém uma camada de dados unificada:
+
+* **ClickHouse Keeper compartilhado** -- Todos os grupos de nós em um cluster Hydra usam o mesmo ensemble do Keeper para coordenação distribuída. Não há necessidade de instâncias separadas do Keeper para cada grupo de nós.
+* **Dados S3 compartilhados** -- Todos os grupos de nós leem do mesmo prefixo de dados no S3 (e, potencialmente, também gravam nele). Como o ClickHouse usa armazenamento de objetos compartilhado para os dados das tabelas, vários grupos de computação podem acessar os mesmos dados subjacentes sem duplicação.
+* **Computação separada** -- Cada grupo de nós executa seu próprio conjunto de pods do servidor ClickHouse, com configurações de recursos independentes e seu próprio endpoint de serviço no Kubernetes.
+
+<div id="parent-child-relationship">
+  ## Relação pai-filho
+</div>
+
+O Hydra usa um **modelo pai-filho**:
+
+* O **pai** é um cluster ClickHouse existente que detém os dados e o ensemble do Keeper.
+* Os **filhos** são grupos de nós adicionais provisionados com referência ao nome e ao espaço de nomes do pai. Ao criar um filho, você especifica o pai usando `parentCluster.name` e `parentCluster.namespace`.
+
+Um pai pode ter vários filhos, cada um com diferentes características de dimensionamento e acesso.
+
+<div id="read-only-vs-read-write-children">
+  ## Instâncias filhas read-only vs read-write
+</div>
+
+Por padrão, as instâncias filhas são **read-write**, o que significa que podem ler e gravar dados no armazenamento compartilhado.
+
+Opcionalmente, uma instância filha pode ser configurada como **read-only** (definindo `isReadonly=true` no momento da criação). Instâncias filhas read-only podem consultar dados, mas não podem modificá-los, o que as torna adequadas para workloads como relatórios, dashboards ou analytics, em que o acesso de escrita não é necessário e se deseja isolamento em relação às operações de escrita.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+Há duas restrições importantes que você deve considerar ao usar o Hydra:
+
+1. **Não é possível provisionar instâncias filhas se a instância pai estiver parada, encerrada ou inativa.** A instância pai deve estar em execução para que as filhas possam ser criadas, pois elas dependem do ensemble do Keeper da instância pai e da configuração de dados compartilhados.
+
+2. **Você deve excluir todas as instâncias filhas antes de excluir o cluster pai.** O pai não pode ser removido enquanto as filhas ainda fizerem referência a ele. A tentativa de excluir um pai com filhas ativas falhará.

@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', '자동 계측']
 ---
 
-import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -82,7 +82,9 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 {/* vale on */}
 
 <Steps>
-  <Step title="Helm으로 Odigos 배포" id="deploy-odigos">
+  <Step>
+    #### Helm으로 Odigos 배포
+
     Odigos Enterprise를 사용하려면 온프레미스 라이선스 토큰이 필요합니다. 셸에서 다음과 같이 export하세요:
 
     ```bash
@@ -112,7 +114,9 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
     ```
   </Step>
 
-  <Step title="Odigos UI에서 소스 추가" id="add-sources">
+  <Step>
+    #### Odigos UI에서 소스 추가
+
     1. Odigos UI 서비스로 포트 포워딩합니다:
 
     ```bash
@@ -125,7 +129,9 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
     5. **SOURCES** 컬럼에서 워크로드가 성공적으로 계측되었는지 확인하세요.
   </Step>
 
-  <Step title="Odigos UI에서 ClickStack을 대상으로 추가하기" id="add-destination-ui">
+  <Step>
+    #### Odigos UI에서 ClickStack을 대상으로 추가하기
+
     텔레메트리를 ClickStack으로 보내려면 Odigos에서 **OTLP HTTP** 대상을 추가합니다. 정확한 구성은 ClickStack의 배포 방식에 따라 달라집니다. 오픈 소스 ClickStack에서는 OpenTelemetry collector가 함께 제공되며 수집 key는 HyperDX UI에서 자동으로 생성됩니다. Managed ClickStack에서는 독립 실행형 ClickStack collector를 직접 실행하고, 컨테이너 시작 시 인증 토큰을 직접 지정합니다.
 
     <Tip>
@@ -187,10 +193,12 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
     </Tabs>
   </Step>
 
-  <Step title="ClickStack에서 텔레메트리 확인" id="verify-telemetry">
+  <Step>
+    #### ClickStack에서 텔레메트리 확인
+
     1. ClickStack UI(HyperDX)를 여십시오:
        * **Open source ClickStack**: 예를 들어 all-in-one 이미지에서는 `http://<host>:8080`입니다.
-       * **Managed ClickStack**: [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 연 후 **Launch ClickStack**을 클릭하십시오.
+       * **Managed ClickStack**: [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 연 후 **Launch ClickStack**을 클릭하십시오. 자세한 내용은 [ClickStack UI로 이동](/ko/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud)을 참조하십시오.
     2. 계측된 서비스의 데이터가 있는지 **Logs**, **Metrics**, **Traces**에서 확인하십시오.
     3. `odigos.version`으로 **Traces**를 필터링하여 엔드 투 엔드 내보내기를 검증하십시오.
 

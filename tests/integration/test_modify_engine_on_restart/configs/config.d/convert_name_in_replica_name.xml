@@ -1,5 +1,0 @@
-<clickhouse>
-<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
-<!-- {database} and {table} are unfolded into the stored replica name, the way a CREATE unfolds them. -->
-<default_replica_name>{database}_{table}_{replica}</default_replica_name>
-</clickhouse>

@@ -179,17 +179,7 @@ void NegativeLimitByTransform::appendRun(const ChunkSlice::ColumnsPtr & columns_
     dropExcessRows(window);
 }
 
-/// Stores a group index in the cell's mapped slot, so a set method cannot be used (and is never selected
-/// here); this overload exists only because the dispatch macro covers every variant.
 template <typename Method>
-requires SetAggregationMethod<Method>
-void NegativeLimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, const ChunkSlice::ColumnsPtr &, UInt64)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitByTransform does not support void-mapped aggregation methods");
-}
-
-template <typename Method>
-requires MapAggregationMethod<Method>
 void NegativeLimitByTransform::consumeImpl(
     Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows)
 {

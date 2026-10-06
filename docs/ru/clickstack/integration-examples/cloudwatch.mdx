@@ -50,7 +50,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
 </Note>
 
 <Steps>
-  <Step title="Получение ключа API ClickStack" id="get-api-key">
+  <Step>
+    #### Получение ключа API ClickStack
+
     OpenTelemetry Collector отправляет данные в конечную точку OTLP ClickStack, для которой требуется аутентификация.
 
     1. Откройте HyperDX по URL-адресу ClickStack (например, http://localhost:8080)
@@ -67,19 +69,21 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     ```
   </Step>
 
-  <Step title="Настройка учетных данных AWS" id="configure-aws">
+  <Step>
+    #### Настройка учетных данных AWS
+
     Экспортируйте учетные данные AWS как переменные окружения. Способ зависит от типа аутентификации:
 
     **Для пользователей AWS SSO (рекомендуется для большинства организаций):**
 
     ```bash
-    # Login to SSO
+    # Войти в SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # Export credentials to environment variables
+    # Экспортировать учётные данные в переменные окружения
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # Verify credentials work
+    # Проверить работоспособность учётных данных
     aws sts get-caller-identity
     ```
 
@@ -92,7 +96,7 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # Verify credentials work
+    # Проверьте работоспособность учётных данных
     aws sts get-caller-identity
     ```
 
@@ -120,7 +124,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     Замените `YOUR_ACCOUNT_ID` на идентификатор вашей учётной записи AWS.
   </Step>
 
-  <Step title="Настройте приёмник CloudWatch" id="configure-receiver">
+  <Step>
+    #### Настройте приёмник CloudWatch
+
     Создайте файл `otel-collector-config.yaml` с конфигурацией приёмника CloudWatch.
 
     <Accordion title="Найдите группы логов, доступные в вашем аккаунте">
@@ -252,7 +258,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     </Note>
   </Step>
 
-  <Step title="Запустите коллектор" id="start-collector">
+  <Step>
+    #### Запустите коллектор
+
     Создайте файл `docker-compose.yaml`:
 
     ```yaml
@@ -286,7 +294,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     ```
   </Step>
 
-  <Step title="Проверьте журналы в HyperDX" id="verify-logs">
+  <Step>
+    #### Проверьте журналы в HyperDX
+
     После запуска коллектора:
 
     1. Откройте HyperDX по адресу http://localhost:8080 (или по URL вашего ClickStack)
@@ -314,7 +324,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
 Для пользователей, которые хотят протестировать интеграцию с журналами CloudWatch перед настройкой рабочей среды AWS, мы предоставляем пример набора данных с заранее сгенерированными журналами, отражающими реалистичные сценарии из нескольких сервисов AWS.
 
 <Steps>
-  <Step title="Загрузите пример набора данных" id="download-sample">
+  <Step>
+    #### Загрузите пример набора данных
+
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
@@ -326,7 +338,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     * **Background jobs**: батч-обработка с повторными попытками
   </Step>
 
-  <Step title="Запустите ClickStack" id="start-clickstack">
+  <Step>
+    #### Запустите ClickStack
+
     Если ClickStack у вас еще не запущен:
 
     ```bash
@@ -338,7 +352,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     Подождите немного, пока ClickStack полностью запустится.
   </Step>
 
-  <Step title="Импортируйте демо-набор данных" id="import-demo-data">
+  <Step>
+    #### Импортируйте демо-набор данных
+
     ```bash
     docker exec -i clickstack clickhouse-client --query="
       INSERT INTO default.otel_logs FORMAT JSONEachRow
@@ -348,7 +364,9 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     Это импортирует журналы напрямую в таблицу журналов ClickStack.
   </Step>
 
-  <Step title="Проверьте демо-данные" id="verify-demo-logs">
+  <Step>
+    #### Проверьте демо-данные
+
     После импорта:
 
     1. Откройте HyperDX по адресу http://localhost:8080 и войдите в систему (при необходимости создайте учетную запись)
@@ -372,15 +390,17 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
   ## Панели мониторинга и визуализация
 </div>
 
-Чтобы упростить мониторинг журналов CloudWatch в ClickStack, мы предоставляем преднастроенную панель мониторинга с основными визуализациями.
+Чтобы упростить мониторинг журналов CloudWatch в ClickStack, мы предоставляем преднастроенный дашборд с основными визуализациями.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импортируйте панель мониторинга" id="import-dashboard">
-    1. Откройте HyperDX и перейдите в раздел Панели мониторинга
+  <Step>
+    #### Импортируйте панель мониторинга
+
+    1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта панели мониторинга" />
@@ -390,13 +410,15 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
+  <Step>
+    #### Просмотрите панель мониторинга
+
     Панель мониторинга будет создана со всеми уже настроенными визуализациями:
 
     <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="Панель мониторинга CloudWatch Logs" />
 
     <Note>
-      Для демо-набора данных установите временной диапазон **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (скорректируйте его в соответствии с вашим часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.
+      Для демо-набора данных установите временной диапазон **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (скорректируйте его в соответствии с вашим локальным часовым поясом). По умолчанию у импортированного дашборда временной диапазон не задан.
     </Note>
   </Step>
 </Steps>
@@ -536,9 +558,9 @@ groups:
 * Отфильтруйте шумные группы логов, удалив их из конфигурации коллектора, чтобы сократить объём ингестии
 
 <div id="going-to-production">
-  ## Переход к продакшн-развертыванию
+  ## Развертывание в продакшене
 </div>
 
-В этом руководстве показано, как запускать OpenTelemetry Collector локально с помощью Docker Compose для тестирования. Для развертываний в продакшн запускайте коллектор в инфраструктуре с доступом к AWS (EC2 с ролями IAM, EKS с IRSA или ECS с ролями задач), чтобы не управлять ключами доступа вручную. Развертывайте коллекторы в том же регионе AWS, что и ваши группы журналов CloudWatch, чтобы снизить задержки и затраты.
+В этом руководстве показано, как запускать OpenTelemetry Collector локально с помощью Docker Compose для тестирования. Для продакшен-развертываний запускайте коллектор в инфраструктуре с доступом к AWS (EC2 с ролями IAM, EKS с IRSA или ECS с ролями задач), чтобы избежать необходимости управлять ключами доступа. Развертывайте коллекторы в том же регионе AWS, что и ваши группы журналов CloudWatch, чтобы снизить задержки и затраты.
 
-См. [Приём данных через OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), где описаны шаблоны развертывания для продакшн и приведены примеры конфигурации коллектора.
+См. [Приём данных через OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), где приведены варианты продакшен-развертывания и примеры конфигурации коллектора.

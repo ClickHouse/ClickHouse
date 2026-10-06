@@ -100,28 +100,17 @@ namespace
 
 String withOrdinalEnding(size_t i)
 {
-    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
-    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
-    const size_t n = i + 1;
-    const char * suffix = "th";
-    if (n % 100 < 11 || n % 100 > 13)
+    switch (i)
     {
-        switch (n % 10)
-        {
-            case 1:
-                suffix = "st";
-                break;
-            case 2:
-                suffix = "nd";
-                break;
-            case 3:
-                suffix = "rd";
-                break;
-            default:
-                break;
-        }
+        case 0:
+            return "1st";
+        case 1:
+            return "2nd";
+        case 2:
+            return "3rd";
+        default:
+            return std::to_string(i) + "th";
     }
-    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -163,7 +152,7 @@ void validateVariadicArgumentsImpl(
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(i),
+                withOrdinalEnding(argument_offset + i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
@@ -496,29 +485,6 @@ bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
             return false;
     }
     return true;
-}
-
-bool plusMinusWithConstantsIsInjective(
-    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
-{
-    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
-    /// fixed there is no varying argument to be injective in.
-    const bool left_is_const = left.column && isColumnConst(*left.column);
-    const bool right_is_const = right.column && isColumnConst(*right.column);
-    if (left_is_const == right_is_const)
-        return false;
-
-    auto is_integer_type = [](const DataTypePtr & type)
-    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
-
-    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
-        return false;
-
-    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
-    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
-    /// constant itself was materialized with size 0, as query-plan constants are.
-    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
-    return !constant.column->onlyNull();
 }
 
 bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)

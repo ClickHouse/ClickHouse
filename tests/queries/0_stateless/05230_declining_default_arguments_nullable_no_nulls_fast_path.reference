@@ -1,6 +1,0 @@
-without a NULL the fast path is kept
-249500
-with a NULL the rows are filtered out
-249500
-declining_no_nulls	0
-declining_with_nulls	1

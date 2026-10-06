@@ -42,8 +42,6 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
             return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
-    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
-    factory.registerFileExtension("json", "JSONCompactColumns", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONCompactColumns", Documentation{
         .description = R"DOCS_MD(
@@ -55,9 +53,9 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
 
 In this format, all data is represented as a single JSON Array.
 
-<Note>
+:::note
 The `JSONCompactColumns` output format buffers all data in memory to output it as a single block which can lead to high memory consumption.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 
@@ -105,7 +103,7 @@ The output will be in JSON format:
 ]
 ```
 
-Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
 ## Format settings {#format-settings}
 )DOCS_MD"});

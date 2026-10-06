@@ -1,0 +1,250 @@
+---
+noindex: true
+title: "为 ClickHouse 生成符合 FIPS 标准的证书"
+sidebarTitle: "配置 FIPS 证书"
+description: "生成 ClickHouse Private 的服务器、Keeper 和客户端组件所需的 TLS 证书。"
+---
+
+生成 ClickHouse Private 的服务器、Keeper 和客户端组件所需的 TLS 证书。下方脚本会在启用了 FIPS 的 Red Hat UBI8 容器中运行 OpenSSL，以确保符合 FIPS 140-2 要求。
+
+如果您的组织已有现成的 PKI 流程，也可以直接使用——只需确保生成的证书满足下文的 SAN 要求，并且 Secret 键名与下文一致。
+
+> 有关这些证书的相关原理——包括其用途、验证模式以及轮换方式——请参阅 [ClickHouse Private 中的 PKI 和 mTLS](/zh/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 已安装 Docker，且可访问 `registry.access.redhat.com/ubi8/ubi`
+* 已确定集群名称 (本指南使用 `default-xx-01`)
+
+<div id="clickhouse-private-requirements">
+  ## ClickHouse Private 要求
+</div>
+
+需要三组由同一 CA 签发的证书：
+
+| 证书     | SAN 模式                                                                                                                                          | secret 键名                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Server | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.cluster.local`, `c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.cluster.local` | `server.crt`, `server.key` |
+| Keeper | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.cluster.local`                                                                      | `keeper.crt`, `keeper.key` |
+| Client | 无需 SAN (server 发起的出站连接)                                                                                                                         | `client.crt`, `client.key` |
+
+* 为满足 FIPS 合规要求，RSA 密钥长度至少为 3072 位
+* 如果你的 Kubernetes 集群使用的域不是 `.cluster.local`，请在 SAN 中替换为相应域名
+* 每个 ClickHouse 集群都必须创建一组唯一的证书 (不包括 CA)
+
+<div id="generate-the-certificates">
+  ## 生成证书
+</div>
+
+> **警告：** 以下生成的证书将在 **365 天** 后过期 (CA 为 3650 天) 。请根据您的安全要求调整 `-days` 的值。
+
+更新脚本顶部的变量，然后运行脚本：
+
+```text expandable
+# update the variables below as needed:
+
+CLUSTER_NAME=default-xx-01
+KUBERNETES_DOMAIN=cluster.local
+COUNTRY=US
+STATE=YourState
+CITY=YourCity
+ORG=YourOrganization
+ORG_UNIT=YourOrganizationalUnit
+CN=YourRootCA
+
+docker run -it --rm \
+  -v $(pwd):/certs \
+  registry.access.redhat.com/ubi8/ubi \
+  /bin/bash -c "
+    set -e
+
+    # Install required packages
+    dnf -y install openssl crypto-policies-scripts
+
+    # Enable FIPS mode
+    fips-mode-setup --enable
+
+    # Create directory structure in the mounted volume
+    mkdir -p /certs/{ca,server,keeper,client}
+
+    # Generate CA certificate
+    cd /certs/ca
+    openssl genrsa -out ca.key 3072
+
+    cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+    openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+    # Generate server certificate
+    cd /certs/server
+
+    cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out server.key 3072
+    openssl req -new -key server.key -out server.csr -config server.cnf
+    openssl x509 -req -days 365 -in server.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+    # Generate keeper certificate
+    cd /certs/keeper
+
+    cat > keeper.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-keeper
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out keeper.key 3072
+    openssl req -new -key keeper.key -out keeper.csr -config keeper.cnf
+    openssl x509 -req -days 365 -in keeper.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out keeper.crt -extensions v3_req -extfile keeper.cnf
+
+    # Generate client certificate
+    cd /certs/client
+
+    cat > client.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-client
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth
+EOF
+
+    openssl genrsa -out client.key 3072
+    openssl req -new -key client.key -out client.csr -config client.cnf
+    openssl x509 -req -days 365 -in client.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out client.crt -extensions v3_req -extfile client.cnf
+
+    # Fix permissions
+    chmod -R 755 /certs
+
+    # Verify FIPS compliance
+    echo 'Verifying FIPS compliance of generated certificates:'
+    openssl version
+    openssl rsa -in /certs/server/server.key -text -noout | grep 'Private-Key'
+    openssl x509 -in /certs/server/server.crt -text -noout | grep 'Signature Algorithm'
+
+    # Show success message
+    echo 'FIPS-compliant certificates have been generated successfully!'
+  "
+```
+
+执行后，当前目录中将包含以下文件：
+
+| 目录        | 文件                         |
+| --------- | -------------------------- |
+| `ca/`     | `ca.crt`, `ca.key`         |
+| `server/` | `server.crt`, `server.key` |
+| `keeper/` | `keeper.crt`, `keeper.key` |
+| `client/` | `client.crt`, `client.key` |
+
+<div id="create-kubernetes-secrets">
+  ## 创建 Kubernetes Secret
+</div>
+
+Secret 必须创建在 ClickHouse 集群将要运行的同一命名空间中 (`ns-<cluster_name>`) 。请勿更改 Secret 名称或键名。
+
+```ini
+CERT_DIR=.
+CLUSTER_NAME=default-xx-01
+
+# Ensure the namespace exists
+kubectl create namespace ns-${CLUSTER_NAME} --dry-run=client -o yaml | kubectl apply -f -
+
+# Server secret (includes client cert for outbound connections)
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=server.crt="$CERT_DIR/server/server.crt" \
+  --from-file=server.key="$CERT_DIR/server/server.key" \
+  --from-file=client.crt="$CERT_DIR/client/client.crt" \
+  --from-file=client.key="$CERT_DIR/client/client.key"
+
+# Keeper secret
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=keeper.crt="$CERT_DIR/keeper/keeper.crt" \
+  --from-file=keeper.key="$CERT_DIR/keeper/keeper.key"
+```
+
+<div id="using-your-own-ca">
+  ## 使用您自己的 CA
+</div>
+
+如果您已有自己的证书颁发机构，请跳过脚本中的 CA 生成步骤。将您的 CA 证书挂载到 Docker 容器中用于签名，并在本指南中所有提到 `ca.crt` 文件的地方使用它 (包括上文中的 Kubernetes secrets) 。每个 ClickHouse 集群 都必须创建一组唯一的证书 (不包括 CA 证书) 。

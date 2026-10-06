@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <filesystem>
 #include <Common/re2.h>
 
 #if USE_HDFS

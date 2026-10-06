@@ -363,10 +363,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             limit = exact_number;
         if (ratio_to_cores > 0)
         {
-            // Clamp before casting to `Int64`: a large ratio (e.g. `1e100`) would otherwise produce a
-            // float outside `Int64` range and trigger undefined-behaviour on conversion.
-            Float64 raw = ratio_to_cores * getNumberOfCPUCoresToUse();
-            Int64 value = (raw >= static_cast<Float64>(unlimited)) ? unlimited : static_cast<Int64>(raw);
+            Int64 value = static_cast<Int64>(ratio_to_cores * getNumberOfCPUCoresToUse());
             if (value > 0 && value < limit)
                 limit = value;
         }

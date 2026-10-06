@@ -16,7 +16,6 @@ extern const char * VERSION_OFFICIAL;
 extern const char * VERSION_FULL;
 extern const char * VERSION_DESCRIBE;
 extern const unsigned VERSION_INTEGER;
-extern const char * SYSTEM_PROCESSOR;
 
 /// These fields are frequently changing and we don't want to have them in the header file to allow caching.
 extern const char * VERSION_GITHASH;

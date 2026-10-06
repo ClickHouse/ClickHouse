@@ -1,15 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <fmt/format.h>
-
 #include <Storages/MemorySettings.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -135,44 +129,20 @@ static void checkOld(
     size_t table_num,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {},
-    bool require_dialect_neutral_literals = false)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
-    /// The static table list of `State` carries no aliases, while the real old-analyzer pipeline builds
-    /// them from the query (`JoinedTables::tablesWithColumns`). Do the same here, otherwise a query such as
-    /// `test.table AS t ... WHERE t.apply_id = 1` cannot resolve its qualified names.
-    auto tables_with_columns = state.getTables(table_num);
-    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->tables())
-    {
-        for (const auto & child : select->tables()->children)
-        {
-            const auto * element = child->as<ASTTablesInSelectQueryElement>();
-            const auto * table_expression
-                = element && element->table_expression ? element->table_expression->as<ASTTableExpression>() : nullptr;
-            if (!table_expression || !table_expression->database_and_table_name)
-                continue;
-            const DatabaseAndTableWithAlias db_and_table(*table_expression, "test");
-            if (db_and_table.alias.empty())
-                continue;
-            for (auto & table : tables_with_columns)
-                if (table.table.table == db_and_table.table)
-                    table.table.alias = db_and_table.alias;
-        }
-    }
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, tables_with_columns);
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
-        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
-        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns,
-        require_dialect_neutral_literals);
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -189,9 +159,9 @@ static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const
 
     if (node->getNodeType() == QueryTreeNodeType::JOIN)
     {
-        if (auto res = findTableExpression(node->as<JoinNode>()->getLeftTableExpressionNode(), table_name))
+        if (auto res = findTableExpression(node->as<JoinNode>()->getLeftTableExpression(), table_name))
             return res;
-        if (auto res = findTableExpression(node->as<JoinNode>()->getRightTableExpressionNode(), table_name))
+        if (auto res = findTableExpression(node->as<JoinNode>()->getRightTableExpression(), table_name))
             return res;
     }
     return nullptr;
@@ -203,9 +173,7 @@ static void checkNewAnalyzer(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {},
-    bool require_dialect_neutral_literals = false)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -225,12 +193,11 @@ static void checkNewAnalyzer(
     if (!query_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
 
-    query_info.table_expression = static_pointer_cast<ITableExpressionNode>(findTableExpression(query_node->getJoinTreeNode(), "table"));
+    query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
 
     std::string transformed_query = transformQueryForExternalDatabase(
-        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
-        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns,
-        require_dialect_neutral_literals);
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -242,63 +209,16 @@ static void check(
     const std::string & query,
     const std::string & expected,
     const std::string & expected_new = "",
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {},
-    bool require_dialect_neutral_literals = false)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style, local_only_columns, require_dialect_neutral_literals);
+        checkOld(state, table_num, query, expected, literal_escaping_style);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style,
-                         local_only_columns, require_dialect_neutral_literals);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style);
     }
-}
-
-/// `StorageXDBC` does not know which database is behind the bridge, so it asks for dialect-neutral
-/// literals only: a string that `Regular` escaping writes differently from a standard-conforming
-/// database is filtered by ClickHouse instead of being compared against different bytes remotely.
-TEST(TransformQueryForExternalDatabase, DialectNeutralLiteralsOnly)
-{
-    const State & state = State::instance();
-
-    /// A string every dialect reads the same way is still pushed down.
-    check(state, 1, {"field"},
-          "SELECT field FROM test.table WHERE field = 'plain'",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" = 'plain')",
-          "",
-          LiteralEscapingStyle::Regular, {}, true);
-
-    /// A backslash, a quote and a control character are all written differently by the dialects.
-    for (const char * literal : {R"('a\\b')", R"('it\'s')", R"('a\nb')"})
-    {
-        const std::string query = fmt::format("SELECT field FROM test.table WHERE field = {}", literal);
-        check(state, 1, {"field"},
-              query,
-              R"(SELECT "field" FROM "test"."table")",
-              "",
-              LiteralEscapingStyle::Regular, {}, true);
-
-        /// Without the flag the very same predicate is pushed down (this is what MySQL gets).
-        SCOPED_TRACE(query);
-        checkOld(state, 1, query, fmt::format(R"(SELECT "field" FROM "test"."table" WHERE "field" = {})", literal));
-    }
-
-    /// Only the branch over the unsafe literal stays local; a conjunction keeps the rest.
-    check(state, 1, {"field", "column"},
-          R"(SELECT field, column FROM test.table WHERE column = 1 AND field = 'a\\b')",
-          R"(SELECT "column", "field" FROM "test"."table" WHERE "column" = 1)",
-          R"(SELECT "field", "column" FROM "test"."table" WHERE "column" = 1)",
-          LiteralEscapingStyle::Regular, {}, true);
-
-    /// A nested literal in an IN set is covered too.
-    check(state, 1, {"field"},
-          R"(SELECT field FROM test.table WHERE field IN ('plain', 'a\\b'))",
-          R"(SELECT "field" FROM "test"."table")",
-          "",
-          LiteralEscapingStyle::Regular, {}, true);
 }
 
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
@@ -429,65 +349,6 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
-    check(state, 2, {"column", "apply_id"},
-          "SELECT t.column FROM test.table AS t "
-          "JOIN test.table2 AS table2 ON (t.apply_id = table2.num) "
-          "WHERE t.apply_id = 1 AND table2.num = 1",
-          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
-}
-
-TEST(TransformQueryForExternalDatabase, ForeignColumnInWhereOr)
-{
-    const State & state = State::instance();
-
-    check(state, 2, {"column", "apply_id"},
-          "SELECT column FROM test.table "
-          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
-          "WHERE apply_id = 1 AND (column > 2 OR table2.num = 1)",
-          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
-    check(state, 2, {"column"},
-          "SELECT column FROM test.table "
-          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
-          "WHERE column > 2 OR table2.num = 1",
-          R"(SELECT "column", "apply_id" FROM "test"."table")",
-          R"(SELECT "column" FROM "test"."table")");
-}
-
-TEST(TransformQueryForExternalDatabase, NegationOverPrunedConjunction)
-{
-    const State & state = State::instance();
-
-    check(state, 2, {"column", "apply_id"},
-          "SELECT column FROM test.table "
-          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
-          "WHERE apply_id = 1 AND NOT (column > 2 AND table2.num = 1)",
-          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
-}
-
-TEST(TransformQueryForExternalDatabase, LocalOnlyColumns)
-{
-    const State & state = State::instance();
-    state.context->setSetting("external_table_strict_query", false);
-
-    check(state, 1, {"column", "apply_id"},
-          "SELECT column FROM table WHERE column = 44 OR apply_id = 2",
-          R"(SELECT "column", "apply_id" FROM "test"."table")",
-          "",
-          LiteralEscapingStyle::Regular,
-          {"column"});
-    check(state, 1, {"column", "apply_id"},
-          "SELECT column FROM table WHERE apply_id = 2 AND NOT (column = 44 AND apply_id = 1)",
-          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 2)",
-          "",
-          LiteralEscapingStyle::Regular,
-          {"column"});
-
-    state.context->setSetting("external_table_strict_query", true);
-    EXPECT_THROW(
-        check(state, 1, {"column", "apply_id"},
-              "SELECT column FROM table WHERE column = 44 OR apply_id = 2", "", "", LiteralEscapingStyle::Regular, {"column"}),
-        Exception);
-    state.context->setSetting("external_table_strict_query", false);
 }
 
 TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)
@@ -526,68 +387,10 @@ TEST(TransformQueryForExternalDatabase, Strict)
           "SELECT field FROM table WHERE field LIKE '%test%'",
           R"(SELECT "field" FROM "test"."table" WHERE "field" LIKE '%test%')");
 
-    /// A filter on a joined source is evaluated by the outer query and does not make the
-    /// predicate on this external source non-pushdownable.
-    check(state, 2, {"column", "apply_id"},
-          "SELECT column FROM test.table "
-          "JOIN test.table2 AS table2 ON test.table.apply_id = table2.num "
-          "WHERE column > 2 AND apply_id = 1 AND table2.num = 1",
-          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
-
     /// removeUnknownSubexpressionsFromWhere() takes place
     EXPECT_THROW(check(state, 1, {"field"}, "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)", ""), Exception);
     /// !isCompatible() takes place
     EXPECT_THROW(check(state, 1, {"column"}, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
-}
-
-TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyzer)
-{
-    const State & state = State::instance();
-    state.context->setSetting("external_table_strict_query", true);
-
-    ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(
-        parser,
-        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num WHERE table2.num = 1",
-        1000,
-        1000,
-        1000000);
-    SelectQueryInfo query_info;
-    SelectQueryOptions select_options;
-    query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
-    query_info.query = ast;
-
-    /// An outer filter that belongs only to a joined source is not a filter on the query-backed external source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
-
-    ast = parseQuery(
-        parser,
-        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num WHERE 1 AND table2.num = 1",
-        1000,
-        1000,
-        1000000);
-    query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
-    query_info.query = ast;
-
-    /// Pruning a foreign predicate may leave a true literal, which is not a filter on the source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
-
-    ast = parseQuery(
-        parser,
-        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num PREWHERE table2.num = 1",
-        1000,
-        1000,
-        1000000);
-    query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
-    query_info.query = ast;
-
-    /// A foreign-table `PREWHERE` must likewise not be treated as a filter on the query-backed source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
-
-    state.context->setSetting("external_table_strict_query", false);
 }
 
 TEST(TransformQueryForExternalDatabase, Null)
@@ -787,64 +590,13 @@ static String formatQueryTableArgument(
     const State & state,
     const std::string & argument,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style,
-    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary)
+    LiteralEscapingStyle literal_escaping_style)
 {
     ParserSubquery parser;
     ASTPtr ast = parseQuery(parser, argument, 1000, 1000, 1000000);
-    auto query = tryGetExternalDatabaseQuery(
-        ast, state.context, identifier_quoting_style, literal_escaping_style, identifier_quoting_rule);
+    auto query = tryGetExternalDatabaseQuery(ast, state.context, identifier_quoting_style, literal_escaping_style);
     EXPECT_TRUE(query.has_value()) << argument;
     return query.value_or("");
-}
-
-TEST(TransformQueryForExternalDatabase, QueryTableArgumentIdentifierQuotingForPostgreSQL)
-{
-    const State & state = State::instance();
-
-    /// PostgreSQL folds an unquoted identifier to lower case and matches a quoted one case-sensitively,
-    /// so the re-serialization of a `(SELECT ...)` source must keep a name that contains upper-case
-    /// characters unquoted (`Foo` keeps resolving to the column `foo`), while a name without upper-case
-    /// characters is quoted: PostgreSQL resolves `"where"` to the very same column as the bare `where`,
-    /// which it rejects as a syntax error, being a reserved word.
-    EXPECT_EQ(
-        formatQueryTableArgument(state,
-            R"((SELECT "where", Foo FROM "group"))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::AlwaysUnlessUpperCase),
-        R"(SELECT "where", Foo FROM "group")");
-
-    /// The quoting of a lower-case name does not change how PostgreSQL resolves it, and a mixed-case name
-    /// is left to the ordinary folding.
-    EXPECT_EQ(
-        formatQueryTableArgument(state,
-            "(SELECT field, Value FROM test.table)",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::AlwaysUnlessUpperCase),
-        R"(SELECT "field", Value FROM "test"."table")");
-
-    /// `ParserIdentifier` does not record whether an identifier was quoted, so a name the user quoted only
-    /// to preserve its mixed-case spelling is the very same parsed identifier as the bare one and is emitted
-    /// unquoted - PostgreSQL folds it to lower case. This is not a property of `AlwaysUnlessUpperCase`: the
-    /// `WhenNecessary` rule it replaced produces byte-identical output here, which is what this comparison
-    /// pins. A case-sensitive mixed-case object has to be addressed through the `query('...')` form, which is
-    /// passed to the external database verbatim.
-    const char * quoted_mixed_case = R"((SELECT "CamelCase" FROM "MixedCase"))";
-    EXPECT_EQ(
-        formatQueryTableArgument(state,
-            quoted_mixed_case,
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::AlwaysUnlessUpperCase),
-        formatQueryTableArgument(state,
-            quoted_mixed_case,
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::WhenNecessary));
-    EXPECT_EQ(
-        formatQueryTableArgument(state,
-            quoted_mixed_case,
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::AlwaysUnlessUpperCase),
-        "SELECT CamelCase FROM MixedCase");
 }
 
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
@@ -870,7 +622,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
     /// A row value is also valid as an operand of a comparison.
     EXPECT_EQ(
@@ -913,17 +665,17 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT (field, value) FROM test.table)",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT (field, value) FROM test."table")");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT ('foo', 'bar') FROM test.table)",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT ('foo', 'bar') FROM test."table")");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE (field, value) IS NOT NULL)",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field, value) IS NOT NULL)");
 
     /// Expressions with no MySQL text form are rejected instead of being sent as broken SQL:
@@ -949,27 +701,6 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
         IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
 }
 
-TEST(TransformQueryForExternalDatabase, QueryTableArgumentForSQLite)
-{
-    const State & state = State::instance();
-
-    /// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers. A query
-    /// table argument is sent to SQLite as is, so reject non-finite literals instead of emitting
-    /// invalid remote SQL. This also covers nested literals in an `IN` tuple.
-    EXPECT_THROW(formatQueryTableArgument(state,
-        "(SELECT field FROM test.table WHERE field = inf)",
-        IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::SQLite), Exception);
-    EXPECT_THROW(formatQueryTableArgument(state,
-        "(SELECT field FROM test.table WHERE field IN (inf, 1.5))",
-        IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::SQLite), Exception);
-
-    EXPECT_EQ(
-        formatQueryTableArgument(state,
-            "(SELECT field FROM test.table WHERE field = 1.5)",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::SQLite),
-        R"(SELECT field FROM test."table" WHERE field = 1.5)");
-}
-
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
 {
     const State & state = State::instance();
@@ -982,7 +713,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE (a > 0, value > 10))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
     EXPECT_EQ(
         formatQueryTableArgument(state,
@@ -993,30 +724,30 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE (field = 'foo') OR ((a > 0, value > 10)))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field = 'foo') OR ((a > 0) AND (value > 10)))");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table GROUP BY field HAVING (count() > 1, a > 0))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" GROUP BY field HAVING (count() > 1) AND (a > 0))");
     /// A single-predicate `tuple` call is unwrapped to the predicate itself.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE tuple(a > 0))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE a > 0)");
     /// The folded `Tuple` literal carrier (a tuple of constants) is not a list of predicates the
     /// external database could evaluate - it is rejected for every dialect, including PostgreSQL,
     /// whose row constructors are otherwise valid anywhere but not as a condition.
     EXPECT_ANY_THROW(formatQueryTableArgument(state,
         "(SELECT field FROM test.table WHERE ('foo', 'bar'))",
-        IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL));
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL));
     /// A genuine row value next to a comparison inside the lowered conjunction still works.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE (a > 0, (field, value) = ('foo', 'bar')))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND ((field, value) = ('foo', 'bar')))");
 }
 
@@ -1035,25 +766,13 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentPrewhere)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table PREWHERE field = 'foo' WHERE value = 'bar')",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field = 'foo') AND (value = 'bar'))");
     /// ... and the lowered filter is a boolean position: a tuple-of-predicates `PREWHERE`
     /// becomes a conjunction, the same way it does in `WHERE`.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table PREWHERE (a > 0, value > 10))",
-            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
-}
-
-TEST(TransformQueryForExternalDatabase, SubqueryColumnProjectionQuotesForTheDialect)
-{
-    /// The projected column names of a `query('...')` / `(SELECT ...)` table argument are quoted by
-    /// `quoteExternalIdentifier`, a separate if-chain whose fallback is ClickHouse backticks.
-    EXPECT_EQ(
-        buildQueryForExternalDatabaseSubquery("SELECT 1", {R"(a"b)"}, IdentifierQuotingStyle::DoubleQuotesPostgreSQL),
-        R"(SELECT "a""b" FROM (SELECT 1) AS __subquery)");
-    EXPECT_EQ(
-        buildQueryForExternalDatabaseSubquery("SELECT 1", {R"(a"b)"}, IdentifierQuotingStyle::DoubleQuotes),
-        R"(SELECT "a\"b" FROM (SELECT 1) AS __subquery)");
 }

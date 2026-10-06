@@ -17,7 +17,7 @@ ClickHouse 允许在发送 `SELECT` 查询的同时，向服务器发送查询�
 在命令行客户端中，你可以按如下格式指定参数部分：
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
 你可能会有多个这样的部分，具体数量取决于正在传输的表的数量。
@@ -28,7 +28,6 @@ stdin 中只能读取单个表。
 
 以下参数为可选参数：**–name**– 表名。如果省略，则使用 &#95;data。
 **–format** – 文件中的数据格式。如果省略，则使用 TabSeparated。
-**–scalar** – 将数据作为标量而不是临时表发送。数据必须恰好包含一行；如果包含多列，则会被打包成单个 Tuple。可在查询中通过 `__getScalar('name')` 访问该值。
 
 以下参数中必须指定一个：**–types** – 以逗号分隔的列类型列表。例如：`UInt64,String`。这些列将命名为 &#95;1、&#95;2、...
 **–structure**– 表结构，格式如 `UserID UInt64`、`URL String`。用于定义列名和类型。
@@ -46,8 +45,6 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
-$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
-42
 ```
 
 使用 HTTP 接口时，外部数据通过 multipart/form-data 格式传入。每个表都会作为单独的文件传输，表名取自文件名。`query_string` 中会传递参数 `name_format`、`name_types` 和 `name_structure`，其中 `name` 是这些参数对应的表名。这些参数的含义与使用命令行客户端时相同。

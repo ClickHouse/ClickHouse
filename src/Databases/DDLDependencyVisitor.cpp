@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -125,15 +124,14 @@ namespace
                             mv_to_dependency->uuid = target.inner_uuid;
                         }
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner)
+                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
                     else if (target.kind == ViewTarget::Kind::Samples
-                        || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
-                        || target.kind == ViewTarget::Kind::MetricFamilies)
+                        || target.kind == ViewTarget::Kind::Metrics)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
                         /// Inner target tables (created and owned by the TimeSeries table) are not, the same way

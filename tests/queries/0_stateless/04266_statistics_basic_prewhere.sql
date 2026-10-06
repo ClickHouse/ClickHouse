@@ -11,7 +11,7 @@ SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 1;
 SET enable_analyzer = 1;
-SET optimize_move_to_prewhere = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET materialize_statistics_on_insert = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based reordering of prewhere conditions
@@ -31,8 +31,7 @@ CREATE TABLE test_basic_prewhere
     range_probe Int64 STATISTICS(tdigest)
 ) ENGINE = MergeTree()
 ORDER BY id
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO test_basic_prewhere SELECT
     number,

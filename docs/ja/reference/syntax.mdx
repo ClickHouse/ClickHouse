@@ -27,25 +27,25 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
 すでに述べたように、`INSERT`クエリでは 2 種類のパーサーの両方が使われます。
-`INSERT INTO t VALUES` の部分は完全パーサーでパースされ、
-データ `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` はデータフォーマットパーサー、つまり高速ストリームパーサーでパースされます。
+`INSERT INTO t VALUES` の部分は完全パーサーで解析され、
+データ `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` はデータフォーマットパーサー、つまり高速ストリームパーサーで解析されます。
 
 <Accordion title="完全パーサーを有効にする">
-  [`input_format_values_interpret_expressions`](/ja/reference/settings/formats/input-format#input_format_values_interpret_expressions) 設定を使うと、
+  [`input_format_values_interpret_expressions`](/ja/reference/settings/formats#input_format_values_interpret_expressions) 設定を使うと、
   データに対して完全パーサーを有効にすることもできます。
 
   前述の設定が `1` に設定されている場合、
-  ClickHouse はまず高速ストリームパーサーで値をパースしようとします。
-  それに失敗すると、ClickHouse はデータを SQL の [式](#expressions) として扱い、完全パーサーでパースしようとします。
+  ClickHouse はまず高速ストリームパーサーで値を解析しようとします。
+  それに失敗すると、ClickHouse はデータを SQL の [式](#expressions) として扱い、完全パーサーで解析しようとします。
 </Accordion>
 
 データには任意のフォーマットを使用できます。
-クエリを受信すると、server はリクエストのうち [max&#95;query&#95;size](/ja/reference/settings/session-settings/max#max_query_size) バイトを超えない部分だけを RAM 上で処理し
-(デフォルトでは 1 MB) 、残りはストリームとしてパースされます。
+クエリを受信すると、server はリクエストのうち [max&#95;query&#95;size](/ja/reference/settings/session-settings#max_query_size) バイトを超えない部分だけを RAM 上で処理し
+(デフォルトでは 1 MB) 、残りはストリームとして解析されます。
 これは、大きな `INSERT`クエリに関する問題を避けるためです。これは、ClickHouse にデータを挿入する推奨方法でもあります。
 
 `INSERT`クエリで [`Values`](/ja/reference/formats/Values) フォーマットを使用する場合、
-データは `SELECT`クエリ内の式と同じようにパースされるように見えるかもしれませんが、実際にはそうではありません。
+データは `SELECT`クエリ内の式と同じように解析されるように見えるかもしれませんが、実際にはそうではありません。
 `Values` フォーマットは、はるかに制限が多くなっています。
 
 この節の残りでは、完全パーサーについて説明します。
@@ -536,7 +536,7 @@ ClickHouse は式 `argMax(a, b)` 内の `b` を式 `sum(b)` に置き換えま�
 この置換によって例外が発生しました。
 
 <Note>
-  この既定の動作は、[prefer&#95;column&#95;name&#95;to&#95;alias](/ja/reference/settings/session-settings/prefer#prefer_column_name_to_alias) を `1` に設定することで変更できます。
+  この既定の動作は、[prefer&#95;column&#95;name&#95;to&#95;alias](/ja/reference/settings/session-settings#prefer_column_name_to_alias) を `1` に設定することで変更できます。
 </Note>
 
 <div id="asterisk">

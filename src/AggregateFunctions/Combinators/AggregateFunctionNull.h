@@ -227,23 +227,6 @@ public:
             nested_function->serialize(nestedPlace(place), buf, version);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        bool flag = getFlag(place);
-        if constexpr (serialize_flag)
-            writeBinary(flag, dst);
-        if (flag)
-            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
-        return dst;
-    }
-
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         bool flag = true;
@@ -684,8 +667,7 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            final_flags = std::make_unique<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -738,18 +720,12 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+                final_flags = std::make_unique<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
-            if (nullable_filters[0] != final_flags_ptr)
-            {
-                for (size_t i = row_begin; i < row_end; i++)
-                    final_flags[i] = nullable_filters[0][i];
-            }
-
-            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
+            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
+            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "Stratégie de sauvegarde pour ClickHouse Private"
+sidebarTitle: "Stratégie de sauvegarde"
+description: "Ce document explique le fonctionnement et les limites des sauvegardes propres à ClickHouse Private."
+---
+
+Ce document explique le fonctionnement et les limites des sauvegardes propres à ClickHouse Private. Pour les concepts généraux de sauvegarde de ClickHouse (complète ou incrémentielle, chaînes de sauvegarde, syntaxe SQL), consultez la [documentation ClickHouse de référence sur les sauvegardes](https://clickhouse.com/docs/operations/backup/overview). Pour les procédures pas à pas, consultez [Sauvegarder et restaurer (manuellement)](/fr/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) ou [Gérer les sauvegardes via l&#39;API](/fr/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="backup-location">
+  ## Emplacement des sauvegardes
+</div>
+
+Les sauvegardes sont stockées dans **Amazon S3**. Celles de chaque cluster sont organisées selon le préfixe de clé S3 du cluster (indiqué dans le CR à `spec.s3.keyPrefix`), ce qui garantit que les sauvegardes de différents clusters restent isolées, même lorsqu&#39;elles partagent le même bucket S3.
+
+<div id="manual-vs-api-driven-backups">
+  ## Sauvegardes manuelles ou pilotées par l’API
+</div>
+
+ClickHouse Private prend en charge deux approches de sauvegarde :
+
+* **Manuelle (SQL)** -- Exécutez directement les instructions `BACKUP`/`RESTORE` sur un pod serveur. Contrôle total du périmètre et des chemins S3. Voir [Sauvegarder et restaurer (manuel)](/fr/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+* **Pilotée par l’API** -- Utilisez l’endpoint REST de la Private API, qui crée des ressources personnalisées `Backup` gérées par l’opérateur. Voir [Gérer les sauvegardes via l’API](/fr/products/clickhouse-private/guides/manage-backups-via-the-private-api) et la [Référence de l’API](/fr/products/clickhouse-private/reference/clickhouse-private-api-reference).
+
+<div id="backup-pod-designation">
+  ## Désignation du pod de sauvegarde
+</div>
+
+Dans l’architecture MultiSTS, une seule réplique est désignée comme **pod de sauvegarde** (`isBackupPod: true` dans le ReplicaStateMap). Les opérations de sauvegarde s’exécutent toujours sur ce pod. L’opérateur évite de marquer le pod de sauvegarde comme Condemned lors d’un scale-in afin de ne pas perturber les opérations de sauvegarde.
+
+<div id="restore-limitation">
+  ## Limitation de la restauration
+</div>
+
+La Private API **n’autorise pas la restauration d’une sauvegarde sur le même cluster** que celui dont elle provient (`instance_id == target_instance_id`). Cela évite d’ajouter une charge supplémentaire à un cluster de production en cours de fonctionnement et réduit le risque d’écrasement de données. Il est recommandé de provisionner un nouveau cluster et d’y restaurer la sauvegarde.
+
+Si vous devez restaurer sur le même cluster (par exemple, pour récupérer une table spécifique), utilisez des commandes SQL manuelles directement sur un pod serveur.
+
+<div id="incremental-backup-chain-integrity">
+  ## Intégrité de la chaîne des sauvegardes incrémentielles
+</div>
+
+Lorsque vous utilisez des politiques de cycle de vie S3 avec des sauvegardes incrémentielles, veillez à ce que les règles d’expiration ne suppriment pas une sauvegarde complète tant qu’il existe encore des sauvegardes incrémentielles qui en dépendent. Si une sauvegarde complète est supprimée, toutes les sauvegardes incrémentielles de sa chaîne deviennent impossibles à restaurer.

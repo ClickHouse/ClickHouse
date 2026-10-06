@@ -51,7 +51,7 @@ materialização tardia se aplica de forma natural sobre essas otimizações, ma
 
 Considere a consulta de exemplo a seguir, que encontra avaliações da Amazon com o maior número de votos úteis, independentemente de data, produto, nota ou status de verificação, e retorna as 3 principais com seu título, subtítulo e texto completo.
 
-Primeiro, execute a consulta (com caches frios do sistema de arquivos) com materialização tardia desativada (usando [`query_plan_optimize_lazy_materialization`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)):
+Primeiro, execute a consulta (com caches frios do filesystem) com materialização tardia desativada (usando [`query_plan_optimize_lazy_materialization`](/pt-BR/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
 
 ```sql title="Query"
 SELECT

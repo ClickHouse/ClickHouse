@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 SET explain_query_plan_default = 'legacy';
 set optimize_move_to_prewhere = 1;
+set query_plan_optimize_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;
 set enable_multiple_prewhere_read_steps = 1;
 set move_primary_key_columns_to_end_of_prewhere = 1;
@@ -19,9 +20,7 @@ CREATE TABLE test_improve_prewhere (
     value UInt32 STATISTICS(TDigest),
     date Date STATISTICS(CountMin),
 ) ENGINE = MergeTree()
-ORDER BY primary_key
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+ORDER BY primary_key;
 
 INSERT INTO test_improve_prewhere
 SELECT

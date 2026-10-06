@@ -55,7 +55,7 @@ public:
 REGISTER_FUNCTION(LowCardinalityKeys)
 {
     FunctionDocumentation::Description description = R"(
-Returns the dictionary values of a [LowCardinality](/reference/data-types/lowcardinality) column.
+Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column.
 If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values.
 Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
     )";

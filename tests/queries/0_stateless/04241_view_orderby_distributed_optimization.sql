@@ -9,15 +9,6 @@
 -- which would collide across concurrent runs (e.g. the flaky check).
 
 SET allow_experimental_analyzer = 1;
--- This test targets `pushOrderByIntoView` specifically. Disable the unrelated
--- `optimize_trivial_view_pushdown_to_distributed` (default on): it ships the
--- whole outer query (including modifiers like FINAL/SAMPLE) to the underlying
--- Distributed table's real storage rather than synthesizing a new ORDER BY
--- reference, so it has no alias-ambiguity or FINAL-support hazard to guard
--- against and can safely fire (or legitimately error, for a storage that
--- rejects FINAL) in cases this test exercises to check `pushOrderByIntoView`'s
--- own, narrower safety guards.
-SET optimize_trivial_view_pushdown_to_distributed = 0;
 
 DROP TABLE IF EXISTS test_local_04241;
 DROP TABLE IF EXISTS test_distributed_04241;
@@ -370,12 +361,19 @@ SELECT 'view QUALIFY disables pushdown:',
 
 DROP VIEW test_view_qualify_04241;
 
--- A view whose inner query carries `limit`/`offset` through its own `SETTINGS`
--- clause is intentionally not covered here: the HTTP "table as file" feature
--- rejects those query-construction settings in a `VIEW` definition (see
--- `InterpreterCreateQuery::createTable`), so such a view cannot be created. The
--- effective-context path (a definer settings profile that sets `limit`/`offset`)
--- exercises the same pushdown-disabling check below.
+-- View whose inner query carries `LIMIT` through its own `SETTINGS` clause:
+-- pushdown must be disabled. `SETTINGS limit = N` constrains which rows the view
+-- exposes just like an explicit `LIMIT`, so re-sorting and truncating around it
+-- would change which rows the view returns.
+DROP VIEW IF EXISTS test_view_settings_limit_04241;
+CREATE VIEW test_view_settings_limit_04241 AS
+SELECT id, val, ts FROM test_distributed_04241 SETTINGS limit = 5;
+
+SELECT 'view SETTINGS limit disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_settings_limit_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_settings_limit_04241;
 
 -- `prefer_column_name_to_alias = 1`: pushdown must be disabled. The injected
 -- inner `ORDER BY` references view columns by bare identifier; with this setting

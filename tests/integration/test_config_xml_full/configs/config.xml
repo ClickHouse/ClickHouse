@@ -587,7 +587,7 @@
     <!--</remote_url_allow_hosts>-->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
-         The path to the file with substitutions is specified in the 'include_from' element. There is no default path.
+         By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
          Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
       -->
 

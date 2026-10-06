@@ -7,16 +7,13 @@ keywords: ['prometheus', 'grafana', 'monitoring', 'metrics', 'exporter']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 The feature supports integrating [Prometheus](https://prometheus.io/) to monitor ClickHouse Cloud services. Access to Prometheus metrics is exposed via the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) endpoint that allows you to securely connect and export metrics into your Prometheus metrics collector. These metrics can be integrated with dashboards e.g., Grafana, Datadog for visualization.
 
-Metrics for [ClickPipes](/integrations/clickpipes) attached to a service are included alongside that service's ClickHouse metrics.
-
 To get started, [generate an API key](/products/cloud/features/admin-features/api/openapi).
 
-If you're looking for the equivalent endpoint for [ClickHouse Managed Postgres](/products/managed-postgres/overview) services, see the [ClickHouse Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus).
+If you're looking for the equivalent endpoint for [Managed Postgres](/products/managed-postgres/overview) services, see the [Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus).
 
 ## Prometheus endpoint API to retrieve ClickHouse Cloud metrics {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 
@@ -25,12 +22,7 @@ If you're looking for the equivalent endpoint for [ClickHouse Managed Postgres](
 | Method | Path                                                                                                               | Description                                                        |
 | ------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Returns metrics for a specific service |
-| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]` | **Deprecated.** Returns metrics for all services in an organization |
-| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]` | Returns Prometheus scrape targets for all services in an organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) format |
-
-<Note>
-The organization-wide metrics endpoint (`GET /v1/organizations/{organizationId}/prometheus`) is deprecated in favor of [automatic service discovery](#automatic-service-discovery). Existing organizations can continue using it; newly created organizations use the discovery endpoint instead. Contact ClickHouse support if you need access to this endpoint.
-</Note>
+| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]` | Returns metrics for all services in an organization |
 
 **Request Parameters**
 
@@ -39,8 +31,6 @@ The organization-wide metrics endpoint (`GET /v1/organizations/{organizationId}/
 | Organization ID  | Endpoint address | uuid               |
 | Service ID       | Endpoint address | uuid (optional)               |
 | filtered_metrics | Query param | boolean (optional) |
-
-Full request and response schemas for these endpoints are available in the [Cloud API reference](/products/cloud/api-reference/prometheus).
 
 ### Authentication {#authentication}
 
@@ -189,54 +179,6 @@ scrape_configs:
 
 Note the `honor_labels` configuration parameter needs to be set to `true` for the instance label to be properly populated.  Additionally, `filtered_metrics` is set to `true` in the above example, but should be configured based on user preference.
 
-### Automatic service discovery {#automatic-service-discovery}
-
-<BetaBadge />
-
-The discovery endpoint returns one scrape target per service in your organization, in the Prometheus [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Prometheus refreshes the target list on every discovery poll and scrapes each discovered target, so newly created services are picked up automatically and deleted services are dropped from the target list. Only services your API key is authorized to view are included; services that are being deleted or have been deleted are omitted.
-
-To use it, point an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at the discovery endpoint:
-
-```yaml
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: "clickhouse"
-    http_sd_configs:
-      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
-        refresh_interval: 60s
-        basic_auth:
-          username: <KEY_ID>
-          password: <KEY_SECRET>
-    basic_auth:
-      username: <KEY_ID>
-      password: <KEY_SECRET>
-    honor_labels: true
-```
-
-Set `basic_auth` in both places: the block under `http_sd_configs` authenticates the discovery polls, and the block on the scrape job authenticates the per-service metric scrapes. As with the static configuration, set `honor_labels: true` so the instance label is properly populated.
-
-A sample discovery response:
-
-```json
-[
-  {
-    "targets": ["api.clickhouse.cloud"],
-    "labels": {
-      "__scheme__": "https",
-      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
-      "__param_filtered_metrics": "true",
-      "clickhouse_org_id": "<ORG_ID>",
-      "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
-    }
-  }
-]
-```
-
-Discovered targets scrape with `filtered_metrics=true`. To discover targets that scrape the full metric set, add `?filtered_metrics=false` to the discovery URL. The full endpoint specification is available in the [Cloud API reference](/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
-
 ## Integrating with Grafana {#integrating-with-grafana}
 
 Users have two primary ways to integrate with Grafana:
@@ -380,4 +322,4 @@ instances:
 - [Cloud Console monitoring](/products/cloud/features/monitoring/cloud-console) — Built-in dashboards that require no external tools
 - [Community and partner integrations](/products/cloud/features/monitoring/integrations) — Datadog agent integration and community solutions
 - [Querying system tables](/products/cloud/features/monitoring/system-tables) — Direct SQL access to system metrics
-- [ClickHouse Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus) — Scrape metrics from your ClickHouse Managed Postgres services
+- [Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus) — Scrape metrics from your Managed Postgres services

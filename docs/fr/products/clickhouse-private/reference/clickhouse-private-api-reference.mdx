@@ -1,0 +1,380 @@
+---
+noindex: true
+title: "Référence de ClickHouse Private API"
+sidebarTitle: "Référence de l’API"
+description: "La ClickHouse Private API est un composant autonome facultatif permettant de gérer les clusters ClickHouse Private."
+---
+
+La ClickHouse Private API est un composant autonome facultatif permettant de gérer les clusters ClickHouse Private. Elle fournit des endpoints REST pour les sauvegardes, la mise à l’échelle verticale, les réinitialisations de mot de passe et la surveillance de l’état des clusters.
+
+***
+
+<div id="configuration-options">
+  ## Options de configuration
+</div>
+
+L’API est installée à l’aide du chart Helm (`helm/airgap-management`).
+
+| Valeur Helm                  | Type    | Par défaut   | Description                                          |
+| ---------------------------- | ------- | ------------ | ---------------------------------------------------- |
+| `image.repository`           | string  | --           | Dépôt ECR/GAR pour l’image de la Private API         |
+| `image.tag`                  | string  | --           | Tag de l’image à déployer                            |
+| `api.port`                   | integer | `8080`       | Port sur lequel l’API écoute                         |
+| `api.basicAuth.enabled`      | boolean | `false`      | Activer l’authentification HTTP de base              |
+| `api.basicAuth.username`     | string  | `"admin"`    | Nom d’utilisateur pour l’authentification de base      |
+| `api.basicAuth.password`     | string  | `"password"` | Mot de passe pour l’authentification de base           |
+| `serviceAccount.enabled`     | boolean | `true`       | Créer un compte de service pour l’API                |
+| `serviceAccount.annotations` | map     | `{}`         | Annotations du compte de service (par ex. pour IRSA) |
+
+***
+
+<div id="authentication">
+  ## Authentification
+</div>
+
+Par défaut, l’authentification de base est désactivée. Pour les environnements de production, activez-la via Helm :
+
+```text
+--set-json='api.basicAuth.enabled=true'
+--set-json='api.basicAuth.username="admin"'
+--set-json='api.basicAuth.password="YOUR_SECURE_PASSWORD"'
+```
+
+Si cette option est activée, incluez les informations d’authentification dans les requêtes :
+
+```bash
+curl -u admin:YOUR_SECURE_PASSWORD http://localhost:8080/api/v1/...
+```
+
+***
+
+<div id="resource-quantity-format">
+  ## Format des quantités de ressources
+</div>
+
+L’API accepte le format de quantité de ressources Kubernetes pour les champs CPU et mémoire.
+
+<div id="cpu-quantities">
+  ### Quantités de CPU
+</div>
+
+| Format     | Exemple  | Signification    |
+| ---------- | -------- | ---------------- |
+| Entier     | `"4"`    | 4 cœurs de CPU   |
+| Décimal    | `"2.5"`  | 2.5 cœurs de CPU |
+| Millicœurs | `"500m"` | 0.5 cœurs de CPU |
+
+<div id="memory-quantities">
+  ### Quantités de mémoire
+</div>
+
+| Format               | Exemple    | Signification    |
+| -------------------- | ---------- | ---------------- |
+| Binaire (recommandé) | `"16Gi"`   | 16 gibioctets    |
+| Binaire              | `"4096Mi"` | 4096 mébioctets  |
+| Décimal              | `"16G"`    | 16 gigaoctets    |
+| Décimal              | `"16000M"` | 16000 mégaoctets |
+
+Les unités binaires (Ki, Mi, Gi) sont recommandées pour la mémoire, conformément aux conventions de Kubernetes.
+
+***
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+<div id="health-check">
+  ### Contrôle de l’état de santé
+</div>
+
+<div id="get-readiness">
+  #### `GET /readiness`
+</div>
+
+Retourne l’état de santé et de readiness de l’API.
+
+**Réponse :** `200 OK`
+
+***
+
+<div id="backups">
+  ### Sauvegardes
+</div>
+
+<div id="create-backup">
+  #### Créer une sauvegarde
+</div>
+
+`POST /api/v1/backups?instance_id={instance_id}`
+
+Crée une nouvelle sauvegarde pour le cluster ClickHouse spécifié.
+
+**Paramètres de requête :**
+
+| Paramètre     | Type   | Obligatoire | Description                                           |
+| ------------- | ------ | ----------- | ----------------------------------------------------- |
+| `instance_id` | string | Oui         | Nom du cluster ClickHouse (par ex. : `default-xx-01`) |
+
+**Corps de la requête :**
+
+```json
+{
+    "incremental": false,
+    "baseBackupUuid": "uuid-of-previous-backup",
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+| Champ            | Type               | Obligatoire | Description                                                                                                                             |
+| ---------------- | ------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `incremental`    | booléen            | Non         | `false` pour une sauvegarde complète, `true` pour une sauvegarde incrémentielle. La valeur par défaut est `false`.                      |
+| `baseBackupUuid` | chaîne             | Non         | UUID de la sauvegarde précédente (requis lorsque `incremental` vaut `true`)                                                             |
+| `databases`      | tableau de chaînes | Non         | Bases de données spécifiques à sauvegarder. Omettez ce champ pour inclure toutes les bases de données.                                  |
+| `tables`         | tableau de chaînes | Non         | Tables spécifiques à sauvegarder. Utilisez des noms pleinement qualifiés (`db.table`). Omettez ce champ pour inclure toutes les tables. |
+
+**Réponse :** `201 Created` -- Renvoie l&#39;objet de sauvegarde créé, y compris son UUID.
+
+**Comportement :** Crée une ressource personnalisée `Backup` dans l&#39;espace de noms du cluster ClickHouse. L&#39;opérateur surveille les nouveaux objets `Backup` et exécute l&#39;instruction SQL de sauvegarde appropriée, en suivant l&#39;état via les tables système.
+
+***
+
+<div id="get-backup">
+  #### Récupérer une sauvegarde
+</div>
+
+`GET /api/v1/backups/{backup_id}?instance_id={instance_id}`
+
+Renvoie le statut et les détails d&#39;une sauvegarde donnée.
+
+**Paramètres de chemin :**
+
+| Paramètre   | Type   | Obligatoire | Description           |
+| ----------- | ------ | ----------- | --------------------- |
+| `backup_id` | string | Oui         | UUID de la sauvegarde |
+
+**Paramètres de requête :**
+
+| Paramètre     | Type   | Obligatoire | Description               |
+| ------------- | ------ | ----------- | ------------------------- |
+| `instance_id` | string | Oui         | Nom du cluster ClickHouse |
+
+**Réponse :** `200 OK` -- Renvoie l&#39;objet de sauvegarde. Le champ `status.state` indique l&#39;état d&#39;avancement (par exemple, `Ready` une fois l&#39;opération terminée).
+
+***
+
+<div id="list-backups">
+  #### Lister les sauvegardes
+</div>
+
+`GET /api/v1/backups?instance_id={instance_id}`
+
+Renvoie toutes les sauvegardes du cluster spécifié.
+
+**Paramètres de requête :**
+
+| Paramètre           | Type    | Obligatoire | Description                                         |
+| ------------------- | ------- | ----------- | --------------------------------------------------- |
+| `instance_id`       | string  | Oui         | Nom du cluster ClickHouse                           |
+| `status__state__eq` | string  | Non         | Filtre par état de la sauvegarde (par ex., `Ready`) |
+| `sort`              | string  | Non         | Champ de tri (par ex., `status__finishTime`)        |
+| `limit`             | integer | Non         | Nombre maximal de résultats à renvoyer              |
+
+**Réponse :** `200 OK` -- Renvoie un tableau d&#39;objets de sauvegarde.
+
+**Exemple :** Trouver l&#39;UUID de la dernière sauvegarde réussie :
+
+```text
+GET /api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1
+```
+
+***
+
+<div id="restore-backup">
+  #### Restaurer une sauvegarde
+</div>
+
+`POST /api/v1/backups/{backup_id}/restore?instance_id={instance_id}&target_instance_id={target_instance_id}`
+
+Restaure une sauvegarde sur un cluster ClickHouse cible. Effectue un `RESTORE ALL` de la sauvegarde.
+
+**Paramètres de chemin :**
+
+| Paramètre   | Type   | Obligatoire | Description                       |
+| ----------- | ------ | ----------- | --------------------------------- |
+| `backup_id` | string | Oui         | UUID de la sauvegarde à restaurer |
+
+**Paramètres de requête :**
+
+| Paramètre            | Type   | Obligatoire | Description                                                     |
+| -------------------- | ------ | ----------- | --------------------------------------------------------------- |
+| `instance_id`        | string | Oui         | Nom du cluster ClickHouse source (où la sauvegarde a été créée) |
+| `target_instance_id` | string | Oui         | Nom du cluster ClickHouse cible (où effectuer la restauration)  |
+
+**Contraintes :** - La restauration sur la même instance (`instance_id == target_instance_id`) est **interdite** par mesure de sécurité. - Il est recommandé de restaurer sur un nouveau cluster afin d’éviter de surcharger le cluster d’origine.
+
+**Réponse :** `202 Accepted` -- Renvoie les identifiants de l’opération de restauration.
+
+***
+
+<div id="vertical-scaling">
+  ### Mise à l’échelle verticale
+</div>
+
+<div id="scale-cluster">
+  #### Mise à l’échelle d’un cluster
+</div>
+
+`POST /api/v1/instances/{instance_id}/scale`
+
+Met à l’échelle verticalement un cluster ClickHouse en ajustant les ressources CPU et mémoire.
+
+**Paramètres de chemin :**
+
+| Paramètre     | Type   | Obligatoire | Description               |
+| ------------- | ------ | ----------- | ------------------------- |
+| `instance_id` | string | Oui         | Nom du cluster ClickHouse |
+
+**Corps de la requête :**
+
+```json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+| Champ                       | Type   | Obligatoire | Description                                                         |
+| --------------------------- | ------ | ----------- | ------------------------------------------------------------------- |
+| `vertical.resources.cpu`    | string | Non*        | Allocation de CPU au format de quantité de ressource Kubernetes     |
+| `vertical.resources.memory` | string | Non*        | Allocation de mémoire au format de quantité de ressource Kubernetes |
+
+*Au moins une des deux valeurs `cpu` ou `memory` doit être fournie.
+
+**Ratio CPU/mémoire :** L’API impose un **ratio de 1:4** (1 cœur de CPU pour 4 GiB de mémoire) avec une marge de 5 %. Si une seule ressource est fournie, l’autre est automatiquement calculée afin de respecter ce ratio.
+
+**Comportement :** Met à jour la `ServerPodPolicy` de la ressource personnalisée `ClickhouseCluster`. L’opérateur déclenche un **redémarrage progressif** des StatefulSets avec la nouvelle allocation de ressources.
+
+**Important :** Contrairement à ClickHouse Cloud, ClickHouse Private n’utilise **pas** le dimensionnement Make Before Break (MBB). Le dimensionnement vertical entraîne un redémarrage progressif susceptible de perturber temporairement le service.
+
+**Réponse :** `201 Created`
+
+***
+
+<div id="password-reset">
+  ### Réinitialisation du mot de passe
+</div>
+
+<div id="reset-user-password">
+  #### Réinitialiser le mot de passe d’un utilisateur
+</div>
+
+`POST /api/v1/instances/{instance_id}/reset-user-password`
+
+Réinitialise le mot de passe d’un utilisateur d’un cluster ClickHouse.
+
+**Paramètres de chemin :**
+
+| Paramètre     | Type   | Obligatoire | Description               |
+| ------------- | ------ | ----------- | ------------------------- |
+| `instance_id` | string | Oui         | Nom du cluster ClickHouse |
+
+**Corps de la requête :**
+
+```json
+{
+  "user_hashed_password": "<base64-encoded-sha256-hash>",
+  "hashing_function": "sha256",
+  "username": "default"
+}
+```
+
+| Champ                  | Type   | Obligatoire | Par défaut  | Description                                                 |
+| ---------------------- | ------ | ----------- | ----------- | ----------------------------------------------------------- |
+| `user_hashed_password` | string | Oui         | --          | Hachage du nouveau mot de passe encodé en Base64            |
+| `hashing_function`     | string | Non         | `"sha256"`  | Algorithme de hachage utilisé                               |
+| `username`             | string | Non         | `"default"` | Nom d’utilisateur pour lequel réinitialiser le mot de passe |
+
+**Génération du hachage du mot de passe :**
+
+```ini
+PASSWORD='My super secret p@$$w0rd'
+HASHED_PASSWORD=$(echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64)
+```
+
+**Contraintes :** - Il n’est **pas possible** de réinitialiser le mot de passe sur les instances enfants Hydra. Effectuez plutôt la réinitialisation sur l’instance parente.
+
+**Réponse :**
+
+```json
+{
+  "message": "User password reset successfully"
+}
+```
+
+**Comportement :** Met à jour le champ `CustomerAccount` dans la ressource personnalisée `ClickhouseCluster`. L’opérateur applique ce changement d’identifiants au cluster. Le mot de passe prend effet une fois la modification traitée par l’opérateur.
+
+***
+
+<div id="cluster-status">
+  ### État du cluster
+</div>
+
+<div id="get-cluster-status">
+  #### Obtenir le statut du cluster
+</div>
+
+`GET /api/v1/instances/{instance_id}/status`
+
+Renvoie le statut actuel du cluster ClickHouse spécifié.
+
+**Paramètres de chemin :**
+
+| Paramètre     | Type   | Obligatoire | Description               |
+| ------------- | ------ | ----------- | ------------------------- |
+| `instance_id` | string | Oui         | Nom du cluster ClickHouse |
+
+**Réponse :**
+
+```json
+{
+  "state": "Running",
+  "previousState": "Provisioning",
+  "message": "Cluster is healthy",
+  "stateProvidedBy": "operator"
+}
+```
+
+| Champ             | Type   | Description                                        |
+| ----------------- | ------ | -------------------------------------------------- |
+| `state`           | string | État actuel du cluster ClickHouse                  |
+| `previousState`   | string | État précédent du cluster                          |
+| `message`         | string | Détails expliquant le changement d’état du cluster |
+| `stateProvidedBy` | string | Processus à l’origine du changement d’état         |
+
+**Cas d’usage :** - Vérifier l’achèvement d’une opération de mise à l’échelle verticale. - Confirmer qu’une réinitialisation du mot de passe a bien été appliquée à l’ensemble du cluster. - Suivre la progression du provisionnement du cluster.
+
+***
+
+<div id="endpoint-summary">
+  ## Résumé des endpoints
+</div>
+
+| Méthode | Chemin                                                                         | Description                                    |
+| ------- | ------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `GET`   | `/readiness`                                                                   | Vérification d’état/de readiness               |
+| `GET`   | `/liveness`                                                                    | Vérification de liveness                       |
+| `POST`  | `/api/v1/backups?instance_id={id}`                                             | Créer une sauvegarde                           |
+| `GET`   | `/api/v1/backups/{backup_id}?instance_id={id}`                                 | Obtenir l’état de la sauvegarde                |
+| `GET`   | `/api/v1/backups?instance_id={id}`                                             | Lister les sauvegardes                         |
+| `POST`  | `/api/v1/backups/{backup_id}/restore?instance_id={id}&target_instance_id={id}` | Restaurer une sauvegarde                       |
+| `POST`  | `/api/v1/instances/{id}/scale`                                                 | Redimensionner verticalement le cluster        |
+| `POST`  | `/api/v1/instances/{id}/reset-user-password`                                   | Réinitialiser le mot de passe de l’utilisateur |
+| `GET`   | `/api/v1/instances/{id}/status`                                                | Obtenir l’état du cluster                      |
+| `GET`   | `/api/v1/license`                                                              | Obtenir les informations de licence            |
+| `PUT`   | `/api/v1/license`                                                              | Créer ou mettre à jour la licence              |
+| `POST`  | `/api/v1/license/fingerprint`                                                  | Obtenir l’empreinte de la licence              |

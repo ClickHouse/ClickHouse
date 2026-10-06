@@ -29,12 +29,6 @@ public:
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
 
-    /// Buffered ranged copy, inherited by every reader that has no native ranged copy. `file_size` is unused:
-    /// reading through buffers has no size precondition.
-    void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
-                             bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
-                             WriteMode write_mode) override;
-
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }
     size_t getWriteBufferSize() const override { return write_buffer_size; }
@@ -68,9 +62,10 @@ public:
     const WriteSettings & getWriteSettings() const override { return write_settings; }
     size_t getWriteBufferSize() const override { return write_buffer_size; }
 
-    std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override = 0;
-
 protected:
+    /// Here readFile() is used only to implement fileContentsEqual().
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
+
     LoggerPtr const log;
 
     /// The read settings are used to read from the source disk in copyFileFromDisk().

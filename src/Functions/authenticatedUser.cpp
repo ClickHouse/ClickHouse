@@ -65,9 +65,8 @@ Alias: authUser()
         .examples{
             {"Usage example",
             R"(
-CREATE USER u1;
-EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
-DROP USER u1;
+            EXECUTE as u1;
+            SELECT currentUser(), authenticatedUser();
             )",
             R"(
 ┌─currentUser()─┬─authenticatedUser()─┐

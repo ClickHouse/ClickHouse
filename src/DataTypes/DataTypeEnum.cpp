@@ -217,25 +217,6 @@ SerializationPtr DataTypeEnum<Type>::doGetSerialization(const SerializationInfoS
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
 
-bool isUnknownEnumElement(const IDataType & type, const Field & value)
-{
-    if (value.getType() != Field::Types::String)
-        return false;
-
-    const auto & name = value.safeGet<String>();
-    if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&type))
-    {
-        Int8 res = 0;
-        return !enum8->tryGetValue(res, name);
-    }
-    if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&type))
-    {
-        Int16 res = 0;
-        return !enum16->tryGetValue(res, name);
-    }
-    return false;
-}
-
 static void checkASTStructure(const ASTPtr & child)
 {
     const auto * func = child->as<ASTFunction>();
@@ -624,9 +605,9 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
-Neither the string nor the numeric value in an `Enum` can be [NULL](/reference/syntax).
+Neither the string nor the numeric value in an `Enum` can be [NULL](../../sql-reference/syntax.md).
 
-An `Enum` can be contained in [Nullable](/reference/data-types/nullable) type. So if you create a table using the query
+An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable.md) type. So if you create a table using the query
 
 ```sql
 CREATE TABLE t_enum_nullable
@@ -662,7 +643,7 @@ Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just 
 
 ## ADD ENUM VALUES {#add-enum-values}
 
-There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/reference/statements/alter/column#modify-column-add-enum-values)
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/sql-reference/statements/alter/column#modify-column-add-enum-values)
 
 ```sql
 CREATE TABLE enum

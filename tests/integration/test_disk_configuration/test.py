@@ -32,14 +32,11 @@ def start_cluster():
             with_minio=True,
             macros={"replica": "node1", "shard": "shard1"},
         )
-        # node2: the substitutions file lives at /etc/metrika.xml, which has no special
-        # meaning any more, so `include_from` has to point at it explicitly.
         cluster.add_instance(
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/include_from_metrika_path.xml",
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
