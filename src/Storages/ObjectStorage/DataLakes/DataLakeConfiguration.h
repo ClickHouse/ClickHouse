@@ -106,7 +106,38 @@ public:
 #endif
     }
 
-    const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+    DataLakeStorageSettingsPtr getDataLakeSettings() const override
+    {
+        std::lock_guard lock(settings_mutex);
+        return settings;
+    }
+
+    void setDataLakeSettings(ObjectStoragePtr object_storage, ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
+    {
+        DataLakeStorageSettingsPtr previous_settings;
+        {
+            std::lock_guard lock(settings_mutex);
+            previous_settings = std::exchange(settings, std::move(new_settings));
+        }
+
+        std::shared_ptr<IDataLakeMetadata> fresh;
+        try
+        {
+            fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(settings_mutex);
+            settings = std::move(previous_settings);
+            throw;
+        }
+
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
+    }
 
     void setExplicitMetadataFilePath(const String & path) override
     {
@@ -407,9 +438,10 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+        const auto current_settings = getDataLakeSettings();
+        if ((*current_settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
@@ -479,7 +511,8 @@ public:
     }
 
 private:
-    const DataLakeStorageSettingsPtr settings;
+    mutable std::mutex settings_mutex;
+    DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
     ObjectStoragePtr ready_object_storage;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent

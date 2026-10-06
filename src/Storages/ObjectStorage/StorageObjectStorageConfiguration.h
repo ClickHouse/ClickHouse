@@ -296,9 +296,14 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    virtual DataLakeStorageSettingsPtr getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual void setDataLakeSettings(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }

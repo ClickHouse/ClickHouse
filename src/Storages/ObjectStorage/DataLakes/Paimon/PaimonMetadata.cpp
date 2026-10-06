@@ -158,9 +158,9 @@ DataLakeMetadataPtr PaimonMetadata::create(
         partition_default_name = it->second;
 
     /// Check if incremental read is enabled
-    const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
-    bool incremental_read_enabled = data_lake_settings[DataLakeStorageSetting::paimon_incremental_read].value;
-    Int64 metadata_refresh_interval_sec = data_lake_settings[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
+    const auto data_lake_settings = configuration_ptr->getDataLakeSettings();
+    bool incremental_read_enabled = (*data_lake_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
+    Int64 metadata_refresh_interval_sec = (*data_lake_settings)[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
 
     /// The settings framework accesses field values through a pointer-to-member
     /// dereference (impl.get()->*t). MSan cannot track initialization across this
@@ -177,8 +177,8 @@ DataLakeMetadataPtr PaimonMetadata::create(
         if (!local_context->hasZooKeeper())
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
-        String keeper_path = data_lake_settings[DataLakeStorageSetting::paimon_keeper_path].value;
-        String replica_name = data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
+        String keeper_path = (*data_lake_settings)[DataLakeStorageSetting::paimon_keeper_path].value;
+        String replica_name = (*data_lake_settings)[DataLakeStorageSetting::paimon_replica_name].value;
         if (keeper_path.empty() || replica_name.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

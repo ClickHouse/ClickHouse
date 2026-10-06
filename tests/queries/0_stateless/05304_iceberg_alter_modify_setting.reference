@@ -1,0 +1,13 @@
+without version hint:
+1
+2
+with version hint:
+1
+SETTINGS iceberg_use_version_hint = 1
+with version hint after ATTACH:
+1
+after RESET SETTING:
+1
+2
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
