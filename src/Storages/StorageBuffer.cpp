@@ -34,15 +34,12 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/Utils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageMerge.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/Utils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -106,7 +103,6 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
@@ -275,46 +271,6 @@ private:
 };
 
 
-namespace
-{
-
-std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescription & destination, const ColumnsDescription & declared)
-{
-    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
-    for (const auto & destination_column : destination.get(order_relevant_columns))
-    {
-        auto declared_column = declared.tryGetColumn(order_relevant_columns, destination_column.name);
-        if (declared_column && !conversionPreservesOrder(*destination_column.type, *declared_column->type))
-            return destination_column;
-    }
-    return {};
-}
-
-/// Whether a read of `storage` lands on a `Merge`, through wrappers that forward both the stage and the read.
-bool readLandsOnMerge(StoragePtr storage)
-{
-    std::vector<StoragePtr> passed;
-    while (storage && std::find(passed.begin(), passed.end(), storage) == passed.end())
-    {
-        if (dynamic_cast<const StorageMerge *>(storage.get()))
-            return true;
-        passed.push_back(storage);
-        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-            storage = proxy->getNested();
-        else if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
-            storage = alias->tryGetTargetTable();
-        else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
-            storage = buffer->getDestinationTable();
-        else if (const auto * view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
-            storage = view->tryGetTargetTable();
-        else
-            return false;
-    }
-    return false;
-}
-
-}
-
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -325,13 +281,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     {
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         const auto stage = destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
-
-        /// `read` casts the destination's result to these types above `stage`. A `Merge`, also behind wrappers that
-        /// forward the read, can be read at `FetchColumns` instead; a `Distributed` there returns identifiers.
-        if (stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(destination)
-            && findOrderBreakingConversion(destination_metadata->getColumns(), storage_snapshot->metadata->getColumns()))
-            return QueryProcessingStage::FetchColumns;
-        return stage;
+        return getStageForConvertingRead(stage, destination, destination_metadata->getColumns(), storage_snapshot->metadata->getColumns());
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -393,17 +343,8 @@ void StorageBuffer::read(
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
 
         /// The stage was chosen from an earlier, unlocked snapshot and can no longer be lowered here.
-        if (processed_stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(destination))
-        {
-            if (auto column = findOrderBreakingConversion(destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns()))
-                throw Exception(
-                    ErrorCodes::INCOMPATIBLE_COLUMNS,
-                    "Column {} of table {} has type {}, which does not preserve the order when converted to the type {} "
-                    "declared by {}. The query processing stage was chosen before this type was visible, most likely "
-                    "because the table was altered while the query was being planned. Retry the query",
-                    backQuoteIfNeed(column->name), destination->getStorageID().getNameForLogs(), column->type->getName(),
-                    metadata_snapshot->getColumns().get(column->name).type->getName(), getStorageID().getNameForLogs());
-        }
+        checkStageForConvertingRead(
+            processed_stage, destination, destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns(), getStorageID());
 
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
