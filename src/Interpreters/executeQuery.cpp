@@ -2774,10 +2774,9 @@ static BlockIO executeQueryImpl(
         /// Distributed DDL (`ON CLUSTER` / `Replicated` database) workers replay the initiator's
         /// query with `QueryFlags{ .internal = false }` (`DDLWorker::tryExecuteQuery`), so the
         /// `internal` guard does not cover them. Rules were already applied once, on the
-        /// initiator, before the query was written to the DDL log; the entry-settings strip in
-        /// `DDLLogEntry::setSettingsIfRequired` suppresses the worker's `query_rules` only for
-        /// entry formats that carry settings (v2+), while a `distributed_ddl_entry_format_version = 1`
-        /// entry leaves the worker on its local profile defaults. Skip rule application on the
+        /// initiator, before the query was written to the DDL log, and `DDLLogEntry::setSettingsIfRequired`
+        /// does not record `query_rules` in the entry, but the worker starts from its local profile
+        /// defaults, which may name rules of its own. Skip rule application on the
         /// `isDDLOrOnClusterInternal` flag (set by `DDLTaskBase::makeQueryContext` and the
         /// `DatabaseReplicated` task for every replayed query, and likewise a server-side flag),
         /// so a worker-side default `query_rules` cannot rewrite or reject the replayed DDL

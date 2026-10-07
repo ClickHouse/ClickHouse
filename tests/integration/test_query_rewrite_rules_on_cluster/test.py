@@ -81,9 +81,9 @@ def test_on_cluster_ddl_is_not_rewritten_second_time_on_workers(started_cluster)
 
 
 def test_on_cluster_ddl_v1_entry_skips_worker_default_rules(started_cluster):
-    # `distributed_ddl_entry_format_version = 1` entries carry no `settings` at all, so the
-    # empty `query_rules` override recorded by `DDLLogEntry::setSettingsIfRequired` (v2+) never
-    # reaches the worker and `DDLTaskBase::makeQueryContext` starts from the worker's local
+    # `DDLLogEntry::setSettingsIfRequired` does not record `query_rules` in the entry (an older
+    # worker would not know the setting), and `distributed_ddl_entry_format_version = 1` entries
+    # carry no `settings` at all, so `DDLTaskBase::makeQueryContext` starts from the worker's local
     # profile defaults. The worker must still not apply rewrite rules to the replayed DDL:
     # `executeQuery` skips rule application on the `isDDLOrOnClusterInternal` flag.
     node1.query(
