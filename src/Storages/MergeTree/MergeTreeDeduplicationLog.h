@@ -145,9 +145,22 @@ public:
         MergeTreePartInfo part_info;
         std::string block_id;
     };
-    /// Add part into in-memory hash table and to disk
-    /// Return empty block_id and part info if insertion was successful.
-    /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
+    /// Return the block IDs that are already in the log, each with the part that has it, without writing anything.
+    /// This is the duplicate check of `addPart`. An insert filters out its duplicates with it before committing
+    /// its part, and publishes the block IDs with `addPart` only after the commit, see `MergeTreeSink::commitPart`.
+    /// Throws `ABORTED` if there are no duplicates and the log is shut down, as `addPart` does.
+    std::vector<AddPartResult> getDuplicates(const std::vector<std::string> & block_ids);
+
+    /// Publish the block IDs of a committed part. Add them to the in-memory hash table and write them to disk.
+    /// Return an empty vector if they were published, or if the deduplication window is 0.
+    /// Otherwise, in case of duplicate, publish nothing and return block_id with the collision and previous part name
+    /// with the same hash (useful for logging).
+    /// The caller must commit the part first, and must hold the parts lock from `getDuplicates` until here. A block ID
+    /// that is published for a part which is never committed makes a retry of the insert look like a duplicate, and
+    /// the rows of the retry are silently lost.
+    /// The records are written one by one. If writing one of them fails, the block IDs written before it stay published.
+    /// They belong to the committed part, so they are correct, and a retry can only insert the rows of the missing ones
+    /// again, never lose them.
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
     /// Remove all covered parts from in memory table and add DROP records to the disk
@@ -211,6 +224,9 @@ private:
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
+
+    /// The duplicate check shared by `getDuplicates` and `addPart`. Must be called under `state_mutex`.
+    std::vector<AddPartResult> getDuplicatesUnlocked(const std::vector<std::string> & block_ids) const;
 };
 
 }

@@ -83,7 +83,7 @@ For application workloads, consider [ClickHouse Managed Postgres](/products/mana
 - This is an experimental feature, and changes should be expected.
 - If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
 - Nested transactions are not supported; finish the current transaction and start a new one instead
-
+- Deduplicated inserts into a table with [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) greater than zero are rejected with `NOT_IMPLEMENTED`, even with `throw_on_unsupported_query_inside_transaction` set to `0`. This includes blocks that a materialized view writes into such a table. Run them outside of the transaction, or disable deduplication for them with [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) set to `'disable'`. For `INSERT SELECT`, set [`deduplicate_insert_select`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select) to `'disable'` instead, because it takes precedence over `deduplicate_insert`.
 ### Configuration {#configuration}
 
 These examples are with a single node ClickHouse server with ClickHouse Keeper enabled.
