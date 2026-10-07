@@ -1,0 +1,41 @@
+explain
+1	2
+1
+results match the join without the optimization
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+runtime filter from the fixed hash table of a single shard
+1
+1
+partition keys of time zones that differ
+3
+implicit time zones of the sessions that created the tables
+3
+max_rows_in_join limits the whole right side
+read in order
+1
+2
+empty side
+729
+729
+partitions without a match are not read for INNER
+1104
+920
+not applied
+0
+0
+0
+0
+0
+0
+0
+0
