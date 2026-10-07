@@ -100,7 +100,8 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         NameSet columns_shadowing_map_subcolumns_,
-        JSONIndexArgumentTypes json_argument_types_);
+        JSONIndexArgumentTypes json_argument_types_,
+        bool is_projection_index_ = false);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -270,6 +271,10 @@ private:
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;
+    /// Whether this condition belongs to a projection text index. The projection index reader
+    /// cannot evaluate pattern-only queries, so such queries must never advertise
+    /// `TextIndexDirectReadMode::Exact` (see `traverseFunctionNode`).
+    bool is_projection_index = false;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

@@ -48,6 +48,8 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
+    LargePostingListReaderStreamPtr getProjectionIndexPostingStreamPtr() const override;
+    LargePostingListReaderStreamPtr getProjectionIndexPostingIndexStreamPtr() const override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
     /// Return map (column to read) -> (list of all streams required to read this column).
@@ -85,6 +87,9 @@ private:
     };
 
     FileStreams streams;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> large_posting_streams;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> position_streams;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> lidx_streams;
 
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
