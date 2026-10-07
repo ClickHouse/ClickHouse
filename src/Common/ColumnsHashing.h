@@ -471,7 +471,7 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            use_batch_serialize = shouldUseBatchSerialize();
+            use_batch_serialize = hash_serialized_context->settings.allow_batch_serialize && shouldUseBatchSerialize();
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
