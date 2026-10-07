@@ -76,6 +76,10 @@ public:
 private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
+    /// Per part, the number of granules in a stripe of the columns cache, or 0 when the part is
+    /// not read through the cache. The ranges are cut at the ends of stripes, see `ColumnsCacheStripes`.
+    std::vector<size_t> columns_cache_stripe_marks;
+
     mutable std::mutex mutex;
 
     /// State to track numbers of slow reads.

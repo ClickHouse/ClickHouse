@@ -282,6 +282,8 @@ private:
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
+        size_t alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks) const;
+        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:

@@ -1086,6 +1086,45 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
     return index_granularity->getRowsCountInRange(current_mark, end_mark);
 }
 
+/// The rows from the current position to the end of the stripe of the columns cache that is the
+/// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
+/// A block that is a whole stripe is served from the cache without a copy.
+/// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
+/// much less: the block takes no memory beyond what the cache holds anyway.
+size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks) const
+{
+    const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);
+    const size_t stripe_end = (current_mark / stripe_marks + 1) * stripe_marks;
+    if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
+        return rows;
+    const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
+    if (rows >= stripe_rows || !merge_tree_reader->canReadWholeColumnsCacheStripe(current_mark))
+        return rows;
+    return stripe_rows;
+}
+
+size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const
+{
+    size_t rows = 0;
+    size_t below = 0;
+    for (size_t mark = current_mark; mark < last_mark; ++mark)
+    {
+        rows += mark == current_mark ? numPendingRowsInCurrentGranule() : index_granularity->getMarkRows(mark);
+        if ((mark + 1) % stripe_marks != 0)
+            continue;
+        if (rows < rows_num)
+        {
+            below = rows;
+            continue;
+        }
+        if (below && rows_num - below <= rows - rows_num)
+            return below;
+        if (rows <= 2 * rows_num)
+            return rows;
+        return below ? below : rows_num;
+    }
+    return rows_num;
+}
 
 bool MergeTreeRangeReader::isCurrentRangeFinished() const
 {
@@ -1161,6 +1200,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.debug_use_query_condition_cache = use_query_condition_cache;
         result.debug_can_read_incomplete_granules = can_read_incomplete_granules;
         size_t space_left = max_rows;
+        const size_t stripe_marks = merge_tree_reader->getColumnsCacheStripeMarks();
+        bool aligned_to_stripes = stripe_marks <= 1;
         while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
@@ -1184,6 +1225,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 stream.toNextMark();
                 ++result.debug_skipped_marks;
                 continue;
+            }
+
+            if (!aligned_to_stripes)
+            {
+                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks);
+                aligned_to_stripes = true;
             }
 
             size_t current_space = space_left;

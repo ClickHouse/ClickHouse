@@ -46,6 +46,13 @@ public:
 
     bool canReadIncompleteGranules() const override { return true; }
 
+    size_t getColumnsCacheStripeMarks() const override
+    {
+        return columns_cache_reads_possible || columns_cache_writes_possible ? stripes.stripe_marks : 0;
+    }
+
+    bool canReadWholeColumnsCacheStripe(size_t mark) override;
+
     void prefetchBeginOfRange(Priority priority) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;

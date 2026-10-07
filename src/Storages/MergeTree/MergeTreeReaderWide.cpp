@@ -539,6 +539,31 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
     return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool s) { return s; });
 }
 
+bool MergeTreeReaderWide::canReadWholeColumnsCacheStripe(size_t mark)
+{
+    if (hasColumnsReadOnlyFromPart())
+        return false;
+    if (columns_cache_writes_possible && canWriteToColumnsCache())
+        return true;
+    if (!columns_cache_reads_possible)
+        return false;
+
+    const size_t stripe = stripes.stripeOf(mark);
+    const size_t first_mark = stripes.firstMark(stripe);
+    const size_t end_mark = stripes.endMark(stripe, data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal());
+
+    /// The stripe is in the range being read: its lookup is done. Otherwise it is the beginning of
+    /// the next range, which is not looked up yet.
+    if (range_first_mark <= first_mark && end_mark <= range_end_mark && granule_served_from_cache.size() == range_end_mark - range_first_mark)
+        return std::all_of(granule_served_from_cache.begin() + (first_mark - range_first_mark),
+            granule_served_from_cache.begin() + (end_mark - range_first_mark), [](bool served) { return served; });
+
+    std::vector<std::vector<ColumnsCache::MappedPtr>> entries;
+    std::vector<bool> servable;
+    lookupColumnsCache(first_mark, end_mark, columns_to_read.size(), entries, servable);
+    return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool served) { return served; });
+}
+
 const ColumnsCache::MappedPtr & MergeTreeReaderWide::cachedEntryFor(size_t pos, size_t mark) const
 {
     static const ColumnsCache::MappedPtr no_entry;
