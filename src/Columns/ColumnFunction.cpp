@@ -221,9 +221,7 @@ bool ColumnFunction::structureEquals(const IColumn & rhs) const
     if (!rhs_func)
         return false;
 
-    /// insertRangeFrom keeps the destination function for all appended rows. Require the same
-    /// callable (IFunctionBase::isEqual), not merely the same wrapper typeid — FunctionExpression
-    /// and FunctionToFunctionBaseAdaptor each wrap many distinct callables.
+    /// `insertRangeFrom` keeps the destination function for all appended rows. Require the same callable (`IFunctionBase::isEqual`), not merely the same wrapper type: `FunctionExpression` and `FunctionToFunctionBaseAdaptor` each wrap many distinct callables.
     if (!function->isEqual(*rhs_func->function))
         return false;
 
