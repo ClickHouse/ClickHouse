@@ -161,6 +161,10 @@ def parse_args():
         nargs="+",
         action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
+    parser.add_argument(
+        "--cold",
+        help="Build without the compiler cache, to measure a full rebuild",
+        action="store_true")
     return parser.parse_args()
 
 def main():
@@ -266,7 +270,7 @@ def main():
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
-        if not Shell.check("sccache --start-server", retries=3):
+        if not args.cold and not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
         results.append(
             # TODO: commented out to make job platform agnostic
@@ -275,7 +279,7 @@ def main():
                 name="Cmake configuration",
                 command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
+                -DCOMPILER_CACHE={"disabled" if args.cold else ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \

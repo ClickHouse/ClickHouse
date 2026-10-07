@@ -323,6 +323,19 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         needs_submodules=True,
     )
+    # Full rebuilds on two instance types, to compare build throughput.
+    fast_test_cold_jobs = fast_test.parametrize(
+        Job.ParamSet(
+            parameter="amd_large, cold",
+            command="python3 ./ci/jobs/fast_test.py --cold",
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
+            parameter="arm_large, cold",
+            command="python3 ./ci/jobs/fast_test.py --cold",
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()

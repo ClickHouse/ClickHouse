@@ -317,6 +317,11 @@ assert not _SINGLE_ARCH_SKIPPED_ARTIFACT_USERS, (
     "from PR_SINGLE_ARCH_SKIPPED_BUILDS in ci/jobs/scripts/workflow_hooks/filter_job.py"
 )
 
+# Experiment: run only the full-rebuild Fast test variants, never from the cache.
+workflow.jobs = [*JobConfigs.fast_test_cold_jobs]
+workflow.enable_cache = False
+workflow.enable_job_filtering_by_changes = False
+
 WORKFLOWS = [
     workflow,
 ]
