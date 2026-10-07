@@ -5,9 +5,9 @@
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
-#include <Access/RowPolicy.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Access/checkRowPolicyForBlendingEngine.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
@@ -131,7 +131,6 @@ namespace Setting
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
-    extern const SettingsBool allow_suspicious_row_policies_with_blending_engines;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -2427,41 +2426,14 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-/// A policy can be created before its table, and then nobody was told that a merge undoes it
-void checkNoRowPolicyForBlendingEngine(const IStorage & storage, LoadingStrictnessLevel mode, const ContextPtr & context)
-{
-    if (mode != LoadingStrictnessLevel::CREATE || !storage.isBlendingEngine()
-        || context->getSettingsRef()[Setting::allow_suspicious_row_policies_with_blending_engines])
-        return;
-
-    auto table_id = storage.getStorageID();
-    const auto & access_control = context->getAccessControl();
-
-    for (const auto & id : access_control.findAll<RowPolicy>())
-    {
-        auto policy = access_control.tryRead<RowPolicy>(id);
-        if (!policy || policy->getDatabase() != table_id.database_name)
-            continue;
-        if (!policy->isForDatabase() && policy->getTableName() != table_id.table_name)
-            continue;
-
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Row policy {} is used for this table, which has the {} engine: a merge takes the values of all "
-            "the rows with the same sorting key into one row, so the policy does not hide the values of the rows "
-            "it filters out. Drop the policy and define it on the table which stores the raw rows, or set "
-            "allow_suspicious_row_policies_with_blending_engines = 1 to create the table anyway",
-            policy->getName(),
-            storage.getName());
-    }
-}
-
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, bool attach_short_syntax, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
-    checkNoRowPolicyForBlendingEngine(storage, mode, context);
+    /// A policy can be created before its table, and then nobody was told that a merge undoes it
+    if (isFreshTableDefinition(mode, attach_short_syntax))
+        checkNoRowPolicyForBlendingEngine(storage, storage.getStorageID(), /*include_database_policies=*/ true, context);
 }
 catch (...)
 {
@@ -2503,7 +2475,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2731,7 +2703,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, create.attach_short_syntax, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3246,7 +3218,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
         return res;
     };
 
