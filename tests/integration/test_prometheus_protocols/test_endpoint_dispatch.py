@@ -104,6 +104,27 @@ def test_endpoints_that_need_a_table_still_report_the_missing_table():
     assert "table name is not set" in body["error"], body
 
 
+@pytest.mark.parametrize(
+    "path,query",
+    [
+        ("/series", {"match[]": "up", "limit": "not_a_number"}),
+        ("/labels", {"limit": "not_a_number"}),
+        ("/label/job/values", {"limit": "not_a_number"}),
+        ("/metadata", {"limit": "not_a_number"}),
+        ("/metadata", {"limit_per_metric": "not_a_number"}),
+    ],
+)
+def test_a_missing_table_is_reported_before_the_endpoint_parameters(path, query):
+    # These endpoints need a table, so the missing one is reported first: validating their own
+    # parameters first would hide the hint about how to supply the table behind a complaint
+    # about a parameter the request will not get to use anyway.
+    response = requests.get(api_url(path), params=query)
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["errorType"] == "bad_data", body
+    assert "table name is not set" in body["error"], body
+
+
 def test_table_less_endpoints_work_without_a_table():
     buildinfo = requests.get(api_url("/status/buildinfo"))
     assert buildinfo.status_code == 200, buildinfo.text

@@ -523,12 +523,14 @@ public:
                 return;
             }
 
-            /// Resolved on first use rather than up front, so that the endpoints below decide the response
+            /// Resolved per endpoint rather than up front, so that the dispatch below decides the response
             /// before a table is involved. A path this server doesn't serve has no table to speak of, and
             /// resolving one eagerly made such a request fail on a missing or unconfigured table instead of
-            /// reporting that the endpoint doesn't exist.
+            /// reporting that the endpoint doesn't exist. Every endpoint that does need the table resolves it
+            /// as its first step, which keeps the diagnostic about a table that is missing or not configured
+            /// ahead of the validation of that endpoint's own parameters, as the eager resolution had it.
             std::optional<PrometheusHTTPProtocolAPI> protocol_holder;
-            auto protocol = [&]() -> PrometheusHTTPProtocolAPI &
+            auto getProtocol = [&]() -> PrometheusHTTPProtocolAPI &
             {
                 if (!protocol_holder)
                     protocol_holder.emplace(DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context), context);
@@ -542,6 +544,8 @@ public:
 
             if (uri_path.ends_with("/query_range"))
             {
+                auto & protocol = getProtocol();
+
                 String query = params->get("query", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
@@ -563,10 +567,12 @@ public:
                     .lookback_delta_param = lookback_delta,
                 };
 
-                protocol().executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
             else if (uri_path.ends_with("/query"))
             {
+                auto & protocol = getProtocol();
+
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
@@ -584,7 +590,7 @@ public:
                     .lookback_delta_param = lookback_delta,
                 };
 
-                protocol().executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -595,39 +601,47 @@ public:
             }
             else if (uri_path.ends_with("/series"))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();
 
-                protocol().getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (uri_path.ends_with("/metadata"))
             {
+                auto & protocol = getProtocol();
+
                 String metric = params->get("metric", "");
                 /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
                 Int64 limit = getMetadataLimitParam("limit");
                 Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
 
-                protocol().getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
+                protocol.getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();
 
-                protocol().getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();
 
-                protocol().getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {
