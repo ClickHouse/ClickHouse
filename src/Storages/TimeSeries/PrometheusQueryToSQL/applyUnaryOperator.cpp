@@ -111,7 +111,7 @@ SQLQueryPiece applyUnaryOperator(
 
             res.select_query = builder.getSelectQuery();
 
-            return dropMetricName(std::move(res), context);
+            return dropMetricName(std::move(res), context, DuplicateSeriesHandling::MERGE_NON_OVERLAPPING);
         }
 
         case StoreMethod::CONST_STRING:
