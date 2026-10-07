@@ -40,6 +40,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
 
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
     format_name = other.format_name;
@@ -58,6 +59,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
     format_name = other.format_name;
@@ -68,6 +70,16 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 FileNamesGenerator::Result FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+
+    if (!data_location.empty())
+    {
+        auto path_in_metadata = fmt::format("{}/data-{}.{}", data_location, uuid_str, format_name);
+        auto path_in_storage = convertMetadataPathToStoragePath(path_in_metadata);
+        return Result{
+            .path_in_metadata = std::move(path_in_metadata),
+            .path_in_storage = std::move(path_in_storage),
+        };
+    }
 
     return Result{
         .path_in_metadata = fmt::format("{}data-{}.{}", data_dir, uuid_str, format_name),
@@ -132,6 +144,16 @@ FileNamesGenerator::Result FileNamesGenerator::generateVersionHint()
 FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+
+    if (!data_location.empty())
+    {
+        auto path_in_metadata = fmt::format("{}/{}-deletes.{}", data_location, uuid_str, format_name);
+        auto path_in_storage = convertMetadataPathToStoragePath(path_in_metadata);
+        return Result{
+            .path_in_metadata = std::move(path_in_metadata),
+            .path_in_storage = std::move(path_in_storage),
+        };
+    }
 
     return Result{
         .path_in_metadata = fmt::format("{}{}-deletes.{}", data_dir, uuid_str, format_name),
