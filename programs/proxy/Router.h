@@ -21,9 +21,11 @@ public:
 
     struct Decision
     {
-        BackendPoolPtr pool;    /// Null if no rule matched and the listener has no default pool.
+        BackendPoolPtr pool;    /// Null if no rule matched and the listener has no default pool,
+                                /// or if the matched rule needs a new dynamic backend and their limit is reached.
         BackendPtr backend;     /// Null if the pool has no alive backends.
         bool authorized_key_matched = false;   /// The pool was chosen by a rule that matched an SSH key allowlist.
+        bool dynamic_backends_exhausted = false;   /// A rule matched, but `max_dynamic_backends` is reached.
     };
 
     /// May run hooks (shell commands) and wait for backends; call only from a fiber.
@@ -33,6 +35,10 @@ public:
     /// non-cooperative context (e.g. inside a libssh callback running in thread mode).
     /// May return no pool when the set of dynamic backends is full.
     Decision routeStatic(const RouteAttributes & attributes, const ListenerConfig & listener);
+
+    /// Whether the matched rule authorizes the offered SSH key, without side effects: a backend template
+    /// is not expanded into a dynamic backend. For a pool, it also requires an alive backend.
+    bool keyIsAcceptable(const RouteAttributes & attributes);
 
     bool needsCredentials(ListenerProtocol protocol) const { return table->needsCredentials(protocol); }
     bool needsQueryType(ListenerProtocol protocol) const { return table->needsQueryType(protocol); }
@@ -85,7 +91,8 @@ private:
     void runFirstSeenHook(const String & command, const char * kind, const String & value,
         std::map<String, bool> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
-    BackendPoolPtr resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener, bool * authorized_key_matched = nullptr);
+    /// Fills `pool`, `authorized_key_matched` and `dynamic_backends_exhausted` of the decision.
+    Decision resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);
     BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener);
 };
 

@@ -83,11 +83,13 @@ FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, boo
             "a TLS backend leg for it", backend.name(), toString(ctx.listener.protocol));
 
     const UInt16 port = backendPortFor(ctx.listener.protocol, backend.config(), ctx.listener.port);
-    const Poco::Net::SocketAddress address = resolveAddress(backend.config().host, port);
 
     const auto started = std::chrono::steady_clock::now();
     try
     {
+        /// Inside the guarded section: a backend whose name stops resolving is failing like an unreachable one.
+        const Poco::Net::SocketAddress address = resolveAddress(backend.config().host, port);
+
         FiberSocket socket;
         if (encrypt)
         {
@@ -134,7 +136,9 @@ RouteResult routeConnection(const FrontendContext & ctx, const RouteAttributes &
 
     if (!decision.pool)
     {
-        result.failure_reason = "no routing rule matched and the listener has no default pool";
+        result.failure_reason = decision.dynamic_backends_exhausted
+            ? "a routing rule matched, but the limit of dynamic backends (`max_dynamic_backends`) is reached"
+            : "no routing rule matched and the listener has no default pool";
         LOG_WARNING(ctx.log, "Cannot route {} connection (host='{}', user='{}', database='{}'): {}",
             toString(attributes.protocol), attributes.host, attributes.user, attributes.database, result.failure_reason);
         return result;

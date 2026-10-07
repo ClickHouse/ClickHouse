@@ -109,6 +109,17 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
         attributes.authorized_key = canonical;
         attributes.peer_address = bridge->peer.host().toString();
 
+        /// The client only asks whether the key is acceptable and has not proven possession of it yet,
+        /// so the answer must have no side effects (a backend template is not expanded into a backend).
+        if (signature_state == SSH_PUBLICKEY_STATE_NONE)
+        {
+            if (bridge->ctx->router.keyIsAcceptable(attributes))
+                return SSH_AUTH_SUCCESS;    /// The client proceeds to sign with the key.
+            LOG_DEBUG(bridge->log, "SSH {} key (user '{}') is not in the allowlist of a routing rule with an available backend",
+                public_key.getType(), attributes.user);
+            return SSH_AUTH_DENIED;
+        }
+
         /// Pure routing only: hooks and waits use fibers and must not run inside this callback.
         Router::Decision decision = bridge->ctx->router.routeStatic(attributes, bridge->ctx->listener);
 
@@ -122,9 +133,6 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
                 public_key.getType(), attributes.user);
             return SSH_AUTH_DENIED;
         }
-
-        if (signature_state == SSH_PUBLICKEY_STATE_NONE)
-            return SSH_AUTH_SUCCESS;    /// The key is acceptable; the client proceeds to sign with it.
 
         bridge->backend = decision.backend;
         bridge->routed = true;

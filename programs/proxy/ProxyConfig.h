@@ -104,6 +104,10 @@ struct RuleConfig
 /// and does not match on an attribute that sessions of this protocol never have.
 bool ruleCanMatchProtocol(const RuleConfig & rule, ListenerProtocol protocol);
 
+/// Whether a session of this listener can match the rule: `ruleCanMatchProtocol` refined with the attributes
+/// that depend on the listener settings (the host of a `native` session is known only on a secure listener).
+bool ruleCanMatchListener(const RuleConfig & rule, const ListenerConfig & listener);
+
 struct HooksConfig
 {
     /// Every hook is a shell command run as: command KIND PROTOCOL HOST USER DATABASE.

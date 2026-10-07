@@ -232,9 +232,11 @@ its first keyword, for example within a long leading comment, and for `multipart
 whose query is assembled from all the `query` parameters of the URL and of the form.
 A rule without `protocol` applies only to the protocols whose connections can have the attributes it
 matches on: `query_type` is known only for `http`, `authorized_key` only for `ssh`, and `host` only for
-`http`, `native` (the SNI of a secure listener) and `tls`. Such a rule does not make the proxy parse the
+`http`, `native` (the SNI of a secure listener) and `tls`, while `user` and `database` are not known
+for `tls` and `stream`, and `database` is not known for `ssh`. Such a rule does not make the proxy parse the
 credentials of other protocols (e.g. downgrade the TLS negotiation of PostgreSQL), and it is not taken
-into account when choosing the health check port of the backends of its pool for them.
+into account when choosing the health check port of the backends of its pool for them (nor for a
+plaintext `native` listener, if it matches on `host`).
 Hostnames are matched case-insensitively, as DNS names are case-insensitive: the incoming value is
 lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
 is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
@@ -257,7 +259,8 @@ backends:
 
 Backends created from a `backend_template` are kept in a set bounded by `max_dynamic_backends`
 (10000 by default), because the template captures come from the client: when the set is full, the
-idle ones are forgotten, and a connection that needs a new one beyond the limit is rejected.
+idle ones are forgotten, and a connection that needs a new one beyond the limit is rejected (without
+running the `on_unknown` hook, as a rule did match).
 
 The proxy runs a shell command on these events, invoked as `<command> KIND PROTOCOL HOST USER DATABASE`:
 

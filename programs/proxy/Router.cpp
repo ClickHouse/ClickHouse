@@ -252,33 +252,52 @@ BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_confi
     return it->second.pool;
 }
 
-BackendPoolPtr Router::resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener, bool * authorized_key_matched)
+Router::Decision Router::resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener)
 {
+    Decision decision;
     if (auto target = table->resolve(attributes))
     {
-        if (authorized_key_matched)
-            *authorized_key_matched = target->authorized_key_matched;
+        decision.authorized_key_matched = target->authorized_key_matched;
         if (target->backend)
-            return poolForDynamicBackend(*target->backend, listener);
+        {
+            decision.pool = poolForDynamicBackend(*target->backend, listener);
+            decision.dynamic_backends_exhausted = !decision.pool;
+            return decision;
+        }
 
         auto it = pools.find(target->pool_name);
         chassert(it != pools.end());    /// Pool names are validated when the configuration is loaded.
-        return it->second;
+        decision.pool = it->second;
+        return decision;
     }
 
     if (!listener.default_pool.empty())
-        return pools.at(listener.default_pool);
+        decision.pool = pools.at(listener.default_pool);
 
-    return nullptr;
+    return decision;
 }
 
 Router::Decision Router::routeStatic(const RouteAttributes & attributes, const ListenerConfig & listener)
 {
-    bool authorized_key_matched = false;
-    BackendPoolPtr pool = resolvePool(attributes, listener, &authorized_key_matched);
-    if (!pool)
-        return {};
-    return {pool, pool->choose(attributes), authorized_key_matched};
+    Decision decision = resolvePool(attributes, listener);
+    if (decision.pool)
+        decision.backend = decision.pool->choose(attributes);
+    return decision;
+}
+
+bool Router::keyIsAcceptable(const RouteAttributes & attributes)
+{
+    if (auto target = table->resolve(attributes))
+    {
+        if (!target->authorized_key_matched)
+            return false;
+        /// Whether the dynamic backend can be created and is alive is checked once the key is proven.
+        if (target->backend)
+            return true;
+        return pools.at(target->pool_name)->choose(attributes) != nullptr;
+    }
+    /// The listener's default pool does not authorize anyone.
+    return false;
 }
 
 Router::Decision Router::route(const RouteAttributes & attributes, const ListenerConfig & listener)
@@ -286,17 +305,18 @@ Router::Decision Router::route(const RouteAttributes & attributes, const Listene
     runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", attributes.user, seen_users, attributes);
     runFirstSeenHook(hooks.on_first_seen_database, "first_seen_database", attributes.database, seen_databases, attributes);
 
-    bool authorized_key_matched = false;
-    BackendPoolPtr pool = resolvePool(attributes, listener, &authorized_key_matched);
-    if (!pool)
+    Decision decision = resolvePool(attributes, listener);
+    if (!decision.pool)
     {
         /// A notification only: the routing table is static, so the hook cannot make a route appear,
-        /// and the connection is rejected regardless of its outcome.
-        if (!hooks.on_unknown.empty())
+        /// and the connection is rejected regardless of its outcome. Not run when a rule matched,
+        /// but the limit of dynamic backends prevented creating its backend.
+        if (!decision.dynamic_backends_exhausted && !hooks.on_unknown.empty())
             runHook(hooks.on_unknown, "unknown", attributes);
-        return {};
+        return decision;
     }
 
+    const BackendPoolPtr & pool = decision.pool;
     BackendPtr backend = pool->choose(attributes);
     if (!backend && !hooks.on_no_backends.empty() && runHook(hooks.on_no_backends, "no_backends", attributes))
     {
@@ -311,7 +331,8 @@ Router::Decision Router::route(const RouteAttributes & attributes, const Listene
         }
     }
 
-    return {pool, backend, authorized_key_matched};
+    decision.backend = backend;
+    return decision;
 }
 
 }

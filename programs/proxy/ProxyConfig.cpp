@@ -85,6 +85,24 @@ bool ruleCanMatchProtocol(const RuleConfig & rule, ListenerProtocol protocol)
     if ((!rule.host.empty() || !rule.host_regexp.empty())
         && protocol != ListenerProtocol::HTTP && protocol != ListenerProtocol::Native && protocol != ListenerProtocol::TLS)
         return false;
+    /// The user and the database are not known for `tls` and `stream` connections, which are not decrypted,
+    /// and the database is not known for SSH.
+    if ((!rule.user.empty() || !rule.user_regexp.empty())
+        && (protocol == ListenerProtocol::TLS || protocol == ListenerProtocol::Stream))
+        return false;
+    if ((!rule.database.empty() || !rule.database_regexp.empty())
+        && (protocol == ListenerProtocol::TLS || protocol == ListenerProtocol::Stream || protocol == ListenerProtocol::SSH))
+        return false;
+    return true;
+}
+
+bool ruleCanMatchListener(const RuleConfig & rule, const ListenerConfig & listener)
+{
+    if (!ruleCanMatchProtocol(rule, listener.protocol))
+        return false;
+    /// A `native` listener knows the host only from the SNI, so only when it terminates TLS.
+    if ((!rule.host.empty() || !rule.host_regexp.empty()) && listener.protocol == ListenerProtocol::Native && !listener.secure)
+        return false;
     return true;
 }
 
@@ -426,7 +444,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
             pool_listeners[listener.default_pool].insert(i);
         for (const auto & rule : res.rules)
         {
-            if (rule.pool.empty() || !ruleCanMatchProtocol(rule, listener.protocol))
+            if (rule.pool.empty() || !ruleCanMatchListener(rule, listener))
                 continue;
             pool_listeners[rule.pool].insert(i);
         }
