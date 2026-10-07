@@ -807,7 +807,7 @@ namespace QueryPlanOptimizations
 /// verdict of "replicas win" returns false: the caller then builds the plan and takes the real decision
 /// through the matching path, so a wrong guess here can only cost a skipped optimization, never enable
 /// parallel replicas on statistics that were not matched properly.
-bool cachedStatisticsDeclineParallelReplicas(
+static bool cachedStatisticsDeclineParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     /// Mode 2 collects statistics on purpose, so it must reach the collection path below.
