@@ -15,6 +15,17 @@ SELECT o.k, (SELECT uniqExact(i.flag) FROM values('k UInt8, flag UInt8', (1, 0),
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
 
+-- countDistinct() and countIfDistinct(): empty group -> 0 also with the uniqCombined/uniqCombined64 implementations.
+SELECT o.k, (SELECT countDistinct(i.flag) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k
+SETTINGS count_distinct_implementation = 'uniqCombined', aggregate_functions_null_for_empty = 0;
+
+SELECT o.k, (SELECT countIfDistinct(i.flag, i.flag = 1) FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k
+SETTINGS count_distinct_implementation = 'uniqCombined64', aggregate_functions_null_for_empty = 0;
+
 -- sum() empty group stays NULL, so `WHERE outer > (SELECT sum ...)` keeps filtering empty groups
 -- (deliberate, see QueryNode::getResultType). Not restored here: this PR restores only the bare
 -- returns_default_when_only_null aggregates.

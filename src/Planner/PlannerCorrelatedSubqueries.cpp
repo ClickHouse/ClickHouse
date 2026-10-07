@@ -119,7 +119,7 @@ void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
     join_settings.join_overflow_mode = OverflowMode::THROW;
 }
 
-/// True only for a bare aggregate projection with `returns_default_when_only_null`, a Nullable result, no
+/// True only for a bare aggregate projection with `returns_default_when_only_null` (or `uniqCombined*`), a Nullable result, no
 /// GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET, and `empty_result_for_aggregation_by_empty_set` off. In that
 /// case the aggregate cannot produce NULL over a non-empty group, so a post-join NULL is exactly an empty group.
 bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree)
@@ -153,7 +153,14 @@ bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree
         return false;
 
     auto properties = AggregateFunctionFactory::instance().tryGetProperties(function_node->getFunctionName(), NullsAction::EMPTY);
-    return properties && properties->returns_default_when_only_null;
+    if (properties && properties->returns_default_when_only_null)
+        return true;
+
+    /// `uniqCombined*` (`count_distinct_implementation` targets) lack the property, but also count 0 over an empty input.
+    auto base_function = function_node->getAggregateFunction();
+    while (base_function && base_function->getNestedFunction())
+        base_function = base_function->getNestedFunction();
+    return base_function && (base_function->getName() == "uniqCombined" || base_function->getName() == "uniqCombined64");
 }
 
 using CorrelatedPlanStepMap = std::unordered_map<QueryPlan::Node *, bool>;
