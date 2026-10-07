@@ -7,7 +7,7 @@
         "ko/resources/changelogs/cloud/index",
         "ko/resources/changelogs/cloud/2026",
         {
-          "group": "Archive",
+          "group": "보관 자료",
           "pages": [
             "ko/resources/changelogs/cloud/archive/2025",
             "ko/resources/changelogs/cloud/archive/2024",
@@ -17,12 +17,13 @@
         },
         "ko/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud database release changelog",
+          "group": "Cloud 데이터베이스 릴리스 변경 내역",
           "pages": [
             "ko/resources/changelogs/cloud/release-notes-index",
             {
               "group": "2026",
               "pages": [
+                "ko/resources/changelogs/cloud/release-notes/26_6",
                 "ko/resources/changelogs/cloud/release-notes/26_4",
                 "ko/resources/changelogs/cloud/release-notes/26_02"
               ]
@@ -53,13 +54,13 @@
       ]
     },
     {
-      "dropdown": "Open source",
+      "dropdown": "오픈 소스",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "ko/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "Archive",
+          "group": "보관 자료",
           "pages": [
             "ko/resources/changelogs/oss/2025",
             "ko/resources/changelogs/oss/2024",
@@ -77,5 +78,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "Changelogs"
+  "item": "변경 내역"
 }

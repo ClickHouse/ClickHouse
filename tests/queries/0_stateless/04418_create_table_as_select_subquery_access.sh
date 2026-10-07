@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the fix under test is for `Atomic` databases only
 # Test for https://github.com/ClickHouse/ClickHouse/issues/26746
 # A `CREATE TABLE ... AS SELECT` that is denied because the user lacks SELECT on a table referenced
 # by a subquery must not leave an empty orphan table behind. Before the fix the table was created

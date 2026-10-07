@@ -16,7 +16,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -95,7 +95,8 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     else
         total_number_of_distinct_values = input_stats.estimated_rows;
 
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    if (total_number_of_distinct_values)
+        aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
     return aggregation_stats;
 }

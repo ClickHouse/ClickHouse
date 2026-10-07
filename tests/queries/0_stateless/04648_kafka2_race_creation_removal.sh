@@ -45,7 +45,7 @@ cleanup
 
 function create_table()
 {
-    ${CLICKHOUSE_CLIENT} --allow_experimental_kafka_offsets_storage_in_keeper=1 -q "
+    ${CLICKHOUSE_CLIENT} --allow_kafka_offsets_storage_in_keeper=1 -q "
         CREATE TABLE k2_race (a String) ENGINE = Kafka
         SETTINGS kafka_broker_list = 'localhost:1',
                  kafka_topic_list = 'k2_race_topic',

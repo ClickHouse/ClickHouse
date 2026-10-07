@@ -47,6 +47,19 @@ public:
         return nested_func->isVersioned();
     }
 
+    /** `Merge` was the one combinator that forwarded `isVersioned` and `getDefaultVersion` but not
+      * this, so it answered the base class's `0` for every revision while claiming to be versioned.
+      * No shape of `...MergeState...` was found where that is observable - the state type carries
+      * the version through the chain on its own, and a round trip of `uniqMergeState` /
+      * `uniqMergeStateIf` over `remote()` was verified to announce `AggregateFunction(1, uniq, ...)`
+      * and to write a byte-identical payload either way - but a function that reports a version
+      * independent of the revision it is asked about is a trap for the next caller of it.
+      */
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
@@ -117,6 +130,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -137,6 +160,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override

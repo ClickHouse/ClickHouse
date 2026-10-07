@@ -267,7 +267,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// such arrays are not able to be used as ClickHouse Array at all.
             ///
             /// For empty arrays, array_ndims([]) will return NULL.
-            auto postgres_column = doubleQuoteString(name_and_type.name);
+            auto postgres_column = doubleQuoteStringPostgreSQL(name_and_type.name);
             pqxx::result result{tx.exec(
                 fmt::format("SELECT {} IS NULL, array_ndims({}) FROM {} LIMIT 1;", postgres_column, postgres_column, postgres_table))};
 
@@ -368,8 +368,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty()
-        ? doubleQuoteString(postgres_table)
-        : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+        ? doubleQuoteStringPostgreSQL(postgres_table)
+        : doubleQuoteStringPostgreSQL(postgres_schema) + '.' + doubleQuoteStringPostgreSQL(postgres_table);
     /// How the relation is named in diagnostics. Deliberately the spelling this function used before
     /// the table identifier was quoted for the empty-schema branch, so that no error message
     /// changes: the schema-qualified form has always been shown quoted, the bare one unquoted.
