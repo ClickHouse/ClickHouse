@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <future>
 #include <map>
 #include <set>
 #include <optional>
@@ -480,8 +481,8 @@ namespace ServerSetting
 
 namespace FailPoints
 {
-    extern const char context_zookeeper_lock_acquired_pause[];
-    extern const char context_auxiliary_zookeeper_lock_acquired_pause[];
+    extern const char context_zookeeper_connection_attempt_pause[];
+    extern const char context_auxiliary_zookeeper_connection_attempt_pause[];
 }
 
 namespace ErrorCodes
@@ -548,6 +549,71 @@ static const std::vector<String> distributed_cache_force_setting_names
     }                                                   \
 } while (false)                                         \
 
+/// A connection attempt of one Keeper client, shared by every thread that finds the client missing or expired.
+/// The thread that registered it (the connector) connects with no lock held and finishes it exactly once.
+class ZooKeeperConnectionAttempt
+{
+public:
+    /// Called by reconnectZooKeeper with the client mutex held: the connector must not publish its client.
+    /// The attempt stays registered until its connector finishes.
+    void supersede() { superseded = true; }
+    bool isSuperseded() const { return superseded; }
+
+    /// `zookeeper_` is nullptr if the attempt was superseded.
+    void finish(zkutil::ZooKeeperPtr zookeeper_)
+    {
+        zookeeper = std::move(zookeeper_);
+        promise.set_value();
+    }
+
+    /// Called in the connector's catch block. Throws the connector's own copy of the exception.
+    [[noreturn]] void fail(std::exception_ptr error_)
+    {
+        error = std::move(error_);
+        promise.set_value();
+        rethrowError();
+    }
+
+    const std::shared_future<void> & getFuture() const { return future; }
+
+    /// After the future is ready: the client, nullptr if there is none, or throws a copy of the connector's exception.
+    zkutil::ZooKeeperPtr getResult() const
+    {
+        if (error)
+            rethrowError();
+        return zookeeper;
+    }
+
+private:
+    /// `error` is never thrown itself: catch blocks modify the exceptions they catch, so every thread gets a copy.
+    [[noreturn]] void rethrowError() const
+    {
+        try
+        {
+            std::rethrow_exception(error);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            throw Coordination::Exception(e);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(e);
+        }
+        catch (...)
+        {
+            throw Exception::createRuntime(getExceptionErrorCode(error), getExceptionMessage(error, /* with_stacktrace= */ false));
+        }
+    }
+
+    std::promise<void> promise;
+    std::shared_future<void> future = promise.get_future().share();
+    bool superseded = false; /// Protected by the client mutex.
+    /// Written by the connector before `promise` is satisfied, only read after.
+    zkutil::ZooKeeperPtr zookeeper;
+    std::exception_ptr error;
+};
+
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
@@ -565,17 +631,23 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
-    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
+    /// Protects the ZooKeeper client and its connection attempt. Not held while connecting, except by config reload.
     mutable std::timed_mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper. Protected by zookeeper_mutex.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs. Protected by zookeeper_mutex.
+    mutable std::shared_ptr<ZooKeeperConnectionAttempt> zookeeper_connection_attempt; /// Protected by zookeeper_mutex.
+    bool zookeeper_server_started = false;                  /// Set by setServerCompletelyStarted. Protected by zookeeper_mutex.
+    bool zookeeper_shut_down = false;                       /// Set by shutdown: no new connection attempts. Protected by zookeeper_mutex.
 
     ConfigurationPtr sensitive_data_masker_config;
 
     mutable std::timed_mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers; /// Map for auxiliary ZooKeeper clients. Protected by auxiliary_zookeepers_mutex.
     ConfigurationPtr auxiliary_zookeepers_config;                        /// Stores auxiliary zookeepers configs. Protected by auxiliary_zookeepers_mutex.
+    mutable std::map<String, std::shared_ptr<ZooKeeperConnectionAttempt>> auxiliary_zookeeper_connection_attempts; /// Protected by auxiliary_zookeepers_mutex.
+    bool auxiliary_zookeepers_server_started = false;       /// Set by setServerCompletelyStarted. Protected by auxiliary_zookeepers_mutex.
+    bool auxiliary_zookeepers_shut_down = false;            /// Set by shutdown. Protected by auxiliary_zookeepers_mutex.
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -1286,6 +1358,41 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
+        /// Stop zookeeper connections. A connection attempt in flight needs the schedule pool, so this goes first.
+        zkutil::ZooKeeperPtr delete_zookeeper;
+        {
+            std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
+            {
+                std::lock_guard lock(zookeeper_mutex);
+                zookeeper_shut_down = true;
+                attempt = zookeeper_connection_attempt;
+            }
+            /// The attempt in flight publishes its client before it is moved out below.
+            if (attempt)
+                attempt->getFuture().wait();
+            std::lock_guard lock(zookeeper_mutex);
+            delete_zookeeper = std::move(zookeeper);
+        }
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::vector<std::shared_ptr<ZooKeeperConnectionAttempt>> attempts;
+            {
+                std::lock_guard lock(auxiliary_zookeepers_mutex);
+                auxiliary_zookeepers_shut_down = true;
+                for (const auto & [name, attempt] : auxiliary_zookeeper_connection_attempts)
+                    attempts.push_back(attempt);
+            }
+            for (const auto & attempt : attempts)
+                attempt->getFuture().wait();
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
+
         {
             std::lock_guard lock(schedule_pools_mutex);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
@@ -1295,23 +1402,6 @@ struct ContextSharedPart : boost::noncopyable
             delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
-
-        zkutil::ZooKeeperPtr delete_zookeeper;
-        {
-            /// Stop zookeeper connection
-            std::lock_guard lock(zookeeper_mutex);
-            delete_zookeeper = std::move(zookeeper);
-        }
-        if (delete_zookeeper)
-            delete_zookeeper->finalize("shutdown");
-
-        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
-        {
-            std::lock_guard lock(auxiliary_zookeepers_mutex);
-            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
-        }
-        for (auto & [name, zk] : delete_auxiliary_zookeepers)
-            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -6497,107 +6587,186 @@ void recordZooKeeperConnectionLoss()
     );
 }
 
-std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
-    const Context & context, std::timed_mutex & mutex, const char * lock_name)
+/// The waits of a caller of the `Context` Keeper getters. A caller with a query context stops waiting for the client
+/// mutex or for another thread's connection attempt after `get_zookeeper_lock_acquire_timeout_ms` or when the query is
+/// cancelled; other callers wait until the mutex is free or the attempt ends.
+class ZooKeeperWaitLimit
 {
-    const bool has_query_context = context.hasQueryContext();
-    auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (has_query_context)
-        lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-
-    std::unique_lock lock(mutex, std::defer_lock);
-    if (lock_acquire_timeout.totalMilliseconds() == 0)
-        lock.lock();
-    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+public:
+    explicit ZooKeeperWaitLimit(const Context & context)
     {
-        /// Without a query context, report a Keeper error, handled like a lost connection; a query fails fast instead.
-        if (!has_query_context)
-            throw Coordination::Exception(
-                Coordination::Error::ZOPERATIONTIMEOUT,
-                "Timeout exceeded while acquiring {} ({} ms)",
-                lock_name,
-                lock_acquire_timeout.totalMilliseconds());
-        throw Exception(
-            ErrorCodes::TIMEOUT_EXCEEDED,
-            "Timeout exceeded while acquiring {} ({} ms)",
-            lock_name,
-            lock_acquire_timeout.totalMilliseconds());
+        if (!context.hasQueryContext())
+            return;
+        const auto query_context = context.getQueryContext();
+        is_query = true;
+        query_status = query_context->getProcessListElementSafe();
+        timeout_ms = query_context->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms].totalMilliseconds();
+        if (timeout_ms)
+            deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     }
 
-    return lock;
-}
+    std::unique_lock<std::timed_mutex> lock(std::timed_mutex & mutex, const char * lock_name) const
+    {
+        std::unique_lock lock(mutex, std::defer_lock);
+        if (!is_query)
+            lock.lock();
+        else
+            while (!lock.try_lock_for(nextStep()))
+                check("acquiring", lock_name);
+        return lock;
+    }
+
+    void wait(const std::shared_future<void> & finished, const char * attempt_name) const
+    {
+        if (!is_query)
+            finished.wait();
+        else
+            while (finished.wait_for(nextStep()) != std::future_status::ready)
+                check("waiting for", attempt_name);
+    }
+
+private:
+    std::chrono::steady_clock::duration nextStep() const
+    {
+        std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
+        if (deadline)
+            step = std::clamp(*deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero(), step);
+        return step;
+    }
+
+    void check(const char * action, const char * what) const
+    {
+        /// `checkTimeLimit` throws on `KILL QUERY` and in the `throw` overflow mode, and returns false in the `break`
+        /// mode; a Keeper getter has no partial result, so it stops there too.
+        if (query_status && !query_status->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while {} {}", action, what);
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while {} {} ({} ms)", action, what, timeout_ms);
+    }
+
+    bool is_query = false;
+    QueryStatusPtr query_status;
+    UInt64 timeout_ms = 0;
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+};
 
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
-    FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_lock_acquired_pause);
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
-
-    if (!shared->zookeeper)
+    const ZooKeeperWaitLimit limit(*this);
+    while (true)
     {
-        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
+        bool is_connector = false;
+        zkutil::ZooKeeperPtr expired_zookeeper;
+        std::optional<zkutil::ZooKeeperArgs> args;
+        {
+            auto lock = limit.lock(shared->zookeeper_mutex, "ZooKeeper lock");
+            if (shared->zookeeper && !shared->zookeeper->expired())
+                return shared->zookeeper;
 
+            attempt = shared->zookeeper_connection_attempt;
+            if (!attempt)
+            {
+                if (shared->zookeeper_shut_down)
+                    throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "ZooKeeper client is shut down");
+                if (shared->zookeeper)
+                    expired_zookeeper = shared->zookeeper;
+                else
+                {
+                    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+                    args.emplace(config, zkutil::getZooKeeperConfigName(config));
+                    args->send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+                    args->enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+                }
+                attempt = std::make_shared<ZooKeeperConnectionAttempt>();
+                shared->zookeeper_connection_attempt = attempt;
+                is_connector = true;
+            }
+        }
+
+        if (!is_connector)
+        {
+            limit.wait(attempt->getFuture(), "ZooKeeper connection attempt");
+            if (auto zookeeper = attempt->getResult())
+                return zookeeper;
+            continue;
+        }
+
+        /// From here on every path finishes the attempt exactly once, as the last step.
         try
         {
-            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            Stopwatch watch;
+            FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_connection_attempt_pause);
+            zkutil::ZooKeeperPtr zookeeper;
+            try
             {
-                recordZooKeeperConnectionLoss();
+                if (expired_zookeeper)
+                {
+                    CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+                    LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+                    zookeeper = expired_zookeeper->startNewSession();
+                }
+                else
+                    zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
             }
-            throw;
-        }
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-    }
-
-    if (shared->zookeeper->expired())
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-
-        Stopwatch watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-
-        auto old_zookeeper = shared->zookeeper;
-
-        try
-        {
-            shared->zookeeper = shared->zookeeper->startNewSession();
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            catch (const Coordination::Exception & e)
             {
-                recordZooKeeperConnectionLoss();
+                if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+                    recordZooKeeperConnectionLoss();
+                throw;
             }
-            throw;
-        }
 
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            {
+                std::lock_guard lock(shared->zookeeper_mutex);
+                chassert(shared->zookeeper_connection_attempt == attempt);
+                if (!attempt->isSuperseded())
+                {
+                    shared->zookeeper = zookeeper;
+                    if (shared->zookeeper_server_started)
+                        zookeeper->setServerCompletelyStarted();
+                    CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+                    if (auto zookeeper_connection_log = getZooKeeperConnectionLog())
+                    {
+                        if (expired_zookeeper)
+                        {
+                            zookeeper_connection_log->addDisconnected(
+                                ZooKeeperConnectionLog::default_zookeeper_name, *expired_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+                            zookeeper_connection_log->addConnected(
+                                ZooKeeperConnectionLog::default_zookeeper_name, *zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+                        }
+                        else
+                            zookeeper_connection_log->addConnected(
+                                ZooKeeperConnectionLog::default_zookeeper_name, *zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+                    }
+                    if (expired_zookeeper)
+                        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+
+                    shared->zookeeper_connection_attempt.reset();
+                    attempt->finish(zookeeper);
+                    return zookeeper;
+                }
+            }
+            /// Superseded: the discarded session is closed before the attempt is released.
+            zookeeper->finalize("Superseded while connecting");
+            {
+                std::lock_guard lock(shared->zookeeper_mutex);
+                shared->zookeeper_connection_attempt.reset();
+            }
+            attempt->finish(nullptr);
+        }
+        catch (...)
         {
-            zookeeper_connection_log->addDisconnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            {
+                std::lock_guard lock(shared->zookeeper_mutex);
+                if (shared->zookeeper_connection_attempt == attempt)
+                    shared->zookeeper_connection_attempt.reset();
+            }
+            attempt->fail(std::current_exception());
         }
-
-        if (isServerCompletelyStarted())
-            shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
     }
-
-    return shared->zookeeper;
 }
 
 int64_t Context::getZooKeeperLastZXIDSeen() const
@@ -6669,7 +6838,7 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 
 UInt32 Context::getZooKeeperSessionUptime() const
 {
-    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
+    auto lock = ZooKeeperWaitLimit(*this).lock(shared->zookeeper_mutex, "ZooKeeper lock");
     if (!shared->zookeeper || shared->zookeeper->expired())
         return 0;
     return shared->zookeeper->getSessionUptime();
@@ -6677,7 +6846,9 @@ UInt32 Context::getZooKeeperSessionUptime() const
 
 void Context::reconnectZooKeeper(const String & reason) const
 {
-    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
+    auto lock = ZooKeeperWaitLimit(*this).lock(shared->zookeeper_mutex, "ZooKeeper lock");
+    if (shared->zookeeper_connection_attempt)
+        shared->zookeeper_connection_attempt->supersede();
     if (shared->zookeeper)
     {
         shared->zookeeper->finalize(reason);
@@ -6813,49 +6984,115 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
-    FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_lock_acquired_pause);
+    const ZooKeeperWaitLimit limit(*this);
     const auto config_name = "auxiliary_zookeepers." + name;
-
-    auto zookeeper = shared->auxiliary_zookeepers.find(name);
-    if (zookeeper == shared->auxiliary_zookeepers.end())
+    while (true)
     {
-        if (name.contains(':') || name.contains('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
-
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has(config_name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
-
-        zkutil::ZooKeeperArgs args(config, config_name);
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
-
-        zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
-    }
-    else if (zookeeper->second->expired())
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-
-        auto old_zookeeper = zookeeper->second;
-        zookeeper->second = zookeeper->second->startNewSession();
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
+        bool is_connector = false;
+        zkutil::ZooKeeperPtr expired_zookeeper;
+        std::optional<zkutil::ZooKeeperArgs> args;
         {
-            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
+            auto lock = limit.lock(shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
+            auto zookeeper = shared->auxiliary_zookeepers.find(name);
+            if (zookeeper != shared->auxiliary_zookeepers.end() && !zookeeper->second->expired())
+                return zookeeper->second;
+
+            if (auto it = shared->auxiliary_zookeeper_connection_attempts.find(name); it != shared->auxiliary_zookeeper_connection_attempts.end())
+                attempt = it->second;
+            else
+            {
+                const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
+                if (zookeeper == shared->auxiliary_zookeepers.end())
+                {
+                    if (name.contains(':') || name.contains('/'))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
+                    if (!config.has(config_name))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+                            "config.xml",
+                            name);
+                }
+
+                if (shared->auxiliary_zookeepers_shut_down)
+                    throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Auxiliary ZooKeeper client {} is shut down", name);
+
+                if (zookeeper != shared->auxiliary_zookeepers.end())
+                    expired_zookeeper = zookeeper->second;
+                else
+                {
+                    args.emplace(config, config_name);
+                    args->send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+                    args->enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+                }
+                attempt = std::make_shared<ZooKeeperConnectionAttempt>();
+                shared->auxiliary_zookeeper_connection_attempts.emplace(name, attempt);
+                is_connector = true;
+            }
+        }
+
+        if (!is_connector)
+        {
+            limit.wait(attempt->getFuture(), "auxiliary ZooKeeper connection attempt");
+            if (auto zookeeper = attempt->getResult())
+                return zookeeper;
+            continue;
+        }
+
+        auto deregister_attempt = [&]
+        {
+            auto it = shared->auxiliary_zookeeper_connection_attempts.find(name);
+            if (it != shared->auxiliary_zookeeper_connection_attempts.end() && it->second == attempt)
+                shared->auxiliary_zookeeper_connection_attempts.erase(it);
+        };
+
+        /// From here on every path finishes the attempt exactly once, as the last step.
+        try
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_connection_attempt_pause);
+            zkutil::ZooKeeperPtr zookeeper;
+            if (expired_zookeeper)
+            {
+                CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+                zookeeper = expired_zookeeper->startNewSession();
+            }
+            else
+                zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+
+            {
+                std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+                chassert(shared->auxiliary_zookeeper_connection_attempts.contains(name)
+                    && shared->auxiliary_zookeeper_connection_attempts.at(name) == attempt);
+                shared->auxiliary_zookeepers[name] = zookeeper;
+                if (shared->auxiliary_zookeepers_server_started)
+                    zookeeper->setServerCompletelyStarted();
+                if (auto zookeeper_connection_log = getZooKeeperConnectionLog())
+                {
+                    if (expired_zookeeper)
+                    {
+                        zookeeper_connection_log->addDisconnected(name, *expired_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+                        zookeeper_connection_log->addConnected(name, *zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+                    }
+                    else
+                        zookeeper_connection_log->addConnected(name, *zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+                }
+
+                deregister_attempt();
+                attempt->finish(zookeeper);
+                return zookeeper;
+            }
+        }
+        catch (...)
+        {
+            {
+                std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+                deregister_attempt();
+            }
+            attempt->fail(std::current_exception());
         }
     }
-
-    return zookeeper->second;
 }
 
 std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
@@ -6866,7 +7103,7 @@ std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const
 
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
-    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
+    auto lock = ZooKeeperWaitLimit(*this).lock(shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
     return shared->auxiliary_zookeepers;
 }
 
@@ -6910,62 +7147,88 @@ static void reloadZooKeeperIfChangedImpl(
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
-    bool server_started = isServerCompletelyStarted();
-
     auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChanged");
-    std::lock_guard lock(shared->zookeeper_mutex);
-    shared->zookeeper_config = config;
-
-    reloadZooKeeperIfChangedImpl(
-        config,
-        ZooKeeperConnectionLog::default_zookeeper_name,
-        zkutil::getZooKeeperConfigName(*config),
-        shared->zookeeper,
-        getZooKeeperLog(),
-        getZooKeeperConnectionLog(),
-        getAggregatedZooKeeperLog(),
-        server_started,
-        getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-        getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
+    while (true)
+    {
+        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
+        {
+            std::lock_guard lock(shared->zookeeper_mutex);
+            if (shared->zookeeper_shut_down)
+                return;
+            shared->zookeeper_config = config;
+            attempt = shared->zookeeper_connection_attempt;
+            if (!attempt)
+            {
+                reloadZooKeeperIfChangedImpl(
+                    config,
+                    ZooKeeperConnectionLog::default_zookeeper_name,
+                    zkutil::getZooKeeperConfigName(*config),
+                    shared->zookeeper,
+                    getZooKeeperLog(),
+                    getZooKeeperConnectionLog(),
+                    getAggregatedZooKeeperLog(),
+                    shared->zookeeper_server_started,
+                    getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+                    getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
+                return;
+            }
+        }
+        /// Two sessions of one client must not connect at the same time: they would race on the session node.
+        attempt->getFuture().wait();
+    }
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
-    bool server_started = isServerCompletelyStarted();
     auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    shared->auxiliary_zookeepers_config = config;
-
-    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
+    while (true)
     {
-        const auto config_name = "auxiliary_zookeepers." + it->first;
-        LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
-        if (!config->has(config_name))
+        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
         {
-            LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
-            if (zookeeper_connection_log)
-                zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
+            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+            if (shared->auxiliary_zookeepers_shut_down)
+                return;
 
-            it = shared->auxiliary_zookeepers.erase(it);
+            shared->auxiliary_zookeepers_config = config;
+
+            if (shared->auxiliary_zookeeper_connection_attempts.empty())
+            {
+                for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
+                {
+                    const auto config_name = "auxiliary_zookeepers." + it->first;
+                    LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
+                    if (!config->has(config_name))
+                    {
+                        LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
+                        if (zookeeper_connection_log)
+                            zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
+
+                        it = shared->auxiliary_zookeepers.erase(it);
+                    }
+                    else
+                    {
+                        LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
+                        reloadZooKeeperIfChangedImpl(
+                            config,
+                            it->first,
+                            config_name,
+                            it->second,
+                            getZooKeeperLog(),
+                            zookeeper_connection_log,
+                            getAggregatedZooKeeperLog(),
+                            shared->auxiliary_zookeepers_server_started,
+                            getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+                            getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
+                        ++it;
+                    }
+                }
+                return;
+            }
+            attempt = shared->auxiliary_zookeeper_connection_attempts.begin()->second;
         }
-        else
-        {
-            LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(
-                config,
-                it->first,
-                config_name,
-                it->second,
-                getZooKeeperLog(),
-                zookeeper_connection_log,
-                getAggregatedZooKeeperLog(),
-                server_started,
-                getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-                getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
-            ++it;
-        }
+        /// As in reloadZooKeeperIfChanged: no session is created while a connection attempt is in flight.
+        attempt->getFuture().wait();
     }
 }
 
@@ -8939,12 +9202,14 @@ void Context::setServerCompletelyStarted()
     {
         {
             std::lock_guard lock(shared->zookeeper_mutex);
+            shared->zookeeper_server_started = true;
             if (shared->zookeeper)
                 shared->zookeeper->setServerCompletelyStarted();
         }
 
         {
             std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+            shared->auxiliary_zookeepers_server_started = true;
             for (auto & zk : shared->auxiliary_zookeepers)
                 zk.second->setServerCompletelyStarted();
         }
