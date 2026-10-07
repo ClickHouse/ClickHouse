@@ -247,7 +247,7 @@ void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
+void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent /* intent */)
 {
     initializeHDFSFS();
     if (exists(object))
@@ -256,7 +256,8 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
 
 void HDFSObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
-    StoredObjects * successful_objects)
+    StoredObjects * successful_objects,
+    RemoteIORequestIntent /* intent */)
 {
     initializeHDFSFS();
     for (const auto & object : objects)

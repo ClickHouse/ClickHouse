@@ -480,7 +480,7 @@ void DiskLocal::removeFileIfExists(const String & path)
     }
 }
 
-void DiskLocal::removeDirectory(const String & path)
+void DiskLocal::removeDirectory(const String & path, RemoteIORequestIntent /* intent */)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))

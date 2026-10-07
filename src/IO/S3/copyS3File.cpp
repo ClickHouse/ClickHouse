@@ -267,6 +267,7 @@ namespace
         {
             LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
+            abort_request.setRequestIntent(RemoteIORequestIntent::Cleanup);
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);

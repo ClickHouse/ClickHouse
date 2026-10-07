@@ -35,15 +35,6 @@ void MergePlainMergeTreeTask::onCompleted()
     task_result_callback(delay);
 }
 
-MergePlainMergeTreeTask::~MergePlainMergeTreeTask()
-{
-    /// Synchronous `OPTIMIZE` can unwind without going through the background executor's `cancel`.
-    ThreadGroupSwitcher operation_group(
-        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-    merge_task.reset();
-    new_part.reset();
-}
-
 bool MergePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::executeStep");
@@ -218,7 +209,13 @@ void MergePlainMergeTreeTask::finish()
 void MergePlainMergeTreeTask::cancel() noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::cancel");
-    /// The executor calls `cancel` after the execution step's group has detached.
+    cleanupAfterFailure();
+}
+
+void MergePlainMergeTreeTask::cleanupAfterFailure() noexcept
+{
+    /// Cleanup and part destruction can issue S3 requests; keep the merge's cancellation visible
+    /// through `CurrentThread`. Only explicitly marked abort/delete requests retain configured retries.
     ThreadGroupSwitcher operation_group(
         merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     if (merge_task)

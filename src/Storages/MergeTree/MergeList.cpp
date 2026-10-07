@@ -84,6 +84,7 @@ MergeListElement::MergeListElement(
 
 std::function<bool()> MergeListElement::getCancellationPredicate() const
 {
+    /// Once this attempt observes cancellation, keep it cancelled even if a temporary blocker is released.
     return [canceled = is_cancelled, predicate = operation_is_canceled]
     {
         if (canceled->load(std::memory_order_relaxed))

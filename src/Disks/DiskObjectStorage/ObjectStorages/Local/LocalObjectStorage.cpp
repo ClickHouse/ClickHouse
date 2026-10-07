@@ -714,7 +714,7 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
         removeObject(object);
 }
 
-void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
+void LocalObjectStorage::removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent /* intent */)
 {
     removeObject(object);
 
@@ -729,7 +729,8 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 
 void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
-    StoredObjects * successful_objects)
+    StoredObjects * successful_objects,
+    RemoteIORequestIntent /* intent */)
 {
     throwIfReadonly();
     for (const auto & object : objects)

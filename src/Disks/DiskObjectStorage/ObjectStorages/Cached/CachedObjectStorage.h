@@ -59,11 +59,12 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void removeObjectIfExists(const StoredObject & object) override;
+    void removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void removeObjectsIfExist( /// NOLINT
         const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+        StoredObjects * successful_objects = nullptr,
+        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

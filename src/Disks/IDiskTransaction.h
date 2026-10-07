@@ -1,5 +1,7 @@
 #pragma once
 
+#include <IO/RemoteIORequestIntent.h>
+
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
@@ -97,7 +99,7 @@ public:
     virtual void removeFileIfExists(const std::string & path) = 0;
 
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
-    virtual void removeDirectory(const std::string & path) = 0;
+    virtual void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const std::string & path) = 0;
@@ -111,7 +113,7 @@ public:
     /// Differs from removeRecursive for S3/HDFS disks
     /// Second bool param is a flag to remove (false) or keep (true) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedRecursive(const std::string & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */) = 0;
+    virtual void removeSharedRecursive(const std::string & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Remove file or directory if it exists.
     /// Differs from removeFileIfExists for S3/HDFS disks
@@ -122,7 +124,7 @@ public:
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) = 0;
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;

@@ -261,14 +261,15 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObjectIfExists(const StoredObject &)
+void WebObjectStorage::removeObjectIfExists(const StoredObject &, RemoteIORequestIntent /* intent */)
 {
     throwNotAllowed();
 }
 
 void WebObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects &,
-    StoredObjects *)
+    StoredObjects *,
+    RemoteIORequestIntent /* intent */)
 {
     throwNotAllowed();
 }

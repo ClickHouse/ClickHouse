@@ -1,5 +1,7 @@
 #pragma once
 
+#include <IO/RemoteIORequestIntent.h>
+
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
@@ -98,6 +100,7 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
+    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
@@ -114,7 +117,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
 
     void execute() override;
     void undo() override;
@@ -160,6 +164,7 @@ public:
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
+    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const bool if_exists;
     const std::shared_ptr<FsSnapshot> fs_tree;
@@ -190,7 +195,8 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        StoredObjects & removed_objects_);
+        StoredObjects & removed_objects_,
+        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
 
     void execute() override;
     void undo() override;
@@ -345,6 +351,7 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
 {
 private:
+    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
@@ -367,7 +374,8 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        StoredObjects & removed_objects_);
+        StoredObjects & removed_objects_,
+        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
 
     void execute() override;
     void undo() override;

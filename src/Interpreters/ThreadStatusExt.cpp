@@ -275,7 +275,6 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(
     group->memory_tracker.setParent(&background_memory_tracker);
     if (foreground_group)
     {
-        /// Foreground dry runs retain query diagnostics and cancellation; operation cancellation is bound below.
         group->parent = std::move(foreground_group);
         group->performance_counters.setParent(&group->parent->performance_counters);
         auto parent_shared_data = group->parent->getSharedData();
@@ -284,28 +283,15 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(
     }
     if (operation_is_canceled)
     {
-        /// Keep cancellation observable after a temporary merge blocker is released.
-        /// Both predicates share the latch, including copies already installed on worker threads.
-        auto is_canceled = [predicate = std::move(operation_is_canceled), canceled = std::make_shared<std::atomic_bool>(false)]
-        {
-            if (canceled->load(std::memory_order_relaxed))
-                return true;
-            if (predicate())
-            {
-                canceled->store(true, std::memory_order_relaxed);
-                return true;
-            }
-            return canceled->load(std::memory_order_relaxed);
-        };
-
         std::lock_guard lock(group->mutex);
         group->shared_data.query_is_canceled_predicate
-            = [query_is_canceled = std::move(group->shared_data.query_is_canceled_predicate), is_canceled]
+            = [query_is_canceled = std::move(group->shared_data.query_is_canceled_predicate), operation_is_canceled]
         {
-            return is_canceled() || (query_is_canceled && query_is_canceled());
+            return operation_is_canceled() || (query_is_canceled && query_is_canceled());
         };
         group->shared_data.throw_if_query_canceled_predicate
-            = [throw_if_query_canceled = std::move(group->shared_data.throw_if_query_canceled_predicate), is_canceled]
+            = [throw_if_query_canceled = std::move(group->shared_data.throw_if_query_canceled_predicate),
+               is_canceled = std::move(operation_is_canceled)]
         {
             /// Preserve a query's original cancellation exception when available.
             if (throw_if_query_canceled)

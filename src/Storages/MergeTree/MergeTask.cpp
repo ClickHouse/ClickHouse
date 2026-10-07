@@ -341,7 +341,8 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    /// Projection entries observe the parent operation, not their synthetic partition ID.
+    /// A projection's synthetic partition ID does not identify the parent partition's blocker.
+    /// Use the inherited predicate so stopping the parent operation also stops its projection work.
     return operation_is_cancelled();
 }
 

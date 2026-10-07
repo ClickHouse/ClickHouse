@@ -160,7 +160,8 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) override;
+        LoggerPtr log,
+        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;
@@ -259,7 +260,8 @@ private:
         const CanRemoveDescription & can_remove_description,
         const MergeTreeDataPartChecksums & checksums,
         bool is_temp,
-        LoggerPtr log);
+        LoggerPtr log,
+        RemoteIORequestIntent intent);
 
     /// For names of expected data part files returns the actual names
     /// of files in filesystem to which data of these files is written.

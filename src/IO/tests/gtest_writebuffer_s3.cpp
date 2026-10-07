@@ -1139,6 +1139,7 @@ TEST_F(WBS3Test, CurrentOperationAllowsMultipartCleanupWithoutHooks)
         canceled->store(true);
 
         S3::AbortMultipartUploadRequest abort;
+        abort.setRequestIntent(RemoteIORequestIntent::Cleanup);
         abort.SetBucket(bucket);
         abort.SetKey("file");
         abort.SetUploadId(created.GetResult().GetUploadId());

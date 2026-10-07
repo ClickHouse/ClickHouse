@@ -162,14 +162,15 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonOrigin().user_id);
 }
 
-void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
+void CachedObjectStorage::removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent /* intent */)
 {
     removeCacheIfExists(object.remote_path);
 }
 
 void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
-    StoredObjects * successful_objects)
+    StoredObjects * successful_objects,
+    RemoteIORequestIntent /* intent */)
 {
     for (const auto & object : objects)
     {

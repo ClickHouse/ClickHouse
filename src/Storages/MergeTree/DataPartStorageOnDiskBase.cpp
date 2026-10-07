@@ -822,7 +822,8 @@ void DataPartStorageOnDiskBase::remove(
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
-    LoggerPtr log)
+    LoggerPtr log,
+    RemoteIORequestIntent intent)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -871,7 +872,7 @@ void DataPartStorageOnDiskBase::remove(
             {
                 can_remove_description.emplace(can_remove_callback());
                 disk->removeSharedRecursive(
-                    fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
+                    fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove, intent);
             }
             catch (const fs::filesystem_error & e)
             {
@@ -958,7 +959,7 @@ void DataPartStorageOnDiskBase::remove(
             std::move(files_not_to_remove_for_projection),
         };
 
-        clearDirectory(fs::path(to) / proj_dir_name, proj_description, projection.checksums, is_temp, log);
+        clearDirectory(fs::path(to) / proj_dir_name, proj_description, projection.checksums, is_temp, log, intent);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -982,7 +983,7 @@ void DataPartStorageOnDiskBase::remove(
                     auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
-                    clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
+                    clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log, intent);
                 }
                 catch (...)
                 {
@@ -992,7 +993,7 @@ void DataPartStorageOnDiskBase::remove(
         }
     }
 
-    clearDirectory(to, *can_remove_description, checksums, is_temp, log);
+    clearDirectory(to, *can_remove_description, checksums, is_temp, log, intent);
 }
 
 void DataPartStorageOnDiskBase::clearDirectory(
@@ -1000,7 +1001,8 @@ void DataPartStorageOnDiskBase::clearDirectory(
     const CanRemoveDescription & can_remove_description,
     const MergeTreeDataPartChecksums & checksums,
     bool is_temp,
-    LoggerPtr log)
+    LoggerPtr log,
+    RemoteIORequestIntent intent)
 {
     auto disk = volume->getDisk();
     auto [can_remove_shared_data, names_not_to_remove] = can_remove_description;
@@ -1015,7 +1017,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// The fast path by listing files cannot be used for an incomplete part and is not faster on this disk.
         try
         {
-            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove, intent);
         }
         catch (const fs::filesystem_error & e)
         {
@@ -1052,8 +1054,8 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, true);
 
-        disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
-        disk->removeDirectory(dir);
+        disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove, intent);
+        disk->removeDirectory(dir, intent);
     }
     catch (...)
     {
@@ -1062,7 +1064,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
         try
         {
-            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove, intent);
         }
         catch (const fs::filesystem_error & e)
         {

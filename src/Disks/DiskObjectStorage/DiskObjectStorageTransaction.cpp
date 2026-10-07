@@ -1,7 +1,6 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
-#include <IO/RemoteIOCleanup.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ForkWriteBuffer.h>
@@ -191,23 +190,23 @@ void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bo
 }
 
 void DiskObjectStorageTransaction::removeSharedRecursive(
-    const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
+    const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
 {
     if (!keep_all_shared_data && file_names_remove_metadata_only.empty())
     {
-        addOperation([path](MetadataTransactionPtr tx)
+        addOperation([path, intent](MetadataTransactionPtr tx)
         {
-            tx->removeRecursive(path, /*should_remove_objects=*/nullptr);
+            tx->removeRecursive(path, /*should_remove_objects=*/nullptr, intent);
         });
     }
     else
     {
-        addOperation([path, keep_all_shared_data, file_names_remove_metadata_only](MetadataTransactionPtr tx)
+        addOperation([path, keep_all_shared_data, file_names_remove_metadata_only, intent](MetadataTransactionPtr tx)
         {
             tx->removeRecursive(path, /*should_remove_objects=*/[keep_all_shared_data, file_names_remove_metadata_only](const std::string & relative_path)
             {
                 return !keep_all_shared_data && !file_names_remove_metadata_only.contains(relative_path);
-            });
+            }, intent);
         });
     }
 }
@@ -220,11 +219,11 @@ void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & 
     });
 }
 
-void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
+void DiskObjectStorageTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent intent)
 {
-    addOperation([path](MetadataTransactionPtr tx)
+    addOperation([path, intent](MetadataTransactionPtr tx)
     {
-        tx->removeDirectory(path);
+        tx->removeDirectory(path, intent);
     });
 }
 
@@ -244,14 +243,14 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
     });
 }
 
-void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
 {
     for (const auto & [path, if_exists] : files)
     {
         const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename());
-        addOperation([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
+        addOperation([path, if_exists, should_remove_objects, intent](MetadataTransactionPtr tx)
         {
-            tx->unlinkFile(path, if_exists, should_remove_objects);
+            tx->unlinkFile(path, if_exists, should_remove_objects, intent);
         });
     }
 }
@@ -728,14 +727,13 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
-    /// Rollback may delete already-written blobs once even when its operation is cancelled.
-    /// This does not permit regular reads/writes or cancelled cleanup retries.
-    RemoteIOCleanupScope cleanup;
+    /// Rollback deletes already-written blobs with configured retries even after cancellation.
+    /// Cleanup intent applies only to these deletes; regular reads and writes remain cancelled.
     for (const auto & [location, blobs] : written_blobs)
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs, nullptr, RemoteIORequestIntent::Cleanup);
         }
         catch (...)
         {

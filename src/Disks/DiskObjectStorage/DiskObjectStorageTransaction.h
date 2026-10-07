@@ -104,13 +104,13 @@ public:
 
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;
-    void removeDirectory(const std::string & path) override;
+    void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
     void removeRecursive(const std::string & path) override;
 
     void removeSharedFile(const std::string & path, bool keep_shared_data) override;
-    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
     void removeSharedFileIfExists(const std::string & path, bool keep_shared_data) override;
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void chmod(const String & path, mode_t mode) override;

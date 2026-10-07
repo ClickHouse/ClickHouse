@@ -475,6 +475,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
     S3::AbortMultipartUploadRequest req;
+    req.setRequestIntent(RemoteIORequestIntent::Cleanup);
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);

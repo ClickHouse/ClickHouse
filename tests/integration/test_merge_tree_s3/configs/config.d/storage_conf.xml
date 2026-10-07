@@ -93,6 +93,19 @@
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
                 <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_long_retries_always_multi_part>
+            <broken_s3_cleanup_retries>
+                <type>s3</type>
+                <endpoint>http://resolver:8085/root/data/cleanup_retry/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <s3_retry_attempts>2</s3_retry_attempts>
+                <s3_retry_initial_delay_ms>10</s3_retry_initial_delay_ms>
+                <s3_retry_max_delay_ms>10</s3_retry_max_delay_ms>
+                <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
+                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+                <persistent_removal_log>true</persistent_removal_log>
+            </broken_s3_cleanup_retries>
             <cached_broken_s3_long_retries_always_multi_part>
                 <type>cache</type>
                 <disk>broken_s3_long_retries_always_multi_part</disk>
@@ -146,6 +159,13 @@
             </s3_cache_r>
         </disks>
         <policies>
+            <broken_s3_cleanup_retries>
+                <volumes>
+                    <main>
+                        <disk>broken_s3_cleanup_retries</disk>
+                    </main>
+                </volumes>
+            </broken_s3_cleanup_retries>
             <s3>
                 <volumes>
                     <main>

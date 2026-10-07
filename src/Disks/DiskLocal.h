@@ -96,7 +96,7 @@ public:
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
-    void removeDirectory(const String & path) override;
+    void removeDirectory(const String & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
     void removeDirectoryIfExists(const String & path) override;
     void removeRecursive(const String & path) override;
 

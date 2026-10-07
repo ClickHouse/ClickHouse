@@ -92,9 +92,9 @@ public:
         delegate->setReadOnly(wrappedPath(path));
     }
 
-    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
     {
-        delegate->unlinkFile(wrappedPath(path), if_exists, should_remove_objects);
+        delegate->unlinkFile(wrappedPath(path), if_exists, should_remove_objects, intent);
     }
 
     void createDirectory(const std::string & path) override
@@ -107,19 +107,19 @@ public:
         delegate->createDirectoryRecursive(wrappedPath(path));
     }
 
-    void removeDirectory(const std::string & path) override
+    void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
     {
-        delegate->removeDirectory(wrappedPath(path));
+        delegate->removeDirectory(wrappedPath(path), intent);
     }
 
-    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
     {
         auto unwrapped_should_remove_objects = [wrapper = metadata_path, should_remove_objects](const String & relative_path)
         {
             return should_remove_objects(unwrapPath(wrapper, relative_path));
         };
 
-        delegate->removeRecursive(wrappedPath(path), unwrapped_should_remove_objects);
+        delegate->removeRecursive(wrappedPath(path), unwrapped_should_remove_objects, intent);
     }
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override

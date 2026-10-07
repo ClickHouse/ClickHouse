@@ -7,7 +7,6 @@
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
-#include <IO/RemoteIOCleanup.h>
 #include <IO/S3/Requests.h>
 
 #include <algorithm>
@@ -484,17 +483,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto sdk_attempt = getSDKAttemptNumber(request);
     auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
-    const auto query_parameters = request.GetQueryStringParameters();
-    const bool is_abort = request.GetMethod() == Aws::Http::HttpMethod::HTTP_DELETE && query_parameters.contains("uploadId");
-    const bool is_cleanup_delete = RemoteIOCleanupScope::isActive()
-        && (request.GetMethod() == Aws::Http::HttpMethod::HTTP_DELETE
-            || (request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST && query_parameters.contains("delete")));
-    const bool initial_cleanup_attempt = first_attempt && (is_abort || is_cleanup_delete);
-    if (!initial_cleanup_attempt)
+    const auto * poco_request_metadata = dynamic_cast<const PocoHTTPRequest *>(&request);
+    const bool is_cleanup = poco_request_metadata && poco_request_metadata->intent == RemoteIORequestIntent::Cleanup;
+    if (!is_cleanup)
         CurrentThread::checkIfNotCancelled();
-
-    if (initial_cleanup_attempt && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        LOG_DEBUG(log, "One cleanup HTTP attempt for cancelled operation: {} {}. No retries, redirects or retry backoff; network timeouts still apply", method, uri);
 
     if (!first_attempt)
         LOG_DEBUG(
@@ -565,9 +557,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
-            /// SDK retries and transport redirects must not escape operation cancellation.
-            /// Only the first multipart-abort or explicitly scoped deletion attempt may clean up cancelled work.
-            if (!initial_cleanup_attempt || attempt > 0)
+            /// Permission belongs to this request and survives its redirects, never to the surrounding thread.
+            if (!is_cleanup)
                 CurrentThread::checkIfNotCancelled();
             Poco::URI target_uri(uri);
 
@@ -643,7 +634,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
-            if (!initial_cleanup_attempt || attempt > 0)
+            if (!is_cleanup)
                 CurrentThread::checkIfNotCancelled();
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,

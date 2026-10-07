@@ -1,4 +1,6 @@
 #pragma once
+
+#include <IO/RemoteIORequestIntent.h>
 #include <Core/NamesAndTypes.h>
 #include <Disks/WriteMode.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -184,7 +186,8 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) = 0;
+        LoggerPtr log,
+        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.

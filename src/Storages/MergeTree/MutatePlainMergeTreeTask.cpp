@@ -24,14 +24,6 @@ namespace ErrorCodes
 }
 
 
-MutatePlainMergeTreeTask::~MutatePlainMergeTreeTask()
-{
-    ThreadGroupSwitcher operation_group(
-        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-    mutate_task.reset();
-    new_part.reset();
-}
-
 StorageID MutatePlainMergeTreeTask::getStorageID() const
 {
     return storage.getStorageID();
@@ -94,6 +86,10 @@ void MutatePlainMergeTreeTask::prepare()
 
 void MutatePlainMergeTreeTask::finish()
 {
+    /// Destroy `MutateTask` and its writer buffers while the mutation's `ThreadGroup` is attached,
+    /// before `MergeMutateSelectedEntry::finalize` makes the source parts available for other background tasks.
+    mutate_task.reset();
+
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();
 }
@@ -208,6 +204,13 @@ bool MutatePlainMergeTreeTask::executeStep()
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
+    cleanupAfterFailure();
+}
+
+void MutatePlainMergeTreeTask::cleanupAfterFailure() noexcept
+{
+    /// Cleanup and part destruction can issue S3 requests; keep the mutation's cancellation visible
+    /// through `CurrentThread`. Only explicitly marked abort/delete requests retain configured retries.
     ThreadGroupSwitcher operation_group(
         merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     if (mutate_task)

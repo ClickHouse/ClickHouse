@@ -43,7 +43,6 @@ public:
     void cancel() noexcept override;
 
     void onCompleted() override;
-    ~MutatePlainMergeTreeTask() override;
     StorageID getStorageID() const override;
     Priority getPriority() const override { return priority; }
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
@@ -51,6 +50,7 @@ public:
 private:
     void prepare();
     void finish();
+    void cleanupAfterFailure() noexcept;
 
     enum class State : uint8_t
     {

@@ -213,7 +213,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("remove the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
-        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
+        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path), RemoteIORequestIntent::Cleanup);
     });
 }
 
@@ -359,8 +359,10 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
-    : path(std::move(path_))
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    RemoteIORequestIntent intent_)
+    : intent(intent_)
+    , path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
@@ -386,7 +388,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
     remove_attempted = true;
     auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, /*local_path*/ path, path.string().length());
-    object_storage->removeObjectIfExists(metadata_object);
+    object_storage->removeObjectIfExists(metadata_object, intent);
 
     fs_tree->removeDirectory(path);
     ProfileEvents::increment(metrics->directory_removed);
@@ -507,8 +509,10 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_)
-    : path(std::move(path_))
+    StoredObjects & removed_objects_,
+    RemoteIORequestIntent intent_)
+    : intent(intent_)
+    , path(std::move(path_))
     , if_exists(if_exists_)
     , fs_tree(std::move(fs_tree_))
     , object_storage(object_storage_)
@@ -561,7 +565,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     blob_removal_attempted = true;
 
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
-    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
+    object_storage->removeObjectIfExists(StoredObject(remote_source_path), intent);
 
     fs_tree->removeFile(path);
 }
@@ -603,7 +607,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path), RemoteIORequestIntent::Cleanup);
     });
 }
 
@@ -612,14 +616,14 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
     if (blob_to_remove)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Removing the blob '{}' of the unlinked file '{}'", blob_to_remove->remote_path, path);
-        object_storage->removeObjectIfExists(*blob_to_remove);
+        object_storage->removeObjectIfExists(*blob_to_remove, intent);
         removed_objects.push_back(*blob_to_remove);
     }
 
     if (blob_removal_attempted)
     {
         removed_objects.push_back(StoredObject(remote_source_path));
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path), intent);
     }
 }
 
@@ -714,7 +718,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
     undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to), RemoteIORequestIntent::Cleanup);
     });
 }
 
@@ -987,7 +991,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         if (!had_existing_target)
         {
             /// The key held no file before the move, so nothing of value can be there.
-            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+            object_storage->removeObjectIfExists(StoredObject(remote_path_to), RemoteIORequestIntent::Cleanup);
             return;
         }
 
@@ -1005,12 +1009,12 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from), RemoteIORequestIntent::Cleanup);
     });
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to), RemoteIORequestIntent::Cleanup);
     });
 }
 
@@ -1043,8 +1047,10 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_)
-    : path(std::move(path_))
+    StoredObjects & removed_objects_,
+    RemoteIORequestIntent intent_)
+    : intent(intent_)
+    , path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
@@ -1121,7 +1127,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     if (!move_tried)
         return;
 
-    object_storage->removeObjectsIfExist(objects_to_remove);
+    object_storage->removeObjectsIfExist(objects_to_remove, nullptr, intent);
     removed_objects.append_range(objects_to_remove);
 }
 

@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 
+import boto3
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -956,13 +957,40 @@ def assert_s3_cancelled(node, table, request):
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree('/cancel_teardown', 'r1')"])
-def test_cancelled_merge_teardown_bounds_failed_multipart_abort(s3_cancellation, broken_s3, engine):
+@pytest.mark.parametrize("recover", [True, False], ids=["recovery", "exhaustion"])
+def test_cancelled_merge_teardown_retries_multipart_abort(
+    s3_cancellation, broken_s3, cluster, engine, recover
+):
     node, table = s3_cancellation
     failpoint = "merge_task_pause_after_write"
     optimize_query_id = "cleanup_cancel_" + uuid.uuid4().hex
+    prefix = "data/cleanup_retry/"
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{cluster.minio_ip}:{cluster.minio_port}",
+        aws_access_key_id=cluster.minio_access_key,
+        aws_secret_access_key=cluster.minio_secret_key,
+        region_name="us-east-1",
+    )
+
+    def outstanding_uploads():
+        # MinIO treats a nonempty multipart-list prefix as an exact object key.
+        # List live uploads and filter locally; do not mistake an empty prefix lookup for successful cleanup.
+        return [
+            upload
+            for page in s3.get_paginator("list_multipart_uploads").paginate(
+                Bucket=cluster.minio_bucket
+            )
+            for upload in page.get("Uploads", [])
+            if upload["Key"].startswith(prefix)
+        ]
+
+    def object_names():
+        return {obj.object_name for obj in list_objects(cluster, prefix)}
+
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String) ENGINE={engine} ORDER BY key "
-        "SETTINGS storage_policy='broken_s3_long_retries_always_multi_part', "
+        "SETTINGS storage_policy='broken_s3_cleanup_retries', "
         "enable_vertical_merge_algorithm=0, min_bytes_for_full_part_storage=0, "
         "min_rows_for_wide_part=0, min_bytes_for_wide_part=0, "
         "index_granularity_bytes=0, merge_max_block_size_bytes=0"
@@ -972,9 +1000,10 @@ def test_cancelled_merge_teardown_bounds_failed_multipart_abort(s3_cancellation,
         node.query(
             f"INSERT INTO {table} SELECT number + {offset}, randomString(8192) FROM numbers(8192)"
         )
+    original_objects = object_names()
+    assert not outstanding_uploads()
     try:
         broken_s3.reset()
-        broken_s3.setup_fake_multpartuploads()
         node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         node.query(f"SYSTEM START MERGES {table}")
         # Plain `OPTIMIZE` executes synchronously; replicated `OPTIMIZE` schedules the background executor.
@@ -983,26 +1012,39 @@ def test_cancelled_merge_teardown_bounds_failed_multipart_abort(s3_cancellation,
         )
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
         wait_for_s3_request(broken_s3, "part_upload")
-        uploads = broken_s3.get_request_counts()["create_multipart_upload"]
-        assert uploads > 0
-        broken_s3.setup_action("at_abort_multipart_upload", action="internal_error", count=10000)
+        uploads = outstanding_uploads()
+        assert uploads, "The paused merge must own real incomplete multipart uploads"
+        broken_s3.setup_action(
+            "at_abort_multipart_upload", action="internal_error", count=1 if recover else 10000
+        )
         node.query(f"SYSTEM STOP MERGES {table}")
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         assert_eq_with_retry(
             node,
             f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
             "0",
-            retry_count=20,
+            retry_count=100,
             sleep_time=0.1,
         )
         if engine == "MergeTree":
             assert "ABORTED" in request.get_error()
-        assert broken_s3.get_request_counts()["abort_multipart_upload"] == uploads
+        assert broken_s3.get_request_counts()["abort_multipart_upload"] > len(uploads)
+        if recover:
+            wait_condition(outstanding_uploads, lambda remaining: not remaining, max_attempts=30)
+            wait_condition(object_names, lambda remaining: remaining <= original_objects, max_attempts=30)
+        else:
+            # Exhaustion must terminate teardown, but does not promise eventual garbage collection.
+            remaining_ids = {upload["UploadId"] for upload in outstanding_uploads()}
+            assert {upload["UploadId"] for upload in uploads} <= remaining_ids
     finally:
         # A replicated `OPTIMIZE` waits for queue completion even after its current merge was cancelled.
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         node.query(f"KILL QUERY WHERE query_id='{optimize_query_id}' SYNC")
         broken_s3.reset()
-        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        for upload in outstanding_uploads():
+            s3.abort_multipart_upload(
+                Bucket=cluster.minio_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
+            )
 
 
 def test_local_projection_observes_parent_partition_cancellation(s3_cancellation):

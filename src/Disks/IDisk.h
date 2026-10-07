@@ -1,5 +1,7 @@
 #pragma once
 
+#include <IO/RemoteIORequestIntent.h>
+
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
@@ -281,7 +283,7 @@ public:
     virtual void removeFileIfExists(const String & path) = 0;
 
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
-    virtual void removeDirectory(const String & path) = 0;
+    virtual void removeDirectory(const String & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     virtual void removeDirectoryIfExists(const String &)
     {
@@ -308,7 +310,7 @@ public:
     /// Differs from removeRecursive for S3/HDFS disks
     /// Second bool param is a flag to remove (false) or keep (true) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedRecursive(const String & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */) { removeRecursive(path); }
+    virtual void removeSharedRecursive(const String & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */, RemoteIORequestIntent /* intent */ = RemoteIORequestIntent::Regular) { removeRecursive(path); }
 
     /// Remove file or directory if it exists.
     /// Differs from removeFileIfExists for S3/HDFS disks
@@ -392,7 +394,7 @@ public:
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular);
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;

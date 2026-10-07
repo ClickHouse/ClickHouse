@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
+#include <IO/RemoteIORequestIntent.h>
 #include <memory>
 
 
@@ -32,7 +33,8 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const String & local_path_for_blob_storage_log = {},
     size_t file_size_for_blob_storage_log = 0,
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
+    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular);
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
 void deleteFilesFromS3(
@@ -46,7 +48,8 @@ void deleteFilesFromS3(
     const Strings & local_paths_for_blob_storage_log = {},
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log = {},
     std::optional<ProfileEvents::Event> profile_event = std::nullopt,
-    Strings * successful_keys = nullptr);
+    Strings * successful_keys = nullptr,
+    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular);
 
 }
 

@@ -96,7 +96,7 @@ public:
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
-    void removeDirectory(const String & path) override;
+    void removeDirectory(const String & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
     void removeRecursive(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;

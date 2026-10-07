@@ -185,7 +185,7 @@ void DiskBackup::removeFileIfExists(const String &)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support removeFileIfExists method");
 }
 
-void DiskBackup::removeDirectory(const String &)
+void DiskBackup::removeDirectory(const String &, RemoteIORequestIntent /* intent */)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support removeDirectory method");
 }

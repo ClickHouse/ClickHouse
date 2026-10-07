@@ -77,10 +77,10 @@ public:
     {
         unexpected("readObject");
     }
-    void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
+    void removeObjectIfExists(const StoredObject &, DB::RemoteIORequestIntent) override { unexpected("removeObjectIfExists"); }
     void removeObjectsIfExist(
         const StoredObjects &,
-        StoredObjects *) override { unexpected("removeObjectsIfExist"); }
+        StoredObjects *, DB::RemoteIORequestIntent) override { unexpected("removeObjectsIfExist"); }
     void copyObject( /// NOLINT
         const StoredObject &,
         const StoredObject &,

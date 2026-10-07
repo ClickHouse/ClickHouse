@@ -1,5 +1,7 @@
 #pragma once
 
+#include <IO/RemoteIORequestIntent.h>
+
 #include <string>
 #include <map>
 #include <mutex>
@@ -346,12 +348,13 @@ public:
     virtual bool isRemote() const = 0;
 
     /// Remove object on path if exists
-    virtual void removeObjectIfExists(const StoredObject & object) = 0;
+    virtual void removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Remove objects on path if exists
     virtual void removeObjectsIfExist( /// NOLINT
         const StoredObjects & object,
-        StoredObjects * successful_objects = nullptr) = 0;
+        StoredObjects * successful_objects = nullptr,
+        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) = 0;
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT

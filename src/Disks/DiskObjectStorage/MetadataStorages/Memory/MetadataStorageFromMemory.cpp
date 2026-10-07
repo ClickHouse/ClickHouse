@@ -263,7 +263,7 @@ void MetadataStorageFromMemoryTransaction::writeInlineDataToFile(const std::stri
     putRecordUnlocked(path, std::move(record));
 }
 
-void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
+void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects, RemoteIORequestIntent /* intent */)
 {
     std::unique_lock lock(storage.metadata_mutex);
 
@@ -291,13 +291,13 @@ void MetadataStorageFromMemoryTransaction::createDirectoryRecursive(const std::s
     storage.tree.createDirectoryRecursive(normalizePath(path));
 }
 
-void MetadataStorageFromMemoryTransaction::removeDirectory(const std::string & path)
+void MetadataStorageFromMemoryTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent /* intent */)
 {
     std::unique_lock lock(storage.metadata_mutex);
     storage.tree.removeDirectory(normalizePath(path));
 }
 
-void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
+void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent /* intent */)
 {
     std::unique_lock lock(storage.metadata_mutex);
 

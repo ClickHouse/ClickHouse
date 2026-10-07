@@ -140,8 +140,9 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    /// Bind before attaching any threads: they snapshot SharedData on attachment.
-    /// The predicate must be thread-safe and own (or safely reference) its cancellation state.
+    /// Creates a merge/mutation group with `operation_is_canceled` installed before threads attach.
+    /// Attached threads copy the callback, so its captured state must remain valid and be thread-safe.
+    /// The caller owns cancellation state, including keeping observed cancellation set for the operation.
     static ThreadGroupPtr createForMergeMutate(
         ContextPtr storage_context, QueryIsCanceledPredicate operation_is_canceled = {}, ThreadGroupPtr foreground_group = {});
 
@@ -166,7 +167,7 @@ public:
 private:
     mutable std::mutex mutex;
 
-    /// Set up at creation, no race when reading
+    /// Mutable group data protected by `mutex`; copied into `ThreadStatus::local_data` when a thread attaches.
     SharedData shared_data TSA_GUARDED_BY(mutex);
 
     /// Set of all thread ids which has been attached to the group

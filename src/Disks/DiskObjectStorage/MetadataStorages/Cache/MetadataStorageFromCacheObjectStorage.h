@@ -114,12 +114,12 @@ public:
 
     void setReadOnly(const std::string & path) override;
 
-    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void createDirectory(const std::string & path) override;
     void createDirectoryRecursive(const std::string & path) override;
-    void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
+    void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
 

@@ -143,7 +143,7 @@ bool removeBlobsBatch(
     {
         LOG_TRACE(log, "Removing {} blobs from '{}' location", remove_batch.size(), location);
 
-        object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch);
+        object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch, nullptr, RemoteIORequestIntent::Cleanup);
         ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemovedBlobs, remove_batch.size());
 
         return true;

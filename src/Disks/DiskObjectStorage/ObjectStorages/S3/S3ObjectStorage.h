@@ -106,13 +106,14 @@ public:
     bool supportsPrefixListing() const override { return true; }
 
     /// Uses `DeleteObjectRequest`.
-    void removeObjectIfExists(const StoredObject & object) override;
+    void removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist( /// NOLINT
         const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+        StoredObjects * successful_objects = nullptr,
+        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void tagObjects( /// NOLINT
         const StoredObjects & objects,
@@ -171,8 +172,8 @@ public:
     ObjectStoragePtr cloneImpl() const override;
 
 private:
-    void removeObjectImpl(const StoredObject & object, bool if_exists);
-    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
+    void removeObjectImpl(const StoredObject & object, bool if_exists, RemoteIORequestIntent intent);
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects, RemoteIORequestIntent intent);
 
     std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
     std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;

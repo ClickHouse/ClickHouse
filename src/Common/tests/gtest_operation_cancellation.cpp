@@ -141,7 +141,7 @@ TEST(OperationCancellation, MergeListBlockerCancellationLatches)
         .get();
 }
 
-TEST(OperationCancellation, AttachedThreadObservesAndLatchesCancellation)
+TEST(OperationCancellation, AttachedThreadObservesCancellation)
 {
     std::async(
         std::launch::async,
@@ -156,12 +156,10 @@ TEST(OperationCancellation, AttachedThreadObservesAndLatchesCancellation)
             EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
             canceled->store(true);
             EXPECT_TRUE(CurrentThread::get().isQueryCanceled());
-            canceled->store(false);
-            EXPECT_TRUE(CurrentThread::get().isQueryCanceled());
             try
             {
                 CurrentThread::checkIfNotCancelled();
-                FAIL() << "Cancellation must remain set after the blocker is released";
+                FAIL() << "Operation cancellation must throw";
             }
             catch (const Exception & exception)
             {
@@ -327,6 +325,7 @@ TEST(OperationCancellation, CancelledAdmissionDrainsRunningWork)
     auto started_future = started.get_future();
     std::promise<void> observed_cancellation;
     auto observed_future = observed_cancellation.get_future();
+    std::atomic_bool cancellation_observed = false;
     std::atomic_bool canceled = false;
     std::atomic_bool finished = false;
     auto scheduler = std::async(
@@ -340,7 +339,8 @@ TEST(OperationCancellation, CancelledAdmissionDrainsRunningWork)
                 {
                     if (!canceled.load())
                         return false;
-                    observed_cancellation.set_value();
+                    if (!cancellation_observed.exchange(true))
+                        observed_cancellation.set_value();
                     return true;
                 });
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);

@@ -101,11 +101,11 @@ public:
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void removeSharedRecursiveWithLimit(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void truncateFile(const String & path, size_t size) override;
 
@@ -134,7 +134,7 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    void removeDirectory(const String & path) override;
+    void removeDirectory(const String & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
 
     void removeDirectoryIfExists(const String & path) override;
 

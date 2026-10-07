@@ -1,5 +1,4 @@
 #include <IO/S3/Client.h>
-#include <IO/RemoteIOCleanup.h>
 
 #if USE_AWS_S3
 
@@ -111,9 +110,6 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (attemptedRetries >= config.max_retries)
         return false;
 
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
-
     /// It does not make sense to retry when GCS suggest to use Rewrite
     if (useGCSRewrite(error))
         return false;
@@ -189,6 +185,41 @@ void Client::RetryStrategy::RequestBookkeeping(
 
 namespace
 {
+
+void checkRequestCancellation(RemoteIORequestIntent intent)
+{
+    if (intent == RemoteIORequestIntent::Regular)
+        CurrentThread::checkIfNotCancelled();
+}
+
+/// AWS calls this request's hook before retry sleep, while its shared retry strategy has no request context.
+class RequestRetryScope
+{
+public:
+    RequestRetryScope(Aws::AmazonWebServiceRequest & request_, RemoteIORequestIntent intent)
+        : request(request_)
+        , previous(request.GetRequestRetryHandler())
+    {
+        request.SetRequestRetryHandler([this, intent](const Aws::AmazonWebServiceRequest & retry_request)
+        {
+            checkRequestCancellation(intent);
+            if (previous)
+                previous(retry_request);
+            checkRequestCancellation(intent);
+        });
+    }
+
+    ~RequestRetryScope()
+    {
+        request.SetRequestRetryHandler(std::move(previous));
+    }
+    RequestRetryScope(const RequestRetryScope &) = delete;
+    RequestRetryScope & operator=(const RequestRetryScope &) = delete;
+
+private:
+    Aws::AmazonWebServiceRequest & request;
+    Aws::RequestRetryHandler previous;
+};
 
 void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
 {
@@ -430,6 +461,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
 Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
+    RequestRetryScope retry_scope(request, RemoteIORequestIntent::Regular);
     CurrentThread::checkIfNotCancelled();
     const auto & bucket = request.GetBucket();
 
@@ -546,7 +578,7 @@ Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); }, RequestCancellationPolicy::Cleanup);
+        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
@@ -697,15 +729,13 @@ Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & requ
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); },
-        RemoteIOCleanupScope::isActive() ? RequestCancellationPolicy::Cleanup : RequestCancellationPolicy::Regular);
+        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); },
-        RemoteIOCleanupScope::isActive() ? RequestCancellationPolicy::Cleanup : RequestCancellationPolicy::Regular);
+        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
@@ -740,10 +770,11 @@ Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & reques
 
 template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
-Client::doRequest(RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy) const
+Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
-    if (cancellation_policy == RequestCancellationPolicy::Regular)
-        CurrentThread::checkIfNotCancelled();
+    const auto intent = request.getRequestIntent();
+    checkRequestCancellation(intent);
+    RequestRetryScope retry_scope(request, intent);
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -776,13 +807,12 @@ Client::doRequest(RequestType & request, RequestFn request_fn, RequestCancellati
 
     for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
     {
-        if (cancellation_policy == RequestCancellationPolicy::Regular || attempt > 0)
-            CurrentThread::checkIfNotCancelled();
+        checkRequestCancellation(intent);
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
 
-        CurrentThread::checkIfNotCancelled();
+        checkRequestCancellation(intent);
 
         const auto & error = result.GetError();
 
@@ -842,7 +872,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn, RequestCancellati
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
-Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn, RequestCancellationPolicy cancellation_policy) const
+Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
     /// S3 does retries network errors actually.
     /// But it does matter when errors occur.
@@ -856,7 +886,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
 
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
-    auto with_retries = [this, request_fn_ = std::move(request_fn), cancellation_policy] (RequestType & request_)
+    const auto intent = request.getRequestIntent();
+    auto with_retries = [this, request_fn_ = std::move(request_fn), intent] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
@@ -878,16 +909,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
                 /*retryable*/ true);
 
-            // network exceptions are always retryable, we could just return true here
-            // but we have to check cancellation points for query, ShouldRetry method does it already
+            checkRequestCancellation(intent);
             return client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1);
         };
 
         for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
         {
-            const bool initial_cleanup_attempt = cancellation_policy == RequestCancellationPolicy::Cleanup && attempt_no == 1;
-            if (!initial_cleanup_attempt)
-                CurrentThread::checkIfNotCancelled();
+            checkRequestCancellation(intent);
 
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
@@ -909,11 +937,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
-            if (!initial_cleanup_attempt)
-            {
-                slowDownAfterRetryableError();
-                CurrentThread::checkIfNotCancelled();
-            }
+            slowDownAfterRetryableError(intent);
+            checkRequestCancellation(intent);
 
             try
             {
@@ -925,6 +950,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
                 /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                checkRequestCancellation(intent);
                 if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                     break;
             }
@@ -945,7 +971,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         return outcome;
     };
 
-    return doRequest(request, with_retries, cancellation_policy);
+    return doRequest(request, with_retries);
 }
 
 template <typename RequestResult>
@@ -989,7 +1015,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     }
 }
 
-void Client::slowDownAfterRetryableError() const
+void Client::slowDownAfterRetryableError(RemoteIORequestIntent intent) const
 {
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
@@ -1015,7 +1041,7 @@ void Client::slowDownAfterRetryableError() const
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
 
-        sleepForMilliseconds(sleep_ms, [] { CurrentThread::checkIfNotCancelled(); });
+        sleepForMilliseconds(sleep_ms, [intent] { checkRequestCancellation(intent); });
     }
 }
 
@@ -1054,6 +1080,13 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
 {
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
+    const auto * metadata = dynamic_cast<const RequestMetadata *>(&request);
+    const auto intent = metadata ? metadata->getRequestIntent() : RemoteIORequestIntent::Regular;
+    if (auto * poco_request = dynamic_cast<PocoHTTPRequest *>(httpRequest.get()))
+        poco_request->intent = intent;
+    else if (intent == RemoteIORequestIntent::Cleanup)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cleanup requires a PocoHTTPRequest with explicit request intent");
+
     if (api_mode == ApiMode::GCS)
         translateHeadersToGCS(*httpRequest);
 }
@@ -1087,6 +1120,8 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
+    RequestRetryScope retry_scope(req, RemoteIORequestIntent::Regular);
+    CurrentThread::checkIfNotCancelled();
     req.SetBucket(bucket);
 
     addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
