@@ -1266,7 +1266,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
     /// concurrent writers. The Iceberg sink re-reads the metadata and retries a conflicting commit; the Delta
     /// one does not, so its per-node commits race for a single log version.
-    const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(dst_storage.get());
+    const auto object_storage = castStorage<StorageObjectStorage>(dst_storage, DeferredTable::Load);
     const bool lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage();
     if (!(dst_storage->isMergeTree() || lake_retries_conflicting_commits) || !dst_storage->supportsReplication())
         return {};
