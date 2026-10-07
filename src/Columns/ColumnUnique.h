@@ -63,6 +63,7 @@ public:
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
+    void uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
@@ -238,6 +239,12 @@ private:
 
     ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
+
+    /// `src` must be `ColumnType` or `Nullable(ColumnType)`.
+    std::pair<const ColumnType *, const NullMap *> getValuesAndNullMap(const IColumn & src) const;
+
+    /// The NULL and default value rules of `uniqueInsertRangeFrom`. Returns nothing for any other value.
+    ALWAYS_INLINE std::optional<size_t> getSpecialValueIndex(const ColumnType & src, const NullMap * null_map, size_t row) const;
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -452,6 +459,57 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 }
 
 template <typename ColumnType>
+void ColumnUnique<ColumnType>::uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows)
+{
+    const auto [src_column, null_map] = getValuesAndNullMap(src);
+    UInt64 previous_row = std::numeric_limits<UInt64>::max();
+    UInt64 previous_index = 0;
+    for (UInt64 & row : rows)
+    {
+        if (row != previous_row)
+        {
+            previous_row = row;
+            if (auto special_index = getSpecialValueIndex(*src_column, null_map, row))
+                previous_index = *special_index;
+            else
+                previous_index = uniqueInsertFrom(*src_column, row);
+        }
+        row = previous_index;
+    }
+}
+
+template <typename ColumnType>
+std::pair<const ColumnType *, const NullMap *> ColumnUnique<ColumnType>::getValuesAndNullMap(const IColumn & src) const
+{
+    const ColumnType * src_column = nullptr;
+    const NullMap * null_map = nullptr;
+
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
+    {
+        src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
+        null_map = &nullable_column->getNullMapData();
+    }
+    else
+        src_column = typeid_cast<const ColumnType *>(&src);
+
+    if (src_column == nullptr)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for ColumnUnique::insertRangeFrom. "
+                        "Expected {}, got {}", column_holder->getName(), src.getName());
+
+    return {src_column, null_map};
+}
+
+template <typename ColumnType>
+std::optional<size_t> ColumnUnique<ColumnType>::getSpecialValueIndex(const ColumnType & src, const NullMap * null_map, size_t row) const
+{
+    if (null_map && (*null_map)[row])
+        return getNullValueIndex();
+    if (getRawColumnPtr()->compareAt(getNestedTypeDefaultValueIndex(), row, src, 1) == 0)
+        return getNestedTypeDefaultValueIndex();
+    return std::nullopt;
+}
+
+template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
     /// The reserved prefix slots are not in the reverse index, so the default value is matched here.
@@ -663,8 +721,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    const ColumnType * src_column = nullptr;
-    const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 
     auto update_position = [&](UInt64 & next_position) -> MutableColumnPtr
@@ -698,17 +754,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
-    {
-        src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
-        null_map = &nullable_column->getNullMapData();
-    }
-    else
-        src_column = typeid_cast<const ColumnType *>(&src);
-
-    if (src_column == nullptr)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for ColumnUnique::insertRangeFrom. "
-                        "Expected {}, got {}", column_holder->getName(), src.getName());
+    const auto [src_column, null_map] = getValuesAndNullMap(src);
 
     auto column = getRawColumnPtr();
 
@@ -730,10 +776,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     {
         auto row = start + num_added_rows;
 
-        if (null_map && (*null_map)[row])
-            positions[num_added_rows] = static_cast<IndexType>(getNullValueIndex());
-        else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[num_added_rows] = static_cast<IndexType>(getNestedTypeDefaultValueIndex());
+        if (auto special_index = getSpecialValueIndex(*src_column, null_map, row))
+            positions[num_added_rows] = static_cast<IndexType>(*special_index);
         else
         {
             auto ref = src_column->getDataAt(row);

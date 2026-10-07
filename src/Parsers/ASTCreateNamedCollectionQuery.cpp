@@ -16,7 +16,10 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
 
 void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "CREATE NAMED COLLECTION ";
+    ostr << "CREATE ";
+    if (or_replace)
+        ostr << "OR REPLACE ";
+    ostr << "NAMED COLLECTION ";
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
     ostr << backQuoteIfNeed(collection_name);

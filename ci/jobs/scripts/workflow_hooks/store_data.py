@@ -2,6 +2,9 @@ import copy
 import json
 import os
 import re
+import subprocess
+import tempfile
+from pathlib import Path
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -100,55 +103,76 @@ def get_master_first_parent_commits(
             return chain
 
 
-def fetch_patch_and_file(repo_name, pr_number, path):
-    """Return `(patch, file_lines)` for `path` in `pr_number`, or raise naming the cause.
+def fetch_file_at(repo_name, path, ref):
+    """Lines of `path` at commit `ref`, from the GitHub API: CI containers have no .git history."""
+    content = GH.get_output_with_retries(
+        f'gh api -H "Accept: application/vnd.github.raw" '
+        f'"repos/{repo_name}/contents/{path}?ref={ref}"',
+        verbose=True,
+        strict=True,
+    )
+    if not content.strip():
+        raise RuntimeError(f"no content returned for {path} at {ref}")
+    return content.splitlines()
 
-    CI containers have no .git history, so both come from the GitHub API, and from the same
-    file entry: `.contents_url` names the file at the very revision `.patch` was computed
-    against. Reading the checked-out file instead would resolve the patch's new-file line
-    numbers against the PR merged with its base, whose numbering can differ, attributing
-    records to the wrong setting.
 
-    The style check reports whichever message this raises, so the failure modes must stay
-    distinguishable: a failed command, a `null` patch, and an entry the API never returned."""
+def fetch_declaration_diffs(repo_name, pr_number, paths):
+    """`{path: (patch, head_file_lines)}` for the `paths` changed by `pr_number`, the patch diffed here by
+    `git diff` from the merge-base and head contents of each file. GitHub's per-file `.patch` is not used: it
+    is omitted for large diffs, and this check must not be skipped when a declaration file changed.
+
+    Diffing from the merge base, as `git diff <base>...<head>` does, keeps changes that the base made on its
+    own from being reported as reversions made by the PR."""
     if pr_number <= 0:
         raise RuntimeError(
             "could not resolve the PR number for the settings-history diff"
         )
-    # `.patch` is the unified diff for just this file (hunks only, no file header).
-    # strict=True so a command failure is not laundered into an empty result, which the
-    # checks below would then mislabel as the large-diff case.
-    file_entry = GH.get_output_with_retries(
-        f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate "
-        f"--jq '.[] | select(.filename == \"{path}\") "
-        "| {patch, contents_url}'",
+    refs = json.loads(
+        GH.get_output_with_retries(
+            f"gh api repos/{repo_name}/pulls/{pr_number} --jq '{{base: .base.sha, head: .head.sha}}'",
+            verbose=True,
+            strict=True,
+        )
+    )
+    if not (_is_commit_sha(refs.get("base")) and _is_commit_sha(refs.get("head"))):
+        raise RuntimeError(
+            f"could not resolve the base and head commits of PR {pr_number}: {refs}"
+        )
+    merge_base = GH.get_output_with_retries(
+        f"gh api 'repos/{repo_name}/compare/{refs['base']}...{refs['head']}?per_page=1' "
+        "--jq .merge_base_commit.sha",
         verbose=True,
         strict=True,
-    )
-    if not file_entry.strip():
-        # rc=0 with no output: the jq `select` matched nothing, i.e. the API's file list does
-        # not contain this file even though changed_files says it changed.
+    ).strip()
+    if not _is_commit_sha(merge_base):
         raise RuntimeError(
-            f"{path} is in changed_files but absent from the GitHub API file list for "
-            f"PR {pr_number}"
+            f"could not resolve the merge base of PR {pr_number}: {merge_base!r}"
         )
-    file_entry = json.loads(file_entry)
-    patch = file_entry["patch"] or ""
-    if not patch.strip():
-        # GitHub omits the per-file patch for very large diffs; `.patch` is then null.
-        raise RuntimeError(
-            f"no patch returned for changed file {path} "
-            "(GitHub omits the patch for very large diffs)"
+    files = {}
+    for path in paths:
+        base_lines = fetch_file_at(repo_name, path, merge_base)
+        head_lines = fetch_file_at(repo_name, path, refs["head"])
+        files[path] = (git_diff(base_lines, head_lines), head_lines)
+    return files
+
+
+def git_diff(base_lines, head_lines):
+    """Unified diff of two line lists by `git diff`, so that CI parses the very hunks the local runner
+    (`python3 -m ci.jobs.scripts.settings_history`) parses: `difflib` aligns repeated record blocks
+    differently and then attributes a changed record to the wrong setting."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base, head = Path(tmp, "base"), Path(tmp, "head")
+        base.write_text("\n".join(base_lines) + "\n", encoding="utf-8")
+        head.write_text("\n".join(head_lines) + "\n", encoding="utf-8")
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--no-ext-diff", "-U3", str(base), str(head)],
+            capture_output=True,
+            text=True,
         )
-    contents_url = file_entry["contents_url"]
-    head_file = GH.get_output_with_retries(
-        f'gh api -H "Accept: application/vnd.github.raw" "{contents_url}"',
-        verbose=True,
-        strict=True,
-    )
-    if not head_file.strip():
-        raise RuntimeError(f"no content returned for {contents_url}")
-    return patch, head_file.splitlines()
+    # `--no-index` exits 1 when the files differ; anything above is an error.
+    if result.returncode > 1:
+        raise RuntimeError(f"git diff failed ({result.returncode}): {result.stderr.strip()}")
+    return result.stdout
 
 
 _FETCH_ERROR_MESSAGE_LIMIT = 500
@@ -227,11 +251,11 @@ def store_settings_declaration_changes(info, changed_files):
         pr_number = info.pr_number
         if pr_number <= 0 and info.is_merge_queue_event:
             pr_number = info.linked_pr_number
-        files = {
-            path: fetch_patch_and_file(info.repo_name, pr_number, path)
-            for path in SETTINGS_DECLARATION_FILES
-            if path in changed_files
-        }
+        files = fetch_declaration_diffs(
+            info.repo_name,
+            pr_number,
+            [path for path in SETTINGS_DECLARATION_FILES if path in changed_files],
+        )
         changes = parse_declaration_changes(files)
         info.store_kv_data("settings_declaration_changes", changes)
         print(f"Stored settings declaration changes: {changes}")
