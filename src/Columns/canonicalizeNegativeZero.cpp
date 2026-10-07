@@ -12,6 +12,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Core/TypeId.h>
@@ -361,6 +362,59 @@ std::optional<String> serializeValueIfContainsNegativeZero(const IColumn & colum
     Arena arena;
     const char * begin = nullptr;
     return String(value_column->serializeValueIntoArena(0, arena, begin, nullptr));
+}
+
+void updateHashWithRawValue(const IColumn & column, size_t n, SipHash & hash)
+{
+    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column))
+    {
+        hash.update(column_float64->getData()[n]);
+    }
+    else if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column))
+    {
+        hash.update(column_float32->getData()[n]);
+    }
+    else if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
+    {
+        hash.update(column_bfloat16->getData()[n]);
+    }
+    else if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        const UInt8 is_null = column_nullable->getNullMapData()[n];
+        hash.update(is_null);
+        if (!is_null)
+            updateHashWithRawValue(column_nullable->getNestedColumn(), n, hash);
+    }
+    else if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+    {
+        const auto & offsets = column_array->getOffsets();
+        const size_t offset = offsets[n - 1];
+        const size_t array_size = offsets[n] - offset;
+        hash.update(array_size);
+        for (size_t i = 0; i < array_size; ++i)
+            updateHashWithRawValue(column_array->getData(), offset + i, hash);
+    }
+    else if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        for (const auto & element : column_tuple->getColumns())
+            updateHashWithRawValue(*element, n, hash);
+    }
+    else if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+    {
+        updateHashWithRawValue(column_map->getNestedColumn(), n, hash);
+    }
+    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        updateHashWithRawValue(*column_low_cardinality->getDictionary().getNestedColumn(), column_low_cardinality->getIndexes().getUInt(n), hash);
+    }
+    else if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+    {
+        updateHashWithRawValue(column_const->getDataColumn(), 0, hash);
+    }
+    else
+    {
+        column.updateHashWithValue(n, hash);
+    }
 }
 
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder)
