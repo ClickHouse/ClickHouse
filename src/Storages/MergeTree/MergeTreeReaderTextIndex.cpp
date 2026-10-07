@@ -974,6 +974,34 @@ TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
         *stream.getDataBuffer(), token_info.position_offset, expected_num_docs, token_info.position_bytes);
 }
 
+/// Counters of one phrase search, added to the profile events in the destructor.
+struct PhraseSearchStats
+{
+    PhraseSearchStats() = default;
+    PhraseSearchStats(const PhraseSearchStats &) = delete;
+    PhraseSearchStats & operator=(const PhraseSearchStats &) = delete;
+
+    ~PhraseSearchStats()
+    {
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, candidates);
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
+    }
+
+    size_t candidates = 0;
+    UInt64 candidates_us = 0;
+    UInt64 directory_us = 0;
+    UInt64 decode_us = 0;
+    UInt64 match_us = 0;
+    size_t blocks_read = 0;
+    size_t blocks_total = 0;
+    UInt64 bytes_read = 0;
+};
+
 /// Decodes a chunk of candidates' positions per unique token, then runs the phrase adjacency match.
 /// Ranks ascend within a chunk, so blocks decode in ascending order and reseek only on a block gap.
 class PhraseChunkMatcher
@@ -983,12 +1011,14 @@ public:
         MergeTreeReaderStream & stream_,
         TextIndexBlockedPositionsCodec::DecodeScratch & scratch_,
         const std::vector<TextIndexBlockedPositionsCodec::Directory> & dirs_,
-        const std::vector<size_t> & term_to_unique_)
+        const std::vector<size_t> & term_to_unique_,
+        PhraseSearchStats & stats_)
         : stream(stream_)
         , data_buffer(*stream_.getDataBuffer())
         , scratch(scratch_)
         , dirs(dirs_)
         , term_to_unique(term_to_unique_)
+        , stats(stats_)
         , offsets(dirs_.size())
         , positions(dirs_.size())
     {
@@ -1003,29 +1033,14 @@ public:
         Stopwatch decode_watch;
         for (size_t u = 0; u < dirs.size(); ++u)
             decodeToken(u, ranks[u]);
-        decode_us += decode_watch.elapsedMicroseconds();
+        stats.decode_us += decode_watch.elapsedMicroseconds();
 
         Stopwatch match_watch;
         TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, term_to_unique, matching);
-        match_us += match_watch.elapsedMicroseconds();
-    }
-
-    void flushProfileEvents(UInt64 candidates_us, UInt64 directory_us, size_t blocks_total) const
-    {
-        ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
+        stats.match_us += match_watch.elapsedMicroseconds();
     }
 
     static constexpr size_t CHUNK = 1 << 16;
-
-    size_t blocks_read = 0;
-    UInt64 bytes_read = 0;
-    UInt64 decode_us = 0;
-    UInt64 match_us = 0;
 
 private:
     void decodeToken(size_t u, std::span<const UInt64> ranks)
@@ -1056,8 +1071,8 @@ private:
             TextIndexBlockedPositionsCodec::decodeBlock(
                 data_buffer, dir, block_idx, local_ranks, token_offsets, token_positions, scratch);
             previous_block = block_idx;
-            ++blocks_read;
-            bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+            ++stats.blocks_read;
+            stats.bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
         }
     }
 
@@ -1066,6 +1081,7 @@ private:
     TextIndexBlockedPositionsCodec::DecodeScratch & scratch;
     const std::vector<TextIndexBlockedPositionsCodec::Directory> & dirs;
     const std::vector<size_t> & term_to_unique;
+    PhraseSearchStats & stats;
 
     std::vector<PaddedPODArray<UInt32>> offsets;
     std::vector<PaddedPODArray<UInt32>> positions;
@@ -1080,6 +1096,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
     const auto & unique_infos = phrase.unique_infos;
     const auto & term_to_unique = phrase.term_to_unique;
 
+    PhraseSearchStats stats;
     Stopwatch candidates_watch;
 
     /// Candidate rows = intersection of the phrase tokens' postings. The full per-token posting
@@ -1103,7 +1120,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
 
     PaddedPODArray<UInt32> candidates(intersection.cardinality());
     intersection.toUint32Array(candidates.data());
-    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, candidates.size());
+    stats.candidates = candidates.size();
 
     /// A single-term "phrase" needs no positional check: every row containing the token matches.
     if (term_to_unique.size() == 1)
@@ -1113,8 +1130,6 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
     /// so the full candidate position set is never materialized (it cost ~GiB per phrase).
     std::vector<TextIndexBlockedPositionsCodec::Directory> dirs(unique_tokens.size());
     std::vector<PaddedPODArray<UInt64>> candidate_ranks(unique_tokens.size());
-    size_t blocks_total = 0;
-    UInt64 directory_us = 0;
     {
         PaddedPODArray<UInt32> posting_docs;
         for (size_t u = 0; u < unique_tokens.size(); ++u)
@@ -1128,8 +1143,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
             /// readDirectory rejects a blob whose document count disagrees with the postings. That
             /// equality is what bounds a rank below num_docs, so the block index needs no check.
             dirs[u] = readPositionsDirectory(*positions_stream, token_info, postings.cardinality());
-            blocks_total += dirs[u].numBlocks();
-            directory_us += directory_watch.elapsedMicroseconds();
+            stats.blocks_total += dirs[u].numBlocks();
+            stats.directory_us += directory_watch.elapsedMicroseconds();
 
             auto & ranks = candidate_ranks[u];
             ranks.resize(candidates.size());
@@ -1154,9 +1169,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
         }
     }
     const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
-    const UInt64 candidates_us = elapsed_us > directory_us ? elapsed_us - directory_us : 0;
+    stats.candidates_us = elapsed_us > stats.directory_us ? elapsed_us - stats.directory_us : 0;
 
-    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, dirs, term_to_unique);
+    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, dirs, term_to_unique, stats);
 
     PaddedPODArray<UInt32> matching;
     std::vector<std::span<const UInt64>> chunk_ranks(unique_tokens.size());
@@ -1170,7 +1185,6 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
         matcher.match(std::span<const UInt32>(candidates.data() + chunk_lo, chunk_hi - chunk_lo), chunk_ranks, matching);
     }
 
-    matcher.flushProfileEvents(candidates_us, directory_us, blocks_total);
     return matching;
 }
 
@@ -1205,6 +1219,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
     const size_t num_tokens = unique_tokens.size();
 
+    PhraseSearchStats stats;
     Stopwatch candidates_watch;
 
     std::vector<PostingListCursor *> leapfrog_cursors;
@@ -1226,22 +1241,20 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
     /// The directory must hold as many documents as the cursor's checked posting list, which bounds every rank.
     std::vector<TextIndexBlockedPositionsCodec::Directory> directories(num_tokens);
-    size_t blocks_total = 0;
     Stopwatch directory_watch;
     for (size_t u = 0; u < num_tokens; ++u)
     {
         directories[u] = readPositionsDirectory(*positions_stream, *unique_infos[u], cursors[u].numDocuments());
-        blocks_total += directories[u].numBlocks();
+        stats.blocks_total += directories[u].numBlocks();
     }
-    const UInt64 directory_us = directory_watch.elapsedMicroseconds();
+    stats.directory_us = directory_watch.elapsedMicroseconds();
 
-    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, directories, term_to_unique);
+    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, directories, term_to_unique, stats);
 
     PaddedPODArray<UInt32> matching;
     PaddedPODArray<UInt32> chunk_candidates;
     std::vector<PaddedPODArray<UInt64>> chunk_ranks(num_tokens);
     std::vector<std::span<const UInt64>> chunk_rank_spans(num_tokens);
-    size_t num_candidates = 0;
 
     auto match_chunk = [&]
     {
@@ -1261,7 +1274,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
         chunk_candidates.push_back(doc);
         for (size_t u = 0; u < num_tokens; ++u)
             chunk_ranks[u].push_back(cursors[u].rank());
-        ++num_candidates;
+        ++stats.candidates;
 
         if (chunk_candidates.size() == PhraseChunkMatcher::CHUNK)
             match_chunk();
@@ -1269,11 +1282,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
     match_chunk();
 
     const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
-    const UInt64 nested_us = directory_us + matcher.decode_us + matcher.match_us;
-    const UInt64 candidates_us = elapsed_us > nested_us ? elapsed_us - nested_us : 0;
-
-    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, num_candidates);
-    matcher.flushProfileEvents(candidates_us, directory_us, blocks_total);
+    const UInt64 nested_us = stats.directory_us + stats.decode_us + stats.match_us;
+    stats.candidates_us = elapsed_us > nested_us ? elapsed_us - nested_us : 0;
     return matching;
 }
 
