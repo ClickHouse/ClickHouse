@@ -29,7 +29,7 @@ class SignalListener;
 ///
 /// \code
 /// # Some possible command line options:
-/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml, config.yaml or config.yml in the current directory.
 /// #    --log-file
 /// #    --errorlog-file
 /// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
@@ -135,6 +135,14 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
+    /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
+    void startSignalListener();
+
+    /// Ask the signal listener thread to stop and join it. The thread first drains every record already
+    /// queued in the signal pipe (they are ordered before the stop request), so after this returns no
+    /// queued signal work remains pending inside the thread. It can be started again with `startSignalListener`.
+    void stopSignalListener();
+
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
@@ -145,6 +153,9 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
+    /// The name of the configuration file to use when `--config-file` is not specified. The extension is
+    /// only the preferred one: the file is looked up with every supported extension, see
+    /// `getConfigPathForAnySupportedFormat`.
     virtual std::string getDefaultConfigFileName() const;
 
     std::optional<DB::StatusFile> pid_file;
@@ -155,6 +166,9 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
+    /// `Poco::Thread::isRunning` becomes false before `join` and therefore cannot tell whether its
+    /// native thread handle has already been joined.
+    bool signal_listener_thread_started = false;
     std::unique_ptr<SignalListener> signal_listener;
 
     DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;

@@ -8,9 +8,12 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
 from functools import reduce
 
 from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
+
+sys.path.insert(0, os.path.dirname(__file__))
 
 from connection import Engines, default_clickhouse_native_conn_args, setup_connection
 from test_runner import RequestType, Status, TestRunner

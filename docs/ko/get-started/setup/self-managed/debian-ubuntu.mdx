@@ -13,15 +13,11 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
 > **Debian** 또는 **Ubuntu**에서는 공식 사전 컴파일 `deb` 패키지 사용을 권장합니다.
 
 <Steps>
-  <Step>
-    ## 권장 사항 검토
-
+  <Step title="권장 사항 검토" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Debian 리포지토리 설정
-
+  <Step title="Debian 리포지토리 설정" id="setup-the-debian-repository">
     ClickHouse를 설치하려면 다음 명령을 실행하십시오.
 
     ```bash
@@ -73,17 +69,13 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step>
-    ## ClickHouse 서버 및 클라이언트 설치
-
+  <Step title="ClickHouse 서버 및 클라이언트 설치" id="install-clickhouse-server-and-client">
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse 시작
-
+  <Step title="ClickHouse 시작" id="start-clickhouse-server">
     ClickHouse 서버를 시작하려면 다음을 실행하십시오.
 
     ```bash
@@ -103,9 +95,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 독립형 ClickHouse Keeper 설치
-
+  <Step title="독립형 ClickHouse Keeper 설치" id="install-standalone-clickhouse-keeper">
     <Tip>
       운영 환경에서는 전용 노드에서 ClickHouse Keeper를 실행할 것을 강력히 권장합니다.
       테스트 환경에서 ClickHouse 서버와 ClickHouse Keeper를 동일한 서버에서 실행하기로 했다면
@@ -119,9 +109,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper 활성화 및 시작
-
+  <Step title="ClickHouse Keeper 활성화 및 시작" id="enable-and-start-clickhouse-keeper">
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

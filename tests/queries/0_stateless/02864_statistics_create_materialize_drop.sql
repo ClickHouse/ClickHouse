@@ -12,10 +12,10 @@ SELECT 'Test create statistics:';
 
 CREATE TABLE tab
 (
-    a LowCardinality(Int64) STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
+    a LowCardinality(Int64) STATISTICS(countmin, basic, tdigest, uniq, uniq_v2),
     b LowCardinality(Nullable(String)) STATISTICS(countmin, uniq, uniq_v2),
-    c LowCardinality(Nullable(Int64)) STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
-    d DateTime STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
+    c LowCardinality(Nullable(Int64)) STATISTICS(countmin, basic, tdigest, uniq, uniq_v2),
+    d DateTime STATISTICS(countmin, basic, tdigest, uniq, uniq_v2),
     pk String,
 ) Engine = MergeTree() ORDER BY pk;
 

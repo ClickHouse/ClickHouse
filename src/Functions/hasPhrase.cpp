@@ -1,12 +1,17 @@
+#include "config.h"
+
 #include <Functions/hasPhrase.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TokenSearchArgumentTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -37,6 +42,26 @@ VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAnd
     auto column_phrase = arguments[arg_phrase].column;
 
     Field phrase_field = (*column_phrase)[0];
+
+    /// An Array phrase is a token sequence used as-is.
+    if (phrase_field.getType() == Field::Types::Array)
+    {
+        VectorWithMemoryTracking<String> tokens;
+        for (const Field & element : phrase_field.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' requires the elements of an Array phrase argument to be String, got: {}",
+                    function_name,
+                    element.getTypeName());
+
+            if (!element.safeGet<String>().empty())
+                tokens.push_back(element.safeGet<String>());
+        }
+        return tokens;
+    }
+
     if (phrase_field.isNull() || phrase_field.getType() != Field::Types::String)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -140,6 +165,46 @@ void executeMatchPhrase(
         forEachToken(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = 1; }));
     }
 }
+
+/// The elements of an array input are tokenized as the index tokenizes them, and their tokens form one
+/// sequence per row, so a phrase may span two elements.
+template <typename StringColumn>
+requires std::same_as<StringColumn, ColumnString> || std::same_as<StringColumn, ColumnFixedString>
+void executeMatchPhraseOnArray(
+    const ColumnArray & col_input,
+    const StringColumn & col_elements,
+    const ColumnNullable * elements_nullable,
+    PaddedPODArray<UInt8> & col_result,
+    size_t input_rows_count,
+    const ITokenizer * tokenizer,
+    const VectorWithMemoryTracking<String> & phrase_tokens,
+    const VectorWithMemoryTracking<size_t> & failure_table)
+{
+    MatchPhraseMatcher matcher(phrase_tokens, failure_table);
+    const auto & offsets = col_input.getOffsets();
+
+    col_result.resize(input_rows_count);
+
+    ColumnArray::Offset current_offset = 0;
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        const ColumnArray::Offset array_size = offsets[i] - current_offset;
+        col_result[i] = 0;
+        matcher.reset();
+
+        for (ColumnArray::Offset j = 0; j < array_size && !col_result[i]; ++j)
+        {
+            const size_t element_index = current_offset + j;
+            if (elements_nullable && elements_nullable->isNullAt(element_index))
+                continue;
+
+            std::string_view element = col_elements.getDataAt(element_index);
+            forEachToken(*tokenizer, element.data(), element.size(), matcher([&] { col_result[i] = 1; }));
+        }
+
+        current_offset = offsets[i];
+    }
+}
 }
 
 FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
@@ -149,8 +214,14 @@ FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
 DataTypePtr FunctionHasPhraseOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     FunctionArgumentDescriptors mandatory_args{
-        {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"phrase", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
+        {"input",
+         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString),
+         nullptr,
+         "String, FixedString, Array(String) or Array(FixedString)"},
+        {"phrase",
+         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
+         isColumnConst,
+         "const String or const Array(String)"}};
 
     FunctionArgumentDescriptors optional_args{
         {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
@@ -166,31 +237,42 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' requires at least 2 arguments, got {}", name, arguments.size());
 
-    if (!isString(arguments[arg_phrase].type))
+    /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+    /// otherwise `hasPhrase(text, toLowCardinality('b c'))` is rejected.
+    if (!isStringOrArrayOfStringType(*recursiveRemoveLowCardinality(arguments[arg_phrase].type)))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
+            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. "
+            "Expected: const String or const Array(String), got: {}",
             name,
             arguments[arg_phrase].type->getName());
 
     if (!arguments[arg_phrase].column || !isColumnConst(*arguments[arg_phrase].column))
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
+            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. "
+            "Expected: const String or const Array(String), got: {}",
             name,
             arguments[arg_phrase].type->getName());
 
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
 
-    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
-                                                                                         : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
+        ? SplitByNonAlphaTokenizer::getExternalName()
+        : arguments[arg_tokenizer].column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
+        ITokenizer::Type::SplitByRegexp,
+        ITokenizer::Type::Array,
         ITokenizer::Type::AsciiCJK,
+#if USE_ICU
+        ITokenizer::Type::Icu,
+#endif
         ITokenizer::Type::Ngrams,
     };
+
     if (!supported_types.contains(tokenizer->getType()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
 
@@ -222,6 +304,37 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
         executeMatchPhrase(*col_input_string, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
         executeMatchPhrase(*col_input_fixedstring, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
+    else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
+    {
+        const IColumn * elements = &col_input_array->getData();
+        const auto * elements_nullable = checkAndGetColumn<ColumnNullable>(elements);
+        if (elements_nullable)
+            elements = &elements_nullable->getNestedColumn();
+
+        if (const auto * col_elements_string = checkAndGetColumn<ColumnString>(elements))
+            executeMatchPhraseOnArray(
+                *col_input_array,
+                *col_elements_string,
+                elements_nullable,
+                col_result->getData(),
+                input_rows_count,
+                tokenizer.get(),
+                phrase_tokens,
+                failure_table);
+        else if (const auto * col_elements_fixedstring = checkAndGetColumn<ColumnFixedString>(elements))
+            executeMatchPhraseOnArray(
+                *col_input_array,
+                *col_elements_fixedstring,
+                elements_nullable,
+                col_result->getData(),
+                input_rows_count,
+                tokenizer.get(),
+                phrase_tokens,
+                failure_table);
+        else
+            /// `Array(Nothing)`, the type of `[]`: rows without tokens.
+            col_result->getData().assign(input_rows_count, UInt8(0));
+    }
 
     return col_result;
 }
@@ -231,20 +344,24 @@ REGISTER_FUNCTION(HasPhrase)
     FunctionDocumentation::Description description = R"(
 Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
-:::note
-Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+<Note>
+Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
-Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
+Prior to searching, the function tokenizes the `input` and, when it is a `String`, the `phrase` using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-:::note
-When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
+If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
+including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
+
+<Note>
+When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0
@@ -252,8 +369,17 @@ because "brown" appears between "quick" and "fox".
     )";
     FunctionDocumentation::Syntax syntax = "hasPhrase(input, phrase[, tokenizer])";
     FunctionDocumentation::Arguments arguments = {
-        {"input", "The input column.", {"String", "FixedString"}},
-        {"phrase", "Phrase to search for.", {"const String"}},
+        {"input",
+         "The input column.",
+         {"String",
+          "FixedString",
+          "Nullable(String)",
+          "Nullable(FixedString)",
+          "Array(String)",
+          "Array(FixedString)",
+          "Array(Nullable(String))",
+          "Array(Nullable(FixedString))"}},
+        {"phrase", "Phrase to search for.", {"const String", "const Array(String)"}},
         {"tokenizer", "The tokenizer to use. Optional, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
@@ -272,6 +398,20 @@ because "brown" appears between "quick" and "fox".
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
+        )"},
+           {"Token sequence given as arrays",
+            "SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])",
+            R"(
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
+│                                                               1 │
+└─────────────────────────────────────────────────────────────────┘
+        )"},
+           {"Phrase spanning two elements",
+            "SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])",
+            R"(
+┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
+│                                                         1 │
+└───────────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;

@@ -1,3 +1,4 @@
+from ._utils import aws_client
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -18,18 +19,23 @@ class EC2Instance:
         praktika_resource_tag: str = (
             ""  # Praktika resource tag (e.g., "mac") - tagged as "praktika"
         )
-        # GitHub runner labels (e.g., ["arm_macos_small", "macos"]) - tagged as "github:runner-type"
-        # (comma-separated). Tag key is kept for compatibility with the legacy runner-init.py,
-        # which inlines this value into the runner's `--labels` list.
-        runner_labels: List[str] = field(default_factory=list)
+        runner_type: str = (
+            ""  # GitHub runner type (e.g., "arm_macos_small") - tagged as "github:runner-type"
+        )
 
         # AMI + instance type
         image_id: str = ""
         instance_type: str = ""
 
-        # Networking
+        # Networking. `subnet_id`/`security_group_ids` can be given as raw IDs,
+        # or resolved at deploy time from a VPC referenced by `vpc_name`:
+        # the subnet is picked by `availability_zone` (falling back to the first
+        # subnet in the VPC) and the security groups by `security_group_names`.
         subnet_id: str = ""
         security_group_ids: List[str] = field(default_factory=list)
+        vpc_name: str = ""
+        security_group_names: List[str] = field(default_factory=list)
+        availability_zone: str = ""
 
         # IAM
         iam_instance_profile_name: str = ""
@@ -44,6 +50,13 @@ class EC2Instance:
         root_volume_size: int = 0
         root_volume_type: str = ""  # e.g. gp3
         root_volume_encrypted: bool = False
+
+        # Additional block device mappings (passed through verbatim to EC2 API).
+        # Use for non-root EBS volumes — e.g. a data disk for stateful services.
+        # Example: [{"DeviceName": "/dev/sdf",
+        #            "Ebs": {"VolumeSize": 100, "VolumeType": "gp3",
+        #                    "DeleteOnTermination": False}}]
+        extra_block_device_mappings: List[Dict[str, Any]] = field(default_factory=list)
 
         # Placement
         tenancy: str = ""  # e.g. "host"
@@ -66,124 +79,11 @@ class EC2Instance:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_labels:
-                merged["github:runner-type"] = ",".join(self.runner_labels)
+            if self.runner_type:
+                merged["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged.update(self.tags or {})
             return merged
-
-        def _sync_tags(self, ec2, instance_ids: List[str]) -> None:
-            """Upsert desired tags and remove any other tags found on the instances.
-
-            AWS-managed tags (`aws:*`) are skipped — they cannot be deleted and
-            are not under our control. Any other tag not present in the desired
-            set is treated as stale and removed, so the config is the source of
-            truth.
-            """
-            if not instance_ids:
-                return
-
-            desired = self._merged_tags()
-            ec2.create_tags(
-                Resources=instance_ids,
-                Tags=[{"Key": k, "Value": v} for k, v in desired.items()],
-            )
-            print(
-                f"EC2Instance '{self.name}': ensured {len(desired)} tag(s) on {len(instance_ids)} instance(s)"
-            )
-
-            resp = ec2.describe_tags(
-                Filters=[{"Name": "resource-id", "Values": instance_ids}]
-            )
-            desired_keys = set(desired.keys())
-            stale: Dict[str, List[str]] = {}
-            for t in resp.get("Tags", []) or []:
-                key = t.get("Key", "")
-                if not key or key.startswith("aws:") or key in desired_keys:
-                    continue
-                rid = t.get("ResourceId")
-                if rid:
-                    stale.setdefault(key, []).append(rid)
-            for key, ids in stale.items():
-                ec2.delete_tags(Resources=ids, Tags=[{"Key": key}])
-                print(
-                    f"EC2Instance '{self.name}': removed stale tag '{key}' from {len(ids)} instance(s)"
-                )
-
-        def _sync_iam_instance_profile(
-            self, ec2, instances: List[Dict[str, Any]]
-        ) -> None:
-            """Reconcile IAM instance profile association on existing instances.
-
-            Associates/replaces the profile to match `iam_instance_profile_name`,
-            or disassociates if the config is empty. No-op if already matching.
-
-            Only acts on instances in `running`/`pending` state — AWS rejects
-            `ReplaceIamInstanceProfileAssociation` with IncorrectState on stopped
-            instances.
-            """
-            instance_ids = []
-            for inst in instances:
-                iid = inst.get("InstanceId")
-                state = (inst.get("State") or {}).get("Name", "")
-                if not iid:
-                    continue
-                if state in ("running", "pending"):
-                    instance_ids.append(iid)
-                else:
-                    print(
-                        f"EC2Instance '{self.name}': skip IAM profile sync on {iid} (state={state or 'unknown'})"
-                    )
-            if not instance_ids:
-                return
-
-            desired = self.iam_instance_profile_name
-            # Filter to currently-active associations only. Transitional states
-            # (`associating`, `disassociating`) can be returned by the API but
-            # cannot be replaced/disassociated and would yield IncorrectState.
-            resp = ec2.describe_iam_instance_profile_associations(
-                Filters=[
-                    {"Name": "instance-id", "Values": instance_ids},
-                    {"Name": "state", "Values": ["associated"]},
-                ]
-            )
-            assocs: Dict[str, Dict[str, Any]] = {}
-            for a in resp.get("IamInstanceProfileAssociations", []) or []:
-                iid = a.get("InstanceId")
-                if iid:
-                    assocs[iid] = a
-
-            for iid in instance_ids:
-                a = assocs.get(iid) or {}
-                arn = (a.get("IamInstanceProfile") or {}).get("Arn", "")
-                current = arn.rsplit("/", 1)[-1] if arn else ""
-                aid = a.get("AssociationId", "")
-                active = bool(aid)
-
-                if desired:
-                    if current == desired:
-                        continue
-                    if active:
-                        ec2.replace_iam_instance_profile_association(
-                            AssociationId=aid,
-                            IamInstanceProfile={"Name": desired},
-                        )
-                        print(
-                            f"EC2Instance '{self.name}': replaced IAM profile on {iid} ({current or 'none'} -> {desired})"
-                        )
-                    else:
-                        ec2.associate_iam_instance_profile(
-                            InstanceId=iid,
-                            IamInstanceProfile={"Name": desired},
-                        )
-                        print(
-                            f"EC2Instance '{self.name}': associated IAM profile '{desired}' to {iid}"
-                        )
-                elif active:
-                    ec2.disassociate_iam_instance_profile(AssociationId=aid)
-                    print(
-                        f"EC2Instance '{self.name}': disassociated IAM profile '{current}' from {iid}"
-                    )
 
         def _resolve_host_resource_group_arn(self) -> str:
             if self.ext.get("host_resource_group_arn"):
@@ -192,9 +92,7 @@ class EC2Instance:
             if not self.host_resource_group_name:
                 return ""
 
-            import boto3
-
-            rg = boto3.client("resource-groups", region_name=self.region)
+            rg = aws_client("resource-groups", self.region, self.name)
             resp = rg.get_group(GroupName=self.host_resource_group_name)
             group = resp.get("Group") or {}
             arn = group.get("GroupArn", "")
@@ -205,15 +103,41 @@ class EC2Instance:
             self.ext["host_resource_group_arn"] = arn
             return arn
 
+        def _resolve_networking(self) -> None:
+            """Fill in subnet_id / security_group_ids from `vpc_name` when they
+            were not given as raw IDs. No-op if already set or no VPC named."""
+            if (self.subnet_id and self.security_group_ids) or not self.vpc_name:
+                return
+
+            from .vpc import VPC
+
+            lookup = VPC.Lookup(name=self.vpc_name, region=self.region)
+            if not self.subnet_id:
+                if self.availability_zone:
+                    self.subnet_id = lookup.subnet_id_for_az(self.availability_zone)
+                else:
+                    self.subnet_id = lookup.first_subnet_id()
+                print(
+                    f"EC2Instance '{self.name}': resolved subnet {self.subnet_id} "
+                    f"from VPC '{self.vpc_name}'"
+                    + (f" in {self.availability_zone}" if self.availability_zone else "")
+                )
+            if not self.security_group_ids and self.security_group_names:
+                self.security_group_ids = lookup.resolve_security_group_ids(
+                    self.security_group_names
+                )
+                print(
+                    f"EC2Instance '{self.name}': resolved security groups "
+                    f"{self.security_group_ids} from VPC '{self.vpc_name}'"
+                )
+
         def _resolve_root_device_name(self) -> str:
             if self.root_device_name:
                 return self.root_device_name
             if not self.image_id:
                 return ""
 
-            import boto3
-
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = aws_client("ec2", self.region, self.name)
             resp = ec2.describe_images(ImageIds=[self.image_id])
             images = resp.get("Images", []) or []
             root = (images[0] if images else {}).get("RootDeviceName", "")
@@ -241,9 +165,8 @@ class EC2Instance:
 
         def _find_existing_instances(self) -> List[Dict[str, Any]]:
             """Find all existing instances matching the name."""
-            import boto3
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = aws_client("ec2", self.region, self.name)
 
             filters = [
                 {
@@ -311,7 +234,6 @@ class EC2Instance:
             return self
 
         def deploy(self):
-            import boto3
             import os
 
             if not self.image_id or not self.instance_type:
@@ -337,8 +259,10 @@ class EC2Instance:
                     f"EC2Instance '{self.name}': loaded user_data from file '{self.user_data_file}' ({len(self.user_data)} bytes)"
                 )
 
+            self._resolve_networking()
+
             existing_instances = self._find_existing_instances()
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = aws_client("ec2", self.region, self.name)
             if existing_instances:
                 instance_ids = [inst.get("InstanceId") for inst in existing_instances]
                 states = [
@@ -353,9 +277,16 @@ class EC2Instance:
                     self.ext["instance_id"] = instance_ids[0] if instance_ids else None
                     self.ext["state"] = states[0] if states else None
 
-                # Reconcile tags and IAM instance profile on existing instances.
-                self._sync_tags(ec2, instance_ids)
-                self._sync_iam_instance_profile(ec2, existing_instances)
+                # Update tags on all existing instances
+                merged_tags = self._merged_tags()
+                if instance_ids:
+                    ec2.create_tags(
+                        Resources=instance_ids,
+                        Tags=[{"Key": k, "Value": v} for k, v in merged_tags.items()],
+                    )
+                    print(
+                        f"EC2Instance '{self.name}': ensured {len(merged_tags)} tag(s) on {len(instance_ids)} existing instance(s)"
+                    )
 
                 missing = self.quantity - len(existing_instances)
                 if missing <= 0:
@@ -374,33 +305,7 @@ class EC2Instance:
                             print(
                                 f"EC2Instance '{self.name}': starting {len(stopped_ids)} stopped instance(s)"
                             )
-                            from botocore.exceptions import ClientError
-
-                            try:
-                                ec2.start_instances(InstanceIds=stopped_ids)
-                            except ClientError as e:
-                                error_code = e.response.get("Error", {}).get("Code", "")
-                                if error_code == "InsufficientHostCapacity":
-                                    # No dedicated host available — external capacity
-                                    # constraint, nothing to fix programmatically.
-                                    print(
-                                        f"EC2Instance '{self.name}': WARNING no host capacity to start {stopped_ids}: {e}"
-                                    )
-                                else:
-                                    raise
-                            else:
-                                # Re-reconcile IAM profile on the newly-started instances:
-                                # _sync_iam_instance_profile skips stopped instances, so
-                                # any profile change is only applied after start.
-                                started = ec2.describe_instances(
-                                    InstanceIds=stopped_ids
-                                )
-                                started_instances = [
-                                    inst
-                                    for r in started.get("Reservations", [])
-                                    for inst in r.get("Instances", [])
-                                ]
-                                self._sync_iam_instance_profile(ec2, started_instances)
+                            ec2.start_instances(InstanceIds=stopped_ids)
 
                     return self
 
@@ -433,6 +338,7 @@ class EC2Instance:
             if self.user_data:
                 req["UserData"] = self.user_data
 
+            block_device_mappings: List[Dict[str, Any]] = []
             if (
                 self.root_volume_size
                 or self.root_volume_type
@@ -452,12 +358,18 @@ class EC2Instance:
                 if self.root_volume_encrypted:
                     ebs["Encrypted"] = True
 
-                req["BlockDeviceMappings"] = [
+                block_device_mappings.append(
                     {
                         "DeviceName": device_name,
                         "Ebs": ebs,
                     }
-                ]
+                )
+
+            if self.extra_block_device_mappings:
+                block_device_mappings.extend(self.extra_block_device_mappings)
+
+            if block_device_mappings:
+                req["BlockDeviceMappings"] = block_device_mappings
 
             placement = self._desired_placement()
             if placement:
@@ -471,7 +383,20 @@ class EC2Instance:
                 }
             ]
 
-            resp = ec2.run_instances(**req)
+            from botocore.exceptions import ClientError
+
+            try:
+                resp = ec2.run_instances(**req)
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code == "InsufficientHostCapacity":
+                    raise Exception(
+                        f"EC2Instance '{self.name}': insufficient Dedicated Host capacity "
+                        f"(instance_type={self.instance_type}) to launch the instance. "
+                        f"Allocate a new Dedicated Host with a matching configuration "
+                        f"(or target a host resource group that can auto-allocate hosts) and retry."
+                    ) from e
+                raise
             instances = resp.get("Instances", []) or []
 
             if not instances:
@@ -510,8 +435,6 @@ class EC2Instance:
             Args:
                 force: If True, forcefully terminate without stopping first (default: True).
             """
-            import boto3
-
             existing_instances = self._find_existing_instances()
             if not existing_instances:
                 print(
@@ -530,7 +453,7 @@ class EC2Instance:
                 )
                 return self
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = aws_client("ec2", self.region, self.name)
 
             print(
                 f"EC2Instance '{self.name}': found {len(instance_ids)} instance(s) to shutdown: {instance_ids}"

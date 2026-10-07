@@ -20,10 +20,14 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename RENAME COLUMN v1 to v2" 
 
 counter=0 retries=60
 
+# Wait via system.columns (in-memory metadata), NOT `SHOW CREATE`. `SHOW CREATE` reads the
+# durable metadata, which `ALTER ... RENAME` commits before it updates the in-memory metadata.
+# The following `ALTER ... UPDATE` validates against in-memory metadata, so syncing on
+# `SHOW CREATE` can fire the UPDATE while in-memory metadata still lacks v2 -> NO_SUCH_COLUMN.
 I=0
 while [[ $counter -lt $retries ]]; do
     I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "show create table table_to_rename")
+    result=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'table_to_rename'")
     if [[ $result == *"v2"* ]]; then
         break;
     fi

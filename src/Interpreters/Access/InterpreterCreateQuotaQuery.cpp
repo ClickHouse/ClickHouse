@@ -77,6 +77,9 @@ namespace
         {
             auto duration = query_limits.duration;
 
+            if (!query_limits.drop && duration.count() <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota interval duration must be positive, got {} seconds", duration.count());
+
             auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
             if (query_limits.drop)
             {
@@ -120,7 +123,16 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     auto & query = updated_query_ptr->as<ASTCreateQuotaQuery &>();
 
     auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
+
+    /// `CREATE QUOTA OR REPLACE` throws away an existing quota of the same name - including which roles
+    /// it applies to - so it is a drop followed by a create and requires the privileges of both. `DROP
+    /// QUOTA` is required whether or not the quota currently exists, mirroring `REPLACE TABLE`, so that
+    /// the check does not reveal which quotas exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_QUOTA;
+
+    getContext()->checkAccess(required_access);
 
     if (!query.cluster.empty())
     {

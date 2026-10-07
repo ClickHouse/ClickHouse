@@ -2,7 +2,7 @@
 1	10
 -- plan keeps inner/any with constant key, not cross
 Type: inner | Strictness: any
-Join conditions: 1 = 1
+Constant expression value: true
 -- ANY INNER JOIN ON constant false: empty result
 -- ANY LEFT / SEMI / ANTI on constant condition
 1	10

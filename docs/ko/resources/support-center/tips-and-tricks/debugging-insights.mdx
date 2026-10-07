@@ -149,7 +149,7 @@ WHERE is_done = 0;
   ### 외부 집계
 </div>
 
-메모리 사용량이 많은 작업에는 외부 집계를 활성화하십시오. 속도는 느려지지만 디스크로 스필하여 메모리 부족으로 인한 충돌을 방지할 수 있습니다. 이를 위해 `max_bytes_before_external_group_by`를 사용하면 대규모 `GROUP BY` 작업에서 메모리 부족으로 인한 충돌을 방지하는 데 도움이 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings#max_bytes_before_external_group_by)에서 확인할 수 있습니다.
+메모리 사용량이 많은 작업에는 외부 집계를 활성화하십시오. 속도는 느려지지만 디스크로 스필하여 메모리 부족으로 인한 충돌을 방지할 수 있습니다. 이를 위해 `max_bytes_before_external_group_by`를 사용하면 대규모 `GROUP BY` 작업에서 메모리 부족으로 인한 충돌을 방지하는 데 도움이 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)에서 확인할 수 있습니다.
 
 ```sql
 SELECT 
@@ -159,7 +159,7 @@ SELECT
     SUM(value) as total
 FROM large_table
 GROUP BY column1, column2
-SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB 임계값
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
 ```
 
 <div id="async-insert-details">

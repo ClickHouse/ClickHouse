@@ -1,0 +1,13 @@
+-- output_format setting selects the output format
+{"x":1}
+-- format setting selects the output format too
+2
+-- default_format setting is the fallback when there is no FORMAT clause / override
+"x"
+3
+-- output_format wins over the query FORMAT clause (matches the server)
+{"x":4}
+-- a query FORMAT clause is respected when no format setting is given
+5
+-- the --output-format command-line option maps to the output_format setting
+{"x":6}

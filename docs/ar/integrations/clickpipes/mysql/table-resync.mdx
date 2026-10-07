@@ -14,21 +14,17 @@ integration:
 
 ومع أن إعادة مزامنة الجداول الفردية بنقرة زر واحدة لا تزال قيد التطوير، يوضح هذا الدليل الخطوات التي تتيح لك تنفيذ ذلك اليوم في MySQL ClickPipe.
 
-<div id="removing-table">
-  ### 1. إزالة الجدول من خط الأنابيب
-</div>
+<Steps>
+  <Step title="إزالة الجدول من خط الأنابيب" id="removing-table">
+    يمكنك تنفيذ ذلك باتباع [دليل إزالة الجدول](/ar/integrations/clickpipes/mysql/remove-table).
+  </Step>
 
-يمكن تنفيذ ذلك باتباع [دليل إزالة الجدول](/ar/integrations/clickpipes/mysql/remove-table).
+  <Step title="تنفيذ TRUNCATE أو إسقاط الجدول في ClickHouse" id="truncate-drop-table">
+    تهدف هذه الخطوة إلى تجنب تكرار البيانات عند إضافة هذا الجدول مرة أخرى في الخطوة التالية. يمكنك القيام بذلك بالانتقال إلى علامة التبويب **SQL Console** في ClickHouse Cloud وتشغيل استعلام.
+    لاحظ أن لدينا آلية تحقق تمنع إضافة جدول إذا كان موجودًا بالفعل في ClickHouse ولم يكن فارغًا.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. تنفيذ TRUNCATE أو حذف الجدول على ClickHouse
-</div>
-
-تهدف هذه الخطوة إلى تجنّب تكرار البيانات عند إضافة هذا الجدول مرةً أخرى في الخطوة التالية. يمكنك القيام بذلك بالانتقال إلى علامة تبويب **SQL Console** في ClickHouse Cloud وتشغيل query.
-لاحظ أن لدينا آلية تحقّق تمنع إضافة الجدول إذا كان موجودًا بالفعل في ClickHouse ولم يكن فارغًا.
-
-<div id="add-table-again">
-  ### 3. أضِف الجدول إلى ClickPipe مرةً أخرى
-</div>
-
-يمكنك القيام بذلك باتباع [دليل إضافة الجدول](/ar/integrations/clickpipes/mysql/add-table).
+  <Step title="إضافة الجدول إلى ClickPipe مرة أخرى" id="add-table-again">
+    يمكنك تنفيذ ذلك باتباع [دليل إضافة الجدول](/ar/integrations/clickpipes/mysql/add-table).
+  </Step>
+</Steps>

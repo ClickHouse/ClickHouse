@@ -1,0 +1,14 @@
+--- SELECT without the read source grant must fail
+ACCESS_DENIED
+--- INSERT without the write source grant must fail
+ACCESS_DENIED
+--- INSERT without the write source grant must fail with an asynchronous insert too
+ACCESS_DENIED
+--- SELECT with the read source grant
+1
+--- INSERT with the write source grant
+1
+2
+--- INSERT into a plain file name keeps working in clickhouse-local
+1
+2

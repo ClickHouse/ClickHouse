@@ -1,0 +1,23 @@
+<clickhouse>
+    <named_collections>
+        <nats1>
+            <nats_url>nats1:4444</nats_url>
+            <nats_subjects>named</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_skip_broken_messages>111</nats_skip_broken_messages>
+            <nats_num_consumers>12</nats_num_consumers>
+            <nats_username>clickhouse</nats_username>
+            <nats_password>ClickHouse_NATS_P@ssw0rd</nats_password>
+        </nats1>
+        <nats_pull_consumer>
+            <nats_url>nats1:4444</nats_url>
+            <nats_stream>test_stream</nats_stream>
+            <nats_consumer_name>test_consumer</nats_consumer_name>
+            <nats_subjects>test_subject</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_skip_broken_messages>111</nats_skip_broken_messages>
+            <nats_username>clickhouse</nats_username>
+            <nats_password>ClickHouse_NATS_P@ssw0rd</nats_password>
+        </nats_pull_consumer>
+    </named_collections>
+</clickhouse>

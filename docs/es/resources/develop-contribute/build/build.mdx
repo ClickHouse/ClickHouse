@@ -53,7 +53,7 @@ Para instalar Clang en Ubuntu/Debian, utiliza el script de instalación automát
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 Para otras distribuciones de Linux, comprueba si puedes instalar alguno de los [paquetes precompilados](https://releases.llvm.org/download.html) de LLVM.
@@ -66,8 +66,8 @@ GCC y otros compiladores no son compatibles.
 </div>
 
 <Note>
-Rust es una dependencia opcional de ClickHouse.
-Si Rust no está instalado, algunas funcionalidades de ClickHouse se omitirán durante la compilación.
+  Rust es una dependencia opcional de ClickHouse.
+  Si Rust no está instalado, algunas funcionalidades de ClickHouse se omitirán durante la compilación.
 </Note>
 
 Primero, sigue los pasos de la [documentación oficial de Rust](https://www.rust-lang.org/tools/install) para instalar `rustup`.
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-## Compilar ClickHouse
+  ## Compilar ClickHouse
 </div>
 
 Recomendamos crear un directorio `build` separado dentro de `ClickHouse` que contenga todos los artefactos de compilación:
@@ -98,12 +98,12 @@ Puede tener varios directorios diferentes (p. ej., `build_release`, `build_debug
 Opcional: Si tiene instaladas varias versiones del compilador, puede indicar el compilador exacto que desea usar.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 Para fines de desarrollo, se recomiendan las compilaciones de depuración.
-En comparación con las compilaciones de lanzamiento, tienen un nivel más bajo de optimización del compilador (`-O`), lo que ofrece una mejor experiencia de depuración.
+En comparación con las compilaciones de release, tienen un nivel más bajo de optimización del compilador (`-O`), lo que ofrece una mejor experiencia de depuración.
 Además, las excepciones internas de tipo `LOGICAL_ERROR` provocan un cierre inmediato en lugar de fallar de forma controlada.
 
 ```sh
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-Si desea usar un depurador como gdb, añada `-D DEBUG_O_LEVEL="0"` al comando anterior para eliminar todas las optimizaciones del compilador, ya que pueden interferir con la capacidad de gdb para ver o acceder a las variables.
+  Si desea usar un depurador como gdb, añada `-D DEBUG_O_LEVEL="0"` al comando anterior para eliminar todas las optimizaciones del compilador, ya que pueden interferir con la capacidad de gdb para ver o acceder a las variables.
 </Note>
 
 Ejecute ninja para compilar:
@@ -133,16 +133,16 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-`clickhouse-server`, `clickhouse-client` y otros binarios similares son enlaces simbólicos en el directorio `programs/` que apuntan al ejecutable `clickhouse` una vez finalizada la compilación.
+  `clickhouse-server`, `clickhouse-client` y otros binarios similares son enlaces simbólicos en el directorio `programs/` que apuntan al ejecutable `clickhouse` una vez finalizada la compilación.
 </Note>
 
 <Tip>
-CMake ofrece formas abreviadas para los comandos anteriores:
+  CMake ofrece formas abreviadas para los comandos anteriores:
 
-```sh
-cmake -S . -B build  # configurar la compilación; ejecutar desde el directorio raíz del repositorio
-cmake --build build  # compilar
-```
+  ```sh
+  cmake -S . -B build  # configurar la compilación; ejecutar desde el directorio raíz del repositorio
+  cmake --build build  # compilar
+  ```
 </Tip>
 
 <div id="running-the-clickhouse-executable">

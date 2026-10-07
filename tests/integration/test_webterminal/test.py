@@ -10,9 +10,11 @@ handshake, authentication, and gating paths.
 
 import base64
 import json
+import re
 import secrets
 import socket
 import struct
+import time
 
 import pytest
 
@@ -88,14 +90,13 @@ def _ws_handshake(sock, host, path="/webterminal", origin=None):
     return response
 
 
-def _ws_send_text(sock, payload):
-    """Send a single masked WebSocket text frame to the server."""
-    data = payload.encode("utf-8")
+def _ws_send_frame(sock, opcode, data):
+    """Send a single masked WebSocket frame to the server."""
     mask = secrets.token_bytes(4)
     masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
 
     header = bytearray()
-    header.append(0x81)  # FIN | text opcode
+    header.append(0x80 | opcode)  # FIN | opcode
     length = len(data)
     if length < 126:
         header.append(0x80 | length)
@@ -107,6 +108,16 @@ def _ws_send_text(sock, payload):
         header += struct.pack(">Q", length)
     header += mask
     sock.sendall(bytes(header) + masked)
+
+
+def _ws_send_text(sock, payload):
+    """Send a single masked WebSocket text (control) frame to the server."""
+    _ws_send_frame(sock, 0x01, payload.encode("utf-8"))
+
+
+def _ws_send_binary(sock, data):
+    """Send a single masked WebSocket binary frame (terminal input) to the server."""
+    _ws_send_frame(sock, 0x02, data)
 
 
 def _ws_read_frame(sock, timeout=10.0):
@@ -452,3 +463,108 @@ def test_non_auth_first_message_rejected():
             assert code == 1008, f"Expected close code 1008, got {code}"
     finally:
         sock.close()
+
+
+# Matches SGR / cursor-control sequences, OSC sequences, and NUL bytes that
+# replxx interleaves throughout the PTY output stream.
+ANSI_ESCAPE_RE = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x00")
+
+
+def _read_pty_until(sock, timeout, marker=None):
+    """Collect binary PTY frames for up to `timeout` seconds and return the
+    output with ANSI escapes stripped. When `marker` is given, return as soon
+    as it appears in the cleaned output. Stops early on a close frame."""
+    buf = b""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        remaining = max(deadline - time.time(), 0.1)
+        try:
+            frame = _ws_read_frame(sock, timeout=remaining)
+        except socket.timeout:
+            break
+        if frame is None:
+            break
+        opcode, payload = frame
+        if opcode == 0x08:  # close
+            break
+        if opcode == 0x02:  # binary PTY data
+            buf += payload
+            if marker is not None and marker.encode() in ANSI_ESCAPE_RE.sub(b"", buf):
+                break
+    return ANSI_ESCAPE_RE.sub(b"", buf).decode(errors="replace")
+
+
+def test_tab_completion_respects_session_user():
+    """TAB completion in the embedded client must be fed from the session's own user.
+
+    Suggestions used to be loaded through a separate `LocalConnection` that
+    re-authenticated as the `default` user with an empty password. That broke
+    completion entirely on servers where `default` has a password or does not
+    exist, and otherwise leaked names of entities the web-terminal user has no
+    access to. Suggestions must be loaded through the authenticated session
+    itself: words for accessible entities must be completed, and words for
+    inaccessible ones must not even be known to the client.
+    """
+    instance.query(
+        "CREATE TABLE default.visible_completion_target (visible_column UInt64) ENGINE = Memory"
+    )
+    instance.query(
+        "CREATE TABLE default.hidden_completion_target (hidden_column UInt64) ENGINE = Memory"
+    )
+    instance.query(
+        "CREATE USER completer IDENTIFIED WITH plaintext_password BY 'completer_password'"
+    )
+    instance.query("GRANT SELECT ON default.visible_completion_target TO completer")
+
+    try:
+        sock = _open_ws(instance.ip_address, 8123)
+        try:
+            _ws_send_text(
+                sock,
+                json.dumps(
+                    {
+                        "type": "auth",
+                        "user": "completer",
+                        "password": "completer_password",
+                    }
+                ),
+            )
+
+            # Wait for the prompt; suggestions are loaded synchronously before
+            # the embedded client shows it.
+            output = _read_pty_until(sock, timeout=20, marker=":) ")
+            assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+            # The full table name can only appear if it was loaded from
+            # `system.completions` through the authenticated session (either
+            # TAB completion or the ghost-text hint prints it).
+            _ws_send_binary(sock, b"SELECT * FROM visible_completion_ta\t")
+            output = _read_pty_until(
+                sock, timeout=10, marker="visible_completion_target"
+            )
+            assert "visible_completion_target" in output, (
+                "TAB did not complete a table name the user has access to; "
+                f"suggestions were not loaded. raw output: {output!r}"
+            )
+
+            # Ctrl-U clears the line.
+            _ws_send_binary(sock, b"\x15")
+            _read_pty_until(sock, timeout=1)
+
+            # A table the user has no grants on is not visible in
+            # `system.completions` for this user, so it must not be completed.
+            # Before the fix, suggestions were loaded under the `default` user
+            # and leaked names of inaccessible tables.
+            _ws_send_binary(sock, b"SELECT * FROM hidden_completion_ta\t")
+            output = _read_pty_until(sock, timeout=5)
+            assert "hidden_completion_target" not in output, (
+                "TAB completed a table name the user has no access to; "
+                "suggestions were loaded under a wrong (more privileged) user. "
+                f"raw output: {output!r}"
+            )
+        finally:
+            sock.close()
+    finally:
+        instance.query("DROP USER IF EXISTS completer")
+        instance.query("DROP TABLE IF EXISTS default.visible_completion_target")
+        instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")

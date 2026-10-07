@@ -1,0 +1,144 @@
+---
+slug: /use-cases/data-lake/horizon-catalog
+sidebarTitle: 'Horizon 카탈로그'
+title: 'Snowflake Horizon 카탈로그'
+description: 'ClickHouse DataLakeCatalog를 사용하여 Snowflake Horizon Catalog를 통해 Snowflake 관리형 Iceberg 테이블을 쿼리하고 쓸 수 있습니다.'
+keywords: ['Horizon', 'Snowflake', 'Iceberg', '데이터 레이크', 'Polaris']
+show_related_blogs: true
+doc_type: '가이드'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse는 Horizon에서 제공하는 Iceberg REST API(Apache Polaris 기반)를 통해 [Snowflake Horizon Catalog](https://docs.snowflake.com/en/user-guide/tables-iceberg-access-using-external-query-engine-snowflake-horizon)에 연결할 수 있습니다.
+이를 통해 `catalog_type = 'horizon'`으로 설정된 `DataLakeCatalog` 데이터베이스 엔진을 사용하여 ClickHouse에서 Snowflake 관리형 Iceberg 테이블을 **읽고 쓸 수 있습니다**.
+
+Horizon은 Snowflake Open Catalog / 자체 호스팅 Polaris와 관련은 있지만 동일한 것은 아닙니다.
+
+|           | Open Catalog / Polaris (`catalog_type = 'rest'`) | Horizon (`catalog_type = 'horizon'`)                                                                                   |
+| --------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 엔드포인트     | Open Catalog 또는 자체 호스팅 Polaris URI               | `https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog`                                                   |
+| Warehouse | Polaris catalog / warehouse 이름                   | Snowflake **데이터베이스** 이름(일반적으로 대문자)                                                                                     |
+| 인증 범위     | `PRINCIPAL_ROLE:ALL`(일반적)                        | `session:role:<ROLE>`                                                                                                  |
+| 자격 증명     | `client_id:client_secret`                        | PAT 또는 키 쌍 JWT를 `catalog_credential`로 사용(OAuth client&#95;secret는 &#39;:&#39; 기준으로 분리되지 않음)하거나 bearer `auth_header` 사용 |
+
+<Note>
+  이 기능은 베타이므로 다음을 사용하여 활성화하십시오.
+  `SET allow_experimental_database_iceberg = 1;`
+  (ClickHouse 버전에 따라 `SET allow_database_iceberg = 1;`을 사용합니다).
+</Note>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* Snowflake 관리형 Iceberg 테이블이 있는 Snowflake 계정
+* Horizon Iceberg REST endpoint:
+  `https://<organization>-<account>.snowflakecomputing.com/polaris/api/catalog`
+* Iceberg 테이블에 대한 권한이 있는 Snowflake 역할(INSERT를 수행하려면 쓰기 권한도 필요)
+* 다음 중 하나를 사용하는 인증:
+  * 프로그래밍 방식의 액세스 토큰 (PAT)
+  * 액세스 토큰으로 교환되는 키 쌍 JWT
+  * 외부 OAuth 액세스 토큰(bearer `auth_header`로 사용)
+* ClickHouse에서 액세스할 수 있는 객체 스토리지(vended 자격 증명 권장)
+* DataLakeCatalog Iceberg를 지원하는 ClickHouse
+
+<div id="connecting">
+  ## 연결 생성
+</div>
+
+<div id="option-a-programmatic-access-token-recommended">
+  ### 옵션 A: 프로그래밍 방식의 액세스 토큰(권장)
+</div>
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    catalog_credential = '<PAT>',
+    auth_scope = 'session:role:DATA_ENGINEER',
+    oauth_server_uri = 'https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog/v1/oauth/tokens',
+    vended_credentials = 1;
+```
+
+`warehouse`에는 Snowflake 가상 웨어하우스가 아닌 Snowflake **데이터베이스** 이름을 지정해야 합니다.
+따옴표로 묶지 않은 Snowflake 식별자는 대문자로 표기합니다.
+
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### 옵션 B: 사전 교환한 Bearer 액세스 토큰
+</div>
+
+```sql
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    auth_header = 'Authorization: Bearer <ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+<div id="query">
+  ## Iceberg 테이블 쿼리
+</div>
+
+```sql
+USE horizon_catalog;
+SHOW TABLES;
+
+SELECT count(*) FROM `PUBLIC.test_table`;
+SHOW CREATE TABLE `PUBLIC.test_table`;
+```
+
+<Note>
+  실험적 테이블 네임스페이스를 활성화하지 않는 한, 네임스페이스(schema)와 테이블은 일반적으로 `` `SCHEMA.table` `` 형식으로 지정합니다.
+</Note>
+
+<div id="write">
+  ## 쓰기 경로
+</div>
+
+INSERT/UPDATE/DELETE 권한(테이블을 생성할 때는 CREATE ICEBERG TABLE 권한 포함)이 있는 역할을 사용하면
+ClickHouse는 동일한 카탈로그를 통해 데이터를 쓸 수 있습니다:
+
+```sql
+-- Insert into an existing Snowflake-managed Iceberg table
+INSERT INTO horizon_catalog.`PUBLIC.test_table`
+SELECT
+    number AS id,
+    concat('name_', toString(number)) AS name
+FROM numbers(100);
+
+-- Create a new Iceberg table in the Horizon catalog (requires CREATE ICEBERG TABLE)
+CREATE TABLE horizon_catalog.`PUBLIC.clickhouse_written`
+(
+    id Int64,
+    name String
+)
+ENGINE = Iceberg;
+```
+
+정확한 `CREATE TABLE` 구문은 사용 중인 버전에서 REST 카탈로그에 지원되는 ClickHouse Iceberg / DataLakeCatalog 쓰기 기능에 따라 달라지며, Snowflake 권한 관련 실패는 카탈로그 HTTP 오류로 표시됩니다.
+
+<div id="loading">
+  ## MergeTree에 로드하기
+</div>
+
+```sql
+CREATE TABLE my_clickhouse_table
+(
+    id Int64,
+    name String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_clickhouse_table
+SELECT * FROM horizon_catalog.`PUBLIC.test_table`;
+```

@@ -111,14 +111,14 @@ hilbertDecode(tuple_size, code)
         {
             "Simple mode",
             "SELECT hilbertDecode(2, 31)",
-            R"(["3", "4"])"
+            R"((3,4))"
         },
         {
             "Single argument", R"(
 -- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
             )",
-            R"(["1"])"
+            R"((1))"
         },
         {
             "Expanded mode",
@@ -126,7 +126,7 @@ SELECT hilbertDecode(1, 1)
 -- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
             )",
-            R"(["128"])"
+            R"((8192))"
         },
         {
             "Column usage",
@@ -143,7 +143,7 @@ insert into hilbert_numbers (*) values(1,2);
 -- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
             )",
-            "1    2"
+            "1\t2"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};

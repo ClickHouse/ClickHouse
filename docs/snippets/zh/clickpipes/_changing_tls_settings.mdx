@@ -1,0 +1,26 @@
+---
+title: 修改 TLS 设置
+---
+
+默认情况下，您的 ClickPipe 在创建时会启用 TLS 和证书验证。您可以在创建 ClickPipe 时修改这些默认设置：
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/tls-settings.webp" alt="TLS 设置" />
+</Frame>
+
+或者在已暂停的 ClickPipe 的 *Settings* 选项卡中的 *Connection settings* 部分进行编辑：
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-connection-settings.webp" alt="连接设置 -> 编辑连接" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-edit-connection.webp" alt="编辑连接" />
+</Frame>
+
+说明如下：
+
+* `Disable TLS` 用于为该连接启用或禁用 TLS。关闭 TLS 意味着数据会以明文形式通过网络传输，其中可能包含 secrets 和敏感数据。
+* `Skip certificate verification` 用于启用或禁用对源数据库所提供证书的验证。请务必考虑跳过证书验证带来的安全影响。
+* `TLS Host` (可选，默认为源 *Host*) 是在启用证书验证时，证书的 CN 必须匹配的 hostname。
+* `Upload CA` 可用于提供在启用证书验证时使用的 CA。

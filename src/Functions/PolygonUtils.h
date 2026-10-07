@@ -389,11 +389,17 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
 
-    if (cell_width == 0 || cell_height == 0)
+    /// Negative spans come from the inverse box boost::geometry::envelope leaves for an empty
+    /// geometry. NaN is not <= 0, so it reaches the finiteness check below.
+    if (cell_width <= 0 || cell_height <= 0)
     {
         has_empty_bound = true;
         return;
     }
+
+    /// 1 / +-inf is +-0.0, which is finite: the scales below would pass their own check.
+    if (!isFinite(cell_width) || !isFinite(cell_height))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 
     x_scale = 1 / cell_width;
     y_scale = 1 / cell_height;

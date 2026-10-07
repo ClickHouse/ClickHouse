@@ -1,0 +1,22 @@
+=== an INSERT handler with an unqualified target mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a DROP TEMPORARY TABLE handler mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a DROP TABLE handler with an unqualified target mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a TRUNCATE TABLE handler with an unqualified target mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a multi-table DROP with any unqualified target mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a database-qualified INSERT ... SELECT handler may still mix methods; GET is rejected at invocation by readonly ===
+READONLY
+1
+=== an unqualified INSERT handler with only mutating methods mutates the session temporary table over POST ===
+42
+=== the handler is not served over GET or HEAD ===
+404
+404
+=== an unqualified DROP TABLE handler with only mutating methods drops the session temporary table over POST ===
+0
+=== ALTER cannot swap a safe-method handler's query to an unqualified INSERT ===
+BAD_ARGUMENTS

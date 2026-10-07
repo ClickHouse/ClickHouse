@@ -15,7 +15,7 @@ title: 성능 최적화 목차
 | [뮤테이션 피하기](/ko/concepts/best-practices/avoid-mutations)                            | 데이터 정확성과 성능을 유지하면서 비용이 큰 `UPDATE` 및 `DELETE` 작업을 없앨 수 있도록 append-only 워크플로를 설계하세요.         |
 | [널 허용 컬럼 피하기](/ko/concepts/best-practices/avoidnullablecolumns)                    | 가능한 경우 널 허용 컬럼 대신 기본값을 사용해 저장소 오버헤드를 줄이고 쿼리 성능을 개선하세요.                                     |
 | [`OPTIMIZE FINAL` 피하기](/ko/concepts/best-practices/avoid-optimize-final)           | `OPTIMIZE TABLE FINAL`을 사용해야 하는 경우와 사용하지 말아야 하는 경우를 이해하세요.                                 |
-| [분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer)                   | ClickHouse의 새로운 쿼리 분석기를 활용해 성능 병목 지점을 파악하고, 더 높은 효율을 위해 쿼리 실행 계획을 최적화하세요.                  |
+| [분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer)                   | ClickHouse의 쿼리 분석기를 활용해 성능 병목 지점을 파악하고, 더 높은 효율을 위해 쿼리 실행 계획을 최적화하세요.                      |
 | [쿼리 프로파일링](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler) | 샘플링 쿼리 프로파일러를 사용해 쿼리 실행 패턴을 분석하고, 성능 병목 지점을 식별하며, 리소스 사용을 최적화하세요.                          |
 | [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)                      | ClickHouse의 내장 쿼리 결과 캐시를 활성화하고 구성하여 자주 실행되는 `SELECT` 쿼리를 가속화하세요.                           |
 | [하드웨어 테스트](/ko/concepts/features/performance/troubleshoot/performance-test)        | 설치 없이 어떤 서버에서든 ClickHouse 성능 벤치마크를 실행해 하드웨어 성능을 평가하세요. (ClickHouse Cloud에는 적용되지 않음)        |

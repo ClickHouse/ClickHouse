@@ -1,0 +1,10 @@
+-- the added columns are missing from the old part --
+1
+-- an explicit dependency-free DEFAULT still caps streams --
+1
+-- an implicit type default still caps streams --
+1
+-- reading only the added column still caps streams --
+1
+-- results are identical with the cap on and off --
+1

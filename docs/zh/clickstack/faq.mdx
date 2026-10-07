@@ -43,9 +43,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
 </div>
 
 <Accordion title="ClickStack 是否支持参数化仪表盘或仪表盘变量？">
-  ClickStack 支持仪表盘中的自定义下拉过滤器，过滤器选项由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上所有卡片的范围。
-
-  ClickStack 目前尚不支持类似 Grafana 模板变量的可复用仪表盘变量。由于 ClickStack 仅使用 ClickHouse 作为数据源，因此无需额外的变量抽象层，也能原生提供下钻和过滤能力。
+  是，ClickStack 支持通过自定义过滤器和变量进行参数化的仪表盘，这些过滤器和变量的值由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上部分或全部卡片的范围。
 
   有关创建仪表盘和应用过滤器的详细信息，请参阅 [仪表盘](/zh/clickstack/features/dashboards/overview)。
 </Accordion>
@@ -71,7 +69,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
 <Accordion title="是否有用于浏览和搜索指标的 UI？">
   ![指标属性浏览器](/images/clickstack/faq/metrics-explorer.webp)
 
-  可通过[图表构建器](/zh/clickstack/features/dashboards/overview#navigate-chart-explorer)中的指标名称下拉菜单查看可用的指标名称。选择某个指标后，指标属性浏览器 面板会显示该指标的描述、单位以及可用属性及其值。这样，你就可以浏览这些属性，并直接在该面板中将其添加为过滤器或分组字段。
+  可通过[图表构建器](/zh/clickstack/features/dashboards/overview#navigate-chart-explorer)中的指标名称下拉菜单发现可用的指标名称。选择某个指标后，指标属性浏览器面板会显示该指标的描述、单位以及可用属性及其值。这样，您就可以浏览这些属性，并直接在该面板中将其添加为过滤器或分组字段。
 
   目前还没有类似日志搜索体验的专用指标搜索页面。改进指标发现能力仍是当前积极推进的开发方向。
 </Accordion>
@@ -84,8 +82,8 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   ## 延伸阅读
 </div>
 
-* [告警](/zh/clickstack/features/alerts): 搜索告警、仪表盘图表告警和 webhook 集成。
-* [仪表盘](/zh/clickstack/features/dashboards/overview): 创建可视化、构建仪表盘和应用过滤器。
-* [搜索](/zh/clickstack/features/search): 使用 Lucene 和 SQL 语法查询日志和 trace。
-* [Schemas](/zh/clickstack/ingesting-data/schemas): 适用于日志、trace 和指标的 OpenTelemetry 数据 schema。
-* [架构](/zh/clickstack/architecture): ClickStack 的各个组件及其协同工作方式。
+* [告警](/zh/clickstack/features/alerts)：搜索告警、仪表盘图表告警和 webhook 集成。
+* [仪表盘](/zh/clickstack/features/dashboards/overview)：创建可视化、构建仪表盘以及使用过滤器。
+* [搜索](/zh/clickstack/features/search)：使用 Lucene 和 SQL 语法查询日志和链路追踪。
+* [schema](/zh/clickstack/ingesting-data/schemas)：日志、链路追踪和指标的 OpenTelemetry 数据 schema。
+* [架构](/zh/clickstack/architecture)：ClickStack 组件及其如何协同工作。

@@ -79,8 +79,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveAllTagsExcept)
 {
     FunctionDocumentation::Description description = R"(
 Removes all tags except specified ones from a group of tags.
-See also function [timeSeriesRemoveTag()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTag),
-[timeSeriesRemoveTags()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTags).
+See also function [timeSeriesRemoveTag()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
+[timeSeriesRemoveTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveAllTagsExcept(group, tags_to_keep)";
     FunctionDocumentation::Arguments arguments = {

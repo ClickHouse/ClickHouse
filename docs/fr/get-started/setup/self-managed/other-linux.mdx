@@ -13,30 +13,24 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
 > Il est recommandé d’utiliser les archives `tgz` officielles précompilées pour toutes les distributions Linux lorsque l’installation de paquets `deb` ou `rpm` n’est pas possible.
 
 <Steps>
-  <Step>
-    ## Consulter les recommandations
-
+  <Step title="Consulter les recommandations" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Télécharger et installer la dernière version stable
-
-    La version requise peut être téléchargée avec `curl` ou `wget` depuis le dépôt https://packages.clickhouse.com/tgz/.
+  <Step title="Télécharger et installer la dernière version stable" id="install-latest-stable">
+    La version requise peut être téléchargée avec `curl` ou `wget` depuis le dépôt [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/).
     Les archives téléchargées doivent ensuite être extraites et installées à l’aide des scripts d’installation.
 
     Voici un exemple montrant comment installer la dernière version stable.
 
     <Note>
       Pour les environnements de production, il est recommandé d’utiliser la dernière version `stable`.
-      Vous trouverez le numéro de version sur cette [page GitHub](https://github.com/ClickHouse/ClickHouse/tags),
+      Vous trouverez le numéro de version sur cette [page GitHub](https://github.com/ClickHouse/ClickHouse/tags)
       avec le suffixe `-stable`.
     </Note>
   </Step>
 
-  <Step>
-    ## Obtenir la dernière version de ClickHouse
-
+  <Step title="Obtenir la dernière version de ClickHouse" id="get-latest-version">
     Récupérez la dernière version de ClickHouse depuis GitHub et stockez-la dans la variable `LATEST_VERSION`.
 
     ```bash
@@ -46,9 +40,7 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Détecter l’architecture de votre système
-
+  <Step title="Détecter l’architecture de votre système" id="detect-system-architecture">
     Détectez l’architecture du système et définissez la variable ARCH en conséquence :
 
     ```bash
@@ -60,9 +52,7 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Télécharger les archives tar pour chaque composant ClickHouse
-
+  <Step title="Télécharger les archives tar pour chaque composant ClickHouse" id="download-tarballs">
     Téléchargez les archives tar de chaque composant ClickHouse. La boucle essaie d’abord les
     paquets spécifiques à l’architecture, puis se rabat sur les paquets génériques.
 
@@ -75,9 +65,7 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Extraire et installer les paquets
-
+  <Step title="Extraire et installer les paquets" id="extract-and-install">
     Exécutez les commandes ci-dessous pour extraire et installer les paquets suivants :
 
     * `clickhouse-common-static`

@@ -23,6 +23,8 @@ std::pair<std::string_view, MainFunc> examples[] =
 #endif
     {"quantile-t-digest", mainEntryExampleQuantileTDigest},
     {"group_array_sorted", mainEntryExampleGroupArraySorted},
+    {"timeseries_to_grid_two_stack_vs_recompute", mainEntryExampleTimeSeriesToGridTwoStackVsRecompute},
+    {"timeseries_to_grid_range_scan_vs_std_sort", mainEntryExampleTimeSeriesToGridRangeScanVsStdSort},
     {"test-connect", mainEntryExampleTestConnect},
     {"zkutil_test_commands", mainEntryExampleZkutilTestCommands},
     {"zkutil_test_commands_new_lib", mainEntryExampleZkutilTestCommandsNewLib},
@@ -60,6 +62,9 @@ std::pair<std::string_view, MainFunc> examples[] =
 #endif
     {"check_pointer_valid", mainEntryExampleCheckPointerValid},
     {"memory_tracker_benchmark", mainEntryExampleMemoryTrackerBenchmark},
+#if USE_LIBRSEQ
+    {"rseq_vs_atomic_benchmark", mainEntryExampleRSeqVsAtomicBenchmark},
+#endif
 #if USE_ICU
     {"utf8_upper_lower", mainEntryExampleUtf8UpperLower},
 #endif
@@ -115,6 +120,7 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"select_parser", mainEntryExampleSelectParser},
     {"create_parser", mainEntryExampleCreateParser},
     {"parser_memory_profiler", mainEntryExampleParserMemoryProfiler},
+    {"storage_memory_profiler", mainEntryExampleStorageMemoryProfiler},
     {"merge_selector", mainEntryExampleMergeSelector},
     {"merge_selector2", mainEntryExampleMergeSelector2},
     {"get_current_inserts_in_replicated", mainEntryExampleGetCurrentInsertsInReplicated},

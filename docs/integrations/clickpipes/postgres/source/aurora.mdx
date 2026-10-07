@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 ## Supported Postgres versions {#supported-postgres-versions}
 
@@ -92,11 +93,19 @@ Connect to your Aurora PostgreSQL writer instance as an admin user and execute t
 
    The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
 
+### Using IAM authentication (optional) {#iam-authentication}
+
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+  IAM authentication for replication requires the `rds.iam_auth_for_replication` parameter to be set to `1`.
+  </Note>
+</IAMAuthentication>
+
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}
 
-If you want to restrict traffic to your Aurora cluster, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to the `Inbound rules` of your Aurora security group.
+If you want to restrict traffic to your Aurora cluster, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your Aurora security group.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Where to find security group in Aurora PostgreSQL?" size="lg" border/>
 

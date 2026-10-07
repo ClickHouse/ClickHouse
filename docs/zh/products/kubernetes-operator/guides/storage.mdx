@@ -37,7 +37,9 @@ spec:
 ```
 
 * 省略 `accessModes` 时，operator 会默认将其设置为 `ReadWriteOnce`。
-* 删除 cluster 时，每个副本的 PVC 都会被保留，因此即使删除后重新创建 Custom Resource，数据也仍然存在。
+* 删除 cluster 时，每个副本的 PVC 都会被保留，因此即使删除后重新创建 Custom Resource，数据也仍然存在。对于
+  [加密策略](#at-rest-encryption)中的数据，这还需要保留加密
+  key——请参阅该部分中的说明。
 * `KeeperCluster` 上也有同样的字段，行为也完全一致。
 
 <div id="ephemeral-storage">
@@ -142,12 +144,45 @@ operator 会将每个附加卷挂载到 `/var/lib/clickhouse/disks/<name>`
 有关这些策略字段，请参阅
 [ClickHouse 存储文档](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)。
 
+<div id="at-rest-encryption">
+  ## 静态数据加密
+</div>
+
+设置 `spec.settings.encryption` 可启用表数据的静态数据加密。该
+operator 会生成一个 16 字节的 AES 密钥——存储在托管集群的 Secret 中，或
+通过 `externalSecret` 提供——以及一个专用的存储策略，使用 ClickHouse 的 `encrypted` 磁盘类型封装每个
+数据磁盘。
+
+```yaml
+spec:
+  settings:
+    encryption: {}   # enables the feature; the policy defaults to "encrypted"
+```
+
+加密需按表单独启用；默认存储策略仍为明文。创建表时，选择
+加密策略：
+
+```sql
+CREATE TABLE secret_data (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 'encrypted';
+```
+
+将 `encryption.policyName` 设置为使用其他策略名称。
+
+<Note>
+  这会使用 AES-128-CTR 对通过加密策略写入的 MergeTree 数据分区片段进行加密。位于数据根目录的 ClickHouse server 元数据和日志不在此范围内——对于这些内容，请使用磁盘级加密，例如 LUKS 或 CSI driver。
+  在运行中的 cluster 上启用加密会触发一次性滚动重启以注入密钥；在重启完成之前，副本可能会短暂报告配置重新加载错误。
+
+  密钥存储在由 operator 管理的 cluster Secret 中，该 Secret 由 Custom Resource 拥有，并会随其一同删除。没有密钥时，加密的 parts 将无法读取：如果删除 CR 后仍需保留加密数据 (PVC 会被保留) ，请通过 `externalSecret` 提供密钥，或在删除前备份 `disk-encryption-key` 条目。
+  不要删除受管 Secret——operator 会生成新的密钥，而现有加密 parts 将变得无法读取。
+</Note>
+
 <div id="immutability">
   ## 创建后不可更改的内容
 </div>
 
-集群一旦创建，存储布局基本就固定了。准入 webhook 会拒绝
-会导致 PersistentVolumeClaims 成为孤立对象或重新绑定的更新：
+集群一旦创建，存储布局基本就固定了。会导致数据成为孤立对象
+或重新绑定 PersistentVolumeClaims 的更新会在准入阶段被拒绝：
 
 * `dataVolumeClaimSpec` 的存在与否是不可变的——对于创建时未配置数据
   卷的集群，你不能**添加**数据卷；对于创建时已配置数据卷的集群，你也不能**移除**它。
@@ -155,23 +190,28 @@ operator 会将每个附加卷挂载到 `/var/lib/clickhouse/disks/<name>`
   **移除**或**重命名**其中的条目。
 * 允许扩展现有条目的 `resources.requests.storage` (前提是
   StorageClass 支持，参见[扩展存储](#expanding-storage)) 。
+* 一旦启用加密，就不能将其**禁用**，并且 `encryption.policyName` 也不能
+  **重命名**——已在使用该加密策略的表将无法访问。
 
 <div id="validation-reference">
   ## 校验参考
 </div>
 
-| 条件                                                             | 结果                          |
-| -------------------------------------------------------------- | --------------------------- |
-| 未设置 `dataVolumeClaimSpec`，且 `/var/lib/clickhouse` 下也没有自定义卷     | 警告 — 重启时可能会导致数据丢失           |
-| 在 `/var/lib/clickhouse` 挂载了自定义卷，同时又设置了 `dataVolumeClaimSpec`   | 拒绝                          |
-| 设置了 `additionalVolumeClaimTemplates`，但缺少 `dataVolumeClaimSpec` | 拒绝                          |
-| 附加磁盘命名为 `default`                                              | 拒绝 — 该名称被 ClickHouse 默认磁盘保留 |
-| 附加磁盘命名为 `clickhouse-storage-volume`                            | 拒绝 — 与主数据卷名称冲突              |
-| 附加磁盘名称重复                                                       | 拒绝                          |
-| 名称不匹配 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 或长度超过 63 个字符              | 被 CRD schema 拒绝             |
-| 创建后添加或删除 `dataVolumeClaimSpec`                                 | 拒绝                          |
-| 创建后添加、删除或重命名 `additionalVolumeClaimTemplates`                  | 拒绝                          |
-| 在 `podTemplate.volumes` 中使用保留卷名称                               | 拒绝                          |
+| 条件                                                             | 结果                             |
+| -------------------------------------------------------------- | ------------------------------ |
+| 未设置 `dataVolumeClaimSpec`，且 `/var/lib/clickhouse` 下也没有自定义卷     | 警告 — 重启时可能会导致数据丢失              |
+| 在 `/var/lib/clickhouse` 挂载了自定义卷，同时又设置了 `dataVolumeClaimSpec`   | 拒绝                             |
+| 设置了 `additionalVolumeClaimTemplates`，但缺少 `dataVolumeClaimSpec` | 拒绝                             |
+| 附加磁盘命名为 `default`                                              | 拒绝 — 该名称被 ClickHouse 默认磁盘保留    |
+| 附加磁盘名称以 `-encrypted` 结尾                                        | 拒绝 — 与生成的加密磁盘名称冲突              |
+| 附加磁盘命名为 `clickhouse-storage-volume`                            | 拒绝 — 与主数据卷名称冲突                 |
+| 附加磁盘名称重复                                                       | 拒绝                             |
+| 名称不匹配 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 或长度超过 63 个字符              | 被 CRD schema 拒绝                |
+| 创建后添加或删除 `dataVolumeClaimSpec`                                 | 拒绝                             |
+| 创建后添加、删除或重命名 `additionalVolumeClaimTemplates`                  | 拒绝                             |
+| 在 `podTemplate.volumes` 中使用保留卷名称                               | 拒绝                             |
+| 将 `encryption.policyName` 设置为 `default`                        | 被 CRD schema 拒绝 — 加密策略不得替换默认策略 |
+| 创建后禁用 `encryption` 或重命名其策略                                     | 被 CRD schema 拒绝                |
 
 <div id="related-guides">
   ## 相关指南

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/BufferBase.h>
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
@@ -104,6 +105,37 @@ class BufferWithOwnMemory : public Base
 protected:
     Memory<> memory{};
     const bool use_existing_memory;
+
+    /// Adaptive sizing of a write buffer (see `use_adaptive_write_buffer` in WriteSettings): the
+    /// buffer starts at a small initial size and `growAdaptiveBufferAfterFlush` doubles it after
+    /// every full flush, up to `adaptive_buffer_max_size`, so one of many rarely-filled buffers
+    /// (e.g. one per column stream of a wide part) only pays for the memory it actually needs.
+    bool use_adaptive_buffer_size = false;
+    size_t adaptive_buffer_max_size = 0;
+
+    /// The initial allocation of an adaptive buffer. The maximum caps it, so an out-of-range
+    /// initial size is never passed straight to the allocator (e.g. a fuzzed
+    /// adaptive_write_buffer_initial_size).
+    static size_t adaptiveBufferInitialSize(bool use_adaptive, size_t initial_size, size_t max_size)
+    {
+        return use_adaptive ? std::min(initial_size, max_size) : max_size;
+    }
+
+    void enableAdaptiveBufferGrowth(bool use_adaptive, size_t max_size)
+    {
+        use_adaptive_buffer_size = use_adaptive;
+        adaptive_buffer_max_size = max_size;
+    }
+
+    /// Call at the end of nextImpl; grows only when the flush used the whole buffer.
+    void growAdaptiveBufferAfterFlush()
+    {
+        if (!Base::available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
+        {
+            memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
+            this->BufferBase::set(memory.data(), memory.size(), 0);
+        }
+    }
 
 public:
     /// If non-nullptr 'existing_memory' is passed,

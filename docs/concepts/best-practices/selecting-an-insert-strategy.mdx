@@ -112,7 +112,7 @@ The impact of compression on CPU and memory is modest for LZ4, and moderate for 
 
 **Combining compression with batching and an efficient input format (like Native) yields the best ingestion performance.**
 
-When using the native interface (e.g. [clickhouse-client](/concepts/features/interfaces/cli)), LZ4 compression is enabled by default. You can optionally switch to ZSTD via settings.
+When using the native interface (e.g. [clickhouse-client](/concepts/features/interfaces/client)), LZ4 compression is enabled by default. You can optionally switch to ZSTD via settings.
 
 With the [HTTP interface](/concepts/features/interfaces/http), use the Content-Encoding header to apply compression (e.g. Content-Encoding: lz4). The entire payload must be compressed before sending.
 
@@ -134,7 +134,7 @@ When data arrives pre-sorted, ClickHouse can skip or simplify the internal sorti
 
 ### Native {#choose-an-interface-native}
 
-ClickHouse offers two main interfaces for data ingestion: the **native interface** and the **HTTP interface**—each with trade-offs between performance and flexibility. The native interface, used by [clickhouse-client](/concepts/features/interfaces/cli) and select language clients like Go and C++, is purpose-built for performance. It always transmits data in ClickHouse's highly efficient Native format, supports block-wise compression with LZ4 or ZSTD, and minimizes server-side processing by offloading work such as parsing and format conversion to the client. 
+ClickHouse offers two main interfaces for data ingestion: the **native interface** and the **HTTP interface**—each with trade-offs between performance and flexibility. The native interface, used by [clickhouse-client](/concepts/features/interfaces/client) and select language clients like Go and C++, is purpose-built for performance. It always transmits data in ClickHouse's highly efficient Native format, supports block-wise compression with LZ4 or ZSTD, and minimizes server-side processing by offloading work such as parsing and format conversion to the client. 
 
 It even enables client-side computation of MATERIALIZED and DEFAULT column values, allowing the server to skip these steps entirely. This makes the native interface ideal for high-throughput ingestion scenarios where efficiency is critical.
 

@@ -31,32 +31,24 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    #### 配置双路摄取
-
+  <Step title="配置双路摄取" id="configure-dual-ingestion">
     设置您的数据采集管道，同时将数据发送到 Elastic 和 ClickStack。
 
     具体如何实现取决于您当前使用的采集代理，请参阅[&quot;迁移采集代理&quot;](/zh/clickstack/migration/elastic/migrating-agents)。
   </Step>
 
-  <Step>
-    #### 调整保留期
-
+  <Step title="调整保留期" id="adjust-retention-period">
     配置 Elastic 的生存时间 (TTL) 设置，使其与您期望的保留期一致。设置 ClickStack 的 [生存时间 (TTL)](/zh/clickstack/managing/production#configure-ttl)，使数据保留相同的时长。
   </Step>
 
-  <Step>
-    #### 验证并比较
-
+  <Step title="验证并比较" id="validate-and-compare">
     * 在两个系统上运行查询，以确保数据一致性
     * 比较查询性能和结果
     * 将仪表盘和告警迁移到 ClickStack。目前这仍需手动完成。
     * 验证所有关键仪表盘和告警在 ClickStack 中都能按预期工作
   </Step>
 
-  <Step>
-    #### 逐步过渡
-
+  <Step title="逐步过渡" id="graudal-transition">
     * 随着 Elastic 中的数据自然过期，您会越来越依赖 ClickStack
     * 一旦确认 ClickStack 运行稳定可靠，您就可以开始将查询和仪表盘逐步切换过去
   </Step>
@@ -141,9 +133,7 @@ ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack
 以下步骤说明如何将单个 Elasticsearch 索引迁移到 ClickHouse。
 
 <Steps>
-  <Step>
-    ### 迁移 schema
-
+  <Step title="迁移 schema" id="migrate-scheme">
     在 ClickHouse 中为从 Elasticsearch 迁移的索引创建一张表。您可以将 [Elasticsearch 类型映射到对应的 ClickHouse](/zh/clickstack/migration/elastic/types) 等效类型。或者，也可以直接使用 ClickHouse 中的 JSON 数据类型，该类型会在数据写入时动态创建相应类型的列。
 
     请参考以下针对包含 `syslog` 数据的索引的 Elasticsearch 映射：
@@ -578,9 +568,7 @@ ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack
     有关在 schema 中使用 JSON 类型及如何高效应用它的更多详情，建议参阅指南 [&quot;Designing your schema&quot;](/zh/guides/clickhouse/data-formats/json/schema)。
   </Step>
 
-  <Step>
-    ### 安装 `elasticdump`
-
+  <Step title={<>安装 <code>elasticdump</code></>} id="install-elasticdump">
     我们建议使用 [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) 从 Elasticsearch 导出数据。该工具依赖 `node`，应安装在一台在网络上可同时便捷访问 Elasticsearch 和 ClickHouse 的机器上。对于大多数导出任务，我们建议使用至少配备 4 个 CPU 核心和 16GB RAM 的专用服务器。
 
     ```shell
@@ -596,19 +584,15 @@ ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack
     在条件允许的情况下，我们建议将 ClickHouse、Elasticsearch 和 `elastic dump` 运行在同一可用区或数据中心，以尽量减少网络出站流量并最大化吞吐量。
   </Step>
 
-  <Step>
-    ### 安装 ClickHouse 客户端
-
+  <Step title="安装 ClickHouse 客户端" id="install-clickhouse-client">
     请确保在 `elasticdump` 所在的服务器上已[安装 ClickHouse](/zh/get-started/setup/install)。**不要启动 ClickHouse 服务器**——这些步骤只需要客户端。
   </Step>
 
-  <Step>
-    ### 流式传输数据
-
+  <Step title="流式传输数据" id="stream-data">
     要在 Elasticsearch 和 ClickHouse 之间流式传输数据，请使用 `elasticdump` 命令，并将输出直接通过管道传给 ClickHouse 客户端。以下命令会将数据插入我们结构清晰的表 `logs_system_syslog`。
 
     ```shell
-    # 导出 URL 和凭据
+    # export url and credentials
     export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
     export ELASTICSEARCH_URL=
     export ELASTICDUMP_INPUT_USERNAME=
@@ -617,7 +601,7 @@ ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack
     export CLICKHOUSE_PASSWORD=
     export CLICKHOUSE_USER=default
 
-    # 要运行的命令 - 根据需要修改
+    # command to run - modify as required
     elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
     clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
@@ -660,9 +644,7 @@ ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack
     </Info>
   </Step>
 
-  <Step>
-    ### 转换数据 (可选)
-
+  <Step title="转换数据 (可选)" id="transform-data">
     上述命令假设 Elasticsearch 字段与 ClickHouse 列之间是一对一映射。用户通常需要在将数据插入 ClickHouse 之前，先对 Elasticsearch 数据进行过滤和转换。
 
     这可以通过 [`input`](/zh/reference/functions/table-functions/input) table function 实现，它允许我们对 stdout 执行任意 `SELECT` 查询。

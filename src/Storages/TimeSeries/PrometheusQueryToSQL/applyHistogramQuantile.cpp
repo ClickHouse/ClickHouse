@@ -27,7 +27,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for the `histogram_quantile` function.
     void checkArgumentTypes(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -69,7 +69,7 @@ bool isHistogramQuantile(std::string_view function_name)
 }
 
 SQLQueryPiece applyHistogramQuantile(
-    const PQT::Function * function_node,
+    const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {
@@ -99,6 +99,7 @@ SQLQueryPiece applyHistogramQuantile(
     ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
     ///            values) AS values
     /// FROM <subquery>
+    /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
     /// GROUP BY new_group
     ASTPtr aggregation_query;
     {
@@ -156,11 +157,10 @@ SQLQueryPiece applyHistogramQuantile(
             /// quantilePrometheusHistogramForEach(phi)(le_array, values)
             ///
             /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted `le` tag value (or NaN if the tag is missing or cannot
-            /// be parsed as a float). Prometheus silently drops bucket series with unparseable
-            /// `le` from the histogram rather than failing the query, so we match that by mapping
-            /// any non-numeric `le` to NaN — `quantilePrometheusHistogramForEach` already treats
-            /// NaN `le` as "ignore this bucket".
+            /// filled with the extracted `le` tag value. Series without a parsable `le` are
+            /// excluded by the WHERE clause added below, so the NaN fallback here is just a
+            /// safety net — `quantilePrometheusHistogramForEach` treats NaN `le` as
+            /// "ignore this bucket".
             auto le_array_expr = makeASTFunction(
                 "arrayResize",
                 makeASTFunction("CAST",
@@ -186,6 +186,16 @@ SQLQueryPiece applyHistogramQuantile(
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
+
+        /// Prometheus silently drops input series whose `le` label is missing or cannot be
+        /// parsed as a float, so for example a pure non-histogram input produces an empty
+        /// result. This filter applies before the out-of-range phi short-circuit above:
+        /// even for an out-of-range phi only series with a parsable `le` produce output.
+        builder.where = makeASTFunction("isNotNull",
+            makeASTFunction("toFloat64OrNull",
+                makeASTFunction("timeSeriesExtractTag",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTLiteral>("le"))));
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 

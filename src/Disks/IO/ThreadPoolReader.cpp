@@ -2,9 +2,7 @@
 #include <future>
 #include <fcntl.h>
 #include <unistd.h>
-#include <base/MemorySanitizer.h>
-#include <base/errnoToString.h>
-#include <Poco/Environment.h>
+#include <IO/preadNoWait.h>
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -13,40 +11,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/VersionNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
-
-#if defined(OS_LINUX)
-
-#include <sys/syscall.h>
-#include <sys/uio.h>
-
-/// We don't want to depend on specific glibc version.
-
-#if !defined(RWF_NOWAIT)
-    #define RWF_NOWAIT 8
-#endif
-
-#if !defined(SYS_preadv2)
-    #if defined(__x86_64__)
-        #define SYS_preadv2 327
-    #elif defined(__aarch64__)
-        #define SYS_preadv2 286
-    #elif defined(__powerpc64__)
-        #define SYS_preadv2 380
-    #elif defined(__riscv)
-        #define SYS_preadv2 286
-    #elif defined(__loongarch64)
-        #define SYS_preadv2 286
-    #elif defined(__e2k__)
-        #define SYS_preadv2 395
-    #else
-        #error "Unsupported architecture"
-    #endif
-#endif
-
-#endif
 
 
 namespace ProfileEvents
@@ -82,17 +48,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if defined(OS_LINUX)
-/// According to man, Linux 5.9 and 5.10 have a bug in preadv2() with the RWF_NOWAIT.
-/// https://manpages.debian.org/testing/manpages-dev/preadv2.2.en.html#BUGS
-/// We also disable it for older Linux kernels, because according to user's reports, RedHat-patched kernels might be also affected.
-static bool hasBugInPreadV2()
-{
-    VersionNumber linux_version(Poco::Environment::osVersion());
-    return linux_version < VersionNumber{5, 11, 0};
-}
-#endif
-
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
     : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, CurrentMetrics::ThreadPoolFSReaderThreadsScheduled, pool_size, pool_size, queue_size_))
 {
@@ -107,17 +62,16 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
 #if defined(OS_LINUX)
     /// Check if data is already in page cache with preadv2 syscall.
-
-    /// We don't want to depend on new Linux kernel.
-    /// But kernels 5.9 and 5.10 have a bug where preadv2() with the
-    /// RWF_NOWAIT flag may return 0 even when not at end of file.
-    /// It can't be distinguished from the real eof, so we have to
-    /// disable pread with nowait.
-    static const bool has_pread_nowait_support = !hasBugInPreadV2();
-
+    /// It is not usable on every system - see `preadNoWaitUnavailableReason`. Then every read is
+    /// handed off to the thread pool, which is why `applySettingsQuirks` switches the default
+    /// `local_filesystem_read_method` from 'pread_threadpool' to 'pread' on such a system.
+    ///
     /// RWF_NOWAIT is ignored for O_DIRECT (mostly, it may return EAGAIN if it cannot lock the inode in case of ext4, see [1])
     ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=548feebec7e93e58b647dba70b3303dcb569c914
-    if (has_pread_nowait_support && !request.direct_io)
+    /// The O_DIRECT check comes first: the support check runs a raw `preadv2` probe on the first
+    /// call, and a kill-on-deny `seccomp` profile must not see the probe for a read that never
+    /// looks at the page cache.
+    if (!request.direct_io && preadNoWaitUnavailableReason().empty())
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -141,15 +95,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             {
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-
-                struct iovec io_vec{ .iov_base = request.buf, .iov_len = request.size };
-                res = syscall(
-                    SYS_preadv2, fd,
-                    &io_vec, 1,
-                    /// This is kind of weird calling convention for syscall.
-                    static_cast<int64_t>(request.offset), static_cast<int64_t>(request.offset >> 32),
-                    /// This flag forces read from page cache or returning EAGAIN.
-                    RWF_NOWAIT);
+                res = preadNoWait(fd, request.buf, request.size, request.offset);
             }
 
             if (!res)
@@ -161,11 +107,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             if (-1 == res)
             {
-                if (errno == ENOSYS || errno == EOPNOTSUPP)
+                if (isPreadNoWaitUnavailable(errno))
                 {
-                    /// No support for the syscall or the flag in the Linux kernel.
-                    /// It shouldn't happen because we check the kernel version but let's
-                    /// fallback to the thread pool.
+                    /// No support for the syscall or the flag in the Linux kernel, or it is rejected
+                    /// by a `seccomp` profile. It shouldn't happen, because the system call is probed
+                    /// beforehand, but a particular filesystem can still reject the flag
+                    /// (`tmpfs` answers `EOPNOTSUPP`, for example).
+                    /// Hand the read off to the thread pool, which reads it with `pread`.
                     break;
                 }
                 if (errno == EAGAIN)
@@ -186,7 +134,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             }
 
             bytes_read += res;
-            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)

@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/connection
 sidebarTitle: '连接'
-title: '连接到 Managed Postgres'
+title: '连接到 ClickHouse Managed Postgres'
 description: '用于 ClickHouse Managed Postgres 的连接字符串、PgBouncer 连接池和 TLS 配置'
 keywords: ['Postgres 连接', '连接字符串', 'pgbouncer', 'TLS', 'SSL']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
@@ -22,7 +22,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 查看连接详细信息
 </div>
 
-要将应用程序连接到 Managed Postgres，请前往实例左侧边栏中的 **Connect** 视图。
+要将应用程序连接到 ClickHouse Managed Postgres，请前往实例左侧边栏中的 **Connect** 视图。
 
 <Image img="/images/managed-postgres/connect-button.webp" alt="点击左侧边栏中的 Connect 以查看连接详细信息" size="md" border />
 
@@ -34,10 +34,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **用户名**：数据库用户 (默认：`postgres`)
 * **密码**：数据库密码 (默认隐藏，点击眼睛图标即可显示)
-* **Server**：Managed Postgres 实例的主机名
+* **Server**：ClickHouse Managed Postgres 实例的主机名
 * **Port**：PostgreSQL 端口 (默认：`5432`)
 
-Managed Postgres 为数据库提供 superuser 访问权限。请使用这些凭据以 superuser 身份连接，这样您就可以创建其他用户并管理数据库对象。
+ClickHouse Managed Postgres 为您的数据库提供 superuser 访问权限。请使用这些凭据以 superuser 身份连接，这样您就可以创建其他用户并管理数据库对象。
 
 <div id="connection-string">
   ## 连接字符串格式
@@ -59,13 +59,13 @@ Managed Postgres 为数据库提供 superuser 访问权限。请使用这些凭�
   ## PgBouncer 连接池
 </div>
 
-Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.org/) 实例，用于服务器端连接池。PgBouncer 有助于改善连接管理、提升性能和资源利用率，尤其适合以下应用程序：
+ClickHouse Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.org/) 实例，用于服务器端连接池。PgBouncer 有助于改善连接管理、提升性能和资源利用率，尤其适合以下应用程序：
 
 * 打开大量并发连接
 * 频繁创建和关闭连接
 * 使用无服务器或临时性计算环境
 
-要使用连接池，请点击连接弹窗顶部的 **通过 PgBouncer** 切换开关。连接详情将更新为通过连接池转发连接，而不是直接连接到 PostgreSQL。
+要使用连接池，请点击连接弹窗顶部的 **通过 PgBouncer** 切换开关。连接详情将更新为通过连接池器转发连接，而不是直接连接到 PostgreSQL。
 
 <Tip>
   **何时使用 PgBouncer**
@@ -79,7 +79,7 @@ Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.org/) 实例�
   ## TLS 配置
 </div>
 
-所有 Managed Postgres 实例均受 TLS 保护。支持的最低版本为 **TLS 1.3**。
+所有 ClickHouse Managed Postgres 实例均受 TLS 保护。支持的最低版本为 **TLS 1.3**。
 
 <div id="quick-connection">
   ### 快速连接 (TLS 加密)
@@ -99,7 +99,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 <Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="从 Settings 选项卡下载 CA 证书" size="md" border />
 
-该 CA 证书是你的 Managed Postgres 实例 专属的，不能用于其他 实例s。
+该 CA 证书是你的 ClickHouse Managed Postgres 实例专属的，不能用于其他实例。
 
 要建立已验证的 TLS 连接，请添加 `sslmode=verify-full` 以及已下载证书的 path：
 

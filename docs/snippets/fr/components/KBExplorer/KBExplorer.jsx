@@ -30,7 +30,7 @@ export const KBExplorer = ({ index, featured = [] }) => {
     return ""
   })
 
-  const [selectedCategories, setSelectedCategories] = useState(() => readStoredList("kb-categories", ["Tous"]))
+  const [selectedCategories, setSelectedCategories] = useState(() => readStoredList("kb-categories", ["All"]))
 
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 6
@@ -74,26 +74,26 @@ export const KBExplorer = ({ index, featured = [] }) => {
     setCurrentPage(1)
   }, [searchTerm, selectedCategories])
 
-  // Generic multi-select toggle: clicking "Tous" clears others; empty -> ['All'].
+  // Generic multi-select toggle: clicking "All" clears others; empty -> ['All'].
   const makeToggle = (setter) => (value) => {
     setter((prev) => {
-      if (value === "Tous") return ["Tous"]
-      const withoutAll = prev.filter((v) => v !== "Tous")
+      if (value === "All") return ["All"]
+      const withoutAll = prev.filter((v) => v !== "All")
       const result = withoutAll.includes(value) ? withoutAll.filter((v) => v !== value) : [...withoutAll, value]
-      return result.length === 0 ? ["Tous"] : result
+      return result.length === 0 ? ["All"] : result
     })
   }
 
   const toggleCategory = makeToggle(setSelectedCategories)
 
-  const categoryOptions = ["Tous", ...data.categories]
+  const categoryOptions = ["All", ...data.categories]
 
   const resetFilters = () => {
     setSearchTerm("")
-    setSelectedCategories(["Tous"])
+    setSelectedCategories(["All"])
   }
 
-  const hasActiveFilters = searchTerm !== "" || !selectedCategories.includes("Tous")
+  const hasActiveFilters = searchTerm !== "" || !selectedCategories.includes("All")
 
   // Filtering logic
   const filteredArticles = useMemo(() => {
@@ -105,7 +105,7 @@ export const KBExplorer = ({ index, featured = [] }) => {
       const matchesSearch =
         term === "" || article.title.toLowerCase().includes(term) || (article.description || "").toLowerCase().includes(term) || (article.tags || []).some((t) => t.toLowerCase().includes(term))
 
-      const matchesCategory = selectedCategories.includes("Tous") || selectedCategories.includes(article.category)
+      const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(article.category)
 
       return matchesSearch && matchesCategory
     })
@@ -121,24 +121,25 @@ export const KBExplorer = ({ index, featured = [] }) => {
     window.location.assign(withBase(href))
   }
 
-  // Featured articles, in the order listed in `featured`. Each keeps its banner
-  // image; the href falls back to the conventional KB path if the index hasn't
-  // loaded yet so the cards are clickable immediately.
+  // Featured articles, in the order listed in `featured`. La bannière est
+  // générée en code à partir du titre (voir ci-dessous), aucune image
+  // spécifique à la locale n'est donc nécessaire.
+  // The href falls back to the conventional KB path if the index hasn't loaded
+  // yet so the cards are clickable immediately.
   const featuredArticles = featured
     .map((f) => {
       const article = data.articles.find((a) => a.id === f.id)
       return {
         id: f.id,
-        image: f.image,
         href: (article && article.href) || `/fr/resources/support-center/knowledge-base/${f.id}`,
         title: (article && article.title) || ""
       }
     })
-    .filter((f) => f.image)
+    .filter((f) => f.title)
 
   // Expandable filter component
   const Expandable = ({ label, options, selectedOptions, onToggle, isOpen, setIsOpen }) => {
-    const activeCount = selectedOptions.filter((o) => o !== "Tous").length
+    const activeCount = selectedOptions.filter((o) => o !== "All").length
     const displayLabel = activeCount > 0 ? `${label} (${activeCount})` : label
 
     return (
@@ -202,14 +203,15 @@ export const KBExplorer = ({ index, featured = [] }) => {
                     onClick={(e) => handleCardClick(e, article.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
-                    {/* Rendered as a background image (not <img>) so Mintlify's
-                        click-to-zoom doesn't hijack the link navigation. */}
-                    <div
-                      role="img"
-                      aria-label={article.title}
-                      className="w-full aspect-[3/1] lg:aspect-[16/9] bg-cover bg-center transition-transform duration-200 group-hover:scale-[1.02]"
-                      style={{ backgroundImage: `url(${withBase(article.image)})` }}
-                    />
+                    {/* Banner art is drawn in code from the title so it
+                        translates automatically — no per-locale PNG needed. */}
+                    <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
+                      <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{article.title}</span>
+                      <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
+                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <span className="text-sm font-medium text-black">Populaire</span>
+                      </div>
+                    </div>
                   </a>
                 ))}
               </div>

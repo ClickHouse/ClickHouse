@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char rmt_cancel_removed_parts_check_pause_in_gap[];
+    extern const char check_table_inject_part_check_cancelled[];
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
@@ -29,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -38,7 +46,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(getLogger(log_name))
-    , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
+    , pausable_task(storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
     getTask()->deactivate();
 }
@@ -67,6 +75,10 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
+    /// Serialize against cancelRemovedPartsCheck so no in-range part can be enqueued during its
+    /// parts_mutex gap (otherwise its recheck throws "Inconsistent parts_queue"). Lock order matches
+    /// cancelRemovedPartsCheck: cancel_removed_parts_mutex before parts_mutex.
+    std::lock_guard cancel_lock(cancel_removed_parts_mutex);
     std::lock_guard lock(parts_mutex);
 
     if (parts_set.contains(name))
@@ -90,6 +102,16 @@ BackgroundSchedulePoolPausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckT
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
 {
+    /// This function drops parts_mutex to remove parts from ZooKeeper, then re-locks and rechecks the
+    /// invariant. Two hazards during that gap, both closed by serializing on cancel_removed_parts_mutex:
+    ///  - another overlapping cancel erases the snapshotted parts -> fewer than snapshotted on re-lock
+    ///    ("Unexpected number of parts to remove from parts_queue");
+    ///  - a concurrent enqueuePart adds an in-range part (the foreground MOVE/REPLACE path holds only a
+    ///    drop-replace intent here, not yet a DROP_RANGE, so enqueuePartForCheck does not filter it) ->
+    ///    an unexpected in-range entry on re-lock ("Inconsistent parts_queue").
+    /// enqueuePart takes the same mutex (same lock order: cancel_removed_parts_mutex before parts_mutex).
+    std::lock_guard cancel_lock(cancel_removed_parts_mutex);
+
     Strings parts_to_remove;
     {
         std::lock_guard lock(parts_mutex);
@@ -100,6 +122,10 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
 
     /// We have to remove parts that were not removed by removePartAndEnqueueFetch
     LOG_INFO(log, "Removing broken parts from ZooKeeper: {}", fmt::join(parts_to_remove, ", "));
+
+    /// Used only by tests to deterministically hit the non-atomic gap between the two parts_mutex sections.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_cancel_removed_parts_check_pause_in_gap);
+
     storage.removePartsFromZooKeeperWithRetries(parts_to_remove);   /// May throw
 
     /// Now we can remove parts from the check queue.
@@ -381,7 +407,9 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
                 [this] { return need_stop.load(); },
                 throw_on_broken_projection);
 
-            if (need_stop)
+            bool cancelled = need_stop;
+            fiu_do_on(FailPoints::check_table_inject_part_check_cancelled, { cancelled = true; });
+            if (cancelled)
             {
                 result.status = {part_name, false, "Checking part was cancelled"};
                 result.action = ReplicatedCheckResult::Cancelled;
@@ -448,7 +476,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 }
 
 
-CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after, bool throw_on_broken_projection)
+CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
+    const String & part_name, std::optional<time_t> * recheck_after, bool throw_on_broken_projection, bool throw_if_cancelled)
 {
     LOG_INFO(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
@@ -459,6 +488,10 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
         case ReplicatedCheckResult::None: UNREACHABLE();
         case ReplicatedCheckResult::DoNothing: break;
         case ReplicatedCheckResult::Cancelled:
+            /// Nothing was learned about the part. A foreground `CHECK TABLE` has to fail rather than certify
+            /// the part as broken with `is_passed = 0`; `ABORTED` is retryable, so the query fails as a whole.
+            if (throw_if_cancelled)
+                throw Exception(ErrorCodes::ABORTED, "Checking part {} was cancelled by table shutdown", part_name);
             LOG_INFO(log, "Checking part was cancelled.");
             break;
 

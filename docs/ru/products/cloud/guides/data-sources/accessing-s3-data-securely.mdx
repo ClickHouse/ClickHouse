@@ -23,7 +23,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Получение ARN роли IAM вашего сервиса ClickHouse
 </div>
 
-1. Войдите в свою учетную запись ClickHouse Cloud.
+1. Войдите в свой аккаунт ClickHouse Cloud.
 
 2. Выберите сервис ClickHouse, для которого хотите создать интеграцию.
 
@@ -167,14 +167,14 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## Расширенный контроль действий
 </div>
 
-Для более строгого управления доступом можно ограничить политику бакета так, чтобы она принимала только запросы, поступающие через конечные точки VPC ClickHouse Cloud, с помощью условия [`aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Чтобы получить конечные точки VPC для вашего региона ClickHouse Cloud, откройте терминал и выполните:
+Для более строгого управления доступом можно ограничить политику бакета так, чтобы она принимала только запросы, поступающие через конечные точки VPC ClickHouse Cloud, с помощью [условия `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Чтобы получить конечные точки VPC для вашего региона ClickHouse Cloud, откройте терминал и выполните:
 
 ```bash
-# Замените <your-region> на регион вашего ClickHouse Cloud
+# Replace <your-region> with your ClickHouse Cloud region
 curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
 ```
 
-Затем добавьте в политику IAM запрещающее правило с полученными конечными точками:
+Затем добавьте в политику IAM правило запрета, используя полученные конечные точки:
 
 ```json
 {
@@ -213,4 +213,4 @@ curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.r
 }
 ```
 
-Подробнее о доступе к конечным точкам сервисов ClickHouse Cloud см. в разделе [Cloud IP Addresses](/ru/products/cloud/guides/data-sources/cloud-endpoints-api).
+Подробнее о том, как получить доступ к конечным точкам сервисов ClickHouse Cloud, см. в разделе [IP-адреса Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api).

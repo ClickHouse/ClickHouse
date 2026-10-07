@@ -41,16 +41,14 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
 * Servicio de metadatos de la instancia de EC2 accesible (habilitado de forma predeterminada)
 
 <Steps>
-  <Step>
-    #### Verifique que se pueda acceder a los metadatos de EC2
-
+  <Step title="Verifique que se pueda acceder a los metadatos de EC2" id="verify-metadata">
     Desde su instancia de EC2, verifique que se pueda acceder al servicio de metadatos:
 
     ```bash
-    # Obtener token de metadatos (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Verificar metadatos de la instancia
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -67,46 +65,40 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
     </Note>
   </Step>
 
-  <Step>
-    #### Verifique que existan archivos de syslog
-
+  <Step title="Verifique que existan archivos de syslog" id="verify-syslog">
     Verifique que su instancia de EC2 esté escribiendo archivos de syslog:
 
     ```bash
-    # Instancias Ubuntu
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Instancias Amazon Linux / RHEL
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # Ver entradas recientes
+    # View recent entries
     tail -20 /var/log/syslog
-    # o
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
 
-  <Step>
-    #### Instalar OpenTelemetry Collector
-
+  <Step title="Instalar OpenTelemetry Collector" id="install-collector">
     Instale la distribución Contrib del OpenTelemetry Collector en su instancia de EC2:
 
     ```bash
-    # Descargar la última versión
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Extraer e instalar
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Verificar la instalación
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
 
-  <Step>
-    #### Crear la configuración del collector
-
+  <Step title="Crear la configuración del collector" id="create-config">
     Cree un archivo de configuración para el OpenTelemetry Collector en `/etc/otelcol-contrib/config.yaml`:
 
     ```bash
@@ -257,9 +249,7 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
     </Info>
   </Step>
 
-  <Step>
-    #### Configura la API key de ClickStack
-
+  <Step title="Configura la API key de ClickStack" id="set-api-key">
     Exporta tu API key de ClickStack como variable de entorno:
 
     ```bash
@@ -274,9 +264,7 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
     ```
   </Step>
 
-  <Step>
-    #### Ejecuta el collector
-
+  <Step title="Ejecuta el collector" id="run-collector">
     Inicia el OpenTelemetry Collector:
 
     ```bash
@@ -290,9 +278,7 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
     </Info>
   </Step>
 
-  <Step>
-    #### Verificación de logs en HyperDX
-
+  <Step title="Verificación de logs en HyperDX" id="verifying-logs">
     Una vez que el collector esté en ejecución, inicia sesión en HyperDX y verifica que los logs estén llegando con metadatos de EC2:
 
     1. Ve a la vista de búsqueda
@@ -319,9 +305,7 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
 Para quienes quieran probar la integración de log de host de EC2 antes de configurar sus instancias de producción, proporcionamos un conjunto de datos de ejemplo con metadatos simulados de EC2.
 
 <Steps>
-  <Step>
-    #### Descarga el conjunto de datos de ejemplo
-
+  <Step title="Descarga el conjunto de datos de ejemplo" id="download-sample">
     Descarga el archivo de logs de ejemplo:
 
     ```bash
@@ -339,9 +323,7 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
     * Combinación de operaciones normales y eventos destacados
   </Step>
 
-  <Step>
-    #### Crear una configuración de prueba para el collector
-
+  <Step title="Crear una configuración de prueba para el collector" id="test-config">
     Cree un archivo llamado `ec2-host-logs-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -366,7 +348,7 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
             value: "ec2-demo"
 
     processors:
-      # Simular metadatos de EC2 para la demo (no se necesita una instancia EC2 real)
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -413,9 +395,7 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
     </Note>
   </Step>
 
-  <Step>
-    #### Ejecutar ClickStack con la configuración de demostración
-
+  <Step title="Ejecutar ClickStack con la configuración de demostración" id="run-demo">
     Ejecute ClickStack con los logs y la configuración de demostración:
 
     ```bash
@@ -428,9 +408,7 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
     ```
   </Step>
 
-  <Step>
-    #### Verifica los logs en HyperDX
-
+  <Step title="Verifica los logs en HyperDX" id="verify-demo-logs">
     Una vez que el collector esté en ejecución:
 
     1. Abre [HyperDX](http://localhost:8080/) e inicia sesión en tu cuenta (puede que primero tengas que crear una cuenta)
@@ -459,20 +437,18 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
 </Steps>
 
 <div id="dashboards">
-  ## Paneles y visualización
+  ## Dashboard y visualización
 </div>
 
-Para ayudarte a empezar a monitorizar el log de host de EC2 con ClickStack, proporcionamos visualizaciones esenciales con contexto de la nube.
+Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, proporcionamos visualizaciones esenciales con contexto de la nube.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importa el dashboard preconfigurado
-
-    1. Abre HyperDX y ve a la sección Dashboards
+  <Step title="Importa el dashboard preconfigurado" id="import-dashboard">
+    1. Abre HyperDX y ve a la sección dashboard
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de los tres puntos
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Botón para importar dashboard" />
@@ -482,9 +458,7 @@ Para ayudarte a empezar a monitorizar el log de host de EC2 con ClickStack, prop
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finalizar importación" />
   </Step>
 
-  <Step>
-    #### Ver el dashboard
-
+  <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Dashboard de logs de EC2" />
@@ -627,4 +601,4 @@ sudo journalctl -u otelcol-contrib -n 50
   ## Paso a producción
 </div>
 
-Esta guía instala el OpenTelemetry Collector directamente en instancias de EC2, que es el patrón recomendado para producción en la monitorización a nivel de host. Para gestionar collectors en muchas instancias, considere usar herramientas de gestión de configuración (Ansible, Chef, Puppet) o el OpenTelemetry Operator en entornos de Kubernetes. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía instala el OpenTelemetry Collector directamente en instancias de EC2, que es el patrón recomendado para entornos de producción en la monitorización a nivel de host. Para gestionar collectors en muchas instancias, considere usar herramientas de gestión de configuración (Ansible, Chef, Puppet) o el OpenTelemetry Operator en entornos de Kubernetes. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

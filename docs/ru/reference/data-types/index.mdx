@@ -4,10 +4,63 @@ sidebarTitle: 'Список типов данных'
 slug: /sql-reference/data-types/
 title: 'Типы данных в ClickHouse'
 doc_type: 'reference'
+mode: wide
 ---
 
 В этом разделе описаны типы данных, поддерживаемые ClickHouse, например [целые числа](/ru/reference/data-types/int-uint), [числа с плавающей точкой](/ru/reference/data-types/float) и [строки](/ru/reference/data-types/string).
 
+Для разных типов данных могут быть полезны разные [кодеки сжатия](/ru/reference/statements/create/table/codec).
+
 Системная таблица [system.data&#95;type&#95;families](/ru/reference/system-tables/data_type_families) содержит
 обзор всех доступных типов данных.
 Она также показывает, является ли тип данных алиасом другого типа данных и зависит ли его имя от регистра (например, `bool` и `BOOL`).
+
+<div id="data-type-categories">
+  ## Категории типов данных
+</div>
+
+<CardGroup cols={2}>
+  <Card title="Числовые типы">
+    Хранение [целых чисел](/ru/reference/data-types/int-uint), [значений с плавающей точкой](/ru/reference/data-types/float), значений [`Decimal`](/ru/reference/data-types/decimal) с фиксированной точностью и флагов [`Bool`](/ru/reference/data-types/boolean).
+  </Card>
+
+  <Card title="Строковые типы">
+    Хранение значений [`String`](/ru/reference/data-types/string) переменной длины и значений [`FixedString`](/ru/reference/data-types/fixedstring) фиксированной длины.
+  </Card>
+
+  <Card title="Типы даты и времени">
+    Представляют даты с помощью [`Date`](/ru/reference/data-types/date) и [`Date32`](/ru/reference/data-types/date32), временные метки — с помощью [`DateTime`](/ru/reference/data-types/datetime) и [`DateTime64`](/ru/reference/data-types/datetime64), а значения времени — с помощью [`Time`](/ru/reference/data-types/time) и [`Time64`](/ru/reference/data-types/time64).
+  </Card>
+
+  <Card title="Сетевые типы">
+    Хранение адресов [`IPv4`](/ru/reference/data-types/ipv4) и [`IPv6`](/ru/reference/data-types/ipv6) в компактной двоичной форме.
+  </Card>
+
+  <Card title="Составные типы">
+    Объединяют значения в структурах [`Array`](/ru/reference/data-types/array), [`Tuple`](/ru/reference/data-types/tuple), [`Map`](/ru/reference/data-types/map) и [`Nested`](/ru/reference/data-types/nested-data-structures/index).
+  </Card>
+
+  <Card title="Полуструктурированные типы">
+    Хранение изменяющихся или неоднородных данных с помощью [`JSON`](/ru/reference/data-types/newjson), [`Dynamic`](/ru/reference/data-types/dynamic) и [`Variant`](/ru/reference/data-types/variant).
+  </Card>
+
+  <Card title="Nullable и необязательные типы">
+    Представляют отсутствующие значения с помощью [`Nullable`](/ru/reference/data-types/nullable) или сокращают объем хранения повторяющихся значений с помощью [`LowCardinality`](/ru/reference/data-types/lowcardinality).
+  </Card>
+
+  <Card title="Специализированные типы">
+    Моделируют значения [`UUID`](/ru/reference/data-types/uuid), значения [`Enum`](/ru/reference/data-types/enum), [географические объекты](/ru/reference/data-types/geo), [векторы для приближенного поиска](/ru/reference/data-types/qbit) и [домены](/ru/reference/data-types/domains/index).
+  </Card>
+
+  <Card title="Типы агрегатных функций">
+    Хранение промежуточных состояний агрегации с помощью [`AggregateFunction`](/ru/reference/data-types/aggregatefunction) и [`SimpleAggregateFunction`](/ru/reference/data-types/simpleaggregatefunction).
+  </Card>
+
+  <Card title="Специальные типы данных">
+    [`Expression`](/ru/reference/data-types/special-data-types/expression), [`Interval`](/ru/reference/data-types/special-data-types/interval), [`Nothing`](/ru/reference/data-types/special-data-types/nothing) и [`Set`](/ru/reference/data-types/special-data-types/set) используются для промежуточных результатов запроса.
+  </Card>
+
+  <Card title="Двоичное кодирование">
+    См. [спецификацию двоичного кодирования](/ru/reference/data-types/data-types-binary-encoding), где описано сериализованное представление каждого типа данных.
+  </Card>
+</CardGroup>

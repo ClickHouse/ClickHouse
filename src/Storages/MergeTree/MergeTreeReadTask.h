@@ -4,6 +4,7 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -17,6 +18,7 @@ namespace DB
 {
 
 class UncompressedCache;
+class ColumnsCache;
 class MarkCache;
 
 struct MergeTreeBlockSizePredictor;
@@ -96,9 +98,11 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
-    /// Data part which should be read while performing this task
-    DataPartPtr data_part;
-    /// Parent part of the projection part
+    /// Part (owned or borrowed) to read while performing this task.
+    /// Owned parts wrap a concrete IMergeTreeDataPart (LoadedMergeTreeDataPartInfoForReader);
+    /// stateless-worker parts use BorrowedMergeTreeDataPartInfoForReader.
+    MergeTreeDataPartInfoForReaderPtr data_part_info;
+    /// Parent part of the projection part (projections are coordinator-only)
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query{};
@@ -110,6 +114,9 @@ struct MergeTreeReadTaskInfo
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Whether `mutation_steps` holds steps for on-fly mutations, as opposed to only the step that
+    /// applies an already materialized lightweight-delete mask.
+    bool has_on_fly_mutation_steps = false;
     /// Patches that should be applied for part.
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
@@ -127,6 +134,10 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// All mark ranges the query reads from this part.
+    MarkRangesPtr read_request_map;
+    /// The same for each of `patch_parts`; empty = the whole patch parts.
+    std::vector<MarkRangesPtr> patch_read_request_maps;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -139,6 +150,7 @@ public:
     struct Extras
     {
         UncompressedCache * uncompressed_cache = nullptr;
+        ColumnsCache * columns_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings;
@@ -154,7 +166,8 @@ public:
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
 
-        void updateAllMarkRanges(const MarkRanges & ranges);
+        void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
+        void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
     };
 
     struct BlockSizeParams
@@ -225,11 +238,14 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
+    /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
+        const std::vector<MarkRanges> & patches_ranges,
+        const MarkRangesPtr & read_request_map = nullptr,
+        const std::vector<MarkRangesPtr> & patch_read_request_maps = {});
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
@@ -238,8 +254,11 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback
-        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback = std::function<void(
+        const ColumnsWithTypeAndName & columns,
+        const NameSet & partially_read_columns,
+        size_t read_bytes,
+        std::optional<bool> & should_continue_sampling)>;
 
     UInt64 estimateNumRows() const;
 

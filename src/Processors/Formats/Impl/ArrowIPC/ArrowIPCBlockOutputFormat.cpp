@@ -2,6 +2,7 @@
 
 #if USE_ARROW
 
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Port.h>
 #include <Core/Block.h>
@@ -352,8 +353,49 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
 
 void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 {
+    /// Not in `writeChunk`: a reader gets the schema on the first chunk even when batches are combined.
     writeSchemaIfNeeded();
 
+    const size_t target_rows = format_settings.arrow.output_record_batch_rows;
+    const size_t target_bytes = format_settings.arrow.output_record_batch_bytes;
+    if (!target_rows && !target_bytes)
+    {
+        writeChunk(std::move(chunk));
+        return;
+    }
+
+    if (chunk.getNumRows() == 0)
+        return;
+
+    /// `ColumnConst::insertRangeFrom` advances the row count without copying the value, and a lazily sparse
+    /// or replicated column cannot be appended to a materialized one. It also has to precede the size
+    /// measured below, which `ColumnConst::byteSize` reports as a single stored value.
+    materializeChunk(chunk);
+
+    auto reached = [&](size_t rows, size_t bytes)
+    { return (target_rows && rows >= target_rows) || (target_bytes && bytes >= target_bytes); };
+
+    /// A chunk that already fills a batch is written as it stands, so a large block is neither copied nor
+    /// combined with its neighbours. `Chunk::append` also requires at least one column.
+    if (chunk.getNumColumns() == 0 || reached(chunk.getNumRows(), chunk.bytes()))
+    {
+        if (staged.getNumRows())
+            writeChunk(std::move(staged));
+        writeChunk(std::move(chunk));
+        return;
+    }
+
+    if (staged.getNumRows())
+        staged.append(chunk);
+    else
+        staged = std::move(chunk);
+
+    if (reached(staged.getNumRows(), staged.bytes()))
+        writeChunk(std::move(staged));
+}
+
+void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
+{
     const size_t num_rows = chunk.getNumRows();
     const Columns & columns = chunk.getColumns();
 
@@ -377,6 +419,10 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 
 void ArrowIPCBlockOutputFormat::finalizeImpl()
 {
+    /// The whole output of a result that never reached a target leaves through here.
+    if (staged.getNumRows())
+        writeChunk(std::move(staged));
+
     /// Make sure even an empty result produces a valid stream/file (schema, then EOS or footer).
     writeSchemaIfNeeded();
 
@@ -398,12 +444,45 @@ void ArrowIPCBlockOutputFormat::finalizeImpl()
 
 void ArrowIPCBlockOutputFormat::resetFormatterImpl()
 {
+    /// `finalizeImpl` drains it on every normal path; this also covers a reset after an interrupted one.
+    staged.clear();
     message_writer.emplace(out);
     schema_written = false;
     dictionary_blocks.clear();
     record_blocks.clear();
     for (auto & state : dictionary_states)
         state = DictionaryColumnState{};
+}
+
+void registerOutputFormatArrow(FormatFactory & factory);
+void registerOutputFormatArrow(FormatFactory & factory)
+{
+    factory.registerOutputFormat(
+        "Arrow",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("Arrow");
+    factory.markOutputFormatNotTTYFriendly("Arrow");
+    factory.setContentType("Arrow", "application/octet-stream");
+
+    factory.registerOutputFormat(
+        "ArrowStream",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
+    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
+    factory.markOutputFormatNotTTYFriendly("ArrowStream");
+    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }

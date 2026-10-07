@@ -42,7 +42,7 @@ ClickHouse 支持使用[数值键](/zh/reference/statements/create/dictionary/at
 
 ClickHouse 支持外部字典属性的层级特性。借助该特性，你可以按上述方式配置层级字典。
 
-[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 函数可用于获取某个元素的父级链。
+[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 函数可用于获取某个元素的父级链。[dictGetRoot](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetRoot) 函数则仅返回某个元素的最顶层祖先 (根) 。
 
 在本例中，字典结构可以如下所示：
 

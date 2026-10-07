@@ -1,0 +1,10 @@
+show_create_has_codec	1
+codes_type	FixedString(8)
+codes_length	8
+codebook_type	FixedString(65536)
+codebook_length	65536
+full_precision_rows	4000
+plan	1	1	1
+unfiltered_exact	1
+filtered_exact	1
+nearest_is_self	1

@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: 'Demo days - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: 'Demo days ClickStack du 24/07/2026'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="metrics-experience-improvements">
+  ## Améliorations de l&#39;expérience des métriques
+</div>
+
+*Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Cette série d&#39;améliorations facilite la création de métriques et de tableaux de bord, à partir des retours d&#39;un client migrant depuis Datadog. Ce client dispose d&#39;un workflow de métriques bien pensé. Nous n&#39;avons pas encore pris en compte tous ses retours, mais la plupart concernaient la création de graphiques et l&#39;exploration de tableaux de bord affichant des centaines de séries temporelles.
+
+Une modification n&#39;est pas liée aux métriques, bien qu&#39;elle soit issue de la même discussion : les tuiles de tableau de bord s&#39;alignent désormais sur une grille visible lors de leur création. Lorsque vous faites glisser ou redimensionnez une tuile, la grille apparaît derrière elle et met en évidence les cellules autour de sa position actuelle. Auparavant, il n&#39;était pas évident de savoir où une tuile allait se placer ni si son déplacement allait en repousser une autre. La grille rend ces deux aspects visibles. Elle utilise la même géométrie que le moteur de mise en page ; les repères correspondent donc à la position finale de la tuile, y compris le long des bords droit et inférieur.
+
+Les modifications apportées aux métriques concernent les graphiques comportant un grand nombre de séries, ce qui est fréquent lors d&#39;un regroupement selon plusieurs dimensions. Auparavant, le survol d&#39;un graphique affichait toutes les séries pour cet horodatage. Sur un graphique comportant 300 séries, l&#39;infobulle pouvait être plus haute que le graphique lui-même, et la série sous le curseur était rarement celle recherchée.
+
+Les graphiques comportant plus de 10 séries n&#39;affichent désormais que la série la plus proche du curseur. Cette série est affichée au premier plan tandis que les autres sont atténuées. Les graphiques comportant 10 séries ou moins conservent l&#39;infobulle complète et triée ; leur comportement n&#39;a donc pas changé. La légende est plus compacte et peut être entièrement masquée. Lorsqu&#39;elle est visible, elle sert également de contrôle de sélection et de recherche rapide, ce qui facilite l&#39;accès à une série spécifique.
+
+La modification la plus importante concerne le mode plein écran, auquel les utilisateurs accèdent généralement après avoir repéré un écart qu&#39;ils souhaitent examiner. Le mode plein écran est désormais accessible en un clic depuis une icône de la barre d&#39;outils, au lieu d&#39;être dissimulé dans le menu kebab. Une fois ouvert, la légende adopte une disposition plus pratique, avec des informations récapitulatives et un champ de recherche. Le filtrage par sous-chaîne dans le nom de la série peut ramener 300 séries à la poignée qui vous intéresse, prêtes à être survolées et comparées.
+
+Un point a changé après l&#39;appel. Le choix entre les infobulles à série unique et à séries multiples sera configurable, au lieu de reposer sur un seuil fixe. Comparer les valeurs absolues de plusieurs séries à un même instant est utile lorsqu&#39;elles ne sont pas nombreuses ; les utilisateurs doivent donc pouvoir choisir le comportement adapté au graphique.
+
+**PR associés :** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard) : afficher une grille d&#39;alignement lors du déplacement ou du redimensionnement d&#39;une tuile, [#2722](https://github.com/hyperdxio/hyperdx/pull/2722) Améliorer le survol des graphiques temporels denses, [#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard) : déplacer le mode plein écran d&#39;une tuile vers une icône de barre d&#39;outils de premier niveau, [#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard) : dessiner une série de graphique temporel isolée au-delà de la limite de rendu des lignes, [#2776](https://github.com/hyperdxio/hyperdx/pull/2776) Paramètres d&#39;affichage configurables pour les graphiques temporels (légende, infobulle, style de ligne)
+
+<div id="trace-viewer-improvements">
+  ## Améliorations de la visionneuse de traces
+</div>
+
+*Démo par [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Deux petites corrections ont été apportées à la visionneuse de traces repensée, toutes deux directement issues des retours sur la nouvelle disposition.
+
+Le panneau de détails du span a récemment été déplacé à droite de la cascade, mais cet emplacement ne convenait pas à tout le monde. Un nouveau contrôle, situé à côté du bouton de fermeture du panneau, permet de le placer à droite, qui reste l’emplacement par défaut, ou en bas. Lorsque le panneau est en bas, vous pouvez le faire glisser à la hauteur qui vous convient.
+
+Le même fil de retours a également révélé un bogue de retour à la ligne. Avec le retour à la ligne activé, les longues valeurs d’attribut sans point de coupure naturel étaient toujours tronquées. Un `url.path` ne contenant ni espaces, ni traits d’union, ni tirets en était un exemple. Les valeurs d’attribut peuvent désormais être coupées à n’importe quel caractère, ce qui permet de lire la valeur dans son intégralité.
+
+**PR associés :** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): break-word attribute wrapping + layout toggle
+
+<div id="mcp-server-and-eval-improvements">
+  ## Améliorations du serveur MCP et du framework d’évaluation
+</div>
+
+*Démo par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Cette petite modification est peut-être celle qui aura le plus d’effet sur l’adoption. L’activation du serveur MCP dans ClickHouse Cloud était difficile à trouver : les utilisateurs devaient suivre les instructions dans l’application, puis localiser le bon paramètre du control plane. Le bouton ouvre désormais directement la fenêtre modale correspondante, dans laquelle le serveur peut être activé.
+
+Brandon continue d’améliorer notre framework d’évaluation du MCP, en s’appuyant sur [ses travaux récents](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals). Le framework d’évaluation peut désormais utiliser un provider et un modèle différents de ceux en cours d’évaluation. Auparavant, l’évaluation complète devait utiliser des modèles Anthropic, ce qui pouvait conduire un modèle à évaluer sa propre sortie. Vous pouvez désormais fournir une clé OpenAI et une spécification de modèle juge préfixée par le provider afin de faire passer l’évaluation par OpenAI.
+
+La comparaison des juges a mis en évidence des différences intéressantes. Certains appliquent la grille d’évaluation de manière beaucoup plus stricte et font échouer une exécution si elle n’utilise pas une clé précise, tandis que d’autres acceptent une réponse suffisamment proche. Nous avons également corrigé un bug de note obsolète découvert lors de ce travail. Réévaluer un batch avec un autre juge lance désormais le nouveau juge au lieu de renvoyer le résultat précédent.
+
+Brandon a également ajouté un nouvel outil MCP, `clickstack_emerging_signals`, après avoir demandé au serveur MCP ce dont il avait besoin pour obtenir un meilleur score dans le scénario de vérification de l’état du service. Il s’agit d’un détecteur de nouveauté de patterns à deux fenêtres. L’outil extrait les patterns de logs et d’événements d’une fenêtre de référence et d’une fenêtre actuelle, puis compare les deux ensembles. Il signale les patterns nouveaux, devenus nettement plus fréquents ou disparus.
+
+Cela contraste avec les outils existants : les Event patterns décrivent ce qui est courant au sein d’une fenêtre, tandis que les Event deltas montrent quels attributs ont changé. Le nouvel outil ajoute environ 10 points au score de vérification de l’état du service.
+
+Des outils CRUD pour les sources et les webhooks ont également été ajoutés au MCP à la suite d’une demande visant à configurer l’ingestion depuis un skill. Les agents peuvent désormais créer, mettre à jour et supprimer des sources et des webhooks au lieu de se limiter à les lire.
+
+Des travaux sont en cours pour exécuter les évaluations dans l’intégration continue pour chaque pull request, afin de remplacer le processus actuel qui consiste à coller manuellement les scores dans les descriptions de PR. L’initialisation S3 fonctionne. Le seul obstacle restant est d’accorder à GitHub Actions l’accès au bucket. Une fois ce problème résolu, les résultats des évaluations devraient arriver beaucoup plus rapidement.
+
+**PR associées :** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals): provider/modèle de juge indépendant + correction de l’ignorance des notes obsolètes lors du changement de juge, [#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp): ajout de l’outil clickstack&#95;emerging&#95;signals, [#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp): outils CRUD pour les sources et les webhooks, [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): squelette M1 pour l’intégration continue, exécution complète des évaluations MCP dans GitHub Actions, [#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals): initialisation rapide M2 de snapshot Parquet

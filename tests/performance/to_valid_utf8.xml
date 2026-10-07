@@ -1,0 +1,62 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep this to ten explicit cases: CI samples at most ten queries from each performance test. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 127)))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 128)))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 129)))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('é', 63), 'a')))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('é', 64)))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('é', 64), 'a')))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <!-- Long valid mixed UTF-8 input. The expression is materialized to avoid measuring row construction. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('aé中文🙂', 80)))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <!-- Invalid input should repair from the first error without rescanning the prefix. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(concat('\xFF', repeat('a', 127))))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 63), '\xE2\x82X', repeat('b', 64))))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 127), '\xE2')))))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+</test>

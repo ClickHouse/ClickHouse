@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -16,9 +17,16 @@ namespace
         static constexpr auto name = "toJSONString";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
-        explicit FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
+        explicit FunctionToJSONString(ContextPtr context)
+            : format_settings(getFormatSettings(context))
+            , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+        {
+        }
 
         String getName() const override { return name; }
+
+        /// The captured settings decide the text produced for the same value, see `IFunctionBase::updateHash`.
+        void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
         size_t getNumberOfArguments() const override { return 1; }
 
@@ -56,6 +64,8 @@ namespace
     private:
         /// Affects only subset of part of settings related to json.
         const FormatSettings format_settings;
+        /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+        const UInt64 format_settings_hash;
     };
 }
 
@@ -64,13 +74,13 @@ REGISTER_FUNCTION(ToJSONString)
     /// toJSONString documentation
     FunctionDocumentation::Description description = R"(
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers) controls this behavior.
-Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals) setting to show them.
-When serializing an [Enum](../data-types/enum.md) value, the function outputs its name.
+64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are output without quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controls this behavior.
+Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals) setting to show them.
+When serializing an [Enum](/reference/data-types/enum) value, the function outputs its name.
 
 See also:
-- [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
-- [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals)
     )";
     FunctionDocumentation::Syntax syntax = "toJSONString(value)";
     FunctionDocumentation::Arguments arguments = {
@@ -95,9 +105,9 @@ SELECT toJSONString(map('key1', 1, 'key2', 2));
 SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
         )",
         R"(
-┌─toJSONString(tuple(1.25, NULL, NaN, plus(inf), minus(inf), []))─┐
-│ [1.25,null,"nan","inf","-inf",[]]                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─toJSONString((1.25, NULL, nan, inf, -inf, []))─┐
+│ [1.25,null,"nan","inf","-inf",[]]              │
+└────────────────────────────────────────────────┘
         )"
     }
     };

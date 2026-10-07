@@ -68,7 +68,7 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 8192 rows in set. Elapsed: 0.079 sec. Processed 100.00 million rows, 800.10 MB (1.26 billion rows/s., 10.10 GB/s.
 ```
 
-Ajoutez maintenant un skip index très simple :
+Ajoutez maintenant un index de saut très simple :
 
 ```sql
 ALTER TABLE skip_table ADD INDEX vix my_value TYPE set(100) GRANULARITY 2;
@@ -219,7 +219,7 @@ Deux paramètres sont disponibles pour les index de saut.
   ## Bonnes pratiques des index de saut
 </div>
 
-Les index de saut ne sont pas intuitifs, surtout pour les personnes habituées aux index secondaires orientés lignes des SGBDR ou aux index inversés des bases documentaires. Pour qu’un data skipping index apporte un réel bénéfice dans ClickHouse, il doit permettre d’éviter suffisamment de lectures de granules pour compenser le coût de calcul de l’index. Point crucial : si une valeur apparaît ne serait-ce qu’une seule fois dans un bloc indexé, l’ensemble du bloc doit être chargé en mémoire puis évalué, et le coût de l’index a alors été engagé en vain.
+Les index de saut ne sont pas intuitifs, surtout pour les personnes habituées aux index secondaires orientés lignes des SGBDR ou aux index inversés des bases documentaires. Pour qu’un index de saut de données apporte un réel bénéfice dans ClickHouse, il doit permettre d’éviter suffisamment de lectures de granules pour compenser le coût de calcul de l’index. Point crucial : si une valeur apparaît ne serait-ce qu’une seule fois dans un bloc indexé, l’ensemble du bloc doit être chargé en mémoire puis évalué, et le coût de l’index a alors été engagé en vain.
 
 Considérez la distribution des données suivante :
 
@@ -267,5 +267,5 @@ simples raisonnements théoriques.
 
 * [Guide des bonnes pratiques](/fr/concepts/best-practices/using-data-skipping-indices)
 * [Exemples d’index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Gestion des index de saut de données](/fr/reference/statements/alter/skipping-index)
+* [Manipulation des index de saut de données](/fr/reference/statements/alter/skipping-index)
 * [Informations sur la table système](/fr/reference/system-tables/data_skipping_indices)

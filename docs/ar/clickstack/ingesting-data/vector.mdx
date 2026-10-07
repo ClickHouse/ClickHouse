@@ -30,9 +30,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
     يفترض هذا الدليل أنك أنشأت بالفعل خدمة Managed ClickStack ودوّنت بيانات اعتماد الخدمة. إن لم تكن قد فعلت ذلك، اتّبع دليل [البدء](/ar/clickstack/getting-started/managed) الخاص بـ Managed ClickStack حتى تصل إلى خطوة ضبط إعدادات Vector.
 
     <Steps>
-      <Step>
-        ### أنشئ قاعدة بيانات وجدولًا
-
+      <Step title="أنشئ قاعدة بيانات وجدولًا" id="create-a-database-table">
         يتطلب Vector تعريف جدول ومخطط قبل بدء استيعاب البيانات.
 
         أنشئ أولًا قاعدة بيانات. ويمكن القيام بذلك عبر [ClickHouse Cloud console](/ar/products/cloud/features/sql-console-features/sql-console).
@@ -72,9 +70,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ### أضِف وجهة ClickHouse إلى إعدادات Vector
-
+      <Step title="أضِف وجهة ClickHouse إلى إعدادات Vector" id="add-clickhouse-sink-to-config">
         عدّل إعدادات Vector لتشمل وجهة ClickHouse، مع تحديث الحقل `inputs` لاستقبال الأحداث من خطوط المعالجة الحالية لديك.
 
         يفترض هذا الإعداد أن خط المعالجة السابق في Vector لديك قد **هيّأ البيانات بالفعل لتتوافق مع مخطط ClickHouse المستهدف**، أي إن الحقول قد تم تحليلها وتسميتها بشكل صحيح وتحديد أنواعها بما يناسب الإدراج. راجع [**مثال Nginx أدناه**](#example-dataset-with-vector) للاطلاع على شرح كامل لكيفية تحليل أسطر السجل الخام وتطبيعها إلى مخطط مناسب لـ ClickStack.
@@ -107,17 +103,13 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### الانتقال إلى واجهة ClickStack
-
+      <Step title="الانتقال إلى واجهة ClickStack" id="navigate-to-clickstack-ui">
         انتقل إلى خدمة Managed ClickStack الخاصة بك، ثم اختر &quot;ClickStack&quot; من القائمة الجانبية اليسرى. إذا كنت قد أكملت الإعداد الأولي بالفعل، فسيؤدي ذلك إلى فتح واجهة ClickStack في علامة تبويب جديدة، وستتم مصادقتك تلقائيًا. وإذا لم تكن قد أكملت ذلك بعد، يمكنك متابعة الإعداد الأولي واختيار “Launch ClickStack” بعد تحديد Vector كمصدر للإدخال.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="تشغيل ClickStack لـ Vector" size="lg" />
       </Step>
 
-      <Step>
-        ### إنشاء مصدر بيانات
-
+      <Step title="إنشاء مصدر بيانات" id="create-a-datasource-managed">
         أنشئ مصدر بيانات للسجلات. إذا لم تكن هناك أي مصادر بيانات، فسيُطلب منك إنشاء واحد عند تسجيل الدخول لأول مرة. وإلا، فانتقل إلى إعدادات الفريق وأضف مصدر بيانات جديدًا.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
@@ -131,9 +123,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         لخيارات أخرى ممكنة، راجع [مرجع التكوين](/ar/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### استكشاف البيانات
-
+      <Step title="استكشاف البيانات" id="explore-the-data-managed">
         انتقل إلى عرض السجلات لاستكشاف البيانات والبدء في استخدام ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="سجلات Nginx في ClickStack" size="lg" />
@@ -143,9 +133,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
 
   <Tab title="ClickStack مفتوح المصدر">
     <Steps>
-      <Step>
-        ### أنشئ قاعدة بيانات وجدولًا
-
+      <Step title="أنشئ قاعدة بيانات وجدولًا" id="create-a-database-table-oss">
         يتطلب Vector تعريف جدول ومخطط مسبقًا قبل إدخال البيانات.
 
         أنشئ أولًا قاعدة بيانات. يمكن القيام بذلك عبر [واجهة مستخدم ClickHouse على الويب](/ar/concepts/features/interfaces/http#web-ui) على [http://localhost:8123/play](http://localhost:8123/play). استخدم اسم المستخدم وكلمة المرور الافتراضيين `api:api`.
@@ -158,7 +146,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        أنشئ جدولًا لبياناتك. يجب أن يطابق ذلك مخطط الإخراج الخاص ببياناتك. يفترض المثال أدناه هيكل Nginx كلاسيكيًا. عدّله بما يتناسب مع بياناتك، مع الالتزام بـ[أفضل ممارسات المخطط](/ar/concepts/best-practices/select-data-type). **نوصي بشدة** بالاطلاع على [مفهوم المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes)، واختيار مفتاحك الأساسي وفقًا للإرشادات الموضحة [هنا](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        أنشئ جدولًا لبياناتك. يجب أن يتطابق هذا مع مخطط إخراج بياناتك. يفترض المثال أدناه بنية Nginx تقليدية. عدّل ذلك بما يتناسب مع بياناتك، مع الالتزام بـ[أفضل ممارسات المخطط](/ar/concepts/best-practices/select-data-type). نحن **نوصي بشدة** بالاطلاع على [مفهوم المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes)، واختيار مفتاحك الأساسي استنادًا إلى الإرشادات الموضحة [هنا](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,13 +171,11 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         <Info>
           **المفتاح الأساسي لـ Nginx**
 
-          يفترض المفتاح الأساسي أعلاه أنماط الوصول المعتادة في واجهة ClickStack لسجلات Nginx، لكنه قد يحتاج إلى تعديل وفقًا لحمل العمل لديك في بيئات الإنتاج.
+          يفترض المفتاح الأساسي أعلاه أنماط الوصول المعتادة في واجهة ClickStack لسجلات Nginx، لكن قد يلزم تعديله بحسب حمل العمل لديك في بيئات الإنتاج.
         </Info>
       </Step>
 
-      <Step>
-        ### أضِف وجهة ClickHouse إلى إعدادات Vector
-
+      <Step title="أضِف وجهة ClickHouse إلى إعدادات Vector" id="add-clickhouse-config-to-sink-oss">
         يجب أن يتم إدخال البيانات إلى ClickStack عبر Vector مباشرةً إلى ClickHouse، مع تجاوز نقطة نهاية OTLP التي يوفّرها المجمّع.
 
         عدّل إعدادات Vector لتضمين وجهة ClickHouse، مع تحديث الحقل `inputs` لاستقبال الأحداث من مسارات المعالجة الحالية.
@@ -224,17 +210,13 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### الانتقال إلى واجهة ClickStack
-
+      <Step title="الانتقال إلى واجهة ClickStack" id="navigate-to-clickstack-ui-oss">
         انتقل إلى واجهة ClickStack على [http://localhost:8080](http://localhost:8080). أنشئ مستخدمًا إذا لم تكن قد أكملت خطوات الإعداد.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="تسجيل الدخول إلى ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### إنشاء مصدر بيانات
-
+      <Step title="إنشاء مصدر بيانات" id="create-a-datasource-oss">
         انتقل إلى إعدادات الفريق وأضف مصدر بيانات جديدًا.
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
@@ -248,10 +230,8 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         للاطلاع على خيارات أخرى، راجع [مرجع الإعدادات](/ar/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### استعرض البيانات
-
-        انتقل إلى عرض السجلات لاستعراض البيانات وبدء استخدام ClickStack.
+      <Step title="استكشاف البيانات" id="explore-the-data-oss">
+        انتقل إلى عرض السجلات لاستكشاف البيانات والبدء في استخدام ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="سجلات Nginx في ClickStack" size="lg" />
       </Step>
@@ -270,21 +250,15 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
     يفترض هذا الدليل أنك أنشأت بالفعل خدمة Managed ClickStack ودوّنت بيانات اعتماد الخدمة. إن لم تكن قد فعلت ذلك، اتّبع دليل [البدء](/ar/clickstack/getting-started/managed) الخاص بـ Managed ClickStack حتى تصل إلى خطوة تهيئة Vector.
 
     <Steps>
-      <Step>
-        ### تثبيت Vector
-
+      <Step title="تثبيت Vector" id="installing-vector">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### نزّل عيّنة البيانات
-
+      <Step title="نزّل عيّنة البيانات" id="download-the-sample-data">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### أنشئ قاعدة بيانات وجدولًا
-
+      <Step title="أنشئ قاعدة بيانات وجدولًا" id="create-database-table-nginx-managed">
         يتطلب Vector تعريف جدول ومخطط قبل إدخال البيانات.
 
         أنشئ أولًا قاعدة بيانات. يمكن إجراء ذلك عبر [ClickHouse Cloud console](/ar/products/cloud/features/sql-console-features/sql-console).
@@ -320,13 +294,11 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         <Info>
           **المفتاح الأساسي لـ Nginx**
 
-          يفترض المفتاح الأساسي المذكور أعلاه أنماط الوصول المعتادة في واجهة ClickStack لسجلات Nginx، لكنه قد يحتاج إلى تعديل وفقًا لحمل العمل لديك في بيئات الإنتاج.
+          يفترض المفتاح الأساسي أعلاه أنماط الوصول المعتادة في واجهة مستخدم ClickStack لسجلات Nginx، لكنه قد يحتاج إلى تعديل بحسب عبء العمل لديك في بيئات الإنتاج.
         </Info>
       </Step>
 
-      <Step>
-        ### انسخ تهيئة Vector
-
+      <Step title="انسخ تهيئة Vector" id="copy-vector-configuration">
         انسخ تهيئة Vector وأنشئ ملفًا باسم `nginx.yaml`، مع ضبط `CLICKHOUSE_ENDPOINT` و`CLICKHOUSE_PASSWORD`.
 
         ```yaml
@@ -370,9 +342,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### تشغيل Vector
-
+      <Step title="تشغيل Vector" id="start-vector">
         شغّل Vector بالأمر التالي، مع إنشاء دليل البيانات أولًا لتسجيل إزاحات الملف.
 
         ```bash
@@ -381,17 +351,13 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         ```
       </Step>
 
-      <Step>
-        ### انتقل إلى واجهة مستخدم ClickStack
-
+      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-nginx-managed">
         انتقل إلى خدمة Managed ClickStack الخاصة بك وحدد &quot;ClickStack&quot; من القائمة الموجودة على الجانب الأيسر. إذا كنت قد أكملت بالفعل عملية التهيئة، فسيؤدي ذلك إلى فتح واجهة مستخدم ClickStack في علامة تبويب جديدة، وستتم مصادقتك تلقائيًا. وإذا لم تكن قد أكملت ذلك بعد، فيمكنك متابعة عملية التهيئة وتحديد “Launch ClickStack” بمجرد اختيار Vector كمصدر للإدخال.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="تشغيل ClickStack لـ Vector" size="lg" />
       </Step>
 
-      <Step>
-        ### إنشاء مصدر بيانات
-
+      <Step title="إنشاء مصدر بيانات" id="create-a-datasource-nginx-managed">
         أنشئ مصدر بيانات للسجلات. إذا لم تكن هناك أي مصادر بيانات، فسيُطلب منك إنشاء واحد عند أول تسجيل دخول. بخلاف ذلك، انتقل إلى إعدادات الفريق وأضف مصدر بيانات جديدًا.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
@@ -424,9 +390,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         للاطلاع على الخيارات الأخرى المتاحة، راجع [مرجع التهيئة](/ar/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### استكشاف البيانات
-
+      <Step title="استكشاف البيانات" id="explore-the-data-nginx-managed">
         انتقل إلى عرض البحث ليوم `October 20th, 2025` لاستكشاف البيانات وبدء استخدام ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="واجهة مستخدم HyperDX" size="lg" />
@@ -438,21 +402,15 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
     يفترض هذا الدليل أنك أعددت ClickStack Open Source باتباع [دليل البدء](/ar/clickstack/getting-started/oss).
 
     <Steps>
-      <Step>
-        ### تثبيت Vector
-
+      <Step title="تثبيت Vector" id="installing-vector-oss">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### نزّل بيانات العينة
-
+      <Step title="نزّل عيّنة البيانات" id="download-the-sample-data-oss">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### أنشئ قاعدة بيانات وجدولًا
-
+      <Step title="أنشئ قاعدة بيانات وجدولًا" id="create-a-database-table-nginx-oss">
         يتطلب Vector تعريف جدول ومخطط مسبقًا قبل إدخال البيانات.
 
         أنشئ أولًا قاعدة بيانات. يمكن تنفيذ ذلك عبر [واجهة الويب لـ ClickHouse](/ar/concepts/features/interfaces/http#web-ui) على [http://localhost:8123/play](http://localhost:8123/play). استخدم اسم المستخدم وكلمة المرور الافتراضيين `api:api`.
@@ -494,9 +452,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ### انسخ إعدادات Vector
-
+      <Step title="انسخ تهيئة Vector" id="copy-vector-configuration-nginx-oss">
         يجب أن يتم إدخال البيانات إلى ClickStack من Vector مباشرةً إلى ClickHouse، مع تجاوز نقطة نهاية OTLP التي يوفّرها الـ collector.
 
         انسخ إعدادات Vector وأنشئ ملفًا باسم `nginx.yaml`.
@@ -542,9 +498,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### تشغيل Vector
-
+      <Step title="تشغيل Vector" id="start-vector-oss-nginx">
         شغّل Vector باستخدام الأمر التالي.
 
         ```bash
@@ -553,9 +507,7 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         ```
       </Step>
 
-      <Step>
-        ### إنشاء مصدر بيانات
-
+      <Step title="إنشاء مصدر بيانات" id="create-a-datasource-nginx-oss">
         أنشئ مصدر بيانات للسجلات عبر `Team -> Sources`
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
@@ -583,25 +535,21 @@ import VectorSampleData from '/snippets/ar/_vector_sample_data.mdx';
         )
         ```
 
-        يعيد هذا تكوين سطر السجل من الحقول المُهيكلة.
+        يعيد هذا بناء سطر السجل من الحقول المنظَّمة.
 
         للاطلاع على الخيارات الأخرى المتاحة، راجع [مرجع التهيئة](/ar/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### انتقل إلى واجهة ClickStack
-
+      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-nginx-oss">
         انتقل إلى واجهة ClickStack على [http://localhost:8080](http://localhost:8080). أنشئ مستخدمًا إذا لم تكن قد أكملت onboarding.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="تسجيل الدخول إلى ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### استكشاف البيانات
+      <Step title="استكشاف البيانات" id="explore-the-data-nginx-oss">
+        انتقل إلى عرض البحث ليوم `October 20th, 2025` لاستكشاف البيانات وبدء استخدام ClickStack.
 
-        انتقل إلى عرض البحث ليوم `20 أكتوبر 2025` لاستكشاف البيانات والبدء في استخدام ClickStack.
-
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="واجهة مستخدم HyperDX" size="lg" />
       </Step>
     </Steps>
   </Tab>

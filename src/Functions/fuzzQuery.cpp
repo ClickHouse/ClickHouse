@@ -156,7 +156,7 @@ REGISTER_FUNCTION(fuzzQuery)
                            "Non-deterministic: each call may produce a different result. "
                            "Requires `allow_fuzz_query_functions = 1`.",
             .syntax = "fuzzQuery(query)",
-            .arguments = {{"query", "The SQL query to be fuzzed. [String](../../sql-reference/data-types/string.md)"}},
+            .arguments = {{"query", "The SQL query to be fuzzed. [String](/reference/data-types/string)"}},
             .returned_value = {"The fuzzed query string", {"String"}},
             .examples{
                 {"basic",

@@ -155,4 +155,11 @@ private:
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 
+/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
+void checkStorageSettingNames(const StorageFactory::Arguments & args);
+
+/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
+/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
+bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
 }

@@ -23,15 +23,13 @@ for FMT in Arrow ArrowStream; do
             tuple(toLowCardinality('t'), number)::Tuple(a LowCardinality(String), b UInt64) AS tup_lc
         FROM numbers(4)
         SETTINGS output_format_arrow_low_cardinality_as_dictionary = 1,
-                 output_format_arrow_use_native_writer = 1,
                  output_format_arrow_string_as_string = 1,
                  output_format_arrow_compression_method = 'none',
                  engine_file_truncate_on_insert = 1
     "
 
-    native=$(${CLICKHOUSE_LOCAL}  --query "SELECT lc, arr_lc, tup_lc FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY tup_lc.2 SETTINGS input_format_arrow_use_native_reader = 1")
-    library=$(${CLICKHOUSE_LOCAL} --query "SELECT lc, arr_lc, tup_lc FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY tup_lc.2 SETTINGS input_format_arrow_use_native_reader = 0")
-    if [ "$native" = "$library" ]; then echo "OK native==library | ${FMT}"; echo "$native"; else echo "MISMATCH | ${FMT}"; fi
+    echo "| ${FMT}"
+    ${CLICKHOUSE_LOCAL} --query "SELECT lc, arr_lc, tup_lc FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY tup_lc.2"
 
     rm -f "${DATA_FILE}.${FMT}"
 done

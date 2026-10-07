@@ -8,7 +8,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) は、概念的には従来の OLTP データベースにおける materialized view と似ており、指定したクエリの結果を保存することで高速な取得を可能にし、リソースを大量に消費するクエリを繰り返し実行する必要を減らします。ClickHouse の [インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) とは異なり、こちらはデータセット全体に対してクエリを定期的に実行する必要があり、その結果はクエリ用のターゲットテーブルに保存されます。理論上、この result set は元のデータセットよりも小さくなるため、後続のクエリをより高速に実行できます。
+[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) は、概念的には従来の OLTP データベースにおける materialized view と似ており、指定したクエリの結果を保存することで高速な取得を可能にし、リソースを大量に消費するクエリを繰り返し実行する必要を減らします。ClickHouse の [インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) とは異なり、こちらはデータセット全体に対してクエリを定期的に実行する必要があり、その結果はクエリ用のターゲットテーブルに保存されます。理論上、この 結果セット は元のデータセットよりも小さくなるため、後続のクエリをより高速に実行できます。
 
 次の図は、リフレッシャブルmaterialized viewの動作を示しています。
 
@@ -30,9 +30,7 @@ ClickHouseのインクリメンタルmaterialized viewは非常に強力で、�
 
 > リフレッシャブルmaterialized viewでは、非正規化のようなタスクを実行するバッチ処理を実行できます。リフレッシャブルmaterialized view間には依存関係を作成でき、あるビューが別のビューの結果に依存し、その完了後にのみ実行されるようにできます。これにより、スケジュールされたワークフローや、[dbt](https://www.getdbt.com/) job のような単純なDAGを置き換えられます。リフレッシャブルmaterialized view間の依存関係の設定方法について詳しくは、[CREATE VIEW](/ja/reference/statements/create/view#refresh-dependencies) の `Dependencies` セクションを参照してください。
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？
-</div>
+## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？ {#how-do-you-refresh-a-refreshable-materialized-view}
 
 リフレッシャブルmaterialized viewは、作成時に定義した間隔で自動的にリフレッシュされます。
 たとえば、次のmaterialized viewは1分ごとにリフレッシュされます。
@@ -51,6 +49,10 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 ビューはキャンセル、停止、開始することもできます。
 詳しくは、[リフレッシャブルmaterialized viewの管理](/ja/reference/statements/system#managing-refreshable-materialized-views)のドキュメントを参照してください。
+
+<Warning>
+  リフレッシュが ClickHouse Keeper を介して調整されていないリフレッシャブルmaterialized viewは、最後にリフレッシュした時刻の情報が失われるため、サーバーの再起動後にすべてが一斉にリフレッシュされる可能性があります。影響を受けるビューと、それらを1つずつ順に再開する方法については、[サーバー再起動時にリフレッシャブルmaterialized viewはどうなるか](/ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts)を参照してください。
+</Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
   ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？

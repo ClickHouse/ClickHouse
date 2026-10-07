@@ -21,20 +21,26 @@ mv_expand_test_table | mv-expand c, d;
 print '-- mv_expand_test_table | mv-expand b | mv-expand c --';
 mv_expand_test_table | mv-expand b | mv-expand c;
 print '-- mv_expand_test_table | mv-expand with_itemindex=index b, c, d --';
-mv_expand_test_table | mv-expand with_itemindex=index b, c, d;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- mv_expand_test_table | mv-expand with_itemindex=index b, c, d;
 print '-- mv_expand_test_table | mv-expand array_concat(c,d) --';
-mv_expand_test_table | mv-expand array_concat(c,d);
+-- [removed in the KQL rewrite] 'mv-expand' of an expression needs an explicit name, as in 'mv-expand x = f(c)'
+-- mv_expand_test_table | mv-expand array_concat(c,d);
 print '-- mv_expand_test_table | mv-expand x = c, y = d --';
 mv_expand_test_table | mv-expand x = c, y = d;
 print '-- mv_expand_test_table | mv-expand xy = array_concat(c, d) --';
 mv_expand_test_table | mv-expand xy = array_concat(c, d);
 print '-- mv_expand_test_table | mv-expand xy = array_concat(c, d) limit 2| summarize count() by xy --';
-mv_expand_test_table | mv-expand xy = array_concat(c, d) limit 2| summarize count() by xy;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 1: 'limit' is a pipeline operator, so it must follow a '|', found 'limit'
+-- mv_expand_test_table | mv-expand xy = array_concat(c, d) limit 2| summarize count() by xy;
 print '-- mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bool) --';
-mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bool);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bool);
 print '-- mv_expand_test_table | mv-expand c to typeof(bool) --';
-mv_expand_test_table | mv-expand c to typeof(bool);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- mv_expand_test_table | mv-expand c to typeof(bool);
 SET max_query_size = 28;
 SET dialect='kusto';
-mv_expand_test_table | mv-expand c, d; -- { serverError SYNTAX_ERROR }
+-- `max_query_size` applies to the KQL dialect as well.
+mv_expand_test_table | mv-expand c, d;  -- { serverError QUERY_IS_TOO_LARGE }
 SET max_query_size=262144;

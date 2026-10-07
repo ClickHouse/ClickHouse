@@ -32,9 +32,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * صلاحية تعديل ملفات تهيئة Nginx
 
 <Steps>
-  <Step>
-    #### إعداد تنسيق سجلات Nginx
-
+  <Step title="إعداد تنسيق سجلات Nginx" id="configure-nginx">
     أولًا، اضبط Nginx لإخراج السجلات بتنسيق JSON لتسهيل تحليلها. أضف تعريف تنسيق السجلات هذا إلى ملف `nginx.conf`:
 
     يوجد ملف `nginx.conf` عادةً في:
@@ -69,9 +67,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     بعد إجراء هذا التغيير، أعد تحميل Nginx.
   </Step>
 
-  <Step>
-    #### أنشئ إعدادًا مخصصًا لـ OTel collector
-
+  <Step title="أنشئ إعدادًا مخصصًا لـ OTel collector" id="custom-otel">
     يتيح لك ClickStack توسيع الإعداد الأساسي لـ OpenTelemetry Collector من خلال إرفاق ملف إعداد مخصص وتعيين متغير بيئة. ويُدمج هذا الإعداد المخصص مع الإعداد الأساسي الذي يديره HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم nginx-monitoring.yaml بالمحتوى التالي:
@@ -122,9 +118,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### هيّئ ClickStack لتحميل تهيئة مخصصة
-
+  <Step title="هيّئ ClickStack لتحميل تهيئة مخصصة" id="load-custom">
     لتمكين تهيئة مخصصة للمجمّع في عملية نشر ClickStack الحالية، يجب عليك:
 
     1. تركيب ملف التهيئة المخصص في ‎/etc/otelcol-contrib/custom.config.yaml
@@ -166,9 +160,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بعد اكتمال الإعداد، سجّل الدخول إلى HyperDX وتحقق من أن السجلات تتدفّق:
 
     1. انتقل إلى Search view
@@ -189,9 +181,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل nginx قبل تهيئة أنظمة الإنتاج لديهم، نوفر مجموعة بيانات تجريبية من سجلات وصول nginx المُولَّدة مسبقًا بأنماط حركة مرور واقعية.
 
 <Steps>
-  <Step>
-    #### نزّل مجموعة البيانات التجريبية
-
+  <Step title="نزّل مجموعة البيانات التجريبية" id="download-sample">
     ```bash
     # نزّل السجلات
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
@@ -205,9 +195,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * أزمنة استجابة وأعداد بايتات واقعية
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة مجمّع الاختبار
-
+  <Step title="أنشئ تهيئة مجمّع الاختبار" id="test-config">
     أنشئ ملفًا باسم `nginx-demo.yaml` بالمحتوى التالي:
 
     ```yaml
@@ -242,9 +230,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### شغّل ClickStack باستخدام تهيئة العرض التجريبي
-
+  <Step title="شغّل ClickStack باستخدام تهيئة العرض التجريبي" id="run-demo">
     شغّل ClickStack باستخدام سجلات العرض التجريبي وهذه التهيئة:
 
     ```bash
@@ -257,9 +243,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من السجلات في HyperDX
-
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
     بمجرد تشغيل ClickStack:
 
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
@@ -284,16 +268,14 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   ## لوحات المعلومات والتصورات
 </div>
 
-لمساعدتك على البدء في مراقبة Nginx باستخدام ClickStack، نوفر مرئيات أساسية لسجلات Nginx.
+لمساعدتك على البدء في مراقبة Nginx باستخدام ClickStack، نوفر تصورات أساسية لسجلات Nginx.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعداد لوحة المعلومات
+  <Step title="تنزيل ملف إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">تنزيل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة المعلومات المُعدّة مسبقًا
-
+  <Step title="استيراد لوحة المعلومات المُعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
@@ -304,9 +286,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### ستُنشأ لوحة المعلومات مع تهيئة جميع المرئيات مسبقًا
-
+  <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (مع تعديله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا بشكل افتراضي.
     </Note>
@@ -380,4 +360,4 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يبني هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

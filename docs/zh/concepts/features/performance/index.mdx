@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
 sidebarTitle: '性能与优化概览'
-description: '“性能与优化”的概览页面'
+description: '性能与优化概览页面'
 title: '性能与优化'
 keywords: ['性能优化', '最佳实践', '优化指南', 'ClickHouse 性能', '数据库优化']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/zh/_performance_optimizations_table_of_contents.mdx';
+本节包含使用 ClickHouse 提升性能的技巧和最佳实践。
+我们建议用户在阅读本节之前先阅读[核心概念](/zh/concepts/core-concepts/parts)，
+其中介绍了提升性能所需的主要概念。
 
-本节包含一些关于使用 ClickHouse 提升性能的提示和最佳实践。
-我们建议用户先阅读[核心概念](/zh/concepts/core-concepts/parts)作为本节的预备内容，
-其中涵盖了提升性能所需的主要概念。
+<CardGroup cols={2}>
+  <Card title="PREWHERE 优化" icon="filter" href="/zh/concepts/features/performance/prewhere">
+    了解 `PREWHERE` 如何通过在读取不必要的列之前先过滤数据来减少 I/O，以及如何监控其效果。
+  </Card>
 
-<TableOfContents />
+  <Card title="内存分配分析" icon="memory" href="/zh/concepts/features/performance/allocation-profiling">
+    使用 jemalloc 分析内存分配。
+  </Card>
+
+  <Card title="适用于 25.9 之前版本的内存分配分析" icon="clock-rotate-left" href="/zh/concepts/features/performance/allocation-profiling-old">
+    适用于 25.9 之前 ClickHouse 版本的内存分配分析。
+  </Card>
+
+  <Card title="缓存" icon="hard-drive" href="/zh/concepts/features/performance/caches/caches">
+    缓存类型，包括查询缓存、查询条件缓存和用户态页缓存。
+  </Card>
+
+  <Card title="数据跳过索引" icon="forward" href="/zh/concepts/features/performance/skip-indexes/skipping-indexes">
+    了解数据跳过索引，并附带示例。
+  </Card>
+
+  <Card title="延迟物化" icon="hourglass-half" href="/zh/concepts/features/performance/lazy-materialization">
+    将列数据的读取推迟到实际需要时再进行。
+  </Card>
+
+  <Card title="故障排查" icon="bug" href="/zh/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    调试内存问题、测试硬件，以及了解采样查询分析器。
+  </Card>
+</CardGroup>

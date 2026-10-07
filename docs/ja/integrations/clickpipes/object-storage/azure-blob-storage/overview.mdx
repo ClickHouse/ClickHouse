@@ -44,7 +44,7 @@ ABS ClickPipe は、指定したコンテナー内でパターンに一致する
 
 ABS ClickPipe は、ファイルがコンテナーに辞書式順序で追加されることを前提としており、この暗黙の順序に基づいてファイルを順番に取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書式順序で後になっている**必要があります**。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` がコンテナーに追加された場合、そのファイル名は最後に取り込まれたファイルよりも辞書式順序で後ではないため、**無視**されます。
 
-このモードでは、ABS ClickPipe は指定したパス内の**すべてのファイル**を初期ロードし、その後、新しいファイルがないかを設定可能な間隔 (デフォルトでは 30 Seconds) でポーリングします。特定のファイルや時点からインジェストを開始することは**できません**。ClickPipes は常に、指定したパス内のすべてのファイルを読み込みます。
+このモードでは、ABS ClickPipe は指定したパス内の**すべてのファイル**を初期ロードし、その後、新しいファイルがないかを設定可能な間隔 (デフォルトでは 30 Seconds) でポーリングします。特定のファイルの後から継続的インジェストを開始するには、**Start after** を設定します。ClickPipes は、設定値以下の辞書式順序のファイルをスキップし、その時点からより新しいファイルの取り込みを続行します。
 
 <div id="file-pattern-matching">
   ### ファイルパターンマッチング
@@ -152,7 +152,7 @@ ABS ClickPipes では、メタデータの検出とデータのインジェス�
   Azure Blob Storage コンテナーが ClickHouse Cloud サービスと同じ Azure リージョンにある場合、IP ベースのアクセス制御は**機能しません**。両方のサービスが同じリージョン内にあると、トラフィックはパブリックインターネットではなく Azure の内部ネットワークを経由してルーティングされます。
 </Warning>
 
-* **IP ベースのアクセス制御**では、Azure Storage ファイアウォールの [IP network rules](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) で、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)に記載されている ClickPipes サービスリージョンの静的 IP と、ClickHouse Cloud サービスの [静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行してください。
+* **IP ベースのアクセス制御**では、Azure Storage ファイアウォールの [IP network rules](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) で、[こちら](/ja/integrations/clickpipes/networking/static-ips)に記載されている ClickPipes サービスリージョンの静的 IP と、ClickHouse Cloud サービスの [静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行してください。
 
   ```bash
   # <your-region> を ClickHouse Cloud のリージョンに置き換えます
@@ -165,18 +165,19 @@ ABS ClickPipes では、メタデータの検出とデータのインジェス�
 
 ClickPipes には、ほとんどのユースケースの要件を満たす適切なデフォルト設定が用意されています。さらに細かく調整する必要がある場合は、次の設定を変更できます。
 
-| Setting                              | Default value | Description                                                                                                       |
-| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | 1 回の insert バッチで処理するバイト数。                                                                                         |
-| `Max file count`                     | 100           | 1 回の insert バッチで処理するファイルの最大数。                                                                                     |
-| `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                      |
-| `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
-| `Min insert block size bytes`        | 1GB           | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
-| `Max download threads`               | 4             | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                  |
-| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                         |
-| `Parallel distributed insert select` | 2             | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false         | アタッチされたビューへのプッシュを[順次ではなく同時実行で](/ja/reference/settings/session-settings#parallel_view_processing)行うかどうか。              |
-| `Use cluster function`               | true          | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                     |
+| Setting                              | Default value | Description                                                                                                                |
+| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 1 回の insert バッチで処理するバイト数。                                                                                                  |
+| `Max file count`                     | 100           | 1 回の insert バッチで処理するファイルの最大数。                                                                                              |
+| `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings/max-threads#max_threads)。                                   |
+| `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings/max-insert#max_insert_threads)。                          |
+| `Min insert block size bytes`        | 1GB           | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                    |
+| `Max download threads`               | 4             | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings/max-download#max_download_threads)。                              |
+| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大ポーリング間隔を設定します。                                                                                  |
+| `Start after`                        | None          | 順序付きの継続的インジェストでは、設定したファイル名またはパス以下の辞書式順序のファイルをスキップします。                                                                        |
+| `Parallel distributed insert select` | 2             | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | アタッチされたビューへのプッシュを[順次ではなく同時実行で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)行うかどうか。              |
+| `Use cluster function`               | true          | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                              |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
 

@@ -1,30 +1,36 @@
 ---
-sidebarTitle: 'リファレンス'
-description: 'Kafka ClickPipes でサポートされる対応フォーマット、ソース、配信セマンティクス、認証、実験的機能について詳しく説明します。'
-slug: /integrations/clickpipes/kafka/reference
-title: 'リファレンス'
-doc_type: 'reference'
-keywords: ['kafka reference', 'clickpipes', 'data sources', 'avro', '仮想カラム']
+title: "リファレンス"
+sidebarTitle: "リファレンス"
+description: "Kafka ClickPipes でサポートされる対応フォーマット、ソース、配信セマンティクス、認証、実験的機能について詳しく説明します。"
+slug: "/integrations/clickpipes/kafka/reference"
+doc_type: "reference"
+keywords: ["kafka reference", "clickpipes", "data sources", "avro", "仮想カラム"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <div id="supported-data-sources">
-  ## 対応データソース
+  ## サポートされているデータソース
 </div>
 
-| 名称               | ロゴ                                                                                                 | 種別      | ステータス | 説明                                                                            |
+| 名前               | ロゴ                                                                                                 | Type    | ステータス | 説明                                                                            |
 | ---------------- | -------------------------------------------------------------------------------------------------- | ------- | ----- | ----------------------------------------------------------------------------- |
 | Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka ロゴ" width="32" />                | ストリーミング | 安定版   | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />         | ストリーミング | 安定版   | 直接インテグレーションにより、Confluent と ClickHouse Cloud の連携を活用できます。                       |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />            | ストリーミング | 安定版   | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。         |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />         | ストリーミング | 安定版   | 直接インテグレーションにより、Confluent と ClickHouse Cloud の連携を最大限に活用できます。                   |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />           | ストリーミング | 安定版   | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。         |
 | AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" width="32" />                       | ストリーミング | 安定版   | ClickPipes を設定し、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。          |
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" /> | ストリーミング | 安定版   | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。 |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />             | ストリーミング | 安定版   | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。       |
+
+<div id="isolation-level">
+  ## 分離レベル
+</div>
+
+Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザクションでコミットされたメッセージのみを読み取り、挿入するかどうかを決定します。`kafka_read_committed` 設定を有効にすると、`read_committed` が使用され、中断されたKafkaトランザクションのメッセージはスキップされます。無効にすると、`read_uncommitted` が使用され、すべてのメッセージが読み取られます。この設定は、**詳細設定** で構成できます。
 
 <div id="supported-data-formats">
   ## 対応データフォーマット
@@ -71,11 +77,8 @@ import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/Experim
 
 ClickPipes は、次の条件で Variant 型をサポートします。
 
-* Avro のユニオン。Avro スキーマに複数の NULL 以外の型を含むユニオンがある場合、ClickPipes は適切な
-  Variant 型を推論します。それ以外の Avro データでは、Variant 型はサポートされません。
-* JSON フィールド。ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を
-  手動で指定できます。複雑なサブタイプ (Array/Map/Tuple) はサポートされません。また、ClickPipes では使用すべき
-  Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つのみです。たとえば、`Variant(Int64, UInt32)` はサポートされません。
+* Avro のユニオン。Avro スキーマに複数の NULL 以外の型を含むユニオンがある場合、ClickPipes は適切な Variant 型を推論します。それ以外の Avro データでは、Variant 型はサポートされません。
+* JSON フィールド。ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を手動で指定できます。複雑なサブタイプ (Array/Map/Tuple) はサポートされません。また、ClickPipes では使用すべき Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つのみです。たとえば、`Variant(Int64, UInt32)` はサポートされません。
 
 <div id="json-type-support">
   ### JSON 型のサポート
@@ -98,8 +101,7 @@ fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型�
   #### サポートされる Avro データ型
 </div>
 
-ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。
-また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
+ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
 
 <div id="nullable-types-and-avro-unions">
   #### Nullable 型と Avro ユニオン
@@ -191,3 +193,15 @@ ClickPipe 用に定義された最上位の Protobuf スキーマに、それ自
 `_raw_message` カラムは、JSON データに対してのみ推奨される点に注意してください。
 JSON 文字列だけが必要なユースケースでは (たとえば、ClickHouse の [`JsonExtract*`](/ja/reference/functions/regular-functions/json-functions#jsonextract-functions) 関数を使用して
 下流の materialized view にデータを投入する場合) 、「仮想ではない」カラムをすべて削除することで ClickPipes のパフォーマンスが向上することがあります。
+
+<div id="structured-message-keys">
+  ### 構造化メッセージキー
+</div>
+
+`_key` を `String` カラムにマッピングすると、元の Kafka メッセージキーが保存されます。このマッピングでは、キーのデコードやスキーマのルックアップは行われません。構造化キーからフィールドを抽出するには、`_key.` で始まるソースフィールドをマッピングします。たとえば、JSON キー `{"customer":{"id":42}}` の場合、`_key.customer.id` を `customer_id` などの宛先カラムにマッピングします。
+
+`_key.*` のマッピング、または `String` 以外の型への `_key` の直接マッピングでは、ClickPipes はまず、キーが設定済みのスキーマレジストリを使用してエンコードされているかどうかを確認します。エンコードされていない場合は、キーが JSON オブジェクトかどうかを確認します。レジストリでエンコードされたキーは、レコード値と同じフォーマットおよびレジストリファミリーを使用する必要がありますが、異なるスキーマ ID を使用できます。キースキーマの変更は自動的に検出されます。
+
+デコードが有効な場合、生データのキー、JSON スカラーまたは配列、不正な JSON からはネストされたキーフィールドに値が設定されません。対応する宛先カラムには、型のデフォルト値が設定されます。ClickPipes がレジストリでエンコードされたキーを認識しても、そのスキーマを取得または適用できない場合は、Kafka レコードを ClickPipes エラーテーブルに書き込みます。
+
+Avro キーでは、プリミティブ型、配列、map、fixed 型など、レコード以外のルートスキーマも使用できます。これをデコードするには、`_key` を `String` 以外の互換性のある宛先型に直接マッピングします。レコード以外のスキーマでは、ネストされたキーフィールドに値を設定できません。

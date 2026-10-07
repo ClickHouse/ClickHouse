@@ -15,7 +15,7 @@ SET materialize_statistics_on_insert = 1;
 CREATE TABLE t_stats_time_mismatch
 (
     c0 Int8,
-    c1 Int16 STATISTICS(MinMax, Uniq),
+    c1 Int16 STATISTICS(basic, Uniq),
     c5 Date
 ) ENGINE = MergeTree()
 ORDER BY tuple();

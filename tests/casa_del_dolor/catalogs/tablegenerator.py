@@ -145,9 +145,7 @@ class LakeTableGenerator:
         # Escape backslashes BEFORE quotes: an entry like `\'` would otherwise become
         # `\\'` in the literal, where `\\` parses as a backslash and the quote then
         # terminates the string early -> PARSE_SYNTAX_ERROR on the rest of the DDL
-        return (
-            random.choice(SOME_STRINGS).replace("\\", "\\\\").replace("'", "\\'")
-        )
+        return random.choice(SOME_STRINGS).replace("\\", "\\\\").replace("'", "\\'")
 
     @staticmethod
     def _refresh_table_model(spark: SparkSession, table: SparkTable):
@@ -159,8 +157,21 @@ class LakeTableGenerator:
                 or "delta.identity.start" in field.metadata
                 or (field.name in table.columns and table.columns[field.name].generated)
             )
+            prev = table.columns.get(field.name)
+            # Only inherit the recorded ClickHouse type while the Spark type is unchanged; an
+            # ALTER COLUMN ... TYPE makes the old clickhouse_type stale, which would mislead the
+            # _LOSSY_CH_INT_RE hash-comparability check. Clear it on a type change (no CH origin).
+            inherited_ch_type = (
+                prev.clickhouse_type
+                if prev and prev.spark_type == field.dataType
+                else ""
+            )
             new_columns[field.name] = SparkColumn(
-                field.name, field.dataType, field.nullable, generated
+                field.name,
+                field.dataType,
+                field.nullable,
+                generated,
+                inherited_ch_type,
             )
         table.columns = new_columns
         table.check_constraints.clear()
@@ -271,6 +282,9 @@ class LakeTableGenerator:
                     from pyspark.sql.types import _parse_datatype_string
 
                     sc.spark_type = _parse_datatype_string(new_type_str)
+                    # The Spark type changed, so the recorded ClickHouse type is stale; clear it so
+                    # _LOSSY_CH_INT_RE no longer treats a widened column as a CH-origin lossy int.
+                    sc.clickhouse_type = ""
                     return ""
         return ""
 
@@ -298,6 +312,10 @@ class LakeTableGenerator:
         random.shuffle(random_subset)
         return ",".join(random_subset)
 
+    def set_table_location(self, next_location: typing.Optional[str]) -> str:
+        """Spark puts LOCATION after PARTITIONED BY and before COMMENT."""
+        return f" LOCATION '{next_location}'" if next_location is not None else ""
+
     def generate_create_table_ddl(
         self,
         catalog_name: str,
@@ -308,6 +326,7 @@ class LakeTableGenerator:
         deterministic: bool,
         next_storage: TableStorage,
         next_catalog: LakeCatalogs,
+        next_location: typing.Optional[str] = None,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -389,7 +408,7 @@ class LakeTableGenerator:
                 f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}{col_comment}"
             )
             columns_spark[val["name"]] = SparkColumn(
-                val["name"], spark_type, nullable, len(generated) > 0
+                val["name"], spark_type, nullable, len(generated) > 0, next_ch_type
             )
             first = False
         ddl += ",".join(columns_def)
@@ -465,7 +484,7 @@ class LakeTableGenerator:
                 flat_cols = res.flat_columns()
                 res.partition_keys = [c for c in random_subset if c in flat_cols]
 
-        # ddl += self.set_table_location(next_location) no location needed yet
+        ddl += self.set_table_location(next_location)
 
         # Optional table COMMENT (metadata only; supported by Iceberg and Delta)
         if random.randint(1, 3) == 1:
@@ -1518,9 +1537,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 properties["delta.columnMapping.mode"] = "none"
             else:
-                properties[
-                    "delta.compatibility.symlinkFormatManifest.enabled"
-                ] = "false"
+                properties["delta.compatibility.symlinkFormatManifest.enabled"] = (
+                    "false"
+                )
         return properties
 
     def generate_alter_table_statements(
@@ -1703,9 +1722,10 @@ class PaimonTableGenerator(LakeTableGenerator):
             ):
                 properties.pop(key, None)
         if properties.get("merge-engine") == "first-row":
-            # Paimon rejects a sequence field on the 'first-row' merge engine, and only
-            # 'none' and 'lookup' changelog producers are supported with it
+            # Paimon rejects a sequence field and deletion vectors on the 'first-row' merge
+            # engine, and only 'none' and 'lookup' changelog producers are supported with it
             properties.pop("sequence.field", None)
+            properties.pop("deletion-vectors.enabled", None)
             if properties.get("changelog-producer") not in (None, "none", "lookup"):
                 properties["changelog-producer"] = random.choice(["none", "lookup"])
         if (
@@ -1730,6 +1750,10 @@ class PaimonTableGenerator(LakeTableGenerator):
         # without a fixed 'bucket') alike, so require a fixed bucket here.
         if "full-compaction.delta-commits" in properties and "bucket" not in properties:
             del properties["full-compaction.delta-commits"]
+        # write-only installs NoopCompactManager, but full-compaction.delta-commits makes the
+        # writer trigger a guaranteed compaction on commit -> every INSERT fails
+        if properties.get("write-only") == "true":
+            properties.pop("full-compaction.delta-commits", None)
         for min_key, max_key in (
             ("snapshot.num-retained.min", "snapshot.num-retained.max"),
             ("compaction.min.file-num", "compaction.max.file-num"),

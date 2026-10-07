@@ -1,0 +1,9 @@
+Nullable(Tuple(a Nullable(UInt32), b String))
+Nullable(UInt32)
+1	1
+2	\N
+3	\N
+1	1
+2	\N
+1	\N
+2	5

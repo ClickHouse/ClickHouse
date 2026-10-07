@@ -16,6 +16,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
 
@@ -24,7 +26,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString additional_result_filter;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -56,18 +57,6 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
     : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getMaxThreadsForAvailableMemory(context->getSettingsRef()[Setting::max_threads], context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]))
 {
-    /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
-    /// it's possible that the analyzer will be enabled in ::getQueryProcessingStage method
-    /// of the underlying storage when all other parts of infrastructure are not ready for it
-    /// (built with old analyzer).
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        LOG_TRACE(getLogger("IInterpreterUnionOrSelectQuery"),
-            "The analyzer is enabled, but the old interpreter is used. It can be a bug, please report it. Will disable 'allow_experimental_analyzer' setting (for query: {})",
-            query_ptr->formatForLogging());
-        context->setSetting("allow_experimental_analyzer", false);
-    }
-
     if (options.shard_num)
         context->addSpecialScalar(
                 "_shard_num",

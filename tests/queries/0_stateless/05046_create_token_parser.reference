@@ -1,0 +1,12 @@
+-- The clauses are optional and can be written in any order; the formatted query is canonical
+CREATE TOKEN
+CREATE TOKEN VALID UNTIL \'2077-01-01\'
+CREATE TOKEN VALID FOR toIntervalDay(30)
+CREATE TOKEN GRANTS (SELECT ON db.t)
+CREATE TOKEN VALID UNTIL \'2077-01-01\' GRANTS (SELECT, INSERT ON db.t)
+CREATE TOKEN VALID UNTIL \'2077-01-01\' GRANTS (SELECT ON db.t)
+CREATE TOKEN VALID FOR toIntervalDay(1) GRANTS (USAGE ON *.*) FORMAT TSVRaw
+CREATE TOKEN FORMAT TSVRaw SETTINGS create_token_default_ttl_seconds = 0
+-- A grant of an authentication method is never widened by the backward-compatibility rewrites
+CREATE TOKEN GRANTS (ALTER USER ON alice)
+-- Malformed clauses are rejected

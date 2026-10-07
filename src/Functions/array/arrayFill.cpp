@@ -151,8 +151,8 @@ regardless of any condition.
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array", {"Array(T)"}};    FunctionDocumentation::Examples examples = {
-        {"Example with single array", "SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 1, 2, 2]"},
-        {"Example with two arrays", "SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res", "[5, 5, 6, 6]"}
+        {"Example with single array", "SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,1,2,2]"},
+        {"Example with two arrays", "SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res", "[5,5,6,6]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -176,8 +176,8 @@ regardless of any condition.
     };
     FunctionDocumentation::ReturnedValue returned_value_reverse = {"Returns an array with elements of the source array replaced by the results of the lambda.", {"Array(T)"}};
     FunctionDocumentation::Examples examples_reverse = {
-        {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 2, 2, NULL]"},
-        {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5, 6, 6, 2]"}
+        {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,2,2,NULL]"},
+        {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5,6,6,2]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_reverse = {20, 1};
     FunctionDocumentation::Category category_reverse = FunctionDocumentation::Category::Array;

@@ -12,7 +12,7 @@ ClickHouse peut déterminer automatiquement la structure de données JSON. Cela 
   ## Quand utiliser l&#39;inférence de type
 </div>
 
-* **Structure cohérente** - Les données à partir desquelles les types seront inférés contiennent toutes les clés qui vous intéressent. L&#39;inférence de type repose sur l&#39;échantillonnage des données jusqu&#39;à un [nombre maximal de lignes](/fr/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) ou d&#39;[octets](/fr/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Les données situées après l&#39;échantillon, avec des colonnes supplémentaires, seront ignorées et ne pourront pas être interrogées.
+* **Structure cohérente** - Les données à partir desquelles les types seront inférés contiennent toutes les clés qui vous intéressent. L&#39;inférence de type repose sur l&#39;échantillonnage des données jusqu&#39;à un [nombre maximal de lignes](/fr/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) ou d&#39;[octets](/fr/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). Les données situées après l&#39;échantillon, avec des colonnes supplémentaires, seront ignorées et ne pourront pas être interrogées.
 * **Types cohérents** - Les types de données associés à certaines clés doivent être compatibles, c&#39;est-à-dire qu&#39;il doit être possible de convertir automatiquement un type en un autre.
 
 Si votre JSON est plus dynamique, avec de nouvelles clés ajoutées et plusieurs types possibles pour le même chemin, consultez [&quot;Working with semi-structured and dynamic data&quot;](/fr/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
@@ -74,7 +74,7 @@ Vous pouvez constater que le jeu de données ci-dessus contient des objets JSON 
 L’utilisation de la [fonction s3](/fr/reference/functions/table-functions/s3) avec la commande `DESCRIBE` affiche les types qui seront déduits.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Évitez les valeurs NULL**
 
-  Vous pouvez constater que de nombreuses colonnes sont détectées comme Nullable. Nous [déconseillons d&#39;utiliser le type Nullable](/fr/reference/data-types/nullable#storage-features) sauf en cas de nécessité absolue. Vous pouvez utiliser [schema&#95;inference&#95;make&#95;columns&#95;nullable](/fr/reference/settings/formats#schema_inference_make_columns_nullable) pour contrôler les cas où Nullable est appliqué.
+  Vous pouvez constater que de nombreuses colonnes sont détectées comme Nullable. Nous [déconseillons d&#39;utiliser le type Nullable](/fr/reference/data-types/nullable#storage-features) sauf en cas de nécessité absolue. Vous pouvez utiliser [schema&#95;inference&#95;make&#95;columns&#95;nullable](/fr/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) pour contrôler les cas où Nullable est appliqué.
 </Info>
 
 Nous pouvons constater que la plupart des colonnes ont été automatiquement détectées comme `String`, et que la colonne `update_date` a bien été détectée comme `Date`. La colonne `versions` a été créée comme `Array(Tuple(created String, version String))` pour stocker une liste d&#39;objets, tandis que `authors_parsed` est défini comme `Array(Array(String))` pour les tableaux imbriqués.
@@ -108,7 +108,7 @@ Nous pouvons constater que la plupart des colonnes ont été automatiquement dé
 <Info>
   **Contrôle de la détection des types**
 
-  La détection automatique des dates et des valeurs DateTime peut être contrôlée respectivement à l’aide des paramètres [`input_format_try_infer_dates`](/fr/reference/settings/formats#input_format_try_infer_dates) et [`input_format_try_infer_datetimes`](/fr/reference/settings/formats#input_format_try_infer_datetimes) (tous deux activés par défaut). L’inférence d’objets sous forme de tuples est contrôlée par le paramètre [`input_format_json_try_infer_named_tuples_from_objects`](/fr/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). D’autres paramètres qui contrôlent l’inférence de schéma pour le JSON, comme la détection automatique des nombres, sont disponibles [ici](/fr/concepts/features/interfaces/schema-inference#text-formats).
+  La détection automatique des dates et des valeurs DateTime peut être contrôlée respectivement à l’aide des paramètres [`input_format_try_infer_dates`](/fr/reference/settings/formats/input-format#input_format_try_infer_dates) et [`input_format_try_infer_datetimes`](/fr/reference/settings/formats/input-format#input_format_try_infer_datetimes) (tous deux activés par défaut). L’inférence d’objets sous forme de tuples est contrôlée par le paramètre [`input_format_json_try_infer_named_tuples_from_objects`](/fr/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). D’autres paramètres qui contrôlent l’inférence de schéma pour le JSON, comme la détection automatique des nombres, sont disponibles [ici](/fr/concepts/features/interfaces/schema-inference#text-formats).
 </Info>
 
 <div id="querying-json">
@@ -124,7 +124,7 @@ SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-Ce qui précède est le schéma correct pour ces données. L’inférence de schéma repose sur l’échantillonnage des données et sur leur lecture ligne par ligne. Les valeurs des colonnes sont extraites selon le format, à l’aide de parseurs récursifs et d’heuristiques permettant de déterminer le type de chaque valeur. Le nombre maximal de lignes et d’octets lus à partir des données lors de l’inférence de schéma est contrôlé par les paramètres [`input_format_max_rows_to_read_for_schema_inference`](/fr/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 par défaut) et [`input_format_max_bytes_to_read_for_schema_inference`](/fr/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB par défaut). Si la détection est incorrecte, vous pouvez fournir des indications comme décrit [ici](/fr/reference/settings/formats#schema_inference_make_columns_nullable).
+Ce qui précède est le schéma correct pour ces données. L’inférence de schéma repose sur l’échantillonnage des données et sur leur lecture ligne par ligne. Les valeurs des colonnes sont extraites selon le format, à l’aide de parseurs récursifs et d’heuristiques permettant de déterminer le type de chaque valeur. Le nombre maximal de lignes et d’octets lus à partir des données lors de l’inférence de schéma est contrôlé par les paramètres [`input_format_max_rows_to_read_for_schema_inference`](/fr/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (25000 par défaut) et [`input_format_max_bytes_to_read_for_schema_inference`](/fr/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (32MB par défaut). Si la détection est incorrecte, vous pouvez fournir des indications comme décrit [ici](/fr/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
 
 <div id="creating-tables-from-snippets">
   ### Création de tables à partir d’extraits
@@ -249,7 +249,7 @@ Les commandes précédentes ont créé une table dans laquelle les données peuv
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## Gestion des erreurs
 </div>
 
-Il peut arriver que certaines données soient incorrectes. Par exemple, certaines colonnes peuvent ne pas avoir le bon type, ou un objet JSON peut être mal formaté. Dans ce cas, vous pouvez utiliser les paramètres [`input_format_allow_errors_num`](/fr/reference/settings/formats#input_format_allow_errors_num) et [`input_format_allow_errors_ratio`](/fr/reference/settings/formats#input_format_allow_errors_ratio) pour autoriser l&#39;ignorance d&#39;un certain nombre de lignes si les données provoquent des erreurs d&#39;insertion. De plus, des [indications](/fr/reference/settings/formats#schema_inference_hints) peuvent être fournies pour faciliter l&#39;inférence.
+Il peut arriver que certaines données soient incorrectes. Par exemple, certaines colonnes peuvent ne pas avoir le bon type, ou un objet JSON peut être mal formaté. Dans ce cas, vous pouvez utiliser les paramètres [`input_format_allow_errors_num`](/fr/reference/settings/formats/input-format#input_format_allow_errors_num) et [`input_format_allow_errors_ratio`](/fr/reference/settings/formats/input-format#input_format_allow_errors_ratio) pour autoriser l&#39;ignorance d&#39;un certain nombre de lignes si les données provoquent des erreurs d&#39;insertion. De plus, des [indications](/fr/reference/settings/formats/schema-inference#schema_inference_hints) peuvent être fournies pour faciliter l&#39;inférence.
 
 <div id="working-with-semi-structured-data">
   ## Travailler avec des données semi-structurées et dynamiques
@@ -337,7 +337,7 @@ Prenons l’exemple suivant, issu d’une version enrichie du jeu de données [P
 Un échantillon de ces données est accessible publiquement au format JSON délimité par des sauts de ligne. Si nous tentons une inférence de schéma sur ce fichier, vous constaterez que les performances sont médiocres et que la réponse est extrêmement détaillée :
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ Avec des milliers de colonnes uniques, cette approche de l’inférence est lent
 `JSONAsObject` traite l’entrée entière comme un seul objet JSON et la stocke dans une seule colonne de type [`JSON`](/fr/reference/data-types/newjson), ce qui le rend plus adapté aux payloads JSON très dynamiques ou imbriqués.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -375,7 +375,7 @@ Ce format est également essentiel lorsque des colonnes ont plusieurs types qui 
 Dans ce cas, ClickHouse peut résoudre le conflit de types par coercition et traiter la colonne `a` comme un `Nullable(String)`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -390,7 +390,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Conversion de type**
 
-  Cette conversion de type peut être contrôlée à l’aide d’un certain nombre de paramètres. L’exemple ci-dessus dépend du paramètre [`input_format_json_read_numbers_as_strings`](/fr/reference/settings/formats#input_format_json_read_numbers_as_strings).
+  Cette conversion de type peut être contrôlée à l’aide d’un certain nombre de paramètres. L’exemple ci-dessus dépend du paramètre [`input_format_json_read_numbers_as_strings`](/fr/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
 </Info>
 
 Cependant, certains types sont incompatibles. Prenons l’exemple suivant :
@@ -403,7 +403,7 @@ Cependant, certains types sont incompatibles. Prenons l’exemple suivant :
 Dans ce cas, aucune conversion de type n’est possible. La commande `DESCRIBE` échoue donc :
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 Dans ce cas, `JSONAsObject` considère chaque ligne comme une unique valeur de type [`JSON`](/fr/reference/data-types/newjson) (ce qui permet à une même colonne d&#39;avoir plusieurs types). C&#39;est essentiel :
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

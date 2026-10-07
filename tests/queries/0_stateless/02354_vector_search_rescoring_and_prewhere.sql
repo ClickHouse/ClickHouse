@@ -47,26 +47,24 @@ FROM tab
 ORDER BY L2Distance(vec, [0.2, 0.3]);
 
 SELECT 'Ensure rescoring optimization works with enabled and disabled PREWHERE';
--- Expect IDs 16 & 19 for next 2 queries
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 0,
-         optimize_move_to_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 1,
-         optimize_move_to_prewhere = 1;
+SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT 'Test with enabled rescoring';
--- Expect 16 & 19, and additionally 18 and 17 because they are in the same granules
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab
@@ -93,6 +91,7 @@ SELECT trimLeft(explain) AS explain FROM (
     PREWHERE attr1 > 110
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 4
+    SETTINGS vector_search_with_rescoring = 1
     )
 WHERE (explain LIKE '%_distance%');
 
@@ -101,7 +100,8 @@ SELECT id
 FROM tab
 PREWHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
-LIMIT 4;
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 1;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2

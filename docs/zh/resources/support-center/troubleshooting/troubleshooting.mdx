@@ -187,7 +187,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
    * 如果您在 IPv6 网络中的 Docker 容器里运行 ClickHouse，请确保已设置 `network=host`。
 
 2. 端点设置。
-   * 检查 [listen&#95;host](/zh/reference/settings/server-settings/settings#listen_host) 和 [tcp&#95;port](/zh/reference/settings/server-settings/settings#tcp_port) 设置。
+   * 检查 [listen&#95;host](/zh/reference/settings/server-settings/settings/listen#listen_host) 和 [tcp&#95;port](/zh/reference/settings/server-settings/settings/tcp-port#tcp_port) 设置。
    * 默认情况下，ClickHouse server 仅接受来自 localhost 的连接。
 
 3. HTTP protocol 设置：
@@ -197,8 +197,8 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 4. 安全连接设置。
 
    * 检查：
-     * [tcp&#95;port&#95;secure](/zh/reference/settings/server-settings/settings#tcp_port_secure) 设置。
-     * [SSL certificates](/zh/reference/settings/server-settings/settings#openssl) 相关设置。
+     * [tcp&#95;port&#95;secure](/zh/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) 设置。
+     * [SSL certificates](/zh/reference/settings/server-settings/settings/other#openssl) 相关设置。
    * 连接时请使用正确的参数。例如，对 `clickhouse_client` 使用 `port_secure` 参数。
 
 5. 用户设置：

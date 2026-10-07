@@ -1,7 +1,7 @@
 #pragma once
 #include <mutex>
 #include <boost/noncopyable.hpp>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfiledLocks.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedLockGuard.h>
 #include <absl/synchronization/mutex.h>
@@ -11,59 +11,40 @@ namespace ProfileEvents
     extern const Event FilesystemCacheStateLockMicroseconds;
     extern const Event FilesystemCachePriorityWriteLockMicroseconds;
     extern const Event FilesystemCachePriorityReadLockMicroseconds;
+    extern const Event FileSegmentLockMicroseconds;
+    extern const Event FilesystemCacheLockKeyMicroseconds;
+    extern const Event FilesystemCacheLockMetadataMicroseconds;
 }
 
 namespace DB
 {
 /**
- * FileCache::get/getOrSet/set
- * 1. CacheMetadataGuard::Lock (take key lock and release metadata lock)
- * 2. KeyGuard::Lock (hold till the end of the method)
+ * Locking order - when taking a lock, every lock already held must be strictly above it here:
  *
- * FileCache::tryReserve
- * 1. CachePriorityGuard::WriteLock, CachePriorityGuard::ReadLock
- * 2. KeyGuard::Lock (taken without metadata lock)
- * 3. any number of KeyGuard::Lock's for files which are going to be evicted (taken via metadata lock)
- * 4. CacheStateGuard (to update state (total size/elements) after successful space reservation).
+ *   FileCache::apply_settings_mutex
+ *   > FileCache::dynamic_resize_lock  (exclusive, try_lock_for: doDynamicResize; shared, try_lock: tryReserve, tryIncreasePriority)
+ *   > CacheStateGuard                 (makes growth atomic: `canFit` + `entryAdd`; decrements are lock-free, so
+ *                                      `entrySub` is callable under KeyGuard, and `getSize(Lock)` is exact only
+ *                                      with respect to concurrent growth - its sole difference from `getSizeApprox`)
+ *   > FileCacheQueryLimit::mutex      (`doTryReserve` calls `tryGetQueryContext` under the state lock)
+ *   > CachePriorityGuard              (one per queue; taken by the priority itself, or by `EvictionCandidates`
+ *                                      through `Iterator::getPriorityGuard`;
+ *                                      SLRU: both sub-queues share one guard, entries move between them;
+ *                                      Overcommit/Split wrappers: no own guard, `getPriorityGuard` throws)
+ *   > CacheMetadataGuard
+ *   > KeyGuard
+ *   > FileSegmentGuard
  *
- * FileCache::removeIfExists
- * 1. CachePriorityGuard::WriteLock
- * 2. KeyGuard::Lock (taken via metadata lock)
- * 3. FileSegmentGuard::Lock
+ * Leaf mutexes (nothing above is taken while they are held):
  *
- * FileCache::removeAllReleasable
- * 1. CachePriorityGuard::WriteLock
- * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
- * 3. FileSegmentGuard::Lock
+ *   ShardedMap shard mutexes | LRUFileCachePriority::eviction_pos_mutex
+ *   | LRUFileCachePriority::invalidated_mutex | SLRUIterator::entry_mutex
  *
- * FileCache::getSnapshot (for all cache)
- * 1. metadata lock
- * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
- * 3. FileSegmentGuard::Lock
+ * The CacheStateGuard > CachePriorityGuard edge is exercised only by startup load (`add` takes the
+ * queue write lock under the state lock) and by dynamic-resize entry removal and restore
+ * (`EvictionCandidates::removeQueueEntries` / `restoreQueueEntries`).
  *
- * FileCache::getSnapshot(key)
- * 1. KeyGuard::Lock (taken via metadata lock)
- * 2. FileSegmentGuard::Lock
- *
- * FileSegment::complete
- * 1. KeyGuard::Lock (taken without metadata lock)
- * 2. FileSegmentGuard::Lock
- *
- * Rules:
- * 1. Priority of locking: CachePriorityGuard::Lock > CacheMetadataGuard::Lock > KeyGuard::Lock > FileSegmentGuard::Lock
- *
- *
- *                                 _CachePriorityGuard_ / _CacheStateGuard
- *                                 1. FileCache::tryReserve
- *                                 2. FileCache::removeIfExists(key)
- *                                 3. FileCache::removeAllReleasable
- *                                 4. FileSegment::complete
- *
- *             _KeyGuard_                                      _CacheMetadataGuard_
- *             1. all from CachePriorityGuard                  1. getOrSet/get/set
- *             2. getOrSet/get/Set
- *
- * *This table does not include locks taken for introspection and system tables.
+ * Introspection and system-table locks are not included.
  */
 
 /**
@@ -79,56 +60,57 @@ struct CachePriorityGuard : private boost::noncopyable
     /// non-interchangable with other guards locks,
     /// so we wouldn't be able to pass CachePriorityGuard::Lock to a function
     /// which accepts KeyGuard::Lock.
-    using WriteLock = std::unique_lock<SharedMutex>;
-    using ReadLock = std::shared_lock<SharedMutex>;
+    using WriteLock = ProfiledExclusiveLock<SharedMutex>;
+    using ReadLock = ProfiledSharedLock<SharedMutex>;
 
-    ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
-    WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
-
-    ReadLock readLock()
+    ReadLock tryReadLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
-        return ReadLock(mutex);
+        return ReadLock(mutex, ProfileEvents::FilesystemCachePriorityReadLockMicroseconds, std::try_to_lock);
     }
-    WriteLock writeLock()
+    WriteLock tryWriteLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
-        return WriteLock(mutex);
+        return WriteLock(mutex, ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds, std::try_to_lock);
+    }
+
+    ReadLock readLock() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return ReadLock(mutex, ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
+    }
+
+    WriteLock writeLock() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return WriteLock(mutex, ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
     }
 
 private:
     SharedMutex mutex;
 };
 
-/// State lock protects cache total size/elements counters.
+/// Makes cache growth atomic: `canFit` followed by the size/elements increment.
+/// Does not protect the counters themselves - decrements are lock-free (see the
+/// locking-order comment at the top of this file).
 struct CacheStateGuard : private boost::noncopyable
 {
-    using Mutex = std::timed_mutex;
-
-    struct Lock : public std::unique_lock<Mutex>
+    struct Lock : public ProfiledExclusiveLock<std::timed_mutex>
     {
-        using Base = std::unique_lock<Mutex>;
+        using Base = ProfiledExclusiveLock<std::timed_mutex>;
         using Base::Base;
-
-        explicit Lock(Mutex & mutex_) : std::unique_lock<Mutex>(mutex_) {}
     };
 
-    Lock tryLock() { return Lock(mutex, std::try_to_lock); }
-
-    Lock lock()
+    Lock tryLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
-        return Lock(mutex);
+        return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds, std::try_to_lock);
     }
 
-    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
+    Lock lock() TSA_NO_THREAD_SAFETY_ANALYSIS { return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds); }
+
+    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
-        return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+        return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds, std::chrono::duration<double, std::milli>(acquire_timeout));
     }
 
 private:
-    Mutex mutex;
+    std::timed_mutex mutex;
 };
 
 /**
@@ -136,9 +118,10 @@ private:
  */
 struct CacheMetadataGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockMetadataMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -150,9 +133,10 @@ struct CacheMetadataGuard : private boost::noncopyable
  */
 struct KeyGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockKeyMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -164,9 +148,10 @@ struct KeyGuard : private boost::noncopyable
  */
 struct FileSegmentGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FileSegmentLockMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }

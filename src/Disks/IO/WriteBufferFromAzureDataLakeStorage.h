@@ -75,6 +75,9 @@ Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint);
 
+/// Build the ADLS Gen2 (DFS) write URL for a blob path. Exposed for unit testing.
+String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path);
+
 }
 
 #endif

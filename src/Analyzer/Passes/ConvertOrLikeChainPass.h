@@ -9,8 +9,8 @@ namespace DB
   *
   * For example:
   *   x LIKE '%foo%' OR x LIKE '%bar%' --> multiSearchAny(x, ['foo', 'bar'])
-  *   x LIKE 'foo%' OR x LIKE '%bar' --> multiMatchAny(x, ['^foo', 'bar$'])  (with allow_hyperscan = 1)
-  *   x LIKE '%foo%' OR match(x, 'bar.*') --> multiMatchAny(x, ['foo', 'bar.*'])
+  *   x LIKE 'foo%' OR x LIKE 'bar%' --> multiMatchAny(x, ['^foo', '^bar'])  (with allow_hyperscan = 1)
+  *   x LIKE '%foo%' OR x LIKE 'bar%' --> multiMatchAny(x, ['foo', '^bar'])  (with allow_hyperscan = 1)
   *
   * If all patterns are simple substring searches (`%substring%`) with the same case sensitivity,
   * the rewrite uses the faster `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8`. Otherwise it
@@ -18,6 +18,9 @@ namespace DB
   * and the patterns are eligible. When neither fast path applies, the original `OR` chain is kept
   * unchanged: a combined `match('(p1)|(p2)|...')` alternation over RE2 is consistently slower than
   * the original short-circuit `OR`, so it is never emitted.
+  *
+  * End-anchored patterns (not ending in `%`, e.g. `'foo'`, `'%foo'`, `'fo_o'`) are never rewritten:
+  * Vectorscan matches `$` before a final newline, RE2 does not.
   *
   * For pure `{i}like`/`match` OR chains, the result is wrapped with `indexHint` to preserve
   * index analysis:

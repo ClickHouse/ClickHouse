@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **Аргументы**
 
-* `bucket_upper_bound` — Верхние границы бакетов гистограммы. У самого большого бакета верхняя граница должна быть `+Inf`. [`Float64`](/ru/reference/data-types/float)
-* `cumulative_bucket_value` — Накопленные значения бакетов гистограммы. Значения должны монотонно возрастать по мере увеличения верхней границы бакета. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float64`](/ru/reference/data-types/float)
+* `bucket_upper_bound` — Верхние границы бакетов гистограммы. У самого большого бакета верхняя граница должна быть `+Inf`. [`Float*`](/ru/reference/data-types/float)
+* `cumulative_bucket_value` — Накопленные значения бакетов гистограммы. Значения должны монотонно возрастать по мере увеличения верхней границы бакета. [`UInt*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
-Возвращает квантиль указанного уровня. [`Float64`](/ru/reference/data-types/float)
+Возвращает квантиль указанного уровня. Тип результата с плавающей запятой соответствует типу `bucket_upper_bound`. [`Float32`](/ru/reference/data-types/float) или [`Float64`](/ru/reference/data-types/float)
 
 **Примеры**
 

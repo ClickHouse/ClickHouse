@@ -1,0 +1,64 @@
+---
+description: 'Documentação da Web SQL UI (Play), a interface de consulta integrada ao navegador disponível em `/play`'
+sidebarTitle: 'Web SQL UI'
+slug: /interfaces/web-sql
+title: 'Web SQL UI (Play)'
+doc_type: 'reference'
+---
+
+A Web SQL UI (Play) é a interface de consulta integrada ao navegador do ClickHouse. Ela é disponibilizada em qualquer porta HTTP do ClickHouse no caminho `/play` (por exemplo, `http://localhost:8123/play`). Ela permite escrever e executar consultas, visualizar resultados em tabela ou gráfico e compartilhar uma consulta copiando sua URL.
+
+Toda a interface está contida em `programs/server/play.html`, uma única página autônoma servida diretamente pelo binário do ClickHouse, sem frameworks nem etapa de compilação. A única exceção é a renderização de gráficos: a biblioteca de gráficos `uPlot` é carregada sob demanda a partir de uma CDN de terceiros na primeira vez que um resultado é exibido como gráfico, portanto os gráficos ficam indisponíveis em implantações offline ou com egress restrito.
+
+<div id="query-tabs">
+  ## Abas de consulta
+</div>
+
+As abas permitem manter várias consultas lado a lado, em vez de ficar alternando entre elas em um único editor ou depender do histórico do navegador.
+
+Cada aba tem seu próprio texto de consulta, título, parâmetros de consulta e último resultado. As configurações de conexão (URL, usuário, senha) permanecem globais e são compartilhadas por todas as abas.
+
+<div id="when-the-tab-bar-appears">
+  ### Quando a barra de abas aparece
+</div>
+
+A barra de abas aparece assim que uma consulta é executada ou quando há mais de uma aba. Uma única aba sem resultados tem exatamente a mesma aparência que a página tinha antes de existirem abas, portanto não há nenhuma barra de abas visível até que você precise dela.
+
+A aba ativa se integra visualmente à página: seu plano de fundo segue a cor do hash de cada consulta (a mesma cor já usada no plano de fundo da página), com um gradiente mais saturado na parte superior no tema claro e mais brilhante na parte superior no tema escuro. As abas inativas recebem uma tonalidade baseada no hash do texto da própria consulta, de modo que abas diferentes são automaticamente diferenciadas pela cor.
+
+<div id="creating-closing-and-renaming-tabs">
+  ### Criando, fechando e renomeando abas
+</div>
+
+* Crie uma nova aba com o botão `[+]` à direita das abas.
+* Feche uma aba usando o ícone `x` na própria aba.
+* As novas abas recebem nomes padrão como `Query A`, `Query B` e assim por diante.
+* Clique no título da aba ativa para editá-lo diretamente nela; o campo de edição se expande para se ajustar ao texto.
+
+<div id="switching-tabs">
+  ### Alternando abas
+</div>
+
+* Clique em uma aba inativa para alternar para ela.
+* Gire a roda do mouse sobre o painel de abas para alternar entre elas: ao rolar para cima, você vai para a aba à esquerda; ao rolar para baixo, para a aba à direita (se houver). Tanto a rolagem vertical quanto a horizontal da roda funcionam.
+
+A barra de abas é fixa na horizontal — ela permanece à esquerda durante a rolagem horizontal da página, como o logotipo do ClickHouse na parte inferior — e se desloca na vertical com o restante da página.
+
+<div id="persistence-and-browser-history">
+  ### Persistência e histórico do navegador
+</div>
+
+A área de trabalho — as abas, seus títulos, a aba ativa, sua ordem e pequenos snapshots dos resultados — é persistida no IndexedDB e restaurada ao recarregar. A persistência é feita na medida do possível: se o IndexedDB não estiver disponível, a área de trabalho passa a usar estado em memória na sessão atual.
+
+As abas também se integram à API History do navegador e à URL:
+
+* O estado do histórico armazena a aba ativa, para que os botões de voltar e avançar do navegador alternem entre as abas.
+* A URL recebe um parâmetro `tab=<name>`. Ao carregar, a consulta da URL e o parâmetro `tab` são reconciliados com as abas salvas: uma aba existente com esse nome é reutilizada (e sua consulta é substituída), ou uma nova aba é criada quando o nome não é encontrado ou quando a aba não tinha nome. Isso torna possível abrir uma URL com uma nova consulta sem perder suas próprias abas salvas.
+
+<div id="limitations">
+  ### Limitações
+</div>
+
+Trocar de aba enquanto uma consulta está em execução descarta o estado de execução dessa consulta.
+
+Somente resultados pequenos são salvos em snapshot para restauração. Um resultado grande (acima do limite de tamanho do snapshot) ou um resultado de imagem não é persistido: após trocar de aba ou recarregar, a aba mantém sua consulta, mas não o resultado renderizado, e executar a consulta novamente o reproduz. Isso se aplica tanto a resultados de uma única consulta quanto à saída combinada de uma execução &quot;Run all&quot; (múltiplas consultas).

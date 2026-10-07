@@ -1,0 +1,48 @@
+---
+description: 'Documentación sobre las columnas fijadas (sticky) en la interfaz web SQL integrada (`/play`)'
+sidebarTitle: 'Columnas fijadas de la interfaz web'
+slug: /interfaces/web-ui-pinned-columns
+title: 'Columnas fijadas de la interfaz web'
+doc_type: 'reference'
+sidebar: false
+---
+
+La interfaz web SQL integrada (`play.html`, disponible en la ruta [`/play`](/es/concepts/features/interfaces/http) de cualquier puerto HTTP de ClickHouse) puede mantener visibles las columnas seleccionadas de un resultado mientras el resto de la tabla se desplaza horizontalmente. Una columna fijada queda pegada al borde más cercano del área de resultados en lugar de desplazarse fuera de la vista, de modo que una columna clave —un identificador, un nombre, una fecha— sigue visible junto a las columnas del extremo derecho que estés consultando.
+
+<div id="pinning-a-column">
+  ## Fijar una columna
+</div>
+
+A la izquierda del encabezado de cada columna aparece un icono de chincheta 📌. Haz clic en él para fijar la columna; vuelve a hacer clic para desfijarla. El icono es un botón real, por lo que quienes usan el teclado pueden llegar a él con Tab y activarlo con el teclado, además de exponer su estado de fijación a las tecnologías de asistencia.
+
+En dispositivos con un puntero que permite pasar por encima (un ratón), el icono solo se muestra al pasar el puntero sobre el encabezado o cuando el control tiene el foco, para no estorbar el resto del tiempo; en dispositivos táctiles y otros con puntero poco preciso, que no tienen estado hover, el icono siempre se muestra para que pueda tocarse directamente. Una columna fijada mantiene su icono visible con toda su intensidad como indicador de que la columna está fijada.
+
+<div id="when-pinning-is-available">
+  ## Cuándo está disponible la fijación
+</div>
+
+La fijación solo está disponible cuando la tabla es lo bastante ancha como para desplazarse horizontalmente. Cuando la tabla completa cabe en el área visible, no hay nada que pueda quedar fuera de vista al desplazarse, por lo que el interruptor de fijación está deshabilitado y queda excluido del orden de tabulación del teclado. En cuanto el resultado pasa a poder desplazarse horizontalmente —un resultado ancho, una ventana estrecha o un resultado en streaming que crece horizontalmente—, los interruptores se activan.
+
+<div id="how-a-pinned-column-behaves-when-scrolling">
+  ## Cómo se comporta una columna fijada al desplazarse
+</div>
+
+Una columna fijada se desplaza con el contenido durante el desplazamiento horizontal hasta que está a punto de salir del área visible; en ese momento, se fija al borde más cercano —el izquierdo para las columnas de la izquierda y el derecho para las columnas de la derecha— y permanece visible. Varias columnas fijadas se apilan junto al borde en su orden original, cada una separada del contenido en desplazamiento por un borde. Una celda fijada se superpone a las celdas normales que se desplazan por debajo de ella, incluida una celda seleccionada, por lo que siempre sigue siendo legible.
+
+<div id="shared-across-results">
+  ## Compartido entre resultados
+</div>
+
+Las columnas fijadas se identifican por el nombre de la columna y se comparten entre todas las tablas de resultados de la página, al igual que los [modos de codificación por colores](/es/concepts/features/interfaces/web-ui-color-coding) por columna. Fijar una columna llamada `id` en un resultado hace que una columna llamada `id` permanezca fijada en los demás resultados y en consultas posteriores que devuelvan la misma columna.
+
+<div id="persistence">
+  ## Persistencia
+</div>
+
+El conjunto fijado se guarda en la URL de la página, en el historial del navegador y en la instantánea de resultados de cada pestaña, por lo que al recargar la página, compartir el enlace o navegar hacia atrás y hacia delante se conserva. Solo se almacenan las columnas fijadas: un conjunto vacío no añade nada a la URL ni al estado del historial, para mantenerlos compactos.
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+* El diseño vertical (transpuesto) de una sola fila no tiene columnas con desplazamiento horizontal, por lo que no permite fijarlas.

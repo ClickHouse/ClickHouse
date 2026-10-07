@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -13,6 +15,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -28,6 +32,15 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
             return nullptr;
 
         if (reading->isParallelReadingEnabled())
+            return nullptr;
+
+        /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
+        /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
+        /// one port per primary-key range. Both are contracts about which rows go to which output
+        /// port, consumed positionally by the steps above, so a single read can satisfy only one of
+        /// them: partitions generally do not form primary-key ranges, and there is no repartitioning
+        /// step between the two consumers that could convert one port layout into the other.
+        if (reading->willOutputEachPartitionThroughSeparatePort())
             return nullptr;
 
         return reading;
@@ -129,6 +142,16 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        /// The layer split compares key values as `greater(tuple(pk), tuple(border))`, and an IEEE
+        /// comparison answers false for `NaN` against anything, so a row with a `NaN` key fails the
+        /// filter of every layer - including the last one, which only has a lower bound - and is
+        /// dropped at read time. `Null` and a `NaN` nested in a container compare inconsistently there
+        /// for the same reason, which is why every other consumer of
+        /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
+        /// actually reads has to be safe, so an unsafe column just ends the prefix here.
+        if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
+            break;
+
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
         bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
         if (ldesc != rdesc)
@@ -213,6 +236,12 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     /// For sorting steps which are created for full sorting merge algorithm,
     /// We need to change the sorting mode to sort partitions independently.
     std::list<SortingStep *> sorting_steps;
+    /// Merge-join sorting steps above this subtree whose join has not been reached yet. They move to
+    /// `sorting_steps` once that join is sharded. If it is not, they are left alone: such a sort then feeds
+    /// a single merge join, which needs one stream per side, so it must merge the shards of a sharded join
+    /// below it instead of keeping them (a `FinishSorting` above a `full_sorting_merge` join is normal - the
+    /// join emits its result in key order).
+    std::list<SortingStep *> pending_sorting_steps;
     /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
     /// Whether the common primary key prefix used for sharding is in reverse order.
@@ -230,6 +259,8 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
+    /// The `part_index_in_query` a part had in its source, by its position in `all_parts`.
+    std::vector<size_t> original_part_indexes;
     std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
@@ -239,12 +270,15 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
         size_t added_parts = all_parts.size();
         /// Renumber part_index_in_query to be contiguous starting from added_parts.
-        /// filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
+        /// Index analysis and filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
         /// leaving non-contiguous part_index_in_query values. The distribution logic
         /// below assumes contiguous indices to assign parts back to their sources.
+        /// The original index is remembered: the read step keys its per-part state
+        /// (the ranges read by the skip indexes, the `_part_index` virtual column) by it.
         for (size_t local_idx = 0; local_idx < analysis_result->parts_with_ranges.size(); ++local_idx)
         {
             all_parts.push_back(analysis_result->parts_with_ranges[local_idx]);
+            original_part_indexes.push_back(all_parts.back().part_index_in_query);
             all_parts.back().part_index_in_query = added_parts + local_idx;
         }
 
@@ -282,7 +316,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
             while (next_part < layer.size() && layer[next_part].part_index_in_query < sum_parts + num_parts_in_source)
             {
                 auto & new_part_range = new_layer.emplace_back(layer[next_part]);
-                new_part_range.part_index_in_query -= sum_parts;
+                new_part_range.part_index_in_query = original_part_indexes[new_part_range.part_index_in_query];
                 ++next_part;
             }
             sum_parts += num_parts_in_source;
@@ -419,12 +453,20 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
                 result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
+                /// The pre-sorts of both sides feed a sharded join now, so they sort each shard independently.
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(result->joins.pending_sorting_steps));
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.pending_sorting_steps));
                 result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
 
                 frame.results.back() = std::nullopt;
             }
-            else if (can_split_left_table)
+            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped)
             {
+                /// A hash join probes each left stream independently, so the shards of the left table
+                /// survive it and a join above can still be sharded. A `full_sorting_merge` join that is
+                /// not sharded itself merges its left input into a single stream and spreads its result
+                /// over `max_streams` arbitrary streams, which are not the shards anymore: the chain stops
+                /// here, and the sharding found below is applied as it is (see the end of the loop).
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
                 result->joins.joins_to_keep_in_order.emplace_back(join_step);
@@ -443,14 +485,14 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         else if (auto * sorting = typeid_cast<SortingStep *>(frame.node->step.get());
             sorting && sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
         {
-            /// Here we assume that read-in-order is applied for full sorting merge join.
-            /// The SortingStep can potentially appear from ORDER BY,
-            /// but it would be useless because JOIN does not enforce sorting by itself.
+            /// The input is already sorted: either a read in order, or a `full_sorting_merge` join below,
+            /// which emits its result in key order. Whether the sort keeps the streams (one per shard) or
+            /// merges them is decided at the join it feeds.
 
             if (frame.results.size() == 1 && frame.results[0])
             {
                 result = std::move(frame.results[0]);
-                result->joins.sorting_steps.push_back(sorting);
+                result->joins.pending_sorting_steps.push_back(sorting);
             }
         }
         else if (frame.results.size() == 1 && frame.results[0])
@@ -468,6 +510,123 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
     if (result)
         apply(result->joins);
+}
+
+/// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
+/// join keys.
+///
+/// Unlike `optimizeJoinByShards` above (which shards by primary-key ranges and only works when both sides
+/// read from MergeTree in order), this works on any unsorted input: each side's pre-join full
+/// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
+/// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
+/// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
+/// on the join-key values (and equal values hash equally through `LowCardinality`/`Nullable` wrappers, per
+/// `IColumn::computeHashInto`), equal keys land in the same shard on both sides. The join output is unordered.
+void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
+{
+    /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
+    if (num_shards <= 1)
+        return;
+
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * join_step = typeid_cast<JoinStep *>(node->step.get());
+            join_step && node->children.size() == 2)
+        {
+            const auto & join = join_step->getJoin();
+            const auto & table_join = join->getTableJoin();
+
+            /// Only shard when `parallel_full_sorting_merge` was the algorithm actually selected. Both
+            /// algorithms build the same `FullSortingMergeJoin`, so `join_algorithm` membership is not
+            /// enough: with `full_sorting_merge,parallel_full_sorting_merge` the priority list selects plain
+            /// `full_sorting_merge` and the parallel variant is an unreached fallback, so the sharded
+            /// (unordered) rewrite must not fire. `FullSortingMergeJoin::isParallel` carries the selected
+            /// algorithm over from `chooseJoinAlgorithm`.
+            ///
+            /// `ASOF` joins also use `FullSortingMergeJoin` but cannot be sharded by the hash of the whole
+            /// key list: its trailing key is the inequality key, so rows with equal equality keys but
+            /// different `ASOF` values would land in different shards and the closest match could be missed.
+            /// The primary-key-range path (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
+            const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(join.get());
+            if (full_sorting_merge_join
+                && full_sorting_merge_join->isParallel()
+                && table_join.strictness() != JoinStrictness::Asof
+                && table_join.getClauses().size() == 1)
+            {
+                auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
+                auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
+
+                /// Only a plain full sort (`Type::Full`) is scattered: the input is unsorted, so each shard
+                /// sorts from scratch (`convertToScatteredFullSort`). Losing the input order is safe - this
+                /// sort exists only to feed the merge join, whose result is unordered anyway.
+                ///
+                /// An already-sorted side (`FinishSorting`: a MergeTree read in order, or any input
+                /// recognized as pre-sorted) must NOT be scattered, tempting as an order-preserving scatter
+                /// is. It can deadlock: a `ScatterByPartitionTransform` does not consume new input until all
+                /// partition chunks of the previous one are pushed, while its consumers (per-partition
+                /// `MergingSortedTransform`s, per-shard `MergeJoinTransform`s) wait for a chunk of one
+                /// specific input each. Two such scatters then form a circular wait - A blocked pushing to
+                /// shard `i` whose merge waits on B, B blocked pushing to shard `j` whose merge waits on A
+                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune
+                /// while every shard lane is demanded: a sleeping lane never starts draining its input.
+                ///
+                /// A pre-sorted side therefore runs as a single merge join, exactly like
+                /// `full_sorting_merge`, keeping the in-order read and its virtual rows
+                /// (`read_in_order_use_virtual_row`) intact. Such sides can still be joined shard-by-shard
+                /// without a shuffle by the primary-key-range path (`optimizeJoinByShards`,
+                /// `query_plan_join_shard_by_pk_ranges`), which splits both reads at the source.
+                auto is_scatterable_merge_join_sort = [](const SortingStep & sort)
+                {
+                    return sort.isSortingForMergeJoin() && sort.getType() == SortingStep::Type::Full;
+                };
+                if (left_sort && right_sort
+                    && is_scatterable_merge_join_sort(*left_sort)
+                    && is_scatterable_merge_join_sort(*right_sort))
+                {
+                    const auto & clause = table_join.getClauses().front();
+                    const auto & left_header = left_sort->getOutputHeader();
+                    const auto & right_header = right_sort->getOutputHeader();
+
+                    /// Do not shard when a join key is (or contains) a type whose hash-based shard selection
+                    /// is not consistent with the merge-join `compareAt` - floating-point (`-0.0` == `+0.0`,
+                    /// NaN == NaN), `JSON`/`Object`, or `Dynamic` - so equal keys could land in different
+                    /// shards and the match would be lost (see `keyTypeBreaksHashSharding`). If a key
+                    /// column cannot be found to check its type, be conservative and skip sharding as well.
+                    /// The join then runs as a single merge join, exactly like `full_sorting_merge`.
+                    bool can_shard = left_header && right_header;
+                    for (size_t i = 0; can_shard && i < clause.key_names_left.size(); ++i)
+                    {
+                        const auto * left_key = left_header->findByName(clause.key_names_left[i]);
+                        const auto * right_key = right_header->findByName(clause.key_names_right[i]);
+                        if (!left_key || !right_key
+                            || keyTypeBreaksHashSharding(*left_key->type)
+                            || keyTypeBreaksHashSharding(*right_key->type))
+                            can_shard = false;
+                    }
+
+                    if (can_shard)
+                    {
+                        left_sort->convertToScatteredFullSort(num_shards);
+                        right_sort->convertToScatteredFullSort(num_shards);
+
+                        JoinStep::PrimaryKeySharding sharding;
+                        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+                            sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
+                        join_step->enableJoinByLayers(std::move(sharding));
+                    }
+                }
+            }
+        }
+
+        for (auto * child : node->children)
+            stack.push(child);
+    }
 }
 
 }

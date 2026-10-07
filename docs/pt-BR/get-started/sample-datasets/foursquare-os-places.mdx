@@ -1,115 +1,155 @@
 ---
-description: 'Conjunto de dados com mais de 100 milhões de registros contendo informações sobre locais em um mapa, como lojas, 
-restaurantes, parques, playgrounds e monumentos.'
-sidebarTitle: 'Locais do Foursquare'
+description: 'Aprenda a explorar e carregar o conjunto de dados geoespaciais Foursquare OS Places no ClickHouse.'
+sidebarTitle: 'Foursquare OS Places'
 slug: /getting-started/example-datasets/foursquare-places
-title: 'Locais do Foursquare'
-keywords: ['visualizing']
+title: 'Conjunto de dados Foursquare OS Places'
+keywords: ['conjunto de dados de exemplo', 'Foursquare', 'geoespacial', 'Iceberg', 'primeiros passos']
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<div id="dataset">
-  ## Conjunto de dados
-</div>
+O Foursquare OS Places contém mais de 100 milhões de pontos de interesse (POIs) comerciais,
+incluindo lojas, restaurantes, parques, áreas de recreação e monumentos. Neste guia, você
+conectará o ClickHouse ao catálogo Iceberg da Foursquare, explorará o conjunto de dados e o carregará
+em uma tabela otimizada para consultas geoespaciais.
 
-Este conjunto de dados da Foursquare está disponível para [download](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
+O conjunto de dados está disponível no [Foursquare Places Portal](https://places.foursquare.com/)
 e pode ser usado gratuitamente sob a licença Apache 2.0.
 
-Ele contém mais de 100 milhões de registros de pontos de interesse comerciais (POI),
-como lojas, restaurantes, parques, parquinhos e monumentos. Também inclui
-metadados adicionais sobre esses locais, como categorias e informações de redes sociais.
+<Note>
+  A Foursquare atualizou a forma de acessar o OS Places. Versões anteriores deste guia consultavam
+  arquivos fixados por data em um bucket público do S3; agora, o acesso é feito pelo Places Portal e por um
+  catálogo Iceberg autenticado. Consulte a [documentação de acesso ao OS Places da Foursquare](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
+  para mais detalhes.
+</Note>
 
-<div id="data-exploration">
-  ## Exploração de dados
+<div id="before-you-begin">
+  ## Antes de começar
 </div>
 
-Para explorar os dados, usaremos o [`clickhouse-local`](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local), uma pequena ferramenta de linha de comando
-que oferece o mecanismo do ClickHouse completo, embora você também possa usar
-ClickHouse Cloud, `clickhouse-client` ou até mesmo `chDB`.
+Antes de executar as consultas deste guia, você precisa de:
 
-Execute a consulta a seguir para selecionar os dados do bucket do S3 em que eles estão armazenados:
+* Uma conta no [Foursquare Places Portal](https://places.foursquare.com/)
+* Um token de acesso criado na aba **Access Data** do conjunto de dados **OS Places**
+
+<div id="connect-to-the-foursquare-catalog">
+  ## Conecte-se ao catálogo da Foursquare
+</div>
+
+Mantenha seu token de acesso em sigilo. Inicie o cliente ClickHouse e substitua
+`<YOUR_ACCESS_TOKEN>` pelo seu token na consulta a seguir:
 
 ```sql title="Query"
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*') LIMIT 1
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE places
+ENGINE = DataLakeCatalog('https://catalog.h3-hub.foursquare.com/iceberg')
+SETTINGS
+    catalog_type = 'rest',
+    warehouse = 'places',
+    auth_header = 'Authorization: Bearer <YOUR_ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+O banco de dados do catálogo é somente leitura. A tabela `places_os` reflete o lançamento atual
+publicado pela Foursquare, em vez de uma versão do Parquet vinculada a uma data; portanto, suas linhas e seu esquema podem
+mudar ao longo do tempo. Assim, consultas sem uma cláusula `ORDER BY` podem retornar linhas de
+amostra diferentes das respostas mostradas neste guia.
+
+<div id="verify-the-connection">
+  ## Verifique a conexão
+</div>
+
+Consulte uma linha da tabela Iceberg `places_os`:
+
+```sql title="Query"
+SELECT *
+FROM places.`datasets.places_os`
+LIMIT 1;
 ```
 
 ```response title="Response"
-Linha 1:
+Row 1:
 ──────
-fsq_place_id:        4e1ef76cae60cd553dec233f
-name:                @VirginAmerica In-flight Via @Gogo
-latitude:            37.62120111687914
-longitude:           -122.39003793803701
-address:             ᴺᵁᴸᴸ
-locality:            ᴺᵁᴸᴸ
-region:              ᴺᵁᴸᴸ
-postcode:            ᴺᵁᴸᴸ
+fsq_place_id:        587711a138094df2b93ec3af
+name:                Iyang Tadon
+latitude:            ᴺᵁᴸᴸ
+longitude:           ᴺᵁᴸᴸ
+address:             2 38A Jalan Penrissen Batu 10 Pekan Batu 10 93250 Kuching Kuching Sarawak 93250 Malaysia Kuching Sarawak
+locality:            Kuching
+region:              Sarawak
+postcode:            93250
 admin_region:        ᴺᵁᴸᴸ
 post_town:           ᴺᵁᴸᴸ
 po_box:              ᴺᵁᴸᴸ
-country:             US
-date_created:        2011-07-14
-date_refreshed:      2018-07-05
-date_closed:         2018-07-05
-tel:                 ᴺᵁᴸᴸ
+country:             MY
+date_created:        2015-05-24
+date_refreshed:      2015-05-24
+date_closed:         ᴺᵁᴸᴸ
+tel:                 082-617 033
 website:             ᴺᵁᴸᴸ
 email:               ᴺᵁᴸᴸ
 facebook_id:         ᴺᵁᴸᴸ
 instagram:           ᴺᵁᴸᴸ
 twitter:             ᴺᵁᴸᴸ
-fsq_category_ids:    ['4bf58dd8d48988d1f7931735']
-fsq_category_labels: ['Travel and Transportation > Transport Hub > Airport > Plane']
-placemaker_url:      https://foursquare.com/placemakers/review-place/4e1ef76cae60cd553dec233f
-geom:                �^��a�^@Bσ���
-bbox:                (-122.39003793803701,37.62120111687914,-122.39003793803701,37.62120111687914)
-```
-
-Vemos que vários campos estão com `ᴺᵁᴸᴸ`, então podemos adicionar algumas condições
-à nossa consulta para retornar dados mais úteis:
-
-```sql title="Query"
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
-   WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL LIMIT 1
-```
-
-```response
-Linha 1:
-──────
-fsq_place_id:        59b2c754b54618784f259654
-name:                Villa 722
-latitude:            ᴺᵁᴸᴸ
-longitude:           ᴺᵁᴸᴸ
-address:             Gijzenveldstraat 75
-locality:            Zutendaal
-region:              Limburg
-postcode:            3690
-admin_region:        ᴺᵁᴸᴸ
-post_town:           ᴺᵁᴸᴸ
-po_box:              ᴺᵁᴸᴸ
-country:             ᴺᵁᴸᴸ
-date_created:        2017-09-08
-date_refreshed:      2020-01-25
-date_closed:         ᴺᵁᴸᴸ
-tel:                 ᴺᵁᴸᴸ
-website:             https://www.landal.be
-email:               ᴺᵁᴸᴸ
-facebook_id:         522698844570949 -- 522,70 trilhões
-instagram:           landalmooizutendaal
-twitter:             landalzdl
-fsq_category_ids:    ['56aa371be4b08b9a8d5734e1']
-fsq_category_labels: ['Travel and Transportation > Hospedagem > Aluguel de Temporada']
-placemaker_url:      https://foursquare.com/placemakers/review-place/59b2c754b54618784f259654
+fsq_category_ids:    []
+fsq_category_labels: []
+placemaker_url:      https://foursquare.com/placemakers/review-place/587711a138094df2b93ec3af
+unresolved_flags:    []
 geom:                ᴺᵁᴸᴸ
 bbox:                (NULL,NULL,NULL,NULL)
 ```
 
-Execute a consulta a seguir para ver o esquema dos dados inferido automaticamente usando
-o `DESCRIBE`:
+<div id="explore-the-data">
+  ## Explore os dados
+</div>
+
+A linha de exemplo contém vários campos nulos. Adicione filtros para retornar uma linha mais completa:
 
 ```sql title="Query"
-DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
+SELECT *
+FROM places.`datasets.places_os`
+WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL
+LIMIT 1;
+```
+
+```response title="Response"
+Row 1:
+──────
+fsq_place_id:        4b9af2a9f964a52000e635e3
+name:                KFC
+latitude:            42.214429044404966
+longitude:           -83.5428035767019
+address:             2169 Rawsonville Rd
+locality:            Van Buren Township
+region:              MI
+postcode:            48111
+admin_region:        ᴺᵁᴸᴸ
+post_town:           ᴺᵁᴸᴸ
+po_box:              ᴺᵁᴸᴸ
+country:             US
+date_created:        2010-03-13
+date_refreshed:      2026-07-08
+date_closed:         ᴺᵁᴸᴸ
+tel:                 (734) 482-7256
+website:             https://locations.kfc.com/mi/belleville/2169-rawsonville-road
+email:               kfccares@kfc.com
+facebook_id:         159863790842385 -- 159.86 trillion
+instagram:           kfc
+twitter:             kfc
+fsq_category_ids:    ['4d4ae6fc7a7b7dea34424761','4bf58dd8d48988d16e941735']
+fsq_category_labels: ['Dining and Drinking > Restaurant > Fried Chicken Joint','Dining and Drinking > Restaurant > Fast Food Restaurant']
+placemaker_url:      https://foursquare.com/placemakers/review-place/4b9af2a9f964a52000e635e3
+unresolved_flags:    []
+geom:                [binary data]
+bbox:                (-83.5428035767019,42.214429044404966,-83.5428035767019,42.214429044404966)
+```
+
+Use `DESCRIBE` para inspecionar o esquema da tabela:
+
+```sql title="Query"
+DESCRIBE places.`datasets.places_os`;
 ```
 
 ```response title="Response"
@@ -138,8 +178,9 @@ DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*
 22. │ fsq_category_ids    │ Array(Nullable(String))     │
 23. │ fsq_category_labels │ Array(Nullable(String))     │
 24. │ placemaker_url      │ Nullable(String)            │
-25. │ geom                │ Nullable(String)            │
-26. │ bbox                │ Tuple(                     ↴│
+25. │ unresolved_flags    │ Array(Nullable(String))     │
+26. │ geom                │ Nullable(String)            │
+27. │ bbox                │ Tuple(                     ↴│
     │                     │↳    xmin Nullable(Float64),↴│
     │                     │↳    ymin Nullable(Float64),↴│
     │                     │↳    xmax Nullable(Float64),↴│
@@ -148,128 +189,194 @@ DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*
 ```
 
 <div id="loading-the-data">
-  ## Carregando os dados no ClickHouse
+  ## Carregue os dados no ClickHouse
 </div>
 
-Se quiser persistir os dados em disco, você pode usar `clickhouse-server`
-ou ClickHouse Cloud.
+Para armazenar os dados de forma persistente, crie uma tabela no `clickhouse-server` ou no ClickHouse Cloud.
 
-Para criar a tabela, execute o seguinte comando:
+Crie uma tabela `MergeTree` com colunas codificadas por dicionário e coordenadas Web Mercator
+materializadas:
 
 ```sql title="Query"
 CREATE TABLE foursquare_mercator
 (
-    fsq_place_id String,
-    name String,
+    fsq_place_id Nullable(String),
+    name Nullable(String),
     latitude Float64,
     longitude Float64,
-    address String,
-    locality String,
-    region LowCardinality(String),
-    postcode LowCardinality(String),
-    admin_region LowCardinality(String),
-    post_town LowCardinality(String),
-    po_box LowCardinality(String),
-    country LowCardinality(String),
+    address Nullable(String),
+    locality Nullable(String),
+    region LowCardinality(Nullable(String)),
+    postcode LowCardinality(Nullable(String)),
+    admin_region LowCardinality(Nullable(String)),
+    post_town LowCardinality(Nullable(String)),
+    po_box LowCardinality(Nullable(String)),
+    country LowCardinality(Nullable(String)),
     date_created Nullable(Date),
     date_refreshed Nullable(Date),
     date_closed Nullable(Date),
-    tel String,
-    website String,
-    email String,
-    facebook_id String,
-    instagram String,
-    twitter String,
-    fsq_category_ids Array(String),
-    fsq_category_labels Array(String),
-    placemaker_url String,
-    geom String,
+    tel Nullable(String),
+    website Nullable(String),
+    email Nullable(String),
+    facebook_id Nullable(Int64),
+    instagram Nullable(String),
+    twitter Nullable(String),
+    fsq_category_ids Array(Nullable(String)),
+    fsq_category_labels Array(Nullable(String)),
+    placemaker_url Nullable(String),
+    geom Nullable(String),
     bbox Tuple(
         xmin Nullable(Float64),
         ymin Nullable(Float64),
         xmax Nullable(Float64),
         ymax Nullable(Float64)
     ),
-    category LowCardinality(String) ALIAS fsq_category_labels[1],
+    category LowCardinality(Nullable(String)) ALIAS fsq_category_labels[1],
     mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
     mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
     INDEX idx_x mercator_x TYPE minmax,
     INDEX idx_y mercator_y TYPE minmax
 )
-ORDER BY mortonEncode(mercator_x, mercator_y)
+ENGINE = MergeTree
+ORDER BY mortonEncode(mercator_x, mercator_y);
 ```
 
-Observe o uso do tipo de dado [`LowCardinality`](/pt-BR/reference/data-types/lowcardinality)
-em várias colunas, o que altera a representação interna dos dados
-para uma codificação por dicionário. Trabalhar com dados codificados por dicionário
-aumenta significativamente o desempenho de consultas `SELECT` em muitas aplicações.
+Várias colunas usam o tipo de dados [`LowCardinality`](/pt-BR/reference/data-types/lowcardinality),
+que armazena valores repetidos usando codificação de dicionário. Essa representação pode melhorar significativamente
+o desempenho de consultas `SELECT`.
 
-Além disso, são criadas duas colunas `UInt32` `MATERIALIZED`, `mercator_x` e `mercator_y`,
-que mapeiam as coordenadas de latitude/longitude para a [projeção Web Mercator](https://en.wikipedia.org/wiki/Web_Mercator_projection)
-para facilitar a segmentação do mapa em blocos:
+As duas colunas `UInt32` `MATERIALIZED`, `mercator_x` e `mercator_y`, mapeiam latitude e
+longitude para a [projeção Web Mercator](https://en.wikipedia.org/wiki/Web_Mercator_projection),
+facilitando a divisão do mapa em tiles:
 
 ```sql
 mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
 mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
 ```
 
-Vamos detalhar o que está acontecendo acima em cada coluna.
+As expressões calculam os seguintes valores.
 
 **mercator&#95;x**
 
 Esta coluna converte um valor de longitude em uma coordenada X na projeção de Mercator:
 
-* `longitude + 180` desloca o intervalo de longitude de [-180, 180] para [0, 360]
-* Dividir por 360 normaliza isso para um valor entre 0 e 1
-* Multiplicar por `0xFFFFFFFF` (hexadecimal para o valor máximo de um inteiro sem sinal de 32 bits) escala esse valor normalizado para todo o intervalo de um inteiro de 32 bits
+* `longitude + 180` desloca o intervalo de longitude de [-180, 180] para [0, 360].
+* A divisão por 360 normaliza o valor para o intervalo entre 0 e 1.
+* A multiplicação por `0xFFFFFFFF`, o maior inteiro sem sinal de 32 bits, ajusta o valor normalizado para todo o intervalo de um inteiro de 32 bits.
 
 **mercator&#95;y**
 
 Esta coluna converte um valor de latitude em uma coordenada Y na projeção de Mercator:
 
-* `latitude + 90` desloca a latitude de [-90, 90] para [0, 180]
-* Dividir por 360 e multiplicar por pi() converte para radianos para uso nas funções trigonométricas
-* A parte `log(tan(...))` é o núcleo da fórmula da projeção de Mercator
-* Multiplicar por `0xFFFFFFFF` escala para todo o intervalo de inteiros de 32 bits
+* `latitude + 90` desloca o intervalo de latitude de [-90, 90] para [0, 180].
+* A divisão por 360 e a multiplicação por `pi` convertem o valor em radianos para uso nas funções trigonométricas.
+* `log(tan(...))` aplica a fórmula básica da projeção de Mercator.
+* A multiplicação por `0xFFFFFFFF` ajusta o resultado para todo o intervalo de inteiros de 32 bits.
 
-Especificar `MATERIALIZED` garante que o ClickHouse calcule os valores dessas
-colunas quando fazemos o `INSERT` dos dados, sem precisar especificar essas colunas (que não fazem
-parte do esquema de dados original) na instrução `INSERT`.
+Especificar `MATERIALIZED` faz com que o ClickHouse calcule esses valores quando os dados são inseridos,
+sem exigir que os dados de origem contenham as colunas.
 
-A tabela é ordenada por `mortonEncode(mercator_x, mercator_y)`, o que produz uma
-curva Z de preenchimento espacial de `mercator_x`, `mercator_y` para
-melhorar significativamente o desempenho de consultas geoespaciais. Essa ordenação por curva Z garante que os dados sejam
-organizados fisicamente por proximidade espacial:
+A tabela é ordenada por `mortonEncode(mercator_x, mercator_y)`, que cria uma curva de preenchimento de espaço
+em ordem Z e organiza os dados por proximidade espacial:
 
 ```sql
-ORDER BY mortonEncode(mercator_x, mercator_y)
+ORDER BY mortonEncode(mercator_x, mercator_y);
 ```
 
-Também são criados dois índices `minmax` para acelerar as buscas:
+Dois índices `minmax` aceleram ainda mais a filtragem espacial:
 
 ```sql
 INDEX idx_x mercator_x TYPE minmax,
-INDEX idx_y mercator_y TYPE minmax
+INDEX idx_y mercator_y TYPE minmax;
 ```
 
-Como você pode ver, o ClickHouse tem tudo de que você precisa para aplicativos de mapeamento em tempo real!
+Carregue na tabela o lançamento atual do OS Places:
 
-Execute a consulta a seguir para carregar os dados:
+<Warning>
+  Esta consulta lê e armazena mais de 100 milhões de linhas. Ela pode levar bastante tempo,
+  consumir armazenamento e gerar custos de uso no ClickHouse Cloud. Executá-la novamente acrescenta os
+  mesmos dados, portanto, verifique se `foursquare_mercator` está vazia antes de tentar importar novamente.
+</Warning>
 
-```sql
-INSERT INTO foursquare_mercator 
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
+```sql title="Query"
+INSERT INTO foursquare_mercator
+(
+    fsq_place_id,
+    name,
+    latitude,
+    longitude,
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+)
+SELECT
+    fsq_place_id,
+    name,
+    assumeNotNull(latitude),
+    assumeNotNull(longitude),
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+FROM places.`datasets.places_os`
+WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 ```
+
+As listas explícitas de colunas de origem e destino evitam que alterações na ordem das colunas
+do catálogo desalinhem os valores importados. A consulta exclui `unresolved_flags` porque ela
+não é necessária na tabela local e filtra as linhas sem coordenadas, pois elas
+não podem ser posicionadas no mapa. Outros valores anuláveis da origem permanecem nulos na tabela local.
 
 <div id="data-visualization">
   ## Visualizando os dados
 </div>
 
-Para ver o que é possível com este conjunto de dados, confira [adsb.exposed](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219).
-O adsb.exposed foi criado originalmente pelo cofundador e CTO Alexey Milovidov para visualizar dados de voo ADS-B (Automatic Dependent Surveillance-Broadcast),
-que são mil vezes maiores. Durante um hackathon da empresa, Alexey adicionou os dados do Foursquare à ferramenta.
+<Note>
+  O modelo de acesso do Foursquare mudou desde que estas visualizações foram criadas. A
+  [visualização interativa original de Places](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219)
+  é anterior ao modelo de acesso atual e está vinculada como referência histórica, mas pode não
+  exibir mais dados de Places. As imagens abaixo são mantidas como exemplos históricos.
+</Note>
 
-Algumas das nossas visualizações favoritas estão logo abaixo para você apreciar.
+Durante um hackathon da empresa, o cofundador e CTO da ClickHouse, Alexey Milovidov, usou o ClickHouse
+para criar as seguintes visualizações a partir do conjunto de dados do Foursquare.
 
 <Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Mapa de densidade de pontos de interesse na Europa" />
 

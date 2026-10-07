@@ -67,6 +67,10 @@ private:
     std::string config_path;
     std::vector<std::string> extra_paths;
 
+    /// The substitutions file from the <include_from> element of the loaded config.
+    /// Updated on every successful load; accessed only under reload_mutex.
+    std::string include_from_path;
+
     std::string preprocessed_dir;
     FilesChangesTracker files;
     std::unique_ptr<zkutil::ZooKeeperNodeCache> zk_node_cache;

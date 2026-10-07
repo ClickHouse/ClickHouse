@@ -1,0 +1,50 @@
+---
+description: 'Documentación de la interfaz web integrada de búsqueda en la documentación, disponible en la ruta `/docs` de la interfaz HTTP y respaldada por la tabla `system.documentation`'
+sidebarTitle: 'Búsqueda de documentación'
+slug: /interfaces/documentation-search
+title: 'Búsqueda de documentación'
+doc_type: 'reference'
+---
+
+La página de búsqueda de documentación es una pequeña interfaz web autocontenida para realizar búsquedas instantáneas en la documentación de referencia integrada. Se sirve en la ruta `/docs` de cualquier puerto HTTP de ClickHouse.
+
+Vaya a `/docs` en cualquier puerto HTTP de ClickHouse (por ejemplo, `http://localhost:8123/docs`) para abrirla.
+
+<div id="what-it-does">
+  ## Qué hace
+</div>
+
+La página consulta la tabla [`system.documentation`](/es/reference/system-tables/documentation) a través de HTTP mientras escribes y renderiza el Markdown de la entidad seleccionada. Como lee `system.documentation`, cubre todas las entidades que expone esa tabla — funciones, funciones de agregación, funciones de tabla, motores de tabla, motores de base de datos, tipos de datos, ajustes, formatos, códecs de compresión, eventos de perfil, métricas, las propias tablas del sistema y más — y siempre coincide con la documentación integrada en el servidor en ejecución.
+
+Escribe en el cuadro de búsqueda y las coincidencias aparecerán en una lista con colores según el tipo; al seleccionar una coincidencia, se renderizará su documentación. El renderizado incluye:
+
+* un enlace con icono de lápiz junto al título de la entidad que abre su archivo fuente en GitHub, tomado de la columna `source` de `system.documentation`;
+* resaltado de sintaxis de ClickHouse SQL en los bloques de código, usando el mismo lexer integrado (`Lexer.wasm`) que la interfaz de usuario de [`/play`](/es/concepts/features/interfaces/http);
+* matemáticas en TeX mediante [KaTeX](https://katex.org/) (por ejemplo, la fórmula en la página `corr`);
+* admoniciones `:::note`/`:::tip`/…, anclas en los encabezados con enlaces compartibles y un botón flotante &quot;Copy&quot; sobre los bloques de código;
+* enlaces relativos resueltos dentro de la aplicación hacia otra entidad documentada cuando existe; de lo contrario, hacia `https://clickhouse.com/docs`; las referencias &quot;Related&quot; y &quot;Alias of&quot; se convierten en enlaces dentro de la aplicación.
+
+El término de búsqueda actual, la entidad abierta y la sección se reflejan en el fragmento de la URL, por lo que se puede enlazar directamente a una página o sección concreta y restaurarla con la navegación atrás/adelante del navegador. Un selector de tema claro/oscuro (con detección automática) coincide con `/play`.
+
+<div id="connecting">
+  ## Conexión
+</div>
+
+El encabezado tiene campos `URL`, `user` y `password`, igual que en `/play`. Cuando la página se sirve desde ClickHouse, la `URL` predeterminada es el origen actual; cuando la página se abre como archivo local, la `URL` predeterminada es `http://localhost:8123/`, de modo que la página también puede abrirse localmente y conectarse a un servidor remoto. La caché de nombres de enlaces cruzados se reconstruye automáticamente cuando cambia la conexión.
+
+<div id="assets">
+  ## Recursos
+</div>
+
+Todos los recursos —incluidos el renderizador de Markdown ([Marked](https://marked.js.org/)), el renderizador matemático (KaTeX, con sus fuentes) y el lexer de SQL— se sirven desde el propio binario de ClickHouse cuando la página se sirve por HTTP. No se carga ninguna CDN de terceros desde el origen HTTP de ClickHouse, por lo que la página es autocontenida, funciona sin conexión y no ejecuta código de red de terceros junto con las credenciales que maneja.
+
+<div id="security">
+  ## Consideraciones de seguridad
+</div>
+
+La página realiza consultas al endpoint HTTP de ClickHouse con las credenciales introducidas en el encabezado, por lo que aquí se aplican las mismas advertencias que para el protocolo HTTP:
+
+* Sirve siempre `/docs` a través de HTTPS en entornos no confiables para proteger las credenciales.
+* Restringe el acceso a nivel de red (firewall, reverse proxy o la configuración `listen_host`) del mismo modo que restringes el acceso al protocolo HTTP.
+
+`system.documentation` contiene únicamente la documentación de referencia estática integrada en el servidor, por lo que la página no expone ningún dato de tus tablas.

@@ -1,0 +1,8 @@
+generous memory budget: the dictionary filter prunes row group 1, only 20000 rows are read
+{"result":[{"count()":1}],"rows_read":20000}
+tight memory budget below the decoded dictionary footprint: pruning is skipped, all 40000 rows are read
+{"result":[{"count()":1}],"rows_read":40000}
+extreme memory budget (1 byte): pruning is skipped, result is still correct
+{"result":[{"count()":1}],"rows_read":40000}
+results are identical regardless of the memory budget, including across row groups
+OK

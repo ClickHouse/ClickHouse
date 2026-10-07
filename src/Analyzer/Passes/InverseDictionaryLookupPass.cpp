@@ -27,6 +27,7 @@
 #include <Access/Common/AccessType.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/typeid_cast.h>
 
 
@@ -38,6 +39,8 @@ namespace Setting
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
+extern const SettingsBool make_distributed_plan;
+extern const SettingsBool enable_cascades_optimizer;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 }
@@ -146,6 +149,24 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
             return true;
     }
     return false;
+}
+
+/// Comparing against the dictionary's keys is not equivalent to `dictGet` when either the probe
+/// expression's type or the dictionary's declared key type has a dynamic structure or a `Variant` at any level.
+/// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
+/// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
+/// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
+/// and looks that key up, while `IN` and `=` treat the row as NULL. A `Nullable` key is unaffected:
+/// there the cast propagates the NULL. A `JSON` key diverges either way: `convertKeyColumns` skips an
+/// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
+/// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
+/// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
+{
+    if (key_type.hasDynamicStructure())
+        return true;
+
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
 }
 
 bool isRewriteSemanticallySafe(
@@ -317,6 +338,9 @@ public:
             return;
         }
 
+        if (keyTypeBreaksInverseLookupEquivalence(*dictget_function_info.key_expr_node->getResultType()))
+            return;
+
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
         const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
@@ -358,6 +382,12 @@ public:
         else
         {
             return;
+        }
+
+        for (const auto & key_col : key_cols)
+        {
+            if (keyTypeBreaksInverseLookupEquivalence(*key_col.type))
+                return;
         }
 
         /// For complex-key dictionaries, `dictGet` and `IN` don't have the same `NULL` key semantics.
@@ -479,20 +509,30 @@ public:
                 }
 
                 /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+                const auto in_function_name = getInFunctionNameForPassCreatedNode(
+                    "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+                if (!in_function_name)
+                    return;
+
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
 
-                auto in_function_node = std::make_shared<FunctionNode>("in");
+                auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
                 in_function_node->markAsOperator();
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
-                resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+                resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
                 node = preserve_result_type(in_function_node);
                 return;
             }
         }
 
-        if (getSettings()[Setting::rewrite_in_to_join])
+        /// The `IN (SELECT ... FROM dictionary(...))` rewrite below conflicts with a forced IN->JOIN
+        /// rewrite and with the Cascades distributed planner's own IN handling, so skip it in those
+        /// cases. The constant-fold rewrites above stay enabled.
+        if (getSettings()[Setting::rewrite_in_to_join]
+            || (getSettings()[Setting::make_distributed_plan] && getSettings()[Setting::enable_cascades_optimizer]))
             return;
 
         /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
@@ -513,6 +553,12 @@ public:
         /// (in particular internal queries, which otherwise block whenever the replicated access
         /// storage is being refreshed).
         if (!isCreateTemporaryTableGranted())
+            return;
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto in_function_name = getInFunctionNameForPassCreatedNode(
+            "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+        if (!in_function_name)
             return;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
@@ -551,7 +597,7 @@ public:
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = dict_table_function;
+        subquery_node->getJoinTreeNode() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
         for (const auto & key_col_node : key_cols)
@@ -560,11 +606,11 @@ public:
         }
         subquery_node->resolveProjectionColumns(key_cols);
 
-        auto in_function_node = std::make_shared<FunctionNode>("in");
+        auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
         QueryTreeNodePtr querytree_subquery_node = subquery_node;
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+        resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
         /// Preserve the original result type of the comparison node.
         /// For example, original "equals(...)" might have result type Nullable(UInt8),

@@ -1,6 +1,8 @@
--- Tags: no-replicated-database, no-parallel-replicas
+-- Tags: no-replicated-database, no-parallel-replicas, no-flaky-check
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
+-- no-flaky-check: single runs of this test approach the 180s cap in heavy sanitizer + object-storage configurations,
+-- so it cannot fit the flaky-check time limit whenever a PR touches it.
 
 SET optimize_or_like_chain = 0;
 SET optimize_rewrite_like_perfect_affix = 0;
@@ -183,7 +185,7 @@ SELECT count() FROM data_complex_nullable_dict_key WHERE dictGetString('dict_com
 SETTINGS optimize_inverse_dictionary_lookup = 1;
 
 CREATE TABLE data_outer_nullable_tuple (t Nullable(Tuple(Nullable(UInt64), String))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;
 INSERT INTO data_outer_nullable_tuple VALUES ((NULL, 'x')), ((1, 'x'));
 
 SELECT 'Nullable(Tuple(Nullable(K))), no rewrite - plan';
@@ -402,10 +404,15 @@ SELECT 'short-circuited bad-regex match: optimization on, returns 0, opt off';
 SELECT count() FROM data_ops WHERE id < 0 AND match(dictGetString('dict_ops', 'name', id), '[unclosed')
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
-SELECT 'short-circuited bad-regex match, no rewrite - plan';
+SELECT 'short-circuited bad-regex match, no rewrite - plan, optimize_redundant_comparisons = 0';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_ops WHERE id < 0 AND match(dictGetString('dict_ops', 'name', id), '[unclosed')
-SETTINGS optimize_inverse_dictionary_lookup = 1;
+SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_redundant_comparisons = 0;
+
+SELECT 'short-circuited bad-regex match, no rewrite - plan, optimize_redundant_comparisons = 1';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_ops WHERE id < 0 AND match(dictGetString('dict_ops', 'name', id), '[unclosed')
+SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_redundant_comparisons = 1;
 
 
 -- max_rows_in_set / max_bytes_in_set with set_overflow_mode = 'break': skip to avoid silent truncation

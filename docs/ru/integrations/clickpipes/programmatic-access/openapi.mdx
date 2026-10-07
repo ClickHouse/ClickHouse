@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-Все типы ClickPipes можно создавать, обновлять и удалять программно с помощью [ClickHouse Cloud OpenAPI](/ru/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). На этой странице описаны аутентификация и доступные конечные точки ClickPipes, а также приведены примеры запросов `curl` для каждого типа ClickPipe.
+Все типы ClickPipes можно создавать, обновлять и удалять программно с помощью [ClickHouse Cloud OpenAPI](/ru/products/cloud/api-reference/clickpipes/list-clickpipes). На этой странице описаны аутентификация и доступные конечные точки ClickPipes, а также приведены примеры запросов `curl` для каждого типа ClickPipe.
 
 <div id="authentication">
   ## Аутентификация
@@ -57,7 +57,7 @@ https://api.clickhouse.cloud/v1
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | Получить параметры масштабирования CDC ClickPipes |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Обновить параметры масштабирования CDC ClickPipes |
 
-Полные схемы запросов и ответов для каждой конечной точки см. в [Swagger UI](/ru/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+Полные схемы запросов и ответов для каждой конечной точки см. в [справочнике API](/ru/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="examples">
   ## Примеры
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## Создание ClickPipes
 </div>
 
-Тело запроса `POST /clickpipes` зависит от типа источника. В примерах ниже показана структура для каждого поддерживаемого типа ClickPipe. Эталонные JSON-схемы см. в [Swagger UI](/ru/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+Тело запроса `POST /clickpipes` зависит от типа источника. В примерах ниже показана структура для каждого поддерживаемого типа ClickPipe. Эталонные JSON-схемы см. в [справочнике API](/ru/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="create-kafka">
   ### Kafka

@@ -78,7 +78,6 @@ public:
         size_t num_columns = arguments.size();
 
         auto result_col = result_type->createColumn();
-        result_col->reserve(input_rows_count);
 
         /// Cast all arguments to the result type
         /// Use this columns to insert values into the result column
@@ -100,29 +99,63 @@ public:
             casted_columns.push_back(std::move(casted_column));
         }
 
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            bool found = false;
+        if (input_rows_count == 0)
+            return result_col;
 
-            /// Check each argument for truthiness
-            for (size_t arg_idx = 0; !found && arg_idx < num_columns; ++arg_idx)
+        /// A value is "falsey" if it is the default of the ORIGINAL argument's type (NULL for Nullable).
+        size_t first = 0;
+        for (; first < num_columns; ++first)
+        {
+            size_t num_defaults = arguments[first].column->getNumberOfDefaultRows();
+            if (num_defaults == 0)
+                return casted_columns[first];
+            if (num_defaults != input_rows_count)
+                break;
+        }
+
+        if (first == num_columns)
+        {
+            result_col->insertManyDefaults(input_rows_count);
+            return result_col;
+        }
+
+        /// Only `ColumnAggregateFunction` lacks `getIndicesOfNonDefaultRows`, and it has no default rows.
+        IColumn::Offsets non_default_rows;
+        arguments[first].column->getIndicesOfNonDefaultRows(non_default_rows, 0, 0);
+
+        result_col->reserve(input_rows_count);
+        auto insert_from_next_arguments = [&](size_t row)
+        {
+            for (size_t arg_idx = first + 1; arg_idx < num_columns; ++arg_idx)
             {
-                /// A value is considered "falsey" if it's NULL or the default value for its type
-                /// For example:
-                /// - for numeric types, the default is 0
-                /// - for strings, the default is ''
-                /// - for arrays, the default is []
                 if (!arguments[arg_idx].column->isDefaultAt(row))
                 {
-                    /// Found a truthy value, insert it into the result
                     result_col->insertFrom(*casted_columns[arg_idx], row);
-                    found = true;
+                    return;
                 }
             }
+            result_col->insertDefault();
+        };
 
-            if (!found)
-                result_col->insertDefault();
+        size_t row = 0;
+        for (size_t i = 0; i < non_default_rows.size();)
+        {
+            size_t run_start = non_default_rows[i];
+            size_t run_end = run_start + 1;
+            for (++i; i < non_default_rows.size() && non_default_rows[i] == run_end; ++i)
+                ++run_end;
+
+            for (; row < run_start; ++row)
+                insert_from_next_arguments(row);
+            if (run_end - run_start == 1)
+                result_col->insertFrom(*casted_columns[first], run_start);
+            else
+                result_col->insertRangeFrom(*casted_columns[first], run_start, run_end - run_start);
+            row = run_end;
         }
+        for (; row < input_rows_count; ++row)
+            insert_from_next_arguments(row);
+
         return result_col;
     }
 };
@@ -143,7 +176,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {}};
     doc.examples = {
         {"integers", "SELECT firstNonDefault(0, 1, 2)", "1"},
-        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "'hello'"},
+        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "hello"},
         {"nulls", "SELECT firstNonDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
         {"nullable zero", "SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };

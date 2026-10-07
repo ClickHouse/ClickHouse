@@ -23,7 +23,10 @@ import time
 import xml.etree.ElementTree as ET
 
 from ci.defs.defs import ToolSet
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.dataset_download import (
+    download_and_extract_datasets,
+    iceberg_database_ddl_commands,
+)
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -95,7 +98,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "21"
+LLVM_VERSION = "22"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -216,6 +219,7 @@ def download_datasets():
         "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+        "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
     }
     errors = download_and_extract_datasets(dataset_paths.values(), PERF_DB_PATH)
     for error in errors:
@@ -426,7 +430,12 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
             f"{repo_path}/tests/performance/scripts/perf.py "
             f"--host localhost localhost "
             f"--port {port} {port} "
-            f"--runs {runs} --max-queries {max_queries} "
+            # Exactly `runs` runs: profile collection wants quick coverage,
+            # not measurement precision, so pin the minimum and both caps
+            # instead of the legacy --runs ("at least N"), which would widen
+            # the adaptive policy to its default minimum of 5.
+            f"--min-runs {runs} --cap {runs} --cap-fast {runs} "
+            f"--max-queries {max_queries} "
             f"--max-query-seconds 15 --prewarm-max-query-seconds 15 "
             f"--profile-seconds 0 "
             f"{repo_path}/tests/performance/{test_file}",
@@ -512,6 +521,10 @@ def configure_datasets(server_dir, port=9000):
         f'for f in {repo_path}/tests/performance/user_files/*; do [ -e "$f" ] || continue; '
         f'ln -sf "$(readlink -f "$f")" {server_dir}/db/user_files/; done'
     )
+    # Attach the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
+    for command in iceberg_database_ddl_commands(server_dir):
+        if not Shell.check(command, verbose=True):
+            return False
     return True
 
 
@@ -557,8 +570,8 @@ def main():
     # --- Stage: Checkout submodules ---
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         def do_checkout():
-            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init")
-            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3)
+            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init", strict=True)
+            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3, strict=True)
             return r
 
         results.append(

@@ -1,0 +1,400 @@
+---
+title: 'JupySQL과 chDB'
+sidebarTitle: 'JupySQL'
+slug: /chdb/guides/jupysql
+description: 'Jupyter 노트북과 IPython에서 JupySQL로 chDB를 쿼리하는 방법'
+keywords: ['chdb', 'JupySQL']
+doc_type: 'guide'
+---
+
+[JupySQL](https://github.com/ploomber/jupysql)은 Jupyter 노트북과 IPython 셸에서 SQL을 실행할 수 있도록 해주는 Python 라이브러리입니다.
+이 가이드에서는 chDB와 JupySQL을 사용해 데이터를 쿼리하는 방법을 알아보겠습니다.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/2wjl3OijCto?si=EVf2JhjS5fe4j6Cy" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+<div id="setup">
+  ## 준비
+</div>
+
+먼저 가상 환경을 생성합니다:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+그런 다음 JupySQL, IPython, Jupyter Lab을 설치합니다:
+
+```bash
+pip install jupysql ipython jupyterlab
+```
+
+다음을 실행해 시작한 IPython에서 JupySQL을 사용할 수 있습니다:
+
+```bash
+ipython
+```
+
+또는 Jupyter Lab에서는 다음을 실행하세요:
+
+```bash
+jupyter lab
+```
+
+<Note>
+  Jupyter Lab을 사용하는 경우, 이 가이드의 나머지 단계를 진행하기 전에 먼저 노트북을 만들어야 합니다.
+</Note>
+
+<div id="downloading-a-dataset">
+  ## 데이터셋 다운로드
+</div>
+
+약 300만 건의 택시 운행 기록과 각 운행의 요금, 팁, 승차 지역이 포함된 New York City 택시 데이터셋을 사용합니다.
+운행 기록은 여러 TSV 파일에 나뉘어 있으므로, 먼저 파일을 다운로드합니다:
+
+```python
+from urllib.request import urlretrieve
+```
+
+```python
+base = "https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi"
+for n in range(3):
+  _ = urlretrieve(
+    f"{base}/trips_{n}.gz",
+    f"trips_{n}.gz",
+  )
+```
+
+<div id="configuring-chdb-and-jupysql">
+  ## chDB 및 JupySQL 구성하기
+</div>
+
+다음으로, chDB용 `dbapi` 모듈을 불러오겠습니다:
+
+```python
+from chdb import dbapi
+```
+
+그리고 chDB 연결을 생성하겠습니다.
+영구 저장하는 모든 데이터는 `taxi.chdb` 디렉터리에 저장됩니다:
+
+```python
+conn = dbapi.connect(path="taxi.chdb")
+```
+
+이제 `sql` 매직을 불러오고 chDB 연결을 만듭니다:
+
+```python
+%load_ext sql
+%sql conn --alias chdb
+```
+
+다음으로, 쿼리 결과가 잘리지 않도록 표시 한도를 설정합니다:
+
+```python
+%config SqlMagic.displaylimit = None
+```
+
+<div id="querying-data-in-tsv-files">
+  ## TSV 파일의 데이터 쿼리
+</div>
+
+`trips_` 접두사가 붙은 여러 파일을 다운로드했습니다.
+`DESCRIBE` 절을 사용해 스키마를 확인하겠습니다:
+
+```python
+%%sql
+DESCRIBE file('trips_*.gz')
+SETTINGS describe_compact_output=1,
+         schema_inference_make_columns_nullable=0
+```
+
+```text
++--------------------+----------+
+|        name        |   type   |
++--------------------+----------+
+|      trip_id       |  Int64   |
+|     vendor_id      |  Int64   |
+|    pickup_date     |   Date   |
+|  pickup_datetime   | DateTime |
+|    dropoff_date    |   Date   |
+|  dropoff_datetime  | DateTime |
+| store_and_fwd_flag |  Int64   |
+|    rate_code_id    |  Int64   |
++--------------------+----------+
+(40 more rows)
+```
+
+이러한 파일을 직접 대상으로 `SELECT` 쿼리를 실행하여 데이터가 어떻게 보이는지 확인할 수도 있습니다:
+
+```python
+%%sql
+SELECT trip_id, pickup_datetime, pickup_ntaname,
+       trip_distance, fare_amount, tip_amount
+FROM file('trips_*.gz')
+LIMIT 3
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+```text
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+|  trip_id   |   pickup_datetime   |             pickup_ntaname             | trip_distance | fare_amount | tip_amount |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+| 1199999902 | 2015-07-07 19:45:07 |      Lenox Hill-Roosevelt Island       |      2.59     |     14.5    |    3.26    |
+| 1199999919 | 2015-07-07 20:26:29 |                Airport                 |      2.4      |      9      |     0      |
+| 1199999944 | 2015-07-07 21:25:09 | SoHo-TriBeCa-Civic Center-Little Italy |      5.13     |      20     |     3      |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+```
+
+스키마를 다시 살펴보면 금액 관련 컬럼 몇 개(`trip_distance`, `fare_amount`, `tip_amount`)가 숫자 유형이 아니라 `String`으로 추론되었습니다.
+데이터를 테이블로 가져올 때 이를 정리하겠습니다.
+
+<div id="importing-tsv-files-into-chdb">
+  ## TSV 파일을 chDB로 가져오기
+</div>
+
+이제 이 TSV 파일의 데이터를 테이블에 저장합니다.
+기본 데이터베이스는 데이터를 디스크에 영구적으로 저장하지 않으므로, 먼저 다른 데이터베이스를 생성해야 합니다:
+
+```python
+%sql CREATE DATABASE taxi
+```
+
+이제 TSV 파일의 데이터 구조를 바탕으로 스키마를 정의한 `trips` 테이블을 생성하겠습니다.
+`REPLACE` 절을 사용해 금액 관련 컬럼을 `Float64`로 변환하고, [`transform`](/ko/reference/functions/regular-functions/other-functions#transform) 함수를 사용해 숫자형 `pickup_borocode` 컬럼을 사람이 읽을 수 있는 자치구 이름으로 변환하겠습니다:
+
+```python
+%%sql
+CREATE TABLE taxi.trips
+ENGINE = MergeTree
+ORDER BY pickup_datetime AS
+SELECT * REPLACE (
+    toFloat64OrZero(trip_distance) AS trip_distance,
+    toFloat64OrZero(fare_amount) AS fare_amount,
+    toFloat64OrZero(tip_amount) AS tip_amount,
+    toFloat64OrZero(total_amount) AS total_amount
+  ),
+  transform(pickup_borocode, [1, 2, 3, 4, 5],
+            ['Manhattan', 'Bronx', 'Brooklyn', 'Queens', 'Staten Island'],
+            'Unknown') AS pickup_borough
+FROM file('trips_*.gz')
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+테이블의 데이터를 간단히 확인해 보겠습니다:
+
+```python
+%sql SELECT count() AS trips FROM taxi.trips
+```
+
+```text
++---------+
+|  trips  |
++---------+
+| 3000317 |
++---------+
+```
+
+300만 건이 조금 넘는 운행 기록에 이어 두 번째 테이블도 가져오겠습니다.
+New York City의 Taxi &amp; Limousine Commission은 도시를 택시 구역으로 나누고, 조회 파일에는 각 구역과 해당 자치구의 매핑 정보가 들어 있습니다.
+파일을 다운로드하겠습니다:
+
+```python
+_ = urlretrieve(
+    f"{base}/taxi_zone_lookup.csv",
+    "taxi_zone_lookup.csv",
+)
+```
+
+그런 다음 CSV 파일의 내용을 바탕으로 `zones` 테이블을 생성합니다:
+
+```python
+%%sql
+CREATE TABLE taxi.zones
+ENGINE = MergeTree
+ORDER BY LocationID AS
+SELECT * FROM file('taxi_zone_lookup.csv')
+SETTINGS schema_inference_make_columns_nullable=0
+```
+
+실행이 완료되면 수집된 데이터를 살펴볼 수 있습니다:
+
+```python
+%sql SELECT * FROM taxi.zones LIMIT 5
+```
+
+```text
++------------+---------------+-------------------------+--------------+
+| LocationID |    Borough    |           Zone          | service_zone |
++------------+---------------+-------------------------+--------------+
+|     1      |      EWR      |      Newark Airport     |     EWR      |
+|     2      |     Queens    |       Jamaica Bay       |  Boro Zone   |
+|     3      |     Bronx     | Allerton/Pelham Gardens |  Boro Zone   |
+|     4      |   Manhattan   |      Alphabet City      | Yellow Zone  |
+|     5      | Staten Island |      Arden Heights      |  Boro Zone   |
++------------+---------------+-------------------------+--------------+
+```
+
+<div id="querying-chdb">
+  ## chDB 쿼리
+</div>
+
+데이터 수집이 완료되었습니다. 이제 데이터 쿼리라는 흥미로운 단계로 넘어갈 차례입니다!
+
+각 자치구는 서로 다른 수의 택시 구역으로 나뉩니다.
+두 테이블을 조인하여 각 자치구에서 승객을 태운 운행 횟수와 택시 구역당 운행 횟수를 확인하는 쿼리를 작성합니다:
+
+```python
+%%sql
+SELECT pickup_borough AS borough,
+       zone_count,
+       count() AS trips,
+       round(count() / zone_count) AS trips_per_zone
+FROM taxi.trips
+JOIN (
+    SELECT Borough, count() AS zone_count
+    FROM taxi.zones
+    GROUP BY Borough
+) AS zones ON pickup_borough = zones.Borough
+GROUP BY borough, zone_count
+ORDER BY trips DESC
+```
+
+```text
++---------------+------------+---------+----------------+
+|    borough    | zone_count |  trips  | trips_per_zone |
++---------------+------------+---------+----------------+
+|   Manhattan   |     69     | 2713990 |    39333.0     |
+|     Queens    |     69     |  187737 |     2721.0     |
+|    Brooklyn   |     61     |  52445  |     860.0      |
+|    Unknown    |     2      |  43802  |    21901.0     |
+|     Bronx     |     43     |   2300  |      53.0      |
+| Staten Island |     20     |    43   |      2.0       |
++---------------+------------+---------+----------------+
+```
+
+Manhattan과 Queens의 택시 구역 수는 같지만, Manhattan의 승차 건수는 14배 이상 많습니다.
+
+<div id="saving-queries">
+  ## 쿼리 저장
+</div>
+
+`%%sql` 매직과 같은 줄에서 `--save` 매개변수를 사용해 쿼리를 저장할 수 있습니다.
+`--no-execute` 매개변수를 사용하면 쿼리 실행을 건너뜁니다.
+
+```python
+%%sql --save tips_by_neighborhood --no-execute
+SELECT pickup_ntaname AS neighborhood,
+       count() AS trips,
+       round(avg(tip_amount), 2) AS avg_tip
+FROM taxi.trips
+WHERE fare_amount > 0 AND pickup_ntaname != ''
+GROUP BY neighborhood
+ORDER BY avg_tip DESC
+```
+
+저장된 쿼리는 실행 전에 공통 테이블 표현식(CTE)으로 변환됩니다.
+다음 쿼리는 평균 팁이 가장 높은 지역을 계산합니다:
+
+```python
+%sql SELECT * FROM tips_by_neighborhood ORDER BY avg_tip DESC LIMIT 5
+```
+
+```text
++-----------------------------------+-------+---------+
+|            neighborhood           | trips | avg_tip |
++-----------------------------------+-------+---------+
+| New Springville-Bloomfield-Travis |   2   |   35.0  |
+|       New Dorp-Midland Beach      |   2   |  23.74  |
+|      New Brighton-Silver Lake     |   3   |  16.67  |
+|           Newark Airport          |  201  |  11.89  |
+|   Grymes Hill-Clifton-Fox Hills   |   1   |   11.3  |
++-----------------------------------+-------+---------+
+```
+
+상위 항목은 운행 횟수가 몇 건에 불과한 지역이므로, 한 번의 높은 요금이 평균을 왜곡합니다.
+이러한 항목은 제외하겠습니다.
+
+<div id="querying-with-parameters">
+  ## 매개변수를 사용한 쿼리
+</div>
+
+쿼리에서도 매개변수를 사용할 수 있습니다.
+매개변수는 일반 변수와 같습니다.
+
+```python
+min_trips = 10000
+```
+
+그런 다음 쿼리에서 `{{variable}}` 구문을 사용할 수 있습니다.
+다음 쿼리는 운행 횟수가 10,000회를 초과하는 지역 중 평균 팁이 가장 높은 지역을 찾습니다:
+
+```python
+%%sql
+SELECT * FROM tips_by_neighborhood
+WHERE trips >= {{min_trips}}
+ORDER BY avg_tip DESC
+LIMIT 10
+```
+
+```text
++----------------------------------------+--------+---------+
+|              neighborhood              | trips  | avg_tip |
++----------------------------------------+--------+---------+
+|                Airport                 | 151171 |   4.92  |
+|   Battery Park City-Lower Manhattan    | 89110  |   2.16  |
+|         North Side-South Side          | 11152  |   1.79  |
+| SoHo-TriBeCa-Civic Center-Little Italy | 144887 |   1.65  |
+|               Chinatown                | 54780  |   1.65  |
+|            Lower East Side             | 15753  |   1.64  |
+|              East Village              | 99881  |   1.61  |
+|  Hunters Point-Sunnyside-West Maspeth  | 10054  |   1.58  |
+|        Turtle Bay-East Midtown         | 197035 |   1.57  |
+|              West Village              | 210369 |   1.54  |
++----------------------------------------+--------+---------+
+```
+
+공항 승차는 다른 경우보다 팁이 훨씬 많습니다. 시내까지 장거리 운행을 해야 하기 때문입니다.
+
+<div id="plotting-histograms">
+  ## 히스토그램 그리기
+</div>
+
+JupySQL에는 제한적이지만 차트 기능도 있습니다.
+상자 그림이나 히스토그램을 만들 수 있습니다.
+
+이제 히스토그램을 만들겠습니다. 먼저 20마일 미만인 각 운행의 거리를 반환하는 쿼리를 작성해 저장하겠습니다.
+이 쿼리를 사용하면 각 거리 버킷에 속하는 운행 수를 집계하는 히스토그램을 만들 수 있습니다:
+
+```python
+%%sql --save trip_distances --no-execute
+SELECT trip_distance
+FROM taxi.trips
+WHERE trip_distance > 0 AND trip_distance < 20
+```
+
+그런 다음 다음을 실행해 히스토그램을 만들 수 있습니다.
+
+```python
+from sql.ggplot import ggplot, geom_histogram, aes
+
+plot = (
+  ggplot(
+    table="trip_distances",
+    with_="trip_distances",
+    mapping=aes(x="trip_distance", fill="#69f0ae", color="#fff"),
+  ) + geom_histogram(bins=50)
+)
+```
+
+대부분의 운행 거리는 1~3마일로 짧지만, 공항까지의 장거리 운행으로 이어지는 긴 꼬리 분포도 나타납니다.
+
+<div id="related">
+  ## 관련 자료
+</div>
+
+* [chDB를 사용한 JupySQL 소개 (YouTube)](https://www.youtube.com/watch?v=2wjl3OijCto)

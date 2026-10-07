@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
@@ -129,7 +129,7 @@ Let's say you want to insert raw CSV data into ClickHouse:
 ```java
 public static void main(String[] args) {
     // Configure ClickHouseClient
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
     // Create an ElementConverter
     ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -143,7 +143,7 @@ public static void main(String[] args) {
             MAX_BATCH_SIZE_IN_BYTES,
             MAX_TIME_IN_BUFFER_MS,
             MAX_RECORD_SIZE_IN_BYTES,
-            clickHouseClientConfig
+            clientConfig
     );
 
     csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -185,7 +185,7 @@ For more detailed instructions, see the [Example Guide](https://github.com/Click
 
 | Parameters                  | Description                                                                                                                                        | Default Value | Required |
 |-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------|----------|
-| `url`                       | Fully qualified Clickhouse URL                                                                                                                     | N/A           | Yes      |
+| `url`                       | Fully qualified ClickHouse URL                                                                                                                     | N/A           | Yes      |
 | `username`                  | ClickHouse database username                                                                                                                       | N/A           | Yes      |
 | `password`                  | ClickHouse database password                                                                                                                       | N/A           | Yes      |
 | `database`                  | ClickHouse database name                                                                                                                           | N/A           | Yes      |
@@ -219,7 +219,7 @@ Map<String, String> serverSettings = Map.of(
     "insert_deduplicate", "1"
 );
 
-ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
     url,
     username,
     password,
@@ -318,7 +318,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -403,9 +403,9 @@ You may experience that the connector's throughput does not scale with the job's
 
 [//]: # (  1. ensure the server session setting `insert_deduplicate=1` &#40;see the [example]&#40;#client-options&#41; above for how to set it, if necessary&#41;. Note that `insert_deduplicate` is on by default for replicated tables.)
 
-[//]: # (  2. if necessary, increase either/both the `MergeTree` table settings [`replicated_deduplication_window`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window&#41; or [`replicated_deduplication_window_seconds`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds&#41;.)
+[//]: # (  2. if necessary, increase either/both the `MergeTree` table settings [`replicated_deduplication_window`]&#40;https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window&#41; or [`replicated_deduplication_window_seconds`]&#40;https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds&#41;.)
 
-[//]: # (- If your table is using a non-replicated `*MergeTree` table engine, increase the `MergeTree` table setting [`non_replicated_deduplication_window`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window&#41;.)
+[//]: # (- If your table is using a non-replicated `*MergeTree` table engine, increase the `MergeTree` table setting [`non_replicated_deduplication_window`]&#40;https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window&#41;.)
 
 [//]: # ()
 [//]: # (_Note 1: this solution relies on [synchronous inserts]&#40;https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default&#41;, which is recommended for use with the Flink connector. Please ensure server session setting `async_insert=0`._)

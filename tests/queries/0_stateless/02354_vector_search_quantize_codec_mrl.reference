@@ -1,0 +1,9 @@
+show_create	1	1
+codes_bf16	128
+codes_int8	20
+full_precision_rows	4000
+plan	1	1
+bf16_unfiltered_exact	1
+int8_unfiltered_exact	1
+bf16_nearest_is_self	1
+nonfinite	1	1	20

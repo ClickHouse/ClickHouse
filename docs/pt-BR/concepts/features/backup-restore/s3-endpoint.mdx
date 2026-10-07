@@ -53,9 +53,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
 <br />
 
 <Steps>
-  <Step>
-    #### Configuração
-
+  <Step title="Configuração" id="create-a-table">
     Crie o banco de dados e a tabela a seguir e insira alguns dados aleatórios nela:
 
     ```sql
@@ -77,9 +75,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Crie um backup de base
-
+  <Step title="Crie um backup de base" id="create-a-base-initial-backup">
     Backups incrementais exigem um backup *de base* como ponto de partida. O primeiro parâmetro do
     destino S3 é o endpoint do S3, seguido pelo diretório dentro do bucket
     que será usado para este backup. Neste exemplo, o diretório se chama `my_backup`.
@@ -101,9 +97,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Adicione mais dados
-
+  <Step title="Adicione mais dados" id="add-more-data">
     Os backups incrementais contêm apenas a diferença entre o backup base e
     o conteúdo atual da tabela da qual está sendo feito o backup. Adicione mais dados antes de fazer o
     backup incremental:
@@ -115,10 +109,8 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Fazer um backup incremental
-
-    Este comando de backup é semelhante ao backup de base, mas adiciona `SETTINGS base_backup` e o local do backup de base. Observe que o destino do backup incremental não é o mesmo diretório do backup de base, mas sim o mesmo endpoint com um diretório de destino diferente dentro do bucket. O backup de base está em `my_backup`, e o incremental será gravado em `my_incremental`:
+  <Step title="Fazer um backup incremental" id="take-an-incremental-backup">
+    Este comando de backup é semelhante ao backup de base, mas adiciona `SETTINGS base_backup` e o local do backup de base.  Observe que o destino do backup incremental não é o mesmo diretório do backup de base, mas sim o mesmo endpoint com um diretório de destino diferente dentro do bucket.  O backup de base está em `my_backup`, e o incremental será gravado em `my_incremental`:
 
     ```sql
     BACKUP TABLE test_db.test_table TO S3(
@@ -140,9 +132,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Restaurar a partir do backup incremental
-
+  <Step title="Restaurar a partir do backup incremental" id="restore-from-the-incremental-backup">
     Este comando restaura o backup incremental para uma nova tabela, `test_table_restored`.
     Observe que, quando um backup incremental é restaurado, o backup base também é incluído.
     Especifique apenas o **backup incremental** ao restaurar:
@@ -162,9 +152,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Verifique a contagem
-
+  <Step title="Verifique a contagem" id="verify-the-count">
     Foram feitos dois inserts na tabela original `data`, um com 1.000 linhas e outro com 100 linhas, totalizando 1.100.
     Verifique se a tabela restaurada tem 1.100 linhas:
 
@@ -180,9 +168,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### Verifique o conteúdo
-
+  <Step title="Verifique o conteúdo" id="verify-the-content">
     Isso compara o conteúdo da tabela original, `test_table`, com o da tabela restaurada `test_table_restored`:
 
     ```sql

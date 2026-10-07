@@ -12,6 +12,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsInt64 zstd_window_log_max;
 }
 
@@ -65,7 +66,10 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
     const ObjectInfos::iterator & begin,
     const ObjectInfos::iterator & end)
 {
-    if (!query_settings.schema_inference_use_cache)
+    /// The cache key does not include the compression method, and a cache hit never opens the object.
+    /// Under an explicit `compression_method` the same object can decode differently (or fail), so schemas
+    /// are only cached and reused when the codec follows from the path, same as row counts.
+    if (!query_settings.schema_inference_use_cache || !isCompressionMethodHintAuto(configuration->compression_method))
         return std::nullopt;
 
     for (auto it = begin; it < end; ++it)
@@ -125,13 +129,15 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
-    if (query_settings.schema_inference_use_cache)
+    /// Same as `StorageObjectStorageSource::addNumRowsToCache`: the key does not include the compression method.
+    if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
         schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
-    if (query_settings.schema_inference_use_cache)
+    /// See `tryGetColumnsFromCache`.
+    if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
         schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
 }
 
@@ -156,9 +162,10 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
         = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
-    const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    const auto & settings_ref = context->getSettingsRef();
+    const auto zstd_window = static_cast<int>(settings_ref[Setting::zstd_window_log_max]);
 
-    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window);
+    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window, settings_ref[Setting::snappy_mode]);
 }
 
 ReadBufferIterator::Data ReadBufferIterator::next()
@@ -287,8 +294,12 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         {
             first = false;
 
+            const auto & settings_ref = getContext()->getSettingsRef();
             read_buf = wrapReadBufferWithCompressionMethod(
-                std::move(read_buf), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]));
+                std::move(read_buf),
+                compression_method,
+                static_cast<int>(settings_ref[Setting::zstd_window_log_max]),
+                settings_ref[Setting::snappy_mode]);
 
             return {std::move(read_buf), std::nullopt, format};
         }

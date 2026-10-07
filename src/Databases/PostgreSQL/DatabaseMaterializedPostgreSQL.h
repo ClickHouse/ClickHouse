@@ -49,6 +49,10 @@ public:
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// The iterator above exposes the nested ReplacingMergeTree tables; reading them requires the
+    /// `StorageMaterializedPostgreSQL` wrapper. See `IDatabase::getTableForRead`.
+    StoragePtr getTableForRead(const String & table_name, const StoragePtr & table, ContextPtr local_context) const override;
+
     /// Fail closed for BACKUP DATABASE / BACKUP TABLE if a configured table has no nested ReplacingMergeTree yet,
     /// instead of silently omitting it from the backup (the base implementation only enumerates nested tables).
     std::vector<std::pair<ASTPtr, StoragePtr>>
@@ -87,7 +91,7 @@ private:
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
-    String getFormattedTablesList(const String & except = {}) const;
+    String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 
     bool is_attach;
     String remote_database_name;
@@ -95,8 +99,27 @@ private:
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
-    std::map<std::string, StoragePtr> materialized_tables;
+
     mutable std::mutex tables_mutex;
+
+    /// Wrappers over the nested `ReplacingMergeTree` tables. `tables_mutex` is the only mutex that
+    /// guards this map. Readers - `tryGetTable`, `getTableForRead`, `getTablesForBackup` -
+    /// dereference the stored `StorageMaterializedPostgreSQL` pointers while holding it, so every
+    /// writer must hold it as well. Guarding the writes with `handler_mutex` instead used to let
+    /// `DROP DATABASE` destroy a wrapper while another thread was walking the map, which the
+    /// sanitizers reported as a heap use-after-free. `ServerAsynchronousMetrics` enumerates the
+    /// tables of every database once per second, so the window was hit routinely.
+    /// When both mutexes are needed, `handler_mutex` is taken first.
+    std::map<std::string, StoragePtr> materialized_tables TSA_GUARDED_BY(tables_mutex);
+
+    /// Distinguishes the two states in which `materialized_tables` is empty. After `stopReplication`
+    /// (server shutdown or `DROP DATABASE`) user-facing access legitimately falls back to the nested
+    /// `ReplacingMergeTree` tables. But the map is also empty right after `CREATE` / `ATTACH DATABASE`
+    /// and after a server restart, until `startSynchronization` publishes the wrappers; in that
+    /// startup window user-facing reads must wrap the nested tables on the fly instead of exposing
+    /// them directly (see `tryGetTable` and `getTableForRead`).
+    bool replication_stopped TSA_GUARDED_BY(tables_mutex) = false;
+
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;

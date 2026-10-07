@@ -38,7 +38,9 @@ spec:
 
 - When `accessModes` is omitted, the operator defaults it to `ReadWriteOnce`.
 - The per-replica PVC is retained when the cluster is deleted, so data survives a
-  delete-and-recreate of the Custom Resource.
+  delete-and-recreate of the Custom Resource. For data on an
+  [encrypted policy](#at-rest-encryption) this additionally requires preserving the
+  encryption key — see the note in that section.
 - The same field exists on `KeeperCluster` and behaves the same way.
 
 ## Running without a persistent data volume {#ephemeral-storage}
@@ -141,10 +143,49 @@ See the
 [ClickHouse storage documentation](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
 for the policy fields.
 
+## At-rest encryption {#at-rest-encryption}
+
+Setting `spec.settings.encryption` enables at-rest encryption of table data. The
+operator generates a 16-byte AES key — stored in the managed cluster Secret, or
+supplied through `externalSecret` — and a dedicated storage policy that wraps every
+data disk with ClickHouse's `encrypted` disk type.
+
+```yaml
+spec:
+  settings:
+    encryption: {}   # enables the feature; the policy defaults to "encrypted"
+```
+
+Encryption is opt in per table; the default storage policy stays plaintext. Select
+the encrypted policy when creating a table:
+
+```sql
+CREATE TABLE secret_data (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 'encrypted';
+```
+
+Set `encryption.policyName` to use a different policy name.
+
+<Note>
+This encrypts MergeTree data parts written through the encrypted policy with
+AES-128-CTR. ClickHouse server metadata and logs at the data root are not covered —
+use disk-level encryption such as LUKS or a CSI driver for those.
+Enabling encryption on a running cluster triggers a one-time rolling restart to
+inject the key; replicas may briefly report a configuration reload error until
+that restart completes.
+
+The key is stored in the operator-managed cluster Secret, which is owned by the
+Custom Resource and deleted with it. Encrypted parts are unreadable without the
+key: if encrypted data must survive deleting the CR (PVCs are retained), supply
+the key through `externalSecret` or back up the `disk-encryption-key` entry
+before deletion. Do not delete the managed Secret — the operator would generate
+a fresh key and existing encrypted parts would become unreadable.
+</Note>
+
 ## What you cannot change after creation {#immutability}
 
-Storage layout is largely fixed once a cluster exists. The admission webhook rejects
-updates that would orphan or rebind PersistentVolumeClaims:
+Storage layout is largely fixed once a cluster exists. Updates that would orphan
+data or rebind PersistentVolumeClaims are rejected at admission:
 
 - The presence of `dataVolumeClaimSpec` is immutable — you cannot **add** a data
   volume to a cluster created without one, nor **remove** it from a cluster created
@@ -153,6 +194,8 @@ updates that would orphan or rebind PersistentVolumeClaims:
   **remove**, or **rename** entries after creation.
 - Expanding `resources.requests.storage` on an existing entry **is** allowed (subject
   to StorageClass support, see [Expanding storage](#expanding-storage)).
+- Encryption cannot be **disabled** once enabled, and `encryption.policyName` cannot
+  be **renamed** — tables already using the encrypted policy would become inaccessible.
 
 ## Validation reference {#validation-reference}
 
@@ -162,12 +205,15 @@ updates that would orphan or rebind PersistentVolumeClaims:
 | Custom volume mounted at `/var/lib/clickhouse` while `dataVolumeClaimSpec` is set | Rejected |
 | `additionalVolumeClaimTemplates` set but `dataVolumeClaimSpec` missing | Rejected |
 | Additional disk named `default` | Rejected — reserved by the ClickHouse default disk |
+| Additional disk name ending in `-encrypted` | Rejected — collides with generated encrypted disk names |
 | Additional disk named `clickhouse-storage-volume` | Rejected — collides with the primary data volume name |
 | Duplicate additional disk name | Rejected |
 | Name not matching `^[a-z]([-a-z0-9]*[a-z0-9])?$` or longer than 63 characters | Rejected by the CRD schema |
 | Adding or removing `dataVolumeClaimSpec` after creation | Rejected |
 | Adding, removing, or renaming `additionalVolumeClaimTemplates` after creation | Rejected |
 | Reserved volume name in `podTemplate.volumes` | Rejected |
+| `encryption.policyName` set to `default` | Rejected by the CRD schema — the encrypted policy must not replace the default policy |
+| Disabling `encryption` or renaming its policy after creation | Rejected by the CRD schema |
 
 ## Related guides {#related-guides}
 

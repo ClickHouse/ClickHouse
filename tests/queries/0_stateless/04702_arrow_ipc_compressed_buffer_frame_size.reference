@@ -1,0 +1,31 @@
+OK describe
+OK bad_frame.arrows
+OK zstd_bad_frame.arrows
+OK prefix_mismatch.arrows
+OK no_declared_size_forged_prefixes.arrows
+OK pledge_mismatch.arrows
+OK zstd_prefix_mismatch.arrows
+OK zstd_empty_frame_forged_prefix.arrows
+OK zstd_multi_frame_forged_prefix.arrows
+OK zstd_skippable_prefix_forged_prefix.arrows
+OK lz4_empty_frame_forged_prefix.arrows
+OK lz4_empty_frame_zero_size_forged_prefix.arrows
+OK lz4_no_declared_size_forged_prefix.arrows
+OK lz4_pledge_above_blocks.arrows
+OK lz4_trailing_data.arrows
+OK lz4_truncated_content_checksum.arrows
+OK lz4_tiny_blocks_forged_prefix.arrows
+OK zstd_no_declared_size_forged_prefix.arrows
+OK zstd_no_declared_size_truncated.arrows
+OK consistent_large.arrows
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000
+4000	7998000	4000

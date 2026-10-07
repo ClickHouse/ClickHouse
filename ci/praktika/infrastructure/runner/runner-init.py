@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import shutil
@@ -40,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 72
+    version: int = 77
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -56,6 +57,14 @@ class RunnerConfig:
     max_jobs: int = 1
     max_chill: int = 600
     max_life: int = 3600 * 24
+
+    # When true, the per-job _work wipe in run_job is skipped so the git checkout
+    # survives between jobs. Set for the incremental-sync runner type below, whose
+    # dedicated always-warm ASG reuses one instance to fetch into an existing
+    # checkout instead of re-cloning the full ClickHouse history every cron run.
+    keep_workspace: bool = False
+    # Runner type that reuses its checkout across jobs (see keep_workspace).
+    incremental_sync_runner_type: str = "private-incremental-sync"
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
@@ -202,9 +211,19 @@ class Runner:
             raise RuntimeError("github:runner-type tag is not set for the instance")
         self.labels = f"self-hosted,{sys.platform},{self.runner_type}"
 
-        if "style" in self.runner_type:
+        if "style" in self.runner_type or "tiny" in self.runner_type:
             config.max_chill = 7200
             config.max_jobs = 10
+
+        if self.runner_type == config.incremental_sync_runner_type:
+            # Serve many cron runs on one warm instance and keep its checkout;
+            # max_life still recycles the instance daily for a clean re-clone.
+            config.max_jobs = 1_000_000
+            config.keep_workspace = True
+
+        if config.init_environment == Environment.MACOS:
+            # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
+            config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
@@ -224,20 +243,44 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits
         if config.init_environment == Environment.MACOS:
-            return
+            self._exit_if_init_script_upgraded()
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
             raise Exception(f"Runner lifetime exceeded: {runner_age}")
 
+    def _exit_if_init_script_upgraded(self) -> None:
+        """Exit when a newer runner-init script has been published to S3.
+
+        Called between jobs, so the runner is idle here. Raising unwinds through
+        `run`, which drops the provisioning marker; `user_data` then reboots and
+        re-provisions from the new script. A failure to read the remote version
+        is a safe skip, not an exit.
+        """
+        try:
+            remote_version = EC2.get_remote_init_version()
+        except Exception as e:
+            log(f"Cannot get remote init version: {e}, skipping upgrade check")
+            return
+        if remote_version <= config.version:
+            return
+        raise Exception(
+            f"Remote init version {remote_version} > running {config.version}, "
+            "exiting to re-provision"
+        )
+
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
+        # Diagnostic logs are always rotated; the _work checkout is preserved
+        # for runner types that reuse it across jobs (see config.keep_workspace).
+        shutil.rmtree(config.log_dir, ignore_errors=True)
+        if config.keep_workspace:
+            log("keep_workspace is set: preserving _work checkout between jobs")
+            return
         work_dir = Path(config.runner_home) / "_work"
         if work_dir.exists():
             shutil.rmtree(work_dir)
-        shutil.rmtree(config.log_dir, ignore_errors=True)
 
     def remove_if_not_running(self) -> bool:
         """Unregister the runner from GitHub.
@@ -304,6 +347,8 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
+            # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
+            run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
         else:
             Runner.configure_linux()
@@ -554,6 +599,21 @@ launchctl disable system/com.apple.bluetoothd || true
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
 
+# No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
+tmutil disable || true
+
+# Photos analysis, Siri, iCloud and location services have no use on a runner.
+RUNNER_UID=$(id -u "$SUDO_USER")
+for agent in photoanalysisd mediaanalysisd Siri.agent assistantd cloudd bird cloudphotod; do
+    launchctl disable "gui/$RUNNER_UID/com.apple.$agent" || true
+done
+launchctl disable system/com.apple.locationd || true
+
+# Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
+rm -rf /System/Volumes/Data/.fseventsd || true
+mkdir -p /System/Volumes/Data/.fseventsd
+touch /System/Volumes/Data/.fseventsd/no_log
+
 # CloudWatch agent
 case $(uname -m) in
     x86_64) CLOUDWATCH_ARCH=amd64 ;;
@@ -602,6 +662,7 @@ brew install \
     gh \
     jq \
     pigz \
+    pv \
     ripgrep \
     zstd \
     wget \
@@ -611,6 +672,7 @@ brew install \
     bash \
     coreutils \
     llvm
+brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
@@ -624,7 +686,8 @@ brew install \
     pyjwt \
     numpy==2.3.2 \
     pandas==2.3.3 \
-    scipy==1.16.1
+    scipy==1.16.1 \
+    Jinja2==3.1.6
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
 # runner loop registers with a fresh `config.sh`.

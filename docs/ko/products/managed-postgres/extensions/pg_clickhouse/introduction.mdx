@@ -37,35 +37,35 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 ClickHouse 테이블을 가져오고 쿼리 푸시다운을 시작하려면 [tutorial]을 참조하십시오.
 
 <div id="test-case-tpc-h">
-  ## 테스트 케이스: TPC-H
+  ## 테스트 사례: TPC-H
 </div>
 
-이 표는 일반 PostgreSQL 테이블과 ClickHouse에 연결된 pg&#95;clickhouse의 [TPC-H] 쿼리 성능을 비교합니다. 두 환경 모두 스케일 팩터 1로 적재했으며, ✔︎는 전체 푸시다운을, 대시는 1분 후 쿼리가 취소되었음을 나타냅니다. 모든 테스트는 36 GB 메모리를 탑재한 MacBook Pro M4 Max에서 실행되었습니다.
+이 표는 스케일링 팩터 1로 로드한 일반 PostgreSQL 테이블과 ClickHouse에 연결된 pg&#95;clickhouse의 [TPC-H] 쿼리 성능을 비교합니다. ✔︎는 단일 외래 스캔으로 완전히 푸시다운되었음을, ✼는 여러 외래 스캔으로 완전히 푸시다운되었음을 나타냅니다. 모든 테스트는 메모리 36GB를 탑재한 MacBook Pro M4 Max에서 실행했습니다.
 
-|      쿼리 | PostgreSQL | pg&#95;clickhouse | 푸시다운 |
-| ---------: | ---------: | ----------------: | :------: |
-|  [쿼리 1] |    4693 ms |            268 ms |    ✔︎    |
-|  [쿼리 2] |     458 ms |           3446 ms |          |
-|  [쿼리 3] |     742 ms |            111 ms |    ✔︎    |
-|  [쿼리 4] |     270 ms |            130 ms |    ✔︎    |
-|  [쿼리 5] |     337 ms |           1460 ms |    ✔︎    |
-|  [쿼리 6] |     764 ms |             53 ms |    ✔︎    |
-|  [쿼리 7] |     619 ms |             96 ms |    ✔︎    |
-|  [쿼리 8] |     342 ms |            156 ms |    ✔︎    |
-|  [쿼리 9] |    3094 ms |            298 ms |    ✔︎    |
-| [쿼리 10] |     581 ms |            197 ms |    ✔︎    |
-| [쿼리 11] |     212 ms |             24 ms |          |
-| [쿼리 12] |    1116 ms |             84 ms |    ✔︎    |
-| [쿼리 13] |     958 ms |           1368 ms |          |
-| [쿼리 14] |     181 ms |             73 ms |    ✔︎    |
-| [쿼리 15] |    1118 ms |            557 ms |          |
-| [쿼리 16] |     497 ms |           1714 ms |          |
-| [쿼리 17] |    1846 ms |          32709 ms |          |
-| [쿼리 18] |    5823 ms |          10649 ms |          |
-| [쿼리 19] |      53 ms |            206 ms |    ✔︎    |
-| [쿼리 20] |     421 ms |                 - |          |
-| [쿼리 21] |    1349 ms |           4434 ms |          |
-| [쿼리 22] |     258 ms |           1415 ms |          |
+|         쿼리 | PostgreSQL | pg&#95;clickhouse | 푸시다운 |
+| ---------: | ---------: | ----------------: | :--: |
+|  [쿼리 1] |    4483 ms |             59 ms |   ✔  |
+|  [쿼리 2] |     588 ms |             24 ms |   ✔  |
+|  [쿼리 3] |     786 ms |             62 ms |   ✔  |
+|  [쿼리 4] |     550 ms |             38 ms |   ✔  |
+|  [쿼리 5] |     721 ms |           1439 ms |   ✔  |
+|  [쿼리 6] |     592 ms |             17 ms |   ✔  |
+|  [쿼리 7] |     639 ms |             29 ms |   ✔  |
+|  [쿼리 8] |     398 ms |            383 ms |   ✔  |
+|  [쿼리 9] |    2842 ms |            162 ms |   ✔  |
+| [쿼리 10] |     860 ms |            125 ms |   ✔  |
+| [쿼리 11] |     276 ms |             21 ms |   ✼  |
+| [쿼리 12] |     963 ms |             26 ms |   ✔  |
+| [쿼리 13] |    1037 ms |           1354 ms |      |
+| [쿼리 14] |     675 ms |             30 ms |   ✔  |
+| [쿼리 15] |    2520 ms |            387 ms |      |
+| [쿼리 16] |     539 ms |            823 ms |      |
+| [쿼리 17] |    2107 ms |             37 ms |   ✔  |
+| [쿼리 18] |    5230 ms |           7228 ms |      |
+| [쿼리 19] |      68 ms |             47 ms |   ✔  |
+| [쿼리 20] |     473 ms |             28 ms |      |
+| [쿼리 21] |    1145 ms |           4470 ms |      |
+| [쿼리 22] |     270 ms |             45 ms |   ✼  |
 
 <div id="compile-from-source">
   ### 소스 코드로 빌드하기
@@ -135,16 +135,6 @@ make
 sudo make install
 ```
 
-{/* XXX DSO는 현재 비활성화되어 있습니다.
-  기본적으로 `make`는 `clickhouse-cpp` 라이브러리를 동적으로 링크합니다(macOS에서는 동적 `clickhouse-cpp` 라이브러리를 아직 지원하지 않으므로 제외). ClickHouse 라이브러리를 `pg_clickhouse`에 정적으로 컴파일하려면
-  `CH_BUILD=static`를 지정하십시오:
-
-  ```sh
-  make CH_BUILD=static
-  sudo make install CH_BUILD=static
-  ```
-  */}
-
 호스트에 PostgreSQL이 여러 버전으로 설치되어 있으면, 적절한 버전의 `pg_config`를
 지정해야 할 수 있습니다:
 
@@ -178,7 +168,7 @@ gmake install
 gmake installcheck
 ```
 
-다음과 같은 오류가 발생하는 경우:
+다음과 같은 오류가 발생할 경우:
 
 ```text
 make: pg_config: Command not found
@@ -284,6 +274,8 @@ make], [CMake]가 필요합니다.
 </div>
 
 * [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+* [Josh Ventura](https://github.com/JoshDreamland)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 

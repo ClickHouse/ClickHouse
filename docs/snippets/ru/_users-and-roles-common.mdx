@@ -55,17 +55,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### Создайте тестовую базу данных
-
+  <Step title="Создайте тестовую базу данных" id="create-a-test-database">
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Создайте таблицу
-
+  <Step title="Создайте таблицу" id="create-a-table">
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -77,9 +73,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Заполните таблицу тестовыми строками
-
+  <Step title="Заполните таблицу примерными строками" id="populate">
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -91,9 +85,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Проверьте содержимое таблицы
-
+  <Step title="Проверьте таблицу" id="verify">
     ```sql title="Запрос"
     SELECT *
     FROM db1.table1
@@ -111,9 +103,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Создайте `column_user`
-
+  <Step title={<>Создайте <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
     Создайте обычного пользователя для демонстрации ограничения доступа к определённым столбцам:
 
     ```sql
@@ -121,9 +111,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Создайте `row_user`
-
+  <Step title={<>Создайте <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
     Создайте обычного пользователя для демонстрации ограничения доступа к строкам с определёнными значениями:
 
     ```sql
@@ -145,65 +133,49 @@ DROP DATABASE db1;
 Роли используются для определения групп пользователей с определёнными привилегиями вместо того, чтобы управлять каждым пользователем отдельно.
 
 <Steps>
-  <Step>
-    ##### Создайте роль, чтобы ограничить пользователей этой роли просмотром только `column1` в базе данных `db1` и таблице `table1`:
-
+  <Step title={<>Создайте роль, чтобы ограничить пользователей этой роли просмотром только <code>column1</code> в базе данных <code>db1</code> и таблице <code>table1</code>:</>} id="create-column-role">
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### Задайте привилегии, разрешающие просмотр `column1`
-
+  <Step title={<>Задайте привилегии, разрешающие просмотр <code>column1</code></>} id="set-column-privileges">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### Добавьте пользователя `column_user` в роль `column1_users`
-
+  <Step title={<>Добавьте пользователя <code>column_user</code> в роль <code>column1_users</code></>} id="add-column-user-to-role">
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step>
-    ##### Создайте роль, чтобы ограничить пользователей этой роли просмотром только выбранных строк — в данном случае только строк, где `column1` содержит `A`
-
+  <Step title={<>Создайте роль, чтобы ограничить пользователей этой роли просмотром только выбранных строк — в данном случае только строк, где <code>column1</code> содержит <code>A</code></>} id="create-row-role">
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Добавьте `row_user` в роль `A_rows_users`
-
+  <Step title={<>Добавьте <code>row_user</code> в роль <code>A_rows_users</code></>} id="add-row-user-to-role">
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step>
-    ##### Создайте политику, разрешающую просмотр только строк, где `column1` имеет значение `A`
-
+  <Step title={<>Создайте политику, разрешающую просмотр только строк, где <code>column1</code> имеет значение <code>A</code></>} id="create-row-policy">
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Задайте привилегии для базы данных и таблицы
-
+  <Step title="Задайте привилегии для базы данных и таблицы" id="set-db-table-privileges">
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Выдайте явные разрешения другим ролям, чтобы у них по-прежнему был доступ ко всем строкам
-
+  <Step title="Выдайте явные разрешения другим ролям, чтобы у них по-прежнему был доступ ко всем строкам" id="grant-other-roles-access">
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -224,17 +196,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### Войдите в клиент ClickHouse под пользователем `clickhouse_admin`
-
+  <Step title={<>Войдите в клиент ClickHouse под пользователем <code>clickhouse_admin</code></>} id="login-admin-user">
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step>
-    ##### Проверьте доступ к базе данных, таблице и всем строкам под пользователем admin.
-
+  <Step title="Проверьте доступ к базе данных, таблице и всем строкам под пользователем admin." id="verify-admin-access">
     ```sql
     SELECT *
     FROM db1.table1
@@ -252,17 +220,13 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Войдите в клиент ClickHouse под пользователем `column_user`
-
+  <Step title={<>Войдите в клиент ClickHouse под пользователем <code>column_user</code></>} id="login-column-user">
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### Проверьте `SELECT` со всеми столбцами
-
+  <Step title={<>Проверьте <code>SELECT</code> со всеми столбцами</>} id="test-select-all-columns">
     ```sql
     SELECT *
     FROM db1.table1
@@ -285,9 +249,7 @@ DROP DATABASE db1;
     </Note>
   </Step>
 
-  <Step>
-    ##### Проверьте запрос `SELECT`, указав только разрешённые столбцы:
-
+  <Step title={<>Проверьте запрос <code>SELECT</code>, указав только разрешённые столбцы:</>} id="verify-allowed-columns">
     ```sql
     SELECT
         id,
@@ -313,17 +275,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### Войдите в клиент ClickHouse под пользователем `row_user`
-
+  <Step title={<>Войдите в клиент ClickHouse под пользователем <code>row_user</code></>} id="login-row-user">
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### Просмотрите доступные строки
-
+  <Step title="Просмотрите доступные строки" id="view-available-rows">
     ```sql
     SELECT *
     FROM db1.table1
@@ -353,41 +311,31 @@ DROP DATABASE db1;
 Например, если `role1` разрешает только SELECT по `column1`, а `role2` разрешает SELECT по `column1` и `column2`, то пользователь получит доступ к обоим столбцам.
 
 <Steps>
-  <Step>
-    ##### Используя учетную запись администратора, создайте нового пользователя с ограничением доступа и по строкам, и по столбцам, а также с ролями по умолчанию
-
+  <Step title="Используя учетную запись администратора, создайте нового пользователя с ограничением доступа и по строкам, и по столбцам, а также с ролями по умолчанию" id="create-restricted-user">
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Удалите ранее выданные привилегии у роли `A_rows_users`
-
+  <Step title={<>Удалите ранее выданные привилегии у роли <code>A_rows_users</code></>} id="remove-prior-privileges">
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Разрешите роли `A_row_users` выполнять SELECT только по `column1`
-
+  <Step title={<>Разрешите роли <code>A_row_users</code> выполнять SELECT только по <code>column1</code></>} id="allow-column1-select">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Войдите в клиент ClickHouse под пользователем `row_and_column_user`
-
+  <Step title={<>Войдите в клиент ClickHouse под пользователем <code>row_and_column_user</code></>} id="login-restricted-user">
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step>
-    ##### Проверка со всеми столбцами:
-
+  <Step title="Проверка со всеми столбцами:" id="test-all-columns-restricted">
     ```sql
     SELECT *
     FROM db1.table1
@@ -406,9 +354,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Проверка с ограниченным набором разрешенных столбцов:
-
+  <Step title="Проверка с ограниченным набором разрешенных столбцов:" id="test-limited-columns">
     ```sql
     SELECT
         id,

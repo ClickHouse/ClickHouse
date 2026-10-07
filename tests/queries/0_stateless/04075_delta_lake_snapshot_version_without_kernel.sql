@@ -5,7 +5,7 @@
 -- when DeltaKernel is not active (legacy metadata reader),
 -- instead of silently returning wrong data.
 
-SET allow_experimental_delta_kernel_rs = 0;
+SET allow_delta_kernel_rs = 0;
 
 -- Time travel without kernel must fail
 SELECT count()

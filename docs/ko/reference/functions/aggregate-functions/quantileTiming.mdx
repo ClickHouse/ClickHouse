@@ -52,7 +52,7 @@ quantileTiming(level)(expr)
 
 **인수**
 
-* `expr` — 컬럼 값을 대상으로 하는 표현식으로, Float* 타입의 숫자를 반환합니다. 함수에 음수 값이 전달되면 동작이 정의되지 않습니다. 값이 30,000보다 크면(페이지 로딩 시간이 30초를 초과하는 경우) 30,000으로 간주됩니다. [`Float*`](/ko/reference/data-types/float)
+* `expr` — 컬럼 값을 대상으로 하는 표현식으로, 숫자 데이터 타입, `Date` 또는 `DateTime`을 반환합니다. 함수에 음수 값이 전달되면 동작이 정의되지 않습니다. 값이 30,000보다 크면(페이지 로딩 시간이 30초를 초과하는 경우) 30,000으로 간주됩니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
 
 **반환 값**
 

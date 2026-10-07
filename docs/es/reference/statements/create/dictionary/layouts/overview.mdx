@@ -32,6 +32,9 @@ Hay varias formas de almacenar diccionarios en memoria, cada una con sus propias
 | [direct](/es/reference/statements/create/dictionary/layouts/direct)                                                              | Sin almacenamiento en memoria: consulta el origen directamente para cada solicitud.                                                                          |
 | [complex&#95;key&#95;direct](/es/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | Como `direct`, para claves compuestas.                                                                                                                       |
 | [ip&#95;trie](/es/reference/statements/create/dictionary/layouts/ip-trie)                                                        | Estructura trie para búsquedas rápidas de prefijos IP (basadas en CIDR).                                                                                     |
+| [hierarchical](/es/reference/statements/create/dictionary/layouts/hierarchical)                                                  | Compatibilidad con jerarquías con una clave numérica que describe relaciones padre-hijo.                                                                     |
+| [polygon](/es/reference/statements/create/dictionary/layouts/polygon)                                                            | Búsquedas eficientes de punto en polígono (geocodificación inversa).                                                                                         |
+| [regexp&#95;tree](/es/reference/statements/create/dictionary/layouts/regexp-tree)                                                | Compara las claves con un árbol de expresiones regulares.                                                                                                    |
 
 <Tip>
   **Layouts recomendados**

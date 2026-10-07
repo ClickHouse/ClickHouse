@@ -1,0 +1,11 @@
+update of another column	JSON
+1	11	{"a":1,"b":"x"}
+2	21	{"a":2}
+3	31	{"a":3}
+1	11	{"a":1,"b":"x"}
+2	21	{"a":2}
+3	31	{"a":3}
+update of the JSON column	JSON(a UInt32)
+1	11	{"a":1,"b":"x"}
+2	21	{"a":42,"c":true}
+3	31	{"a":3}

@@ -1,0 +1,123 @@
+---
+title: 'max_insert_* セッション設定'
+sidebarTitle: 'max_insert_*'
+toc_max_heading_level: 2
+description: 'max_insert_* 生成グループに含まれる ClickHouse のセッション設定。'
+doc_type: 'reference'
+---
+
+{/*自動生成開始*/}
+
+import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+
+これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
+
+<div id="max_insert_block_size">
+  ## max_insert_block_size
+</div>
+
+**別名**: `max_insert_block_size_rows`
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+テーブルへの挿入時に形成されるブロックの最大サイズ (行数) です。
+
+この設定は、次の 2 つの場面でのブロック形成を制御します。
+
+1. フォーマットのパース: server が任意のインターフェイス (HTTP、インラインデータ付きの clickhouse-client、gRPC、PostgreSQL ワイヤプロトコル) から行ベースの入力フォーマット (CSV、TSV、JSONEachRow など) をパースする場合、ブロックは次の条件で出力されます。
+
+   * min&#95;insert&#95;block&#95;size&#95;rows と min&#95;insert&#95;block&#95;size&#95;bytes の両方に達した場合、または
+   * max&#95;insert&#95;block&#95;size&#95;rows または max&#95;insert&#95;block&#95;size&#95;bytes のいずれかに達した場合
+
+   注: clickhouse-client または clickhouse-local を使用してファイルから読み取る場合、データは client 自身がパースするため、この設定はクライアント側で適用されます。
+
+2. INSERT 操作: INSERT クエリの実行中、およびデータが materialized view を通過する際のこの設定の動作は、`use_strict_insert_block_limits` によって異なります。
+
+   * 有効な場合: ブロックは次の条件で出力されます。
+     * 最小しきい値 (AND) : min&#95;insert&#95;block&#95;size&#95;rows と min&#95;insert&#95;block&#95;size&#95;bytes の両方に達した場合
+     * 最大しきい値 (OR) : max&#95;insert&#95;block&#95;size&#95;rows または max&#95;insert&#95;block&#95;size&#95;bytes のいずれかに達した場合
+
+   * 無効な場合: min&#95;insert&#95;block&#95;size&#95;rows または min&#95;insert&#95;block&#95;size&#95;bytes のいずれかに達するとブロックが出力されます。max&#95;insert&#95;block&#95;size の設定は適用されません。
+
+設定可能な値:
+
+* 正の整数。
+
+<div id="max_insert_block_size_bytes">
+  ## max_insert_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Row Input Format でデータをパースする際に、バイト単位でブロックサイズを制御できるようにする新しい設定。"}]}]} />
+
+テーブルへの挿入用に形成するブロックの最大サイズ (バイト単位) 。
+
+この設定は max&#95;insert&#95;block&#95;size&#95;rows と組み合わせて機能し、同じコンテキストでのブロック形成を制御します。これらの設定がいつ、どのように適用されるかの詳細については、max&#95;insert&#95;block&#95;size&#95;rows を参照してください。
+
+設定可能な値:
+
+* 正の整数。
+* 0 — この設定はブロック形成に関与しません。
+
+<div id="max_insert_delayed_streams_for_parallel_write">
+  ## max_insert_delayed_streams_for_parallel_write
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+part の最終フラッシュを遅延させる streams (カラム) の最大数。デフォルトは自動です (基盤となるストレージが並列書き込みをサポートしている場合は 100。たとえば S3。そうでない場合は無効) 。
+
+Cloud でのデフォルト値: `50`.
+
+<div id="max_insert_threads">
+  ## max_insert_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "デフォルト値を 1（並列実行なし）から auto（0）に変更しました。これはサーバーで使用可能な CPU コア数に設定され、`max_insert_threads_min_free_memory_per_thread` によりメモリ逼迫時には減らされます。これにより、`INSERT SELECT` はデフォルトで並列実行されます。以前の単一スレッド動作に戻すには、1 に設定してください。"}]}]} />
+
+`INSERT` クエリの実行に使用するスレッドの最大数です。
+
+これは `INSERT SELECT` と、データが
+`clickhouse-client` または HTTP インターフェイス経由で送信される通常の `INSERT` の両方に適用されます。パイプラインの書き込み側
+(ブロックの集約と宛先テーブルへの書き込み) は、
+この数までのスレッドで並列化されます。
+
+設定可能な値:
+
+* 0 — 自動。サーバーで使用可能な CPU コア数 ([`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) と同じ自動値) を使用し、[`max_insert_threads_min_free_memory_per_thread`](/ja/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread) によりメモリ逼迫時には減らされます。
+* 1 — `INSERT` は単一スレッドで実行されます (並列実行なし) 。`INSERT ... SELECT` の挿入順序を維持するには、この値を使用します。
+* 1 より大きい正の整数 — 指定した数のスレッドで並列実行します。
+
+バージョン 26.8 より前のデフォルト値は `1` (並列実行なし) でした。26.8 以降、デフォルト値 (`0`) は CPU コア数に設定されるため、`INSERT` はデフォルトで並列実行されます。以前の動作に戻すには、`max_insert_threads` を `1` に設定するか、`compatibility` 設定を使用します。
+
+Cloud でのデフォルト値:
+
+* メモリ 8 GiB のノードでは `1`
+* メモリ 16 GiB のノードでは `2`
+* より大きいノードでは `4`
+
+並列 `INSERT SELECT` が有効なのは、`SELECT` 部分が並列に実行される場合のみです。[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 設定を参照してください。
+通常の `INSERT` では、入力データは単一ストリームとして読み取り・解析され、その後、書き込みのためにパイプラインがこの数のストリームにリサイズされます。
+書き込み側の並列化は、同期的な通常の `INSERT` にのみ適用されます。非同期挿入 ([`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert) `= 1`) はキューに格納され、バックグラウンドでフラッシュされるため、この設定の影響を受けず、常に単一ストリームのままです。
+書き込み側は、安全に並列化できる場合にのみ並列化されます。それ以外の場合は単一ストリームのままとなり、この設定は効果を持ちません。特に、[`use_strict_insert_block_limits`](/ja/reference/settings/session-settings/use#use_strict_insert_block_limits) が有効で、宛先テーブル (または宛先が転送するテーブル) が挿入ブロックを重複排除し、かつクエリで挿入の重複排除が有効な場合 ([`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) を参照) 、宛先に依存する materialized view がある場合 (宛先が転送するテーブルの view (たとえば `Alias` の背後にあるもの) も含む。ただし、[`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) が有効で、かつ依存 view チェーンに重複排除のリスクがない場合を除く。つまり、view 内の重複排除が無効 ([`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) であるか、依存 view のどのパスでも重複排除できない場合) 、および宛先が `Buffer` または `Distributed` の場合は常に、書き込みは単一ストリームに維持されます。`Buffer` は独自のコンテキストでフラッシュし、`Distributed` は書き込みをリモートシャードに転送します (リモートシャード自体がデータをバッファリングする場合があります) 。そのため、このクエリの重複排除設定は最終的な書き込みには適用されず、設定にかかわらず単一ストリームに維持されます。並列化されないクォーラム挿入 ([`insert_quorum`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が `2` 以上または `'auto'` であり、[`insert_quorum_parallel`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) が無効) も、テーブルごとに処理中のクォーラム part を 1 つしか許可しないため、単一ストリームのままとなります。
+値を大きくすると、メモリ使用量も増加します。
+
+<div id="max_insert_threads_min_free_memory_per_thread">
+  ## max_insert_threads_min_free_memory_per_thread
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4294967296" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "4294967296"},{"label": "利用可能な空きメモリに基づいて挿入スレッド数を制限するための新しい設定"}]}]} />
+
+`max_threads` ではなく `max_insert_threads` に適用される点を除き、`max_threads_min_free_memory_per_thread` と同じです。既定値がより大きいのは、挿入パイプラインでは通常、読み取りパイプラインよりもスレッドごとに大きなバッファ (MergeTree のパーツ、圧縮ブロック) を保持するためです。
+
+空きメモリ量が `max_insert_threads` にこの値を掛けた値を下回る場合、`max_insert_threads` はその範囲に収まるように減らされ、最小値は `1` です。
+
+この制限を無効にするには、`0` に設定します。
+
+{/*AUTOGENERATED_END*/}

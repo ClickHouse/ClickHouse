@@ -4,6 +4,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -28,6 +30,9 @@ private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
+
+    /// Cached result of estimateCardinality + 1. Zero (0) means "not computed yet".
+    mutable std::atomic<UInt64> cached_cardinality_plus_one{0};
 };
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

@@ -2,12 +2,12 @@
 slug: /cloud/managed-postgres/local-development
 sidebarTitle: '로컬 개발'
 title: '로컬 개발 환경'
-description: 'Managed Postgres를 대상으로 빠르게 개발할 수 있도록 Docker를 사용해 로컬에서 PostgreSQL을 실행합니다'
+description: 'ClickHouse Managed Postgres를 대상으로 빠르게 개발할 수 있도록 Docker를 사용해 로컬에서 PostgreSQL을 실행합니다'
 keywords: ['Managed Postgres', '로컬 개발', 'Docker', 'PostgreSQL', '시드 데이터', '마이그레이션']
 doc_type: 'guide'
 ---
 
-Managed Postgres는 표준 PostgreSQL을 기반으로 하며, 기존 PostgreSQL 생태계와 호환됩니다. 대부분의 개발 작업에서는 클라우드 배포 대신 Docker에서 실행되는 로컬 PostgreSQL 인스턴스를 대상으로 개발하고 테스트할 수 있습니다.
+ClickHouse Managed Postgres는 표준 PostgreSQL을 기반으로 하며, 기존 PostgreSQL 생태계와 호환됩니다. 대부분의 개발 작업에서는 클라우드 배포 대신 Docker에서 실행되는 로컬 PostgreSQL 인스턴스를 대상으로 개발하고 테스트할 수 있습니다.
 
 이 방식은 빠른 피드백 루프를 제공하고, 온보딩을 간소화하며, 공유 인프라에 대한 의존성을 줄이고, 프로덕션 시스템에 영향을 주지 않으면서 안전하게 실험할 수 있게 해줍니다.
 
@@ -18,7 +18,7 @@ Managed Postgres는 표준 PostgreSQL을 기반으로 하며, 기존 PostgreSQL 
 * 대표성 있는 개발용 데이터를 포함합니다.
 * 일반적인 애플리케이션 개발 및 테스트 워크플로를 지원합니다.
 
-Managed Postgres는 표준 PostgreSQL이므로 기존 마이그레이션 프레임워크, 스키마 관리 도구, 데이터 시딩 방식도 수정 없이 그대로 사용할 수 있습니다.
+ClickHouse Managed Postgres는 표준 PostgreSQL이므로 기존 마이그레이션 프레임워크, 스키마 관리 도구, 데이터 시딩 방식도 수정 없이 그대로 사용할 수 있습니다.
 
 <div id="example-development-flow">
   ## 개발 흐름 예시
@@ -28,15 +28,15 @@ Managed Postgres는 표준 PostgreSQL이므로 기존 마이그레이션 프레�
 
 ```mermaid
 graph LR
-    A[애플리케이션<br/>스키마 적용] --> B[Docker 내 로컬 PostgreSQL] --> C[스키마 적용]
+    A[Apply the application<br/>schema] --> B[Local PostgreSQL in Docker] --> C[Apply schema]
 ```
 
 ```mermaid
 graph LR
-    A[정제된 테넌트<br/>데이터셋 복원] -.-> B[시드 데이터 생성] -.-> C[로컬에서 개발 및 테스트]
+    A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
 ```
 
-Managed Postgres는 기존 PostgreSQL 개발 워크플로에 잘 맞습니다. 로컬 PostgreSQL 인스턴스를 대상으로 개발하면 팀은 빠르게 반복 개발하고, 재현 가능한 환경을 유지하며, Managed Postgres에 배포할 때도 애플리케이션이 일관되게 동작한다는 확신을 얻을 수 있습니다.
+ClickHouse Managed Postgres는 기존 PostgreSQL 개발 워크플로에 잘 맞습니다. 로컬 PostgreSQL 인스턴스를 대상으로 개발하면 팀은 빠르게 반복 개발하고, 재현 가능한 환경을 유지하며, ClickHouse Managed Postgres에 배포할 때도 애플리케이션이 일관되게 동작한다는 확신을 얻을 수 있습니다.
 
 <div id="run-postgresql-locally-with-docker">
   ## Docker로 로컬에서 PostgreSQL 실행
@@ -44,7 +44,7 @@ Managed Postgres는 기존 PostgreSQL 개발 워크플로에 잘 맞습니다. �
 
 로컬 개발 환경을 구성하는 가장 간단한 방법은 Docker에서 PostgreSQL을 실행하는 것입니다.
 
-Managed Postgres 배포에 맞는 PostgreSQL 버전을 선택하세요:
+ClickHouse Managed Postgres 배포에 맞는 PostgreSQL 버전을 선택하세요:
 
 ```yaml title="docker-compose.yml"
 services:

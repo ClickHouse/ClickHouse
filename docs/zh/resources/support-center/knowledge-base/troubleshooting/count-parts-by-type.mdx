@@ -6,10 +6,6 @@ tags: ['故障排查']
 keywords: ['compact parts', 'wide parts']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <br />
 
 以下查询可用于按类型统计 parts 的数量：
@@ -29,7 +25,7 @@ ORDER BY
     part_type ASC
 ```
 
-如下所示是一个示例响应：
+下面是一个示例响应：
 
 ```response
 ┌─table───────────────────┬─part_type─┬─count()─┐
@@ -45,7 +41,7 @@ ORDER BY
 └─────────────────────────┴───────────┴─────────┘
 ```
 
-运行以下查询，查看 wide 和 compact parts 的 part 大小：
+运行以下查询，查看 wide 和 compact parts 的大小：
 
 ```sql
 SELECT

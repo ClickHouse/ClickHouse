@@ -36,6 +36,6 @@ with pa.OSFile(path, 'wb') as f:
     w.close()
 EOF
 
-$CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 --input_format_parquet_allow_geoparquet_parser=1 \
+$CLICKHOUSE_LOCAL --input_format_parquet_allow_geoparquet_parser=1 \
     --query "SELECT x FROM file('${DATA_FILE}', 'Arrow')" 2>&1 \
     | grep -oF 'INCORRECT_DATA' || echo 'FAIL: expected INCORRECT_DATA'

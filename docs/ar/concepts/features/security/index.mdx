@@ -4,9 +4,23 @@ title: 'الأمان والمصادقة'
 description: 'الصفحة الرئيسية للأمان والمصادقة'
 doc_type: 'landing-page'
 keywords: ['الأمان والمصادقة', 'التحكم في الوصول', 'RBAC', 'إدارة المستخدمين', 'دليل SRE']
+mode: wide
 ---
 
-| الصفحة                                                                              | الوصف                                                                                            |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [المستخدمون والأدوار](/ar/concepts/features/security/access-rights)                    | اطّلع على المزيد حول كيفية دعم ClickHouse لإدارة التحكم في الوصول وفق نهج RBAC.                  |
-| [جهات المصادقة الخارجية](/ar/concepts/features/security/external-authenticators/index) | اطّلع على المزيد حول كيفية دعم OSS ClickHouse لمصادقة المستخدمين وإدارتهم باستخدام خدمات خارجية. |
+<CardGroup cols={2}>
+  <Card title="المستخدمون والأدوار" icon="users" href="/ar/concepts/features/security/access-rights">
+    اطّلع على المزيد حول كيفية دعم ClickHouse لإدارة التحكم في الوصول وفق نهج RBAC.
+  </Card>
+
+  <Card title="منافذ الشبكة" icon="ethernet" href="/ar/concepts/features/security/network-ports">
+    مرجع لمنافذ الشبكة التي يستخدمها ClickHouse.
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/ar/concepts/features/security/tls/index">
+    اضبط TLS لاتصالات آمنة مع ClickHouse.
+  </Card>
+
+  <Card title="جهات المصادقة الخارجية" icon="id-badge" href="/ar/concepts/features/security/external-authenticators/index">
+    اطّلع على المزيد حول كيفية دعم OSS ClickHouse لمصادقة المستخدمين وإدارتهم باستخدام خدمات خارجية.
+  </Card>
+</CardGroup>

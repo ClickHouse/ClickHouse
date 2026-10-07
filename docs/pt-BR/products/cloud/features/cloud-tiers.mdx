@@ -72,7 +72,7 @@ Esta página explica quais tiers são mais adequados ao seu caso de uso específ
       <td />
 
       <td>✓ Escalonamento automático</td>
-      <td>✓ Automático para perfis padrão, manual para perfis personalizados</td>
+      <td>✓ Automático para perfis padrão, com assistência do suporte para perfis personalizados</td>
     </tr>
 
     <tr>
@@ -92,16 +92,7 @@ Esta página explica quais tiers são mais adequados ao seu caso de uso específ
     </tr>
 
     <tr>
-      <td>Upgrades antecipados</td>
-
-      <td />
-
-      <td>✓</td>
-      <td>✓</td>
-    </tr>
-
-    <tr>
-      <td>Separação compute-compute</td>
+      <td>Compute-compute separation</td>
 
       <td />
 
@@ -249,11 +240,11 @@ Atende a implantações de grande escala e de missão crítica com requisitos ri
 * Compatível com segurança de nível empresarial:
   * Single Sign On (SSO)
   * Criptografia avançada: para serviços AWS e GCP. Os serviços são criptografados com nossa chave por padrão, e ela pode ser alternada para a chave do cliente para habilitar Customer Managed Encryption Keys (CMEK).
-* Permite atualizações agendadas: você pode selecionar o dia da semana/a janela de tempo para as atualizações, tanto dos lançamentos do banco de dados quanto da Cloud.
+* Permite upgrades programados: você pode selecionar o dia da semana/a janela de tempo para as atualizações, tanto dos lançamentos do banco de dados quanto da Cloud.
 * Oferece conformidade com [HIPAA](/pt-BR/products/cloud/reference/security/compliance-overview#hipaa-since-2024) e PCI.
 
 <Note>
-  Serviços com réplica única em todos os três tiers devem ter tamanho fixo (`8 GiB`, `12 GiB`)
+  Os tiers Scale e Enterprise oferecem suporte a [serviços grandes com réplica única](/pt-BR/products/cloud/features/large-single-replica-services). Os serviços Scale e os serviços Enterprise com perfis padrão `1:4` oferecem suporte ao autoscaling vertical de autoatendimento, enquanto os serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte. Os serviços com réplica única do tier Basic permanecem com tamanho fixo (`8 GiB` ou `12 GiB`).
 </Note>
 
 <div id="upgrading-to-a-different-tier">

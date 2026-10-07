@@ -14,11 +14,18 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS dst";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE src (n UInt64, type UInt8) ENGINE=MergeTree ORDER BY type SETTINGS old_parts_lifetime=0";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (n UInt64, type UInt8) ENGINE=MergeTree ORDER BY type SETTINGS old_parts_lifetime=0";
 
+# Stop the infinite background loops via this flag instead of kill -TERM: a killed
+# subshell orphans its in-flight clickhouse-client, which then runs after teardown
+# and leaks "table/database does not exist" to stderr. The flag lets each loop exit
+# between queries, after its current client has finished.
+STOP_FILE="${CLICKHOUSE_TMP}/01169_old_stop_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -f "$STOP_FILE"
+
 function thread_insert()
 {
     set -e
     val=1
-    while true; do
+    while [ ! -f "$STOP_FILE" ]; do
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
@@ -86,7 +93,7 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -e
-    while true; do
+    while [ ! -f "$STOP_FILE" ]; do
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         -- no duplicates
@@ -106,11 +113,30 @@ thread_select & PID_2=$!
 
 thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
-wait $PID_3 && wait $PID_4
 
-kill -TERM $PID_1
-kill -TERM $PID_2
-wait ||:
+# The stop flag must be raised even if a worker fails, otherwise errexit leaves the
+# loops running past teardown. Waiting for every worker here also keeps their
+# in-flight clients from outliving the test.
+function stop_threads()
+{
+    touch "$STOP_FILE"
+    wait "$PID_1" 2>/dev/null ||:
+    wait "$PID_2" 2>/dev/null ||:
+    wait "$PID_3" 2>/dev/null ||:
+    wait "$PID_4" 2>/dev/null ||:
+    rm -f "$STOP_FILE"
+}
+trap stop_threads EXIT
+
+# One wait per worker, so the first failure becomes the exit status.
+wait $PID_3
+wait $PID_4
+
+# Ask the loops to stop and let their in-flight queries finish (no orphaned clients).
+touch "$STOP_FILE"
+wait $PID_1
+wait $PID_2
+rm -f "$STOP_FILE"
 wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --implicit_transaction=1 --throw_on_unsupported_query_inside_transaction=0 -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"

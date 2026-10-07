@@ -46,6 +46,17 @@ Read each partition through separate port: 1
 SELECT (SELECT count() FROM (SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 0)) = (SELECT count() FROM (SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 1));
 1
 DROP TABLE test_partition_func_of_key;
+DROP TABLE IF EXISTS test_array_join;
+CREATE TABLE test_array_join (a UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES test_array_join;
+INSERT INTO test_array_join SELECT number, range(number % 5) FROM numbers_mt(1e3);
+INSERT INTO test_array_join SELECT number, range(number % 5) FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0)) = (SELECT count() FROM (SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1));
+1
+DROP TABLE test_array_join;
 DROP TABLE IF EXISTS test_complex_expr_both_sides;
 CREATE TABLE test_complex_expr_both_sides (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2) * 2 + 1;
 INSERT INTO test_complex_expr_both_sides SELECT number FROM numbers_mt(100);

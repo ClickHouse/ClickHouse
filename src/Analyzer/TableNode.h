@@ -7,6 +7,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IASTHash.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -30,7 +31,7 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-class TableNode : public IQueryTreeNode
+class TableNode : public ITableExpressionNode
 {
 public:
     /// Construct table node with storage, storage id, storage lock, storage snapshot
@@ -124,11 +125,8 @@ public:
         return table_expression_modifiers;
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     const MaterializedCTEPtr & getMaterializedCTE() const
     {
@@ -177,6 +175,8 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     MaterializedCTEPtr materialized_cte;
+    /// Hash of the substituted inner query if `storage` is a parameterized view, see `isEqualImpl`.
+    std::optional<IASTHash> parameterized_view_query_hash;
 
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;

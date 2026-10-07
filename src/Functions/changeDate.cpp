@@ -231,10 +231,10 @@ public:
         }
         else if (isDate32(result_type))
         {
-            min_date = date_lut.makeDayNum(1900, 1, 1);
-            max_date = date_lut.makeDayNum(2299, 12, 31);
-            min_year = 1900;
-            max_year = 2299;
+            min_date = date_lut.makeDayNum(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1);
+            max_date = date_lut.makeDayNum(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31);
+            min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+            max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
         }
         else if (isDateTime(result_type))
         {

@@ -1,0 +1,12 @@
+-- literal IN ships as TupleValues
+3
+-- IN (subquery): built once at planning, values shipped to tasks
+50
+-- the explicit rewrite executes IN as a distributed join
+50
+-- GLOBAL IN over local tables behaves as plain IN
+50
+-- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)
+1000
+-- value-producing IN builds its set once on the initiator
+50

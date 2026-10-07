@@ -40,11 +40,11 @@ quantileExactLow(level)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, возвращающее числовые типы данных, Date или DateTime. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, возвращающее числовые типы данных, `Date`, `DateTime` или `DateTime64`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Возвращаемое значение**
 
-Возвращает квантиль указанного уровня. [`Float64`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает квантиль указанного уровня. Для числовых типов данных выходной формат совпадает с входным форматом. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 

@@ -10,6 +10,7 @@
 namespace DB
 {
 class Block;
+class ColumnMapper;
 }
 
 namespace DB::Parquet
@@ -22,6 +23,7 @@ struct WriteOptions
 {
     bool output_string_as_string = false;
     bool output_fixed_string_as_fixed_byte_array = true;
+    bool output_wide_integer_as_decimal = false;
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
@@ -72,6 +74,27 @@ struct WriteOptions
     bool write_geometadata = true;
 };
 
+/// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
+/// Array/Map are never wrapped in Nullable, so an Iceberg `optional` list/map/struct arrives here as
+/// a plain container. `mapper == nullptr` (or a mapper without this info) means "no Iceberg info",
+/// in which case the writer keeps its type-derived behavior.
+struct IcebergOptionality
+{
+    const ColumnMapper * mapper = nullptr;
+    /// True while an enclosing Nullable already supplies the OPTIONAL level for this exact path.
+    /// Nullable is transparent in Iceberg field naming, so the container below it sees the same
+    /// dotted path and must not add a second OPTIONAL level.
+    bool owned_by_enclosing_nullable = false;
+
+    bool isOptional(const String & path) const;
+};
+
+/// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
+/// in random order, so it is allocated through the zero-initializing allocator: `calloc` of a big
+/// buffer is served by pages that the kernel already zeroed, instead of `memset`-ing the whole
+/// region upfront.
+using BloomFilterData = PODArray<UInt32, 4096, Allocator<true>>;
+
 struct ColumnChunkIndexes
 {
     parq::ColumnIndex column_index; // if write_page_index
@@ -80,7 +103,7 @@ struct ColumnChunkIndexes
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
-    PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
+    BloomFilterData bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
 /// Information about a primitive column (leaf of the schema tree) to write to Parquet file.
@@ -168,11 +191,15 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
 
+/// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
+/// derives its max definition level from the schema while the writer derives the level bit width
+/// from the state produced here, so a schema-only change would desynchronize them.
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt);
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
+    const IcebergOptionality & iceberg_optionality = {});
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 

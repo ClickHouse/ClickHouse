@@ -109,7 +109,7 @@ public:
     void joinLoadingThreads();
 
     /// Returns the status of the object.
-    /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
+    /// If the object is not currently loaded in memory then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
     Status getCurrentStatus(const String & name) const;
 
@@ -206,6 +206,12 @@ public:
 
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
+
+    /// Unloads a loaded object, releasing its memory. It will be reloaded lazily on next access.
+    bool unload(const String & name) const;
+
+    /// Unloads all loaded objects, releasing their memory.
+    void unloadAll() const;
 
     /// Reloads all config repositories.
     void reloadConfig() const;
