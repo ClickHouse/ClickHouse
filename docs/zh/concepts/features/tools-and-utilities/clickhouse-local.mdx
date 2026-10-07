@@ -6,9 +6,7 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
-<div id="when-to-use-clickhouse-local-vs-clickhouse">
-  ## 何时使用 clickhouse-local，而不是 ClickHouse
-</div>
+## 何时使用 clickhouse-local，而不是 ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` 是 ClickHouse 的一个易用版本，非常适合那些希望使用 SQL 快速处理本地和远程文件、又不想安装完整数据库服务器的开发者。借助 `clickhouse-local`，开发者可以直接在命令行中使用 SQL 命令 (采用 [ClickHouse SQL 方言](/zh/reference/home)) ，从而以简单高效的方式使用 ClickHouse 的各项功能，而无需完整安装 ClickHouse。`clickhouse-local` 的一大优势在于，安装 [clickhouse-client](/zh/concepts/features/tools-and-utilities/clickhouse-local) 时它就已随附安装。这意味着开发者无需经历复杂的安装流程，即可快速开始使用 `clickhouse-local`。
 
@@ -16,9 +14,7 @@ doc_type: 'reference'
 
 请阅读下方文档，了解 `clickhouse-local` 的示例用例，例如[查询本地文件](#query_data_in_file)或[读取 S3 中的 Parquet 文件](#query-data-in-a-parquet-file-in-aws-s3)。
 
-<div id="download-clickhouse-local">
-  ## 下载 clickhouse-local
-</div>
+## 下载 clickhouse-local {#download-clickhouse-local}
 
 `clickhouse-local` 使用与运行 ClickHouse 服务器 和 `clickhouse-client` 相同的 `clickhouse` 二进制文件执行。下载最新版本最简单的方法是使用以下命令：
 
@@ -30,9 +26,7 @@ curl https://clickhouse.com/ | sh
   你刚下载的二进制文件可以运行各种 ClickHouse 工具和实用工具。如果你想将 ClickHouse 作为数据库服务器运行，请参阅[快速入门](/zh/get-started/setup/install)。
 </Note>
 
-<div id="query_data_in_file">
-  ## 使用 SQL 查询文件中的数据
-</div>
+## 使用 SQL 查询文件中的数据 {#query_data_in_file}
 
 `clickhouse-local` 的一个常见用途是对文件执行临时查询：无需先将数据插入表中。`clickhouse-local` 可以将文件中的数据流式导入临时表，并执行你的 SQL。
 
@@ -110,9 +104,7 @@ FROM file('reviews.tsv')"
 Monopoly Junior Board Game    5
 ```
 
-<div id="query-data-in-a-parquet-file-in-aws-s3">
-  ## 查询 AWS S3 中 Parquet 文件的数据
-</div>
+## 查询 AWS S3 中 Parquet 文件的数据 {#query-data-in-a-parquet-file-in-aws-s3}
 
 如果你在 S3 中有一个文件，可以使用 `clickhouse-local` 和 `s3` 表函数直接在原位置查询该文件 (无需先将数据插入 ClickHouse 表中) 。我们在一个公共 bucket 中有一个名为 `house_0.parquet` 的文件，其中包含英国已售房产的价格数据。让我们来看看它有多少行：
 
@@ -187,9 +179,7 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
   当您准备好将文件数据插入 ClickHouse 时，请启动 ClickHouse 服务器，并将 `file` 和 `s3` 表函数的结果插入 `MergeTree` 表。更多详情，请参阅[快速入门](/zh/get-started/setup/install)。
 </Tip>
 
-<div id="format-conversions">
-  ## 格式转换
-</div>
+## 格式转换 {#format-conversions}
 
 你可以使用 `clickhouse-local` 在不同格式之间进行数据转换。示例：
 
@@ -209,9 +199,7 @@ $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 $ clickhouse-local --copy < data.json > data.csv
 ```
 
-<div id="usage">
-  ## 用法
-</div>
+## 用法 {#usage}
 
 默认情况下，`clickhouse-local` 可以访问同一主机上 ClickHouse 服务器的数据，且不依赖服务器配置。它还支持通过 `--config-file` 参数加载服务器配置。对于临时数据，默认会创建一个唯一的临时数据目录。
 
@@ -261,13 +249,38 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 此外，每个 ClickHouse 配置变量也都有对应的参数，这些参数通常比 `--config-file` 更常用。
 
-<div id="commands">
-  ## 命令
-</div>
+### 配置文件 {#configuration-files}
 
-<div id="ls-command">
-  ### LS 命令
-</div>
+`clickhouse-local` 不会使用安装在同一主机上的 ClickHouse 服务器 的配置——它会查找自己的主配置文件，并使用以下位置中第一个存在的文件：
+
+1. 通过 `--config-file` 传入的路径；
+2. `./config.xml`；
+3. `./clickhouse-local.xml`、`./clickhouse-local.yaml` 或 `./clickhouse-local.yml`；
+4. `~/.clickhouse-local/config.xml`、`~/.clickhouse-local/config.yaml` 或 `~/.clickhouse-local/config.yml`；
+5. `/etc/clickhouse-local/config.xml`、`/etc/clickhouse-local/config.yaml` 或 `/etc/clickhouse-local/config.yml`。
+
+与 `clickhouse-server` 一样，主配置文件同级的合并目录中的 `.xml`、`.yaml`、`.yml` 和 `.conf` 文件也会被合并进主配置文件：`config.xml` 对应 `config.d` 和 `conf.d`，`clickhouse-local.yaml` 对应 `clickhouse-local.d` 和 `conf.d`，以此类推。
+
+即使没有主配置文件，当前目录下的合并目录依然生效：`./config.d` 和 `./conf.d` 会被合并到内置于二进制文件 中的最小配置里。这使得目录本身具有自描述性——例如，使用
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+在该目录下启动的每个 `clickhouse-local` 都会拥有 `datasets` disk，无需为其创建 `config.xml`。
+
+## 命令 {#commands}
+
+### LS 命令 {#ls-command}
 
 列出当前工作目录中 clickhouse-local 可访问的所有文件。
 
@@ -303,9 +316,7 @@ file2.json
 file3.xml
 ```
 
-<div id="clear-command">
-  ### CLEAR 命令
-</div>
+### CLEAR 命令 {#clear-command}
 
 清除终端屏幕 (类似于 Linux 上的 `clear` 命令，或许多终端中的 Ctrl+L) 。这是一个客户端侧操作：不会发送到 SQL 引擎。
 
@@ -321,9 +332,7 @@ file3.xml
 ./clickhouse-local -q clear
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 ```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
@@ -381,9 +390,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-<div id="starting-listeners">
-  ## 启动 TCP 和 HTTP 监听器
-</div>
+## 启动 TCP 和 HTTP 监听器 {#starting-listeners}
 
 `clickhouse-local` 可以转换为一个轻量级服务器，用于接受 TCP (native protocol) 和 HTTP 连接。当你希望让其他 ClickHouse 工具或应用程序访问正在运行的 `clickhouse-local` 实例中的数据库和表时，这会很有用。请注意，每个传入连接都会获得各自独立的会话：交互式 `clickhouse-local` 会话中的临时表和会话级设置对外部连接不可见。
 
@@ -415,9 +422,7 @@ HTTP 监听器会使用与默认 `clickhouse-server` 配置相同的宽松请求
   请注意，浏览器仍可访问回环地址：只要 HTTP 监听器处于打开状态，你访问的任何网页都可以查询本地实例，并且借助默认 CORS 请求头读取结果。
 </Warning>
 
-<div id="related-content-1">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content-1}
 
 * [使用 clickhouse-local 从本地文件中提取、转换并查询数据](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 * [将数据导入 ClickHouse - 第 1 部分](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)

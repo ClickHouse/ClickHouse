@@ -7,6 +7,7 @@ cluster = ClickHouseCluster(__file__)
 limited_node = cluster.add_instance(
     "limited_node",
     main_configs=["configs/max_auth_limited.xml"],
+    stay_alive=True,
 )
 
 default_node = cluster.add_instance(
@@ -178,3 +179,86 @@ def test_alter_default_setting(started_cluster):
     )
 
     default_node.query("DROP USER u_max_authentication_methods")
+
+
+def test_alter_prunes_expired_methods_before_the_limit_check(started_cluster):
+    # Every `ALTER USER` drops the authentication methods whose `VALID UNTIL` deadline has already
+    # passed *before* the new methods are counted against `max_authentication_methods_per_user`
+    # (2 on this node). This is what lets a short-lived credential be rotated indefinitely on a user
+    # that is already at the limit: without the pruning, or with it applied after the count check,
+    # the second rotation below would be rejected.
+    limited_node.query("DROP USER IF EXISTS u_rotate_expired")
+    limited_node.query(
+        "CREATE USER u_rotate_expired IDENTIFIED WITH plaintext_password BY 'live'"
+    )
+    limited_node.query(
+        "ALTER USER u_rotate_expired ADD IDENTIFIED WITH plaintext_password BY 'token_1' "
+        "VALID UNTIL '2020-01-01 00:00:00 UTC'"
+    )
+    # Two methods: the user is at the limit, one of them is already expired.
+    assert (
+        limited_node.query(
+            "SELECT arrayMap(x -> toUInt32(x), valid_until) FROM system.users WHERE name = 'u_rotate_expired'"
+        )
+        == "[0,1577836800]\n"
+    )
+
+    # Rotating the token is accepted: the expired one is dropped first, so the new one fits.
+    assert expected_error not in limited_node.query_and_get_answer_with_error(
+        "ALTER USER u_rotate_expired ADD IDENTIFIED WITH plaintext_password BY 'token_2' "
+        "VALID UNTIL '2100-01-01 00:00:00 UTC'"
+    )
+    assert (
+        limited_node.query(
+            "SELECT arrayMap(x -> toUInt32(x), valid_until) FROM system.users WHERE name = 'u_rotate_expired'"
+        )
+        == "[0,4102444800]\n"
+    )
+    assert (
+        limited_node.query("SELECT 1", user="u_rotate_expired", password="token_2")
+        == "1\n"
+    )
+    assert "token_1" not in limited_node.query("SHOW CREATE USER u_rotate_expired")
+
+    # The limit still applies to the methods that survive: both remaining ones are valid, so a
+    # third one does not fit.
+    assert expected_error in limited_node.query_and_get_error(
+        "ALTER USER u_rotate_expired ADD IDENTIFIED WITH plaintext_password BY 'token_3' "
+        "VALID UNTIL '2100-01-01 00:00:00 UTC'"
+    )
+    assert (
+        limited_node.query(
+            "SELECT arrayMap(x -> toUInt32(x), valid_until) FROM system.users WHERE name = 'u_rotate_expired'"
+        )
+        == "[0,4102444800]\n"
+    )
+
+    limited_node.query("DROP USER u_rotate_expired")
+
+
+def test_restart_does_not_prune_expired_methods(started_cluster):
+    # Pruning happens only on a real `ALTER USER`; loading the stored `ATTACH USER` definition at
+    # startup must materialize exactly what was written, so a user with one live and one expired
+    # method keeps both across a restart.
+    limited_node.query("DROP USER IF EXISTS u_restart_expired")
+    # A method added by the statement itself is never pruned, so this stores an already expired one.
+    limited_node.query(
+        "CREATE USER u_restart_expired IDENTIFIED WITH plaintext_password BY 'live', "
+        "plaintext_password BY 'old' VALID UNTIL '2020-01-01 00:00:00 UTC'"
+    )
+    query = "SELECT arrayMap(x -> toUInt32(x), valid_until) FROM system.users WHERE name = 'u_restart_expired'"
+    assert limited_node.query(query) == "[0,1577836800]\n"
+
+    limited_node.restart_clickhouse()
+
+    assert limited_node.query(query) == "[0,1577836800]\n"
+    assert (
+        limited_node.query("SELECT 1", user="u_restart_expired", password="live")
+        == "1\n"
+    )
+
+    # The next write prunes it.
+    limited_node.query("ALTER USER u_restart_expired DEFAULT ROLE NONE")
+    assert limited_node.query(query) == "[0]\n"
+
+    limited_node.query("DROP USER u_restart_expired")

@@ -11,7 +11,9 @@
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -22,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -62,6 +65,13 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
     /// function subtree (its name and resolved arguments), otherwise e.g. numbers(1) and
     /// numbers(1e6) would share a stats entry.
+    ///
+    /// Unlike the actions DAGs below, the arguments are hashed with their values whatever their size:
+    /// they are the identity of what is read (a path, a URL, a format, a structure), so leaving out a
+    /// string would merge reads of different files. Their size is that of the query text the server
+    /// already parsed, since a folded expression argument such as `numbers(length(...))` is stored as
+    /// its result. The exception is a scalar subquery passed directly as an argument, whose whole
+    /// result is hashed here.
     if (const auto & table_expression = read.getQueryInfo().table_expression)
     {
         if (table_expression->as<TableFunctionNode>())
@@ -98,9 +108,9 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// policies that pass very different numbers of rows to the boundary would otherwise share an
     /// entry.
     if (const auto & row_level_filter = read.getRowLevelFilter())
-        row_level_filter->actions.updateHash(hash);
+        row_level_filter->actions.updateHash(hash, /*with_variable_size_constant_values=*/ false);
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash);
+        dag->prewhere_actions.updateHash(hash, /*with_variable_size_constant_values=*/ false);
     return hash.get64();
 }
 
@@ -119,28 +129,34 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
+/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
+/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
+/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
+/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
+/// `isPassthroughExpressionWithRenames` below.
+bool isByteTransparentTransform(const ITransformingStep & transform)
+{
+    return transform.getTransformTraits().preserves_number_of_rows
+        && !transform.getInputHeaders().empty()
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
-    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
-    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
-    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
-    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
-    /// rename-only step keeps the same byte layout and stays transparent.
-    ///
-    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
-    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
-    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
-    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
-    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
-    /// consequence is a slightly-off estimate, never a wrong result.
-    if (transform.getTransformTraits().preserves_number_of_rows
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+    /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
+    /// `output_bytes`, not just cardinality, so a row-preserving `ExpressionStep` that adds, removes,
+    /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
+    /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
+    /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
+    if (isByteTransparentTransform(transform))
         return 0;
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
-    /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded
-    /// literal here, which `serializeConstant` writes out in full.
+    /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
+    /// written without their variable-size constant values, which can be arbitrarily large (a folded
+    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
@@ -173,6 +189,66 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
+/// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
+/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, no two outputs may
+/// land on the same one, and there must be as many outputs as inputs. That makes the mapping a
+/// bijection: nothing is dropped, added, duplicated or computed, so the columns that leave are the
+/// columns that came in and the bytes are the same however they are ordered.
+///
+/// The mapping is what decides this, not a comparison of the two headers position by position. An
+/// `ALIAS` carries its child's type, so following each output to its input compares like with like, and
+/// a reorder of unlike types - `SELECT b, a` over `(a UInt64, b String)`, which the planner really does
+/// emit as a `Project names` or `Projection` of its own - is recognised for what it is. Reading the
+/// headers off by position would call that a change of layout and refuse to look through the step.
+///
+/// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
+/// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
+/// preserves the row count, yet doubles the bytes, and so does any first-stage `Projection` - the
+/// arbitrary DAG built from the query's projection list (`Planner.cpp`,
+/// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
+/// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
+/// step is `a + a`, not `a + b`.
+///
+/// A forwarded column is an `INPUT` whether or not it happens to be constant - `ActionsDAG::addInput`
+/// never sets `node.column` - so a `COLUMN` output is always a constant this step materialized itself,
+/// which is the case to reject.
+static bool outputsAreRenamedInputs(const ActionsDAG & actions)
+{
+    const auto & inputs = actions.getInputs();
+    const auto & outputs = actions.getOutputs();
+    if (outputs.size() != inputs.size())
+        return false;
+
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
+    for (const auto * output : outputs)
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        if (!forwarded.insert(node).second)
+            return false;
+    }
+    return true;
+}
+
+/// Is this a wrapper that can be skipped over - looked through when locating the boundary the replicas
+/// ship from, and collapsed onto its child when keying it? Only an expression that permutes its inputs
+/// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
+/// (it preserves rows and layout) and must still be a boundary of its own, which is what
+/// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    return expression && expression->getTransformTraits().preserves_number_of_rows
+        && !expression->getInputHeaders().empty()
+        && outputsAreRenamedInputs(expression->getExpression());
+}
+
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
@@ -184,13 +260,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*with_variable_size_constant_values=*/ false);
         }
     }
 
@@ -200,8 +276,9 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
-/// (e.g. the column-blind read hash on the input side, or the join output column names - see the
-/// `JoinStep` case below for why hashing them would be strictly worse). A resulting key
+/// (e.g. the column-blind read hash on the input side, the join output column names - see the
+/// `JoinStep` case below for why hashing them would be strictly worse - or the values of
+/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -338,7 +415,7 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
-                mixed->getActionsDAG().updateHash(frame.hash);
+                mixed->getActionsDAG().updateHash(frame.hash, /*with_variable_size_constant_values=*/ false);
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
             /// columns have different output headers and different `output_bytes` when the join result
@@ -382,13 +459,38 @@ void calculateHashTableCacheKeys(
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
+        }
 
-        const auto raw = frame.hash.get64();
-        raw_hashes[&node] = raw;
-        cache_keys[&node] = raw;
+        /// A step that contributes nothing must not contribute a hashing round either. Hashing its
+        /// child through it gives `SipHash(key(child))`, which is not `key(child)`, so the mere
+        /// presence of such a step shifts every key above it - the step is free of content but not
+        /// free of position. Adopt the child's key instead, which makes it genuinely invisible: a
+        /// plan that carries one and a plan that does not then agree on every key above it.
+        ///
+        /// This is what keeps `optimizePrewhere` from moving the keys. A filter fully moved into
+        /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
+        /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
+        /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
+        /// hence transparent here - and with the adoption below the automatic parallel replicas
+        /// decision can still find its counterpart in the other plan.
+        ///
+        /// A transforming step always has exactly one child, so the join branches above never reach
+        /// this; the guard is for safety, not for a shape that occurs.
+        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1)
+        {
+            raw_hashes[&node] = raw_hashes[node.children.front()];
+            cache_keys[&node] = cache_keys[node.children.front()];
+        }
+        else
+        {
+            const auto raw = frame.hash.get64();
+            raw_hashes[&node] = raw;
+            cache_keys[&node] = raw;
+        }
 
         stack.pop_back();
     }

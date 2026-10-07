@@ -1,7 +1,7 @@
 import re
 from pathlib import PurePosixPath
 
-from ci.defs.defs import JobNames
+from ci.defs.defs import BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -118,6 +118,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    # Exports per-test coverage and runs the post-export selector smoke.
+    "ci/jobs/scripts/functional_tests/export_coverage.py",
+    "ci/jobs/scripts/coverage_selection.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -296,6 +299,80 @@ def _has_uncounted_build_changes(changed_files):
         ):
             return True
     return False
+
+
+# Pull requests run each sanitizer of the stress test on one architecture only: the TSan,
+# MSan and debug stress tests on amd, the ASan one on arm (next to its `s3` variant and the
+# `arm_release` one, so both architectures stay covered). Master and the release and backport
+# workflows keep running all of them. Over 2026-08-20 to 2026-10-02 the amd and arm runs of the
+# same sanitizer failed together on 9 to 59 PR commits per sanitizer, and alone on 135 to 344,
+# evenly split between the architectures; of the 109 distinct failure reasons (stack ids
+# stripped) in PRs and on master, 71 occurred on both, and the ones seen on arm only made up 31
+# of 1491 failing arm runs. The second architecture is a second random sample of the same
+# nondeterministic failures, not coverage of its own.
+PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
+    f"{JobNames.STRESS} (amd_asan_ubsan)",
+    f"{JobNames.STRESS} (arm_debug)",
+    f"{JobNames.STRESS} (arm_tsan)",
+    f"{JobNames.STRESS} (arm_msan)",
+)
+
+# The builds whose binaries only the skipped stress tests use, skipped with them.
+# `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
+# artifacts.
+PR_SINGLE_ARCH_SKIPPED_BUILDS = (
+    f"{JobNames.BUILD} (arm_debug)",
+    f"{JobNames.BUILD} (arm_tsan)",
+    f"{JobNames.BUILD} (arm_msan)",
+)
+
+PR_SINGLE_ARCH_SKIPPED_JOBS = PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS + PR_SINGLE_ARCH_SKIPPED_BUILDS
+
+assert set(PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS) <= {
+    j.name for j in JobConfigs.stress_test_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS names a job that does not exist"
+assert set(PR_SINGLE_ARCH_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.build_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_BUILDS names a job that does not exist"
+
+# Changes that can behave differently per architecture, so a PR touching them runs the stress
+# tests on both, and is never treated as small: the build configuration (toolchains, CPU
+# features, sanitizer flags) and the per-architecture glibc compatibility layer. `contrib/` and the build scripts are covered by
+# `_has_uncounted_build_changes`.
+_ARCH_SENSITIVE_PATHS = (
+    "cmake/",
+    "base/glibc-compatibility/",
+)
+
+
+def _has_arch_sensitive_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _ARCH_SENSITIVE_PATHS)
+        for f in changed_files
+    )
+
+
+# `Build (arm_fuzzers)` builds the libFuzzer targets. No job of the PR workflow uses its output
+# (the targets run in `NightlyFuzzers`), so in a PR it only checks that they still compile. A PR
+# below `SMALL_PR_CHANGED_LINES` skips it with the stress tests, unless it touches the fuzz
+# targets or their build: over 2026-08-20 to 2026-10-02 the build failed alone (all other builds
+# green) in 13 PRs, and the two of them below the threshold failed on infrastructure (`Bus error`
+# in the linker). Master builds it on every commit. `Build (wasm64)` has no consumer either, but
+# keeps running: it compiles with the Emscripten clang, and in the same period it alone found
+# compile errors in 4 PRs below the threshold.
+SMALL_PR_SKIPPED_BUILDS = (f"{JobNames.BUILD} ({BuildTypes.ARM_FUZZERS})",)
+
+assert set(SMALL_PR_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.special_build_jobs
+}, "SMALL_PR_SKIPPED_BUILDS names a job that does not exist"
+
+def _has_fuzzer_target_changes(changed_files):
+    """The fuzz targets live in `fuzzers/` directories next to the code they fuzz, and
+    `tests/fuzz/` holds the scripts that stage their dictionaries and corpora."""
+    return any(
+        "/fuzzers/" in f or f.removeprefix("./").startswith("tests/fuzz/")
+        for f in changed_files
+    )
 
 
 def _is_small_pr(info):
@@ -508,16 +585,47 @@ def should_skip_job(job_name):
     # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
     # master once more. Bypass: the `ci-force-all` label.
+    # The builds that only the skipped stress tests use go with them, except with the
+    # `ci-build` label, which asks for the whole build matrix. A change under `cmake/` or
+    # `base/glibc-compatibility/` is never small: like the uncounted build inputs, one line
+    # there (a compiler or sanitizer flag) can change the whole binary.
+    builds_requested = Labels.CI_BUILD in _info_cache.pr_labels
     if (
-        _is_stress_or_fuzzer_job(job_name)
+        (
+            _is_stress_or_fuzzer_job(job_name)
+            or (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and not builds_requested)
+            or (
+                job_name in SMALL_PR_SKIPPED_BUILDS
+                and not builds_requested
+                and not _has_fuzzer_target_changes(changed_files)
+            )
+        )
         and _is_small_pr(_info_cache)
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
+        and not _has_arch_sensitive_changes(changed_files)
     ):
         return (
             True,
             f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
             f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
+
+    # One architecture per sanitizer for the stress tests, see `PR_SINGLE_ARCH_SKIPPED_JOBS`.
+    # The same exemptions as for small PRs.
+    if (
+        job_name in PR_SINGLE_ARCH_SKIPPED_JOBS
+        and not (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and builds_requested)
+        and _info_cache.pr_number > 0
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and not _has_uncounted_build_changes(changed_files)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+        and not _has_arch_sensitive_changes(changed_files)
+    ):
+        return (
+            True,
+            "Skipped in pull requests: the same sanitizer is stress-tested on the other "
+            f"architecture, and master runs both (add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 
     if (
@@ -735,9 +843,9 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if (
-                (match and match.group(1) != "1")
-                or ("sequential" in job_name and "selected tests" not in job_name)
+            if (match and match.group(1) != "1") or (
+                "sequential" in job_name
+                and "targeted" not in job_name
             ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 

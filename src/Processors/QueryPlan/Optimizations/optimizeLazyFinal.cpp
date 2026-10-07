@@ -497,6 +497,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (split_result.fully_replaced)
         return;
 
+    /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+        return;
+
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
@@ -690,7 +694,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;

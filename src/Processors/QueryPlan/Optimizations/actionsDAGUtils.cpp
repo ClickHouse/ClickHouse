@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -440,13 +441,16 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
+        /// An output that is not computed from a sort column (a constant, a function of several columns or of
+        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
+        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            break;
+            continue;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            break;
+            continue;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -454,14 +458,16 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            break;
+            continue;
 
+        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
+        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            break;
+            continue;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            break;
+            continue;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
@@ -653,6 +659,63 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
         result.push_back({output_position, traced.at(outputs[output_position])});
     return result;
+}
+
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+{
+    /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
+    /// n-th input of a name with the n-th header column of that name.
+    std::unordered_map<std::string_view, std::vector<size_t>> name_to_inputs;
+    for (size_t position = inputs.size(); position != 0; --position)
+        name_to_inputs[inputs[position - 1]->result_name].push_back(position - 1);
+
+    HeaderColumnsToInputs result;
+    result.read_by.resize(header.columns(), HeaderColumnsToInputs::passes_through);
+
+    size_t read_columns = 0;
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        auto it = name_to_inputs.find(header.getByPosition(position).name);
+        if (it == name_to_inputs.end() || it->second.empty())
+            continue;
+
+        result.read_by[position] = it->second.back();
+        it->second.pop_back();
+        ++read_columns;
+    }
+
+    if (read_columns != inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The header [{}] has a column for only {} of the DAG's {} inputs",
+            header.dumpNames(), read_columns, inputs.size());
+
+    return result;
+}
+
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
+{
+    NodeSet visited;
+    std::stack<const ActionsDAG::Node *> stack;
+    for (const auto * root : roots)
+        if (visited.insert(root).second)
+            stack.push(root);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (is_barrier && is_barrier(current))
+            continue;
+
+        for (const auto * child : current->children)
+            if (visited.insert(child).second)
+                stack.push(child);
+    }
+
+    return visited;
 }
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)

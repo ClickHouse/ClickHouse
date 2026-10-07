@@ -83,6 +83,10 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+#if USE_SQLITE
+void registerInputFormatSQLite(FormatFactory & factory);
+void registerOutputFormatSQLite(FormatFactory & factory);
+#endif
 
 /// Output only (presentational) formats.
 
@@ -109,6 +113,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
+void registerInputFormatFreeform(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
 void registerOutputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
@@ -157,11 +162,15 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
+void registerFreeformSchemaReader(FormatFactory & factory);
 void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+#if USE_SQLITE
+void registerSQLiteSchemaReader(FormatFactory & factory);
+#endif
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
 void registerOutputFormatGeoJSON(FormatFactory & factory);
@@ -247,6 +256,10 @@ void registerFormats()
 #endif
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
+#if USE_SQLITE
+    registerInputFormatSQLite(factory);
+    registerOutputFormatSQLite(factory);
+#endif
 
     registerOutputFormatPretty(factory);
     registerOutputFormatVertical(factory);
@@ -277,6 +290,7 @@ void registerFormats()
 
     registerInputFormatCapnProto(factory);
     registerInputFormatMySQLDump(factory);
+    registerInputFormatFreeform(factory);
 
     registerInputFormatParquetMetadata(factory);
     registerInputFormatPuffin(factory);
@@ -322,11 +336,15 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
+    registerFreeformSchemaReader(factory);
     registerPuffinSchemaReaders(factory);
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+#if USE_SQLITE
+    registerSQLiteSchemaReader(factory);
+#endif
 }
 
 }

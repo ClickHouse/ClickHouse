@@ -4,8 +4,8 @@
 
 DROP TABLE IF EXISTS t_jit_bits;
 
-CREATE TABLE t_jit_bits (c0 UInt8, s128 Int128, neg Int8) ENGINE = Memory;
-INSERT INTO t_jit_bits VALUES (230, 2, -1), (250, 2, -2);
+CREATE TABLE t_jit_bits (c0 UInt8, s128 Int128, neg Int8, u128 UInt128) ENGINE = Memory;
+INSERT INTO t_jit_bits VALUES (230, 2, -1, 2), (250, 2, -2, 2);
 
 SELECT bitShiftLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitShiftLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
@@ -14,6 +14,11 @@ SELECT bitRotateLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressi
 SELECT bitRotateRight(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitRotateLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitRotateRight(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
+
+-- The shifts refuse an unsigned big-integer amount too, not only a signed one.
+
+SELECT bitShiftLeft(bitNot(c0), u128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitShiftRight(bitNot(c0), u128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 
 -- Bit rotate refuses a big integer on the left side as well.
 

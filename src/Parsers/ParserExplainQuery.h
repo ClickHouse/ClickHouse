@@ -26,6 +26,8 @@ public:
         : end(nullptr) , allow_settings_after_format_in_insert(false) , select_only(true)
     {}
 
+    std::map<String, Documentation> getDocumentation() const override;
+
 };
 
 }

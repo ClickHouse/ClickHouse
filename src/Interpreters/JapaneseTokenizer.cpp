@@ -44,8 +44,8 @@ bool JapaneseTokenizer::nextInString(
 {
     ensureLoaded();
 
-    /// Re-parse whenever a new buffer is presented.
-    if (data != previous_data || length != previous_len)
+    /// A new string starts at `pos == 0`; the same buffer can be tokenized again (a repeated `LowCardinality` value).
+    if (pos == 0 || data != previous_data || length != previous_len)
     {
         previous_data = data;
         previous_len = length;
