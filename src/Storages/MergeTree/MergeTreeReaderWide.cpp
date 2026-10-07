@@ -541,6 +541,9 @@ bool MergeTreeReaderWide::admitStripeToColumnsCache(size_t stripe)
     return stripe_admission->second;
 }
 
+/// The cache can still reject a stripe read whole for it (too large for a shard, budget used up, invalidated), leaving
+/// a block larger than `preferred_block_size_bytes`, which with values of several KB can exceed `max_memory_usage`.
+/// Accepted: one block per reader, and only for such values.
 bool MergeTreeReaderWide::canReadWholeColumnsCacheStripe(size_t mark)
 {
     if (hasColumnsReadOnlyFromPart())

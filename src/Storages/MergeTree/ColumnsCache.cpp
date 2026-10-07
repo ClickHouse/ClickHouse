@@ -102,6 +102,8 @@ ParkedColumns & parkedColumns()
 }
 
 /// What the query was charged for `column`: its data, and the column objects, as `operator new` charged them.
+/// A `LowCardinality` dictionary shared by N entries is counted N times, so the query is undercounted by up to
+/// N - 1 dictionaries while it runs (its user is not). Accepted: bounded by the dictionary size.
 size_t chargedBytesOfColumn(const IColumn & column)
 {
     size_t bytes = column.allocatedBytes() + ::Memory::getActualAllocationSize(column.sizeOfObject());
@@ -116,6 +118,9 @@ std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
     return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedCacheEntryAllocator<ColumnsCacheEntry>{});
 }
 
+/// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)
+/// is released by that query, which is credited with it. Accepted: bounded by the subcolumn, and checking subcolumns
+/// would never release entries that share a dictionary.
 ColumnsCacheEntry::~ColumnsCacheEntry()
 {
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
