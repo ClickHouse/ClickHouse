@@ -686,7 +686,10 @@ private:
     /// function or operator it doesn't support, which is a statement about the query, not about the route.
     void writeEndpointNotFound(const HTTPServerRequest & request, HTTPServerResponse & response, std::string_view error_message)
     {
-        LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}",
+        /// Logged at debug level, because a client probing for an endpoint this server doesn't serve is
+        /// ordinary traffic and not a fault of the server: Prometheus clients discover what a backend
+        /// supports by asking it, so at error level a working setup would keep writing to the error log.
+        LOG_DEBUG(log(), "No matching endpoint found for URI: {}, method: {}",
             maskSensitiveQueryParametersInURI(request.getURI()), request.getMethod());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
