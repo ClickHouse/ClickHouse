@@ -14,7 +14,6 @@
 #    include <cstdlib>
 #    include <exception>
 #    include <optional>
-#    include <limits>
 #    include <set>
 #    include <stdexcept>
 #    include <string>
@@ -159,17 +158,17 @@ void runTest(std::function<void()> body, TestParams params)
         thread.join();
 
     size_t completed = 0;
-    size_t min_steps = std::numeric_limits<size_t>::max();
+    size_t min_steps = 0;
     size_t max_steps = 0;
     std::set<UInt64> digests;
     for (const auto & outcome : outcomes)
     {
         for (const auto & result : outcome.results)
         {
-            ++completed;
-            min_steps = std::min(min_steps, result.total_steps);
+            min_steps = completed == 0 ? result.total_steps : std::min(min_steps, result.total_steps);
             max_steps = std::max(max_steps, result.total_steps);
             digests.insert(result.digest);
+            ++completed;
         }
     }
     fmt::print(stderr, "Wyrd simulation: runs={} threads={} steps={}..{} distinct_schedules={}\n", completed, threads, min_steps, max_steps, digests.size());

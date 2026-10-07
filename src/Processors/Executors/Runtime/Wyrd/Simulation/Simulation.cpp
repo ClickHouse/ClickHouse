@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 
 namespace DB::Runtime::Wyrd
 {
@@ -55,6 +56,7 @@ SimulationResult Simulation::run(std::function<void()> main)
     setRandomSeed(params.seed);
     createThread(std::move(main));
     SimulationResult::Status status = runLoop();
+    leakUnfinishedThreads();
 
     return SimulationResult{
         .status = status,
@@ -122,6 +124,13 @@ void Simulation::createThread(std::function<void()> user_body)
     threads.push_back(std::make_unique<SimulatedThread>(next_thread_id++, params.fiber_stack_size, std::move(guarded_body)));
     ++alive;
     scheduler.onRunnable(threads.back().get());
+}
+
+void Simulation::leakUnfinishedThreads()
+{
+    for (auto & thread : threads)
+        if (!thread->finished())
+            std::ignore = thread.release();
 }
 
 Simulation * Simulation::current()

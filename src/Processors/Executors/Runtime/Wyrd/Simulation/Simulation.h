@@ -40,6 +40,7 @@ class Simulation
     SimulationResult::Status runLoop();
     void traceEvent(std::string event, std::source_location location);
     void createThread(std::function<void()> user_body);
+    void leakUnfinishedThreads();
 
 public:
     explicit Simulation(SimulationParams params_);
