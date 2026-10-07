@@ -1,0 +1,43 @@
+-- { echoOn }
+
+SELECT key, key.null, count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') GROUP BY ALL;
+9	0	1000
+SELECT v, key.null FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') ORDER BY v LIMIT 2;
+0	0
+1	0
+SELECT count() FROM file(currentDatabase() || '/05332/key=abc/data.jsonl', JSONEachRow, 's String, key Nullable(String)') WHERE key.null = 0;
+2
+SELECT count() FROM file(currentDatabase() || '/05332/key=abc/data.jsonl', JSONEachRow, 's String, key Nullable(String)') WHERE key.null = 0 AND _file = 'data.jsonl';
+2
+SELECT key.null, count() FROM file(currentDatabase() || '/05332/plain/key=9/data.parquet', Parquet, 'v Int64, key Nullable(Int64)') GROUP BY ALL;
+0	10
+SELECT s, key, key.null, key.size FROM file(currentDatabase() || '/05332/key=abc/data.jsonl', JSONEachRow, 's String, key Nullable(String)') ORDER BY s;
+x	abc	0	3
+y	abc	0	3
+SELECT key.null, key.size FROM file(currentDatabase() || '/05332/key=abc/data.jsonl', JSONEachRow, 's String, key Nullable(String)') ORDER BY ALL;
+0	3
+0	3
+SELECT key.null, count() FROM file(currentDatabase() || '/05332/only/a=1/key=9/data.parquet', Parquet, 'key Nullable(Int64)') GROUP BY ALL;
+0	1000
+SELECT t, t.a, v FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') ORDER BY v LIMIT 1;
+(1,2)	1	0
+SELECT t.a, v FROM file(currentDatabase() || '/05332/t=(1,2)/data.jsonl', JSONEachRow, 't Tuple(a Int64, b Int64), v Int64') ORDER BY v LIMIT 1;
+1	0
+SELECT key, key.null, count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') GROUP BY ALL;
+9	0	1000
+SELECT key, key.null, count() FROM url('http://localhost:11111/test/' || currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') GROUP BY ALL;
+9	0	1000
+SELECT v, key.null FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') ORDER BY v DESC LIMIT 2 SETTINGS query_plan_optimize_lazy_materialization = 1;
+999	0
+998	0
+SELECT v, key, key.size FROM t_05332_hive;
+1	abc	3
+-- The format must not filter on the file's values of a partition subcolumn.
+SELECT count() FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') WHERE t.a = 1 AND v >= 0 SETTINGS input_format_parquet_filter_push_down = 1;
+10
+SELECT count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') WHERE key.null = 0 SETTINGS input_format_parquet_filter_push_down = 1;
+1000
+CREATE ROW POLICY p_05332 ON t_05332_file USING key.null = 0 TO ALL;
+SELECT count() FROM t_05332_file SETTINGS optimize_count_from_files = 0;
+1000
+DROP ROW POLICY p_05332 ON t_05332_file;
