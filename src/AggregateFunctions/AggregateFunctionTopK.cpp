@@ -333,12 +333,20 @@ private:
     UInt64 reserved;
     bool include_counts;
     bool is_approx_top_k;
+    /// For a plain column, the width of the floating point values in the raw bytes of a value,
+    /// or 0 if there are none - see `rawFloatValueWidth`. It depends only on the type, and it is
+    /// computed in advance, because `add` is called for every row.
+    size_t float_width = 0;
 
 public:
     AggregateFunctionTopKGeneric(
         UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>(argument_types_, params, createResultType(argument_types_, include_counts_))
-        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_) {}
+        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_)
+    {
+        if constexpr (is_plain_column)
+            float_width = rawFloatValueWidth(*argument_types_[0]->createColumn());
+    }
 
     String getName() const override
     {
@@ -409,7 +417,6 @@ public:
             /// The raw bytes of the value can contain negative zeros, which have to be canonicalized
             /// in a copy - see `rawFloatValueWidth`.
             std::string_view value = columns[0]->getDataAt(row_num);
-            size_t float_width = rawFloatValueWidth(*columns[0]);
             if (float_width)
             {
                 char * canonical = arena->alloc(value.size());
