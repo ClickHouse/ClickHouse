@@ -109,3 +109,9 @@ SELECT toStartOfInterval(toDateTime64('2023-10-09 10:11:12.987654321', 9), toInt
 SELECT toStartOfInterval(toDateTime64('2023-10-09 10:11:12.987654321', 9), toIntervalMicrosecond(1), toDateTime64('2023-10-09 10:11:12.123456789', 9)) AS x, toTypeName(x);
 SELECT toStartOfInterval(toDateTime64('2023-10-09 10:11:12.987', 3), toIntervalMicrosecond(1), toDateTime64('2023-10-09 10:11:12.123', 3)) AS x, toTypeName(x);
 SELECT toStartOfInterval(toDateTime64('2023-01-01 00:00:00.000001700', 9), INTERVAL 1 MICROSECOND, toDateTime64('2023-01-01 00:00:00.000000500', 9)) AS x, toTypeName(x);
+SET to_start_of_interval_preserves_argument_type = 1;
+-- a single week or month of a `DateTime`, in a block that mixes the first days after the epoch with later values
+SELECT t, toStartOfInterval(toDateTime(t, 'Asia/Kolkata'), INTERVAL 1 WEEK) AS w, toStartOfInterval(toDateTime(t, 'Asia/Kolkata'), INTERVAL 1 MONTH) AS m, toTypeName(m)
+FROM (SELECT arrayJoin([0, 100000, 3456000, 1684326896, 4294967295])::UInt32 AS t);
+SELECT t, toStartOfInterval(toDateTime(t, 'America/New_York'), INTERVAL 1 WEEK) AS w, toStartOfInterval(toDateTime(t, 'America/New_York'), INTERVAL 1 MONTH) AS m
+FROM (SELECT arrayJoin([0, 100000, 3456000, 1684326896, 4294967295])::UInt32 AS t);

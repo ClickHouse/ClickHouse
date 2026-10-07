@@ -513,6 +513,44 @@ private:
                         return;
                 }
 
+                /// Rounding a `DateTime` to a single week or month and returning a `DateTime`: take the time of the first
+                /// day directly, instead of going through the day number and converting it back with `fromDayNum`.
+                if constexpr ((unit == IntervalKind::Kind::Week || unit == IntervalKind::Kind::Month)
+                    && std::is_same_v<TimeColumnType, ColumnDateTime> && std::is_same_v<ResultDataType, DataTypeDateTime>)
+                {
+                    if (num_units == 1)
+                    {
+                        UInt32 min_time = std::numeric_limits<UInt32>::max();
+                        for (size_t i = 0; i != size; ++i)
+                        {
+                            const UInt32 t = time_data[i];
+                            min_time = std::min(min_time, t);
+                            Int64 res = 0;
+                            if constexpr (unit == IntervalKind::Kind::Week)
+                                res = time_zone.toFirstDayOfWeek(t);
+                            else
+                                res = time_zone.toFirstDayOfMonth(t);
+                            result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(res);
+                        }
+
+                        /// For an unsigned argument these functions move a first day that starts before the epoch to the
+                        /// first day that starts after it, while the generic path below clamps it to the epoch. Such a first
+                        /// day can only be the result for the first weeks after the epoch, so these are recomputed in the
+                        /// generic way.
+                        constexpr UInt32 min_time_with_first_day_after_epoch = 40 * 86400;
+                        if (unlikely(min_time < min_time_with_first_day_after_epoch))
+                        {
+                            for (size_t i = 0; i != size; ++i)
+                                if (time_data[i] < min_time_with_first_day_after_epoch)
+                                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
+                                        convertToResultRepresentation<unit, ResultDataType>(
+                                            ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier),
+                                            time_zone, result_scale_multiplier));
+                        }
+                        return;
+                    }
+                }
+
                 for (size_t i = 0; i != size; ++i)
                     result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(convertToResultRepresentation<unit, ResultDataType>(
                         ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier));
@@ -819,6 +857,7 @@ The result has the same type as the `value` argument: `Date` for `Date`, `Date32
 A result that is below the range of `Date` or `DateTime` (for example, rounding `1970-01-01` down to a week) is clamped to its minimum value.
 With the setting [`to_start_of_interval_preserves_argument_type`](/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) disabled, the result type depends on the interval unit instead,
 as in versions before 26.10: `Date` for `WEEK` and longer units, `DateTime` for `DAY` down to `SECOND`, and `DateTime64` of the unit's scale for the subsecond units.
+This applies to the overload without `origin`: the overload with `origin` keeps the type of the argument in this case too, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
         )";
         FunctionDocumentation::Syntax syntax = R"(
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
