@@ -576,10 +576,27 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// How a comparison treats the trailing zero bytes of a `FixedString` constant.
+enum class ConstantPadding
+{
+    Compared,      /// `has`, `mapContainsKey`, `mapContains`, `mapContainsValue`
+    Stripped,      /// `hasAny`, `hasAll`: only the constant is cast to `String`
+    BothStripped,  /// `equals`, `notEquals`, `IN`: the stored value loses its trailing zero bytes as well
+};
+
+ConstantPadding constantPadding(const String & function_name)
+{
+    if (function_name == "equals" || function_name == "notEquals")
+        return ConstantPadding::BothStripped;
+    if (function_name == "hasAny" || function_name == "hasAll")
+        return ConstantPadding::Stripped;
+    return ConstantPadding::Compared;
+}
+
 /// Like `convertConstantToIndexDomain`, but also gives a string constant the width of a `FixedString` column, so its probe
 /// tokens are a subset of the granule's. Returns false when no single probe covers every matching value.
 bool normalizeConstantForIndexDomain(
-    bool padding_ignored, const ITokenizer & tokenizer, const DataTypePtr & indexed_type,
+    ConstantPadding padding, const ITokenizer & tokenizer, const DataTypePtr & indexed_type,
     const DataTypePtr & constant_type, const Field & constant, String & value)
 {
     if (!convertConstantToIndexDomain(indexed_type, constant_type, constant, value))
@@ -597,11 +614,13 @@ bool normalizeConstantForIndexDomain(
 
     /// Without a width, a trailing NUL is data a matching stored value carries too, unless the comparison drops the
     /// padding of a `FixedString` constant.
-    if (!isString(primitive_type) || !padding_ignored || !isFixedString(removeNullable(removeLowCardinality(constant_type))))
+    if (!isString(primitive_type) || padding == ConstantPadding::Compared
+        || !isFixedString(removeNullable(removeLowCardinality(constant_type))))
         return true;
 
     value.resize(value.find_last_not_of('\0') + 1);
-    return tokensSurviveTrailingNuls(tokenizer.getType(), value);
+    /// A matching stored value may then carry zero bytes the constant lacks, which can change its last token.
+    return padding == ConstantPadding::Stripped || tokensSurviveTrailingNuls(tokenizer.getType(), value);
 }
 
 }
@@ -645,7 +664,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Travels with `const_value`: the map branches below replace the value with the map key, whose
     /// type is not the compared expression's type. `convertFieldToType` dispatches on this.
     DataTypePtr const_source_type = value_type;
-    const bool padding_ignored = functionIgnoresFixedStringPadding(function_name);
+    const auto padding = constantPadding(function_name);
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
@@ -776,7 +795,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             String value;
             if (!normalizeConstantForIndexDomain(
-                    padding_ignored, *tokenizer, index_data_types[*map_key_index], const_source_type, const_value, value))
+                    padding, *tokenizer, index_data_types[*map_key_index], const_source_type, const_value, value))
                 return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
@@ -802,7 +821,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             String value;
             if (!normalizeConstantForIndexDomain(
-                    padding_ignored, *tokenizer, index_data_types[*map_value_index], const_source_type, const_value, value))
+                    padding, *tokenizer, index_data_types[*map_value_index], const_source_type, const_value, value))
                 return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
@@ -839,7 +858,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             String value = element.safeGet<String>();
             if (normalize
                 && !normalizeConstantForIndexDomain(
-                    padding_ignored, *tokenizer, index_data_types[*key_index], array_value_type->getNestedType(), element, value))
+                    padding, *tokenizer, index_data_types[*key_index], array_value_type->getNestedType(), element, value))
                 return false;
 
             bloom_filters.back().emplace_back(params);
@@ -854,7 +873,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_HAS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         String value;
-        if (!normalizeConstantForIndexDomain(padding_ignored, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
@@ -864,7 +883,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!normalizeConstantForIndexDomain(padding_ignored, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -877,7 +896,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!normalizeConstantForIndexDomain(padding_ignored, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -1050,10 +1069,10 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             if (column->isNullAt(row))
                 return false;
 
-            /// `IN` drops the padding of a `FixedString` on either side, like `equals`. One element without a probe
-            /// would under-approximate membership, so decline the whole atom.
+            /// One element without a probe would under-approximate membership, so decline the whole atom.
             String element;
-            if (!normalizeConstantForIndexDomain(/*padding_ignored=*/ true, *tokenizer, indexed_type, element_type, (*column)[row], element))
+            if (!normalizeConstantForIndexDomain(
+                    ConstantPadding::BothStripped, *tokenizer, indexed_type, element_type, (*column)[row], element))
                 return false;
 
             bloom_filters.back().emplace_back(params);

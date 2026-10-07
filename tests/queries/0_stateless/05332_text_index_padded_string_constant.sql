@@ -173,10 +173,13 @@ DROP TABLE IF EXISTS lit_arr;
 DROP TABLE IF EXISTS lit_log;
 CREATE TABLE lit_arr (id UInt64, v Array(String), INDEX idx_v v TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 CREATE TABLE lit_log (id UInt64, v Array(String)) ENGINE = Log;
-INSERT INTO lit_arr SELECT number, if(number = 7, [concat('VALUE0', unhex('00000000'))], ['VALUE0' || substring(hex(number), 1, 2)]) FROM numbers(64);
-INSERT INTO lit_log SELECT number, if(number = 7, [concat('VALUE0', unhex('00000000'))], ['VALUE0' || substring(hex(number), 1, 2)]) FROM numbers(64);
+INSERT INTO lit_arr SELECT number, multiIf(number = 7, [concat('VALUE0', unhex('00000000'))], number = 9, [concat('VALUE', unhex('C2'))], ['VALUE0' || substring(hex(number), 1, 2)]) FROM numbers(64);
+INSERT INTO lit_log SELECT number, multiIf(number = 7, [concat('VALUE0', unhex('00000000'))], number = 9, [concat('VALUE', unhex('C2'))], ['VALUE0' || substring(hex(number), 1, 2)]) FROM numbers(64);
 SELECT 'widthless has answer', (SELECT count() FROM lit_log WHERE has(v, toFixedString('VALUE0', 10))), (SELECT count() FROM lit_arr WHERE has(v, toFixedString('VALUE0', 10)));
 SELECT 'widthless has prunes exactly', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM lit_arr WHERE has(v, toFixedString('VALUE0', 10))) WHERE explain ILIKE '%Granules: 1/64%';
+-- `hasAny` casts only the constant to `String`, so the stored element equals the trimmed constant and keeps pruning.
+SELECT 'widthless hasAny, UTF-8 tail', (SELECT count() FROM lit_log WHERE hasAny(v, [toFixedString(concat('VALUE', unhex('C2')), 8)])), (SELECT count() FROM lit_arr WHERE hasAny(v, [toFixedString(concat('VALUE', unhex('C2')), 8)]));
+SELECT 'widthless hasAny prunes exactly', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM lit_arr WHERE hasAny(v, [toFixedString(concat('VALUE', unhex('C2')), 8)])) WHERE explain ILIKE '%Granules: 1/64%';
 
 -- A constant longer than the column equals no stored value, so pruning every granule is right and stays.
 SELECT 'wider than column prunes all', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM fs_idx WHERE s = toFixedString('VALUE0LONGER', 12)) WHERE explain ILIKE '%Granules: 0/64%';

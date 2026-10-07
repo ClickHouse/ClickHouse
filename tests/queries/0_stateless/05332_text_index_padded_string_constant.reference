@@ -54,6 +54,8 @@ widthless prunes, tokenbf_v1	1
 widthless answers, ngrambf_v1	1	1
 widthless has answer	1	1
 widthless has prunes exactly	1
+widthless hasAny, UTF-8 tail	1	1
+widthless hasAny prunes exactly	1
 wider than column prunes all	1
 token index keeps pruning	1
 declined index absent, String	1
