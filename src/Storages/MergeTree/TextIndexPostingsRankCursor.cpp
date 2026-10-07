@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(PostingListCursorPtr cursor_, const TokenPostingsInfo & info_)
@@ -17,8 +18,7 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(PostingListCursorPtr cu
     , info(&info_)
 {
     if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index: rank cursor needs the per-segment block index (HasBlockIndex is not set)");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Rank cursor over a posting list without the per-segment block index");
 
     /// A compressed cursor prepares no segment until it is first positioned.
     cursor->advance(0);
