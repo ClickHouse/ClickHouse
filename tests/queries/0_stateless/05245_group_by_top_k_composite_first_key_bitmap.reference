@@ -1,0 +1,21 @@
+nan	0	549
+nan	1	549
+nan	10	550
+0	0
+0	1
+0	10
+nan	0	549
+nan	1	549
+nan	10	550
+142.71428571428572	0	8
+142.71428571428572	1	6
+142.71428571428572	10	4
+2	1	7
+2	10	5
+2	100	7
+2	x	45
+asc nan first	2	1	1
+asc nan last	2	1	1
+desc nan first	2	1	1
+desc nan last	2	1	1
+first key ties	2	1	1

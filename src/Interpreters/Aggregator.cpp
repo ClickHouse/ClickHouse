@@ -1468,7 +1468,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k)
     {
         if (method.top_k_heap.size() >= params.top_k->k)
-            skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
+            skip_bitmap = method.top_k_heap.fillSkipBitmap(heap_key_cols, row_begin, row_end);
     }
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
@@ -1490,7 +1490,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         if constexpr (top_k)
         {
-            if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
+            if (skip_bitmap ? skip_bitmap[i] || (method.top_k_heap.is_composite && method.top_k_heap.shouldSkip(heap_key_cols, i))
                             : (method.top_k_heap.size() >= params.top_k->k
                                && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
             {
@@ -1681,7 +1681,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_k)
             {
                 if (method.top_k_heap.size() >= params.top_k->k)
-                    skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
+                    skip_bitmap = method.top_k_heap.fillSkipBitmap(heap_key_cols, row_begin, row_end);
             }
 
             for (size_t i = row_begin; i < row_end; ++i)
@@ -1700,7 +1700,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
-                    if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
+                    if (skip_bitmap ? skip_bitmap[i] || (method.top_k_heap.is_composite && heap_should_skip(i))
                                     : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
@@ -1798,7 +1798,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             destroyed_states.clear();
             if (method.top_k_heap.size() >= params.top_k->k)
-                skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
+                skip_bitmap = method.top_k_heap.fillSkipBitmap(heap_key_cols, key_start, key_end);
         }
 
         for (size_t i = key_start; i < key_end; ++i)
@@ -1822,7 +1822,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_k)
             {
                 if (skip_bitmap
-                    ? static_cast<bool>(skip_bitmap[i])
+                    ? skip_bitmap[i] || (method.top_k_heap.is_composite && heap_should_skip(i))
                     : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
                 {
                     places[i] = nullptr;

@@ -91,7 +91,8 @@ struct TopKAggregationHeapBase
         return shouldSkip(source_columns, source_row);
     }
 
-    const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end);
+    /// A composite key marks only a strictly worse first key: resolving the rest here would repeat the per-row check after a trim.
+    const UInt8 * fillSkipBitmap(const ColumnRawPtrs & source_columns, size_t begin, size_t end);
 
 protected:
     static constexpr size_t invalid_row = static_cast<size_t>(-1);
