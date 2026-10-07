@@ -3446,6 +3446,9 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
         {
             resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             const auto & matched_nodes = argument_node->as<ListNode &>().getNodes();
+            /// The nodes produced by the matcher are passed as well, see below.
+            for (const auto & matched_node : matched_nodes)
+                projection_nodes_before_matcher.insert(matched_node.get());
             expanded_argument_nodes.insert(expanded_argument_nodes.end(), matched_nodes.begin(), matched_nodes.end());
             expanded = true;
             continue;
@@ -3540,6 +3543,9 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
             {
                 resolveExpressionNode(partition_by_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
                 const auto & matched_nodes = partition_by_node->as<ListNode &>().getNodes();
+                /// The entries produced by the matcher are passed as well.
+                for (const auto & matched_node : matched_nodes)
+                    mark_passed(matched_node);
                 expanded_partition_by_nodes.insert(expanded_partition_by_nodes.end(), matched_nodes.begin(), matched_nodes.end());
                 expanded = true;
                 continue;
@@ -3574,6 +3580,7 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
                 sort_expression->formatASTForErrorMessage());
 
         sort_expression = matched_nodes.front();
+        mark_passed(order_by_node);
         expanded = true;
     }
 

@@ -33,3 +33,24 @@ SELECT t.c, count() OVER (ORDER BY c DESC, * REPLACE (intDiv(c, 2) AS c) ROWS UN
 GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
 SELECT t.c, count() OVER (ORDER BY c DESC, * REPLACE (intDiv(c, 2) AS c) ROWS UNBOUNDED PRECEDING) FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
+
+SELECT '-- PARTITION BY matcher followed by ORDER BY matcher';
+SELECT t.c, count() OVER (PARTITION BY * REPLACE (100 - c AS c) ORDER BY * REPLACE (intDiv(c, 2) AS c) ROWS UNBOUNDED PRECEDING) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
+SELECT t.c, count() OVER (PARTITION BY * REPLACE (100 - c AS c) ORDER BY * REPLACE (intDiv(c, 2) AS c) ROWS UNBOUNDED PRECEDING) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
+SELECT '-- PARTITION BY matcher followed by PARTITION BY matcher';
+SELECT t.c, count() OVER (PARTITION BY * REPLACE (100 - c AS c), * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
+SELECT t.c, count() OVER (PARTITION BY * REPLACE (100 - c AS c), * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
+SELECT '-- ORDER BY matcher followed by ORDER BY matcher';
+SELECT t.c, count() OVER (ORDER BY * REPLACE (-c AS c), * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
+SELECT t.c, count() OVER (ORDER BY * REPLACE (-c AS c), * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
+SELECT '-- function argument matcher followed by a window matcher';
+SELECT t.c, any(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
+SELECT t.c, any(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
