@@ -301,6 +301,14 @@ Possible values:
 
 Force initialize omitted fields with null values
 
+## input_format_freeform_max_search_steps {#input_format_freeform_max_search_steps}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "New setting bounding the search for the structure of a `Freeform` row. The search was unbounded before and could exhaust memory on a wide row of strings; 0 restores that behavior."}]}]}/>
+
+The maximum number of steps of the search for the structure of a row in the `Freeform` format. The search branches on every field that several escaping rules read alike (for example, a word in a tab-separated row is read the same by the `Raw` and `Escaped` rules), so a wide row of strings has exponentially many candidate structures. When the search exceeds this number of steps, an exception is thrown instead of exhausting memory and time. 0 means unlimited.
+
 ## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
@@ -1070,6 +1078,12 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+
+## input_format_sqlite_table_name {#input_format_sqlite_table_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "New setting for the `SQLite` input format: the name of the table to read."}]}]}/>
+
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
 
 ## input_format_try_infer_dates {#input_format_try_infer_dates}
 
