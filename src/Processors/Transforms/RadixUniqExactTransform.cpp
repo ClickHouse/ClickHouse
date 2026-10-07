@@ -221,8 +221,18 @@ constexpr size_t INITIAL_COMPACTION_BUDGET = 64 * 1024;
 /// all of them is worth it.
 constexpr size_t COMPACTION_SAMPLE_KEYS = 4096;
 
-/// After a deduplication, the budget is this many times the number of keys that remain buffered.
-constexpr size_t COMPACTION_BUDGET_FACTOR = 4;
+/// After a deduplication, the budget is this many times the number of keys that remain buffered. Each deduplication
+/// inserts all the buffered keys again, so a large factor makes the repeated keys cheaper, at the cost of memory.
+constexpr size_t COMPACTION_BUDGET_FACTOR = 8;
+
+/// The first deduplication after the switch to the routing comes sooner, because it decides whether the stream goes
+/// back to its local set, and the keys routed until then are wasted work if it does.
+constexpr size_t FIRST_COMPACTION_BUDGET_FACTOR = 4;
+
+/// A stream whose keys are mostly repeated goes back to inserting them into its local set only if the set would not
+/// be larger than this. Larger sets do not fit into the CPU caches, and the inserts into them are slower than routing
+/// and deduplicating the keys in cache-resident sets, even if every key is deduplicated several times.
+constexpr size_t MAX_UNBOUNDED_SET_BYTES = 4 * 1024 * 1024;
 
 /// The number of partitions per stream. Many partitions keep the partition sets cache-resident even when there are
 /// many distinct keys, and they balance the build between the threads.
@@ -386,6 +396,9 @@ private:
         /// The most recent block, the only one that may be not full.
         Block * head = nullptr;
         size_t size = 0;
+        /// The number of the oldest keys of the chain that are known to be distinct: those that were left by its last
+        /// deduplication, or moved from the local set.
+        size_t num_distinct = 0;
     };
 
     struct Stream
@@ -439,8 +452,10 @@ private:
         stream.chains.resize(num_partitions);
         stream.mode = Mode::Radix;
         stream.local_set.forEach([&](Key key) { push(stream, stream.chains[partitionHash(key) >> (64 - partition_bits)], key); });
+        for (auto & chain : stream.chains)
+            chain.num_distinct = chain.size;
         stream.num_buffered = stream.local_set.size();
-        stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * COMPACTION_BUDGET_FACTOR);
+        stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * FIRST_COMPACTION_BUDGET_FACTOR);
     }
 
     ALWAYS_INLINE static void push(Stream & stream, Chain & chain, Key key)
@@ -481,6 +496,7 @@ private:
     void compactStream(Stream & stream)
     {
         size_t sampled_before = 0;
+        size_t sampled_known_distinct = 0;
         size_t sampled_after = 0;
         size_t num_compacted = 0;
         for (; num_compacted < num_partitions && sampled_before < COMPACTION_SAMPLE_KEYS; ++num_compacted)
@@ -488,14 +504,20 @@ private:
             auto & chain = stream.chains[stream.next_sample_chain];
             stream.next_sample_chain = (stream.next_sample_chain + 1) % num_partitions;
             sampled_before += chain.size;
+            sampled_known_distinct += chain.num_distinct;
             compact(stream, chain);
             sampled_after += chain.size;
         }
         stream.num_buffered -= sampled_before - sampled_after;
 
-        if (sampled_after * 4 <= sampled_before)
+        /// Whether the keys are mostly repeated is decided by the keys that were routed since the last deduplication:
+        /// once every key of the stream has been seen, the ratio of all the buffered keys to the distinct ones is
+        /// `COMPACTION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
+        const bool mostly_repeated = (sampled_after - sampled_known_distinct) * 4 <= sampled_before - sampled_known_distinct;
+        const size_t estimated_size = stream.num_buffered * sampled_after / std::max<size_t>(sampled_before, 1) + 1;
+        if (mostly_repeated && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
-            switchToUnboundedSetMode(stream, sampled_before, sampled_after);
+            switchToUnboundedSetMode(stream, estimated_size);
             return;
         }
 
@@ -516,12 +538,11 @@ private:
         stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * COMPACTION_BUDGET_FACTOR);
     }
 
-    /// Most of the keys of the stream are repeated, so they are better deduplicated right away, as the ordinary
-    /// aggregation does, even if the set does not fit into the cache: moves the buffered keys into the local set,
-    /// which grows without a limit since then. The keys are moved to the chains when the stream finishes.
-    void switchToUnboundedSetMode(Stream & stream, size_t sampled_before, size_t sampled_after)
+    /// Most of the keys of the stream are repeated, and their set is small, so they are better deduplicated right
+    /// away, as the ordinary aggregation does: moves the buffered keys into the local set, which grows without a limit
+    /// since then. The keys are moved to the chains when the stream finishes.
+    void switchToUnboundedSetMode(Stream & stream, size_t estimated_size)
     {
-        const size_t estimated_size = stream.num_buffered * sampled_after / std::max<size_t>(sampled_before, 1) + 1;
         auto & set = stream.local_set;
         set.reset(std::bit_ceil(std::max<size_t>(estimated_size * 2, INITIAL_LOCAL_SET_CAPACITY)));
         stream.mode = Mode::UnboundedSet;
@@ -561,6 +582,7 @@ private:
         chain.head = nullptr;
         chain.size = 0;
         set.forEach([&](Key key) { push(stream, chain, key); });
+        chain.num_distinct = chain.size;
     }
 
     const size_t partition_bits;

@@ -24,8 +24,10 @@ SELECT 'count distinct', count(DISTINCT number) FROM numbers_mt(400000);
 
 -- Most values are repeated, so the threads go back to inserting into their own sets.
 SELECT 'repeated UInt64', uniqExact(toUInt64(number % 70000)) FROM numbers_mt(2000000);
-SELECT 'repeated UInt32', uniqExact(toUInt32(number % 140000)) FROM numbers_mt(2000000);
+SELECT 'repeated UInt32', uniqExact(toUInt32(number % 140000)) FROM numbers_mt(3000000);
 SELECT 'repeated String', uniqExact(toString(number % 40000)) FROM numbers_mt(1000000);
+-- Too many distinct values for the threads to go back to their own sets, so the routed values are deduplicated.
+SELECT 'repeated many UInt64', uniqExact(toUInt64(number % 300000)) FROM numbers_mt(2000000);
 
 -- Only the values of a sparse column that differ from the default one are routed, and the default one if there are such rows.
 DROP TABLE IF EXISTS t_radix_uniq_sparse;

@@ -17,6 +17,7 @@ count distinct	400000
 repeated UInt64	70000
 repeated UInt32	140000
 repeated String	40000
+repeated many UInt64	300000
 sparse	100001
 sparse String	100001
 sparse without defaults	100000

@@ -23,8 +23,9 @@ class IDataType;
 /// A stream starts by inserting its keys into a small local set, so low-cardinality inputs never pay for the routing.
 /// It switches to routing once its local set outgrows the CPU cache. While routing, it skips consecutive duplicates,
 /// and it deduplicates its buffered keys when they accumulate, so they are bounded by the number of distinct keys of
-/// the stream, not by the number of rows. If most of the buffered keys turn out to be repeated, the stream goes back to
-/// inserting its keys into a local set (now without a size limit), as the ordinary aggregation does.
+/// the stream, not by the number of rows. If most of the keys routed since the last deduplication turn out to be
+/// repeated, and the distinct keys of the stream fit into a small set, the stream goes back to inserting its keys into
+/// a local set (now without a size limit), as the ordinary aggregation does.
 ///
 /// The pipeline is:
 ///     `RadixUniqExactRouteTransform` (per stream)
