@@ -24,6 +24,8 @@ print_host_state() {
     ls -l /System/Volumes/VM
     timeout 30 diskutil apfs list | grep -E 'APFS Volume Disk|Mount Point|Capacity Consumed'
     echo "diskutil exit status ${PIPESTATUS[0]}"
+    # With +L1, lsof prints COMMAND PID USER FD TYPE DEVICE SIZE/OFF NLINK NODE NAME,
+    # so a file is keyed by DEVICE ($6) and inode NODE ($9).
     local deleted lsof_rc
     deleted=$(timeout 60 sudo -n lsof -nP +L1 2>/dev/null | awk '$5 == "REG"'; exit "${PIPESTATUS[0]}")
     lsof_rc=$?
