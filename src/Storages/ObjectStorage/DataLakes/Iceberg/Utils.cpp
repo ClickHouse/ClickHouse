@@ -214,7 +214,7 @@ static Int32 parseMetadataVersion(const String & version_str, const String & fil
     return version;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))

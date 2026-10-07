@@ -39,7 +39,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::LoadTable, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::TableExists, true},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::DropTable, true},
 
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, false},
