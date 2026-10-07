@@ -341,8 +341,7 @@ DROP TABLE t_mat_plain;
 -- merge does not decide to sync by itself and has to inherit the mutation's decision. It is compared
 -- with an identical table whose threshold makes the projection merge sync by itself: both sides are
 -- read through the same counter, so the comparison does not depend on which syncs it can see.
--- The data is ballast for the size threshold, so the granularity is pinned to keep the part small in
--- granules.
+-- Most of the data is ballast for the byte threshold, so large granules and blocks keep it cheap.
 CREATE TABLE t_multi (id UInt64, v UInt8, h UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 0, fsync_part_directory = 1,
@@ -350,7 +349,7 @@ SETTINGS fsync_after_insert = 0, fsync_part_directory = 1,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1,
-         index_granularity = 8192, index_granularity_bytes = 10485760, merge_max_block_size = 8192;
+         index_granularity = 65536, index_granularity_bytes = 10485760, merge_max_block_size = 65536;
 
 CREATE TABLE t_multi_own (id UInt64, v UInt8, h UInt64)
 ENGINE = MergeTree ORDER BY id
@@ -359,7 +358,7 @@ SETTINGS fsync_after_insert = 0, fsync_part_directory = 1,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1,
-         index_granularity = 8192, index_granularity_bytes = 10485760, merge_max_block_size = 8192;
+         index_granularity = 65536, index_granularity_bytes = 10485760, merge_max_block_size = 65536;
 
 -- One part each: `h` keeps the parent above the byte threshold, the sorted `UInt8` projection far below it.
 INSERT INTO t_multi SELECT number, number % 7, cityHash64(number) FROM numbers(1100000)
