@@ -44,19 +44,25 @@ bool findPartitionEnd(const SlidingBlocks & blocks, const Partition & partition,
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition; under ROWS every row is its own peer group.
-bool findRowsBound(const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, int64_t row_index, RowPoint & bound)
+bool findRowsBound(const SlidingBlocks & blocks, const Partition & partition, int64_t row_index, RowPoint & bound)
 {
     if (row_index >= partition.size())
         return findPartitionEnd(blocks, partition, bound);
 
     const int64_t index = std::max<int64_t>(row_index, 0);
-    bound = RowPoint{*blocks.move(current.location, index - current.row_index_in_partition), index, index};
+    chassert(bound.row_index_in_partition <= index);
+    while (bound.row_index_in_partition < index)
+    {
+        bound.location = blocks.next(bound.location);
+        ++bound.row_index_in_partition;
+    }
+    bound.peer_group_index_in_partition = index;
     return true;
 }
 
-/// The first row from `from` on where `is_bound` holds and stays true to the partition end; found by galloping, then bisecting.
+/// The first row from `from` on where `is_bound` holds and stays true to the partition end
 template <typename IsBound>
-bool findBound(const SlidingBlocks & blocks, const Partition & partition, const RowPoint & from, IsBound && is_bound, RowPoint & bound)
+NO_INLINE bool findBound(const SlidingBlocks & blocks, const Partition & partition, const RowPoint & from, IsBound && is_bound, RowPoint & bound)
 {
     const int64_t rows_left = partition.size() - from.row_index_in_partition;
     if (rows_left == 0)
@@ -115,7 +121,7 @@ bool findFrameStart(const WindowTransformParams & params, const SlidingBlocks & 
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return findRowsBound(blocks, partition, current, current.row_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
+                    return findRowsBound(blocks, partition, current.row_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
                 case WindowFrame::FrameType::RANGE:
                     return findBound(blocks, partition, start, [&](RowNumber row) { return compareWithOffset(params, blocks, row, current.location, frame.begin_offset, frame.begin_preceding) >= 0; }, start);
                 case WindowFrame::FrameType::GROUPS:
@@ -136,7 +142,7 @@ bool findFrameEnd(const WindowTransformParams & params, const SlidingBlocks & bl
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return findRowsBound(blocks, partition, current, current.row_index_in_partition + 1, end);
+                    return findRowsBound(blocks, partition, current.row_index_in_partition + 1, end);
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
                     return findBound(blocks, partition, end, [&, group = current.peer_group_index_in_partition + 1](RowNumber row) { return partition.peerGroupIndex(blocks, row) >= group; }, end);
@@ -145,7 +151,7 @@ bool findFrameEnd(const WindowTransformParams & params, const SlidingBlocks & bl
             switch (frame.type)
             {
                 case WindowFrame::FrameType::ROWS:
-                    return findRowsBound(blocks, partition, current, current.row_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
+                    return findRowsBound(blocks, partition, current.row_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
                 case WindowFrame::FrameType::RANGE:
                     return findBound(blocks, partition, end, [&](RowNumber row) { return compareWithOffset(params, blocks, row, current.location, frame.end_offset, frame.end_preceding) > 0; }, end);
                 case WindowFrame::FrameType::GROUPS:
