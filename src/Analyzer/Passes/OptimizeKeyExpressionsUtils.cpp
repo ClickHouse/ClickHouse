@@ -6,6 +6,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -25,22 +26,14 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
     if (allow_suspicious_types)
         return true;
 
-    bool is_valid = true;
-    auto check = [&](const IDataType & type)
-    {
-        /// Dynamic and Variant types are not allowed in GROUP BY by default.
-        is_valid &= !isDynamic(type) && !isVariant(type);
-    };
+    /// Dynamic and Variant types are not allowed in GROUP BY by default.
+    auto is_suspicious = [](const IDataType & type) { return isDynamic(type) || isVariant(type); };
 
     for (const auto & column : columns)
-    {
-        check(*column.type);
-        column.type->forEachChild(check);
-        if (!is_valid)
-            break;
-    }
+        if (anyInTypeTree(*column.type, is_suspicious))
+            return false;
 
-    return is_valid;
+    return true;
 }
 
 }

@@ -373,7 +373,16 @@ fi
 find $ROOT_PATH/contrib/*-cmake -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -E 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
 
 PATTERN="allow_";
-DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/ci/jobs/scripts/check_style/experimental_settings_ignore.txt | sort -u));
+# Only names outside the raw-string docstrings: a docstring can mention a server setting or an enum value.
+SETTINGS_WITHOUT_DOCS=$(awk '{
+    line = $0; out = "";
+    while (line != "") {
+        if (in_raw) { p = index(line, ")\""); if (!p) break; line = substr(line, p + 2); in_raw = 0 }
+        else { p = index(line, "R\"("); if (!p) { out = out line; break } out = out substr(line, 1, p - 1); line = substr(line, p + 3); in_raw = 1 }
+    }
+    print out
+}' $ROOT_PATH/src/Core/Settings.cpp)
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" <<< "$SETTINGS_WITHOUT_DOCS" | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/ci/jobs/scripts/check_style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to ci/jobs/scripts/check_style/experimental_settings_ignore.txt"
 } > "$O.11" 2>&1 &
 

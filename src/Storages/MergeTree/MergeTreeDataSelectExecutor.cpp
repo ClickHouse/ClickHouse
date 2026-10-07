@@ -59,7 +59,9 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <base/sleep.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -98,7 +100,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
-    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -124,6 +125,11 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
 
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis_per_part[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -145,18 +151,10 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
-    /// Reading a projection part bypasses the parent table's delete-bitmap filter, so
-    /// logically-deleted rows would resurface. This is the single point every projection
-    /// read passes through (optimizer estimate/read and the explicit projection table
-    /// function), so fail closed here regardless of how the combination came to exist
-    /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
-    if (projection)
-    {
-        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-        if (metadata_snapshot->hasUniqueKey())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "UNIQUE KEY tables do not support reading via projections");
-    }
+    /// TODO(unique-key): support reading via projections.
+    if (projection && data.hasUniqueKey())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "UNIQUE KEY tables do not support reading via projections");
 }
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
@@ -1197,6 +1195,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         auto process_part = [&](size_t part_index)
         {
+            fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
+
             if (query_status)
                 query_status->checkTimeLimit();
 
@@ -1392,6 +1392,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
+            /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
+            std::atomic<size_t> next_part_index = 0;
+
             /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
@@ -1399,24 +1402,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+            const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
+            for (size_t job = 0; job < num_jobs; ++job)
             {
-                pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
-                        process_part(part_index);
-                    },
-                    Priority{},
-                    context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+                        /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
+                        while (!pool.isFinished())
+                        {
+                            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                            if (part_index >= parts_with_ranges.size())
+                                break;
+
+                            process_part(part_index);
+                        }
+                    });
             }
 
             pool.wait();
@@ -2383,6 +2386,41 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// A key value that holds a NULL nested in a `Tuple` is not comparable in `Field` order the way the
+    /// key column is stored: the key stores a nested NULL above every value of its element (the same
+    /// `+inf` a flat `Nullable` NULL is mapped to), while `Field` orders `Null` below every value. Such a
+    /// bound therefore comes out in `Field` order below where the key stores it. For the lower bound in
+    /// value space this only widens the range. The upper bound is widened to `+inf` by `KeyCondition`
+    /// where it is compared in `Field` order (a set is compared in the key's own order and needs no
+    /// widening). That is not enough where a granule spans the boundary between non-NULL and NULL
+    /// values: the upper bound then comes out below the lower one, and the range of the granule looks
+    /// empty before any comparison is made. Only such a pair is replaced - by the extremes of its own
+    /// sides, which claim nothing about the column. Returns whether the pair was replaced: a replaced
+    /// pair no longer stands for the equal boundaries `equal_boundaries_mask` reports.
+    /// Set once an upper bound holds a nested NULL: the mark ranges then no longer follow the
+    /// condition's own continuity, because a granule the condition describes as wholly matching may
+    /// hold rows the filter rejects. Only the exactness of the analysis is affected - a widened bound
+    /// claims nothing about the column, so it can only widen `can_be_true`.
+    bool boundary_pair_inexact = false;
+
+    auto repair_boundary_pair = [&key_order, &boundary_pair_inexact](size_t column, FieldRef & left, FieldRef & right)
+    {
+        /// Boundaries follow the storage order of the column: values ascend unless the column does not.
+        const bool reversed = key_order.isReversed(column);
+        if (!KeyCondition::fieldHasNullInside(reversed ? left : right))
+            return false;
+
+        boundary_pair_inexact = true;
+
+        const bool ordered = reversed ? !(left < right) : !(right < left);
+        if (ordered)
+            return false;
+
+        left = key_order.physicalStartExtreme(column);
+        right = key_order.physicalEndExtreme(column);
+        return true;
+    };
+
     /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
     /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
     /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
@@ -2446,6 +2484,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        /// On a descending column the upper bound is the left one, which can hold a nested NULL.
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
                 else
@@ -2468,6 +2510,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
 
@@ -2490,6 +2535,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         create_field_ref(range.begin, i, index_left[i]);
                         /// The value at the unknown physical end of the part is the directional extreme.
                         index_right[i] = key_order.physicalEndExtreme(i);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
@@ -2509,6 +2555,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         create_field_ref(range.begin, i, index_left[i]);
                         create_field_ref(range.end, i, index_right[i]);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
@@ -2712,8 +2759,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+                            /// An upper bound holding a nested NULL breaks the same assumption in its own
+                            /// way: it is widened to `+inf`, so an interior granule of a continuous range
+                            /// is no longer claimed to match wholly.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact)
                             {
                                 auto describe_condition = [](const KeyCondition & condition)
                                 {

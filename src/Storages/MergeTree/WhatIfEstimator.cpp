@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
@@ -373,7 +374,7 @@ WhatIfResult estimateHypotheticalObjects(
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
         const auto & store = local_context->getHypotheticalObjectStore();
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)

@@ -1,6 +1,8 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -98,16 +100,32 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri"))
+    else if (!settings.show_secrets && (first == "uri" || first == "options"))
     {
-        // Hide password from URI in the defention of a dictionary
-        WriteBufferFromOwnString temp_buf;
-        FormatSettings tmp_settings(settings.one_line);
-        FormatState tmp_state;
-        second->format(temp_buf, tmp_settings, tmp_state, frame);
-
-        maskURIPassword(&temp_buf.str());
-        ostr << temp_buf.str();
+        /// A MongoDB connection string or option list.
+        const auto * literal = second->as<ASTLiteral>();
+        const auto * identifier = second->as<ASTIdentifier>();
+        if (literal && literal->value.getType() == Field::Types::String)
+        {
+            String value = literal->value.safeGet<String>();
+            if (maskMongoDBConnectionString(value))
+                make_intrusive<ASTLiteral>(Field(value))->format(ostr, settings, state, frame);
+            else
+                second->format(ostr, settings, state, frame);
+        }
+        else if (identifier)
+        {
+            String value = identifier->name();
+            if (maskMongoDBConnectionString(value))
+                make_intrusive<ASTIdentifier>(value)->format(ostr, settings, state, frame);
+            else
+                second->format(ostr, settings, state, frame);
+        }
+        else
+        {
+            /// An expression is evaluated only after the query is logged.
+            ostr << "'[HIDDEN]'";
+        }
     }
     else
     {
@@ -121,7 +139,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    return isSecretKey(first) || first == "uri" || first == "options" || second->hasSecretParts();
 }
 
 
