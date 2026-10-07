@@ -103,6 +103,8 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ColumnsCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -111,7 +113,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -236,6 +238,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsDouble columns_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 columns_cache_history_window_ms;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -944,7 +952,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -978,7 +986,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
@@ -1342,7 +1350,7 @@ try
 #endif
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1611,6 +1619,10 @@ try
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
+        /// The columns cache goes away with the context; stop resizing it.
+        setMemoryReleasableCache(nullptr);
+        memory_worker.setReleasableCache(nullptr);
 
         global_context->shutdown();
 
@@ -2295,6 +2307,29 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+    /// The columns cache gives its memory back to the queries when the server is short of it, see
+    /// `ColumnsCache::autoResize`: on every tick of the memory worker, and when an allocation is
+    /// about to exceed the memory limit.
+    if (auto columns_cache = global_context->getColumnsCache())
+    {
+        columns_cache->setAutoResizeSettings(
+            server_settings[ServerSetting::columns_cache_free_memory_ratio],
+            server_settings[ServerSetting::columns_cache_history_window_ms]);
+        setMemoryReleasableCache(columns_cache.get());
+        memory_worker.setReleasableCache(columns_cache);
+    }
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -2932,6 +2967,14 @@ try
                     static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateColumnsCacheConfiguration(
+                    config(),
+                    getDefaultColumnsCacheSize(current_physical_server_memory, new_server_settings[ServerSetting::columns_cache_size_to_ram_ratio]),
+                    max_cache_size_in_bytes);
+                if (auto columns_cache = global_context->getColumnsCache())
+                    columns_cache->setAutoResizeSettings(
+                        new_server_settings[ServerSetting::columns_cache_free_memory_ratio],
+                        new_server_settings[ServerSetting::columns_cache_history_window_ms]);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -4175,6 +4218,25 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (type == "interserver")
                 has_interserver = true;
 
+            if ((type == "tls" || type == "postgres") && !Poco::trim(config.getString(prefix + "cipherSuites", "")).empty())
+            {
+                const auto private_key_file = config.getString(prefix + "privateKeyFile", "");
+                if (private_key_file.empty() || config.getString(prefix + "certificateFile", private_key_file).empty())
+                {
+                    ///  builds a context of its own for an ACME certificate too, but it reads the
+                    /// layer-local TLS options only together with a key pair, so the value would be dropped.
+                    if (type == "tls" && config.has("acme"))
+                        throw Exception(
+                            ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Protocol '{}': 'cipherSuites' in '{}' is not applied to a layer served with an ACME certificate; "
+                            "set it in the 'openSSL.server' section or give the layer its own 'privateKeyFile'", protocol, conf_name);
+                    throw Exception(
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Protocol '{}': 'cipherSuites' in '{}' requires a 'privateKeyFile' (and 'certificateFile', if separate) "
+                        "in the same section, without them it cannot be applied", protocol, conf_name);
+                }
+            }
+
             if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -4556,12 +4618,12 @@ void Server::createServers(
             port_name = "grpc_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                Poco::Net::SocketAddress server_address(listen_host, port);
+                auto server_address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "gRPC protocol: " + server_address.toString(),
-                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+                    std::make_unique<GRPCServer>(*this, server_address));
             });
         }
 #endif
@@ -4594,12 +4656,17 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
         {
             port_name = "iceberg_rest_catalog.port";
-            auto warehouse = config.getString("iceberg_rest_catalog.warehouse", "");
-            if (warehouse.empty())
+            HTTPRequestHandlerFactoryPtr handler_factory;
+            try
             {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: 'iceberg_rest_catalog.warehouse' is not set");
+                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
             }
-            else
+            catch (...)
+            {
+                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+            }
+
+            if (handler_factory)
             {
                 createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -4612,7 +4679,7 @@ void Server::createServers(
                         port_name,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
-                            httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
                 });
             }
         }

@@ -53,6 +53,7 @@
         "ko/products/bring-your-own-cloud/reference/faq",
         {
           "group": "커넥터 모드",
+          "hidden": true,
           "pages": [
             "ko/products/bring-your-own-cloud/connector/overview",
             "ko/products/bring-your-own-cloud/connector/onboarding",

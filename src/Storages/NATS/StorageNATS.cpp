@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
@@ -36,7 +37,10 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -45,7 +49,6 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool allow_named_collection_override_by_default;
 extern const SettingsNonZeroUInt64 max_insert_block_size;
 extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -89,6 +92,7 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -96,6 +100,62 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace FailPoints
+{
+extern const char nats_pause_before_building_insert_pipeline[];
+}
+
+namespace
+{
+
+/// Checks a NATS address against the remote host filter and returns the address rebuilt from its parsed
+/// parts - the string to hand to libnats in place of the original value. The remote host filter must see
+/// exactly the host and port libnats will dial, so the value is not passed on as it was written: the
+/// rebuilt address is `[scheme://][credentials@]host:port` with an explicit port, a form libnats
+/// re-parses to the same host and port.
+///
+/// libnats reads a URL of the form `[scheme://][user[:password]@]host[:port]` as a C string, splits the
+/// credentials at the last `@`, substitutes `localhost` for an empty host, allows a `/path` after the
+/// port, and connects to port 4222 when none is given (`natsUrl_Create`). An address which such a
+/// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable ASCII -
+/// is rejected instead of repaired. Throws `UNACCEPTABLE_URL` for a host the filter does not allow and
+/// `BAD_ARGUMENTS` for an address it cannot parse safely.
+String validateNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
+{
+    if (address.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS address must not contain NUL characters");
+
+    String host_and_port = address;
+
+    String scheme;
+    if (const auto scheme_end = host_and_port.find("://"); scheme_end != String::npos)
+    {
+        scheme = host_and_port.substr(0, scheme_end + strlen("://"));
+        host_and_port = host_and_port.substr(scheme_end + strlen("://"));
+
+        for (const char c : scheme.substr(0, scheme_end))
+            if (!isAlphaASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid scheme in NATS address '{}'", address);
+    }
+
+    String credentials;
+    if (const auto credentials_end = host_and_port.rfind('@'); credentials_end != String::npos)
+    {
+        credentials = host_and_port.substr(0, credentials_end + 1);
+        host_and_port = host_and_port.substr(credentials_end + 1);
+
+        /// The credentials are kept verbatim (a password may contain almost anything, including
+        /// non-ASCII), only ASCII control characters (which include DEL) are rejected.
+        for (const char c : credentials)
+            if (isASCII(c) && !isPrintableASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected character in the credentials of NATS address '{}'", address);
+    }
+
+    return scheme + credentials + remote_host_filter.checkAndGetCanonicalHostAndPort(host_and_port, 4222, "NATS address");
+}
+
 }
 
 
@@ -166,6 +226,13 @@ StorageNATS::StorageNATS(
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
            .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
            .secure = (*nats_settings)[NATSSetting::nats_secure].value};
+
+    const auto & remote_host_filter = context_->getRemoteHostFilter();
+    if (!configuration.url.empty())
+        configuration.url = validateNATSAddress(configuration.url, remote_host_filter);
+    for (auto & server : configuration.servers)
+        if (!server.empty())
+            server = validateNATSAddress(server, remote_host_filter);
 
     if (configuration.client_cert_file.empty() != configuration.client_key_file.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings nats_client_cert_file and nats_client_key_file must be specified together");
@@ -327,6 +394,11 @@ void StorageNATS::initializeConsumersFunc()
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (num_views == 0)
     {
+        /// A direct `SELECT` can hand a consumer back still subscribed after the last view is gone.
+        /// A stopped or paused table must hold no subscription, see `threadFunc`.
+        if (stream_control.isBlocked())
+            unsubscribeHandedBackConsumers();
+
         stream_control.claimCycle(last_seen_refresh_epoch);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
@@ -406,6 +478,15 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            /// A direct `SELECT` that held a consumer while `unsubscribeConsumers` ran hands it back
+            /// still subscribed, with what it buffered while the table was not streaming. Replace
+            /// the subscription the way `unsubscribeConsumers` would have.
+            if (consumer->isSubscribed())
+            {
+                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+                consumer->unsubscribe();
+            }
+
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
@@ -427,10 +508,53 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-bool StorageNATS::consumersNeedResubscribe()
+void StorageNATS::resubscribeStaleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
-    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->needsResubscribe())
+            continue;
+
+        /// Let the streaming cycles insert what is buffered first: a stale subscription receives
+        /// nothing more, so the queue drains, and the consumer keeps reporting until then.
+        if (!consumer->queueEmpty())
+        {
+            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+            continue;
+        }
+
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
+
+        /// `onMsg` can still have appended something, which goes back to the broker.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+
+        try
+        {
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            /// An unsubscribed consumer no longer reports that it needs to be recovered.
+            consumers_ready.store(false);
+            break;
+        }
+    }
+}
+
+void StorageNATS::unsubscribeHandedBackConsumers()
+{
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->isSubscribed())
+            continue;
+
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+    }
 }
 
 void StorageNATS::unsubscribeConsumers()
@@ -438,8 +562,8 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
     }
 
     consumers_ready.store(false);
@@ -777,13 +901,10 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A consumer whose subscription the NATS client has closed never receives another message,
-    /// so drop the subscriptions here and let the cycle below subscribe again.
-    if (consumers_ready && consumersNeedResubscribe())
-    {
-        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
-        unsubscribeConsumers();
-    }
+    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
+    /// another message, so replace it here, keeping everything the consumer already holds locally.
+    if (consumers_ready)
+        resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
@@ -886,6 +1007,8 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -895,6 +1018,16 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
+
+    /// A `DROP VIEW` or `DETACH TABLE` after the check in `threadFunc` leaves the interpreter a
+    /// pipeline that discards what it consumes, and acknowledging that would lose the messages.
+    /// Repeat the same readiness check: the dependency metadata survives a plain `DETACH TABLE`,
+    /// and a view with a `Null` target ends in the same discarding sink legitimately.
+    if (!checkDependencies(table_id))
+    {
+        LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");
+        return true;
+    }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
@@ -930,6 +1063,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
         source->setWaitForFlushInterval(
             (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
+        source->setBackgroundStreaming(true);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1050,7 +1184,6 @@ bool resolveCredentialSource(
     bool password_assigned_by_query,
     bool token_assigned_by_query,
     bool destination_assigned_by_query,
-    bool allow_named_collection_override_by_default,
     bool loading_from_existing_metadata)
 {
     /// The value the named collection defines itself, before a query override of the same key.
@@ -1119,55 +1252,6 @@ bool resolveCredentialSource(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`nats_url` and `nats_server_list` cannot be overridden when credentials come from the server configuration file");
-
-    /// Credentials the operator explicitly locked (`<nats_credential_file overridable="false">`) cannot be
-    /// replaced from a query. `tryGetNamedCollectionWithOverrides` checks this for the engine-argument
-    /// spelling - `nats_credentials` inherits the permission of the path key it replaces, see
-    /// `findOverrideForbiddingKey` - but the `SETTINGS` clause is applied on top of the collection values
-    /// without passing through that check, so the permission is enforced here for both spellings. It is
-    /// enforced when loading from metadata as well, for the same reason it is enforced there for the
-    /// engine-argument spelling: the lock is a policy on a named collection that is still in use, and the
-    /// alternative is to authenticate with credentials the operator forbade. This must be based on key
-    /// existence, not the value: `tryGetNamedCollectionWithOverrides` also refuses a new key when
-    /// `allow_named_collection_override_by_default` is disabled. When the collection already stores
-    /// `nats_credentials`, this is a same-key override and uses `allow_named_collection_override_by_default`.
-    /// Replacing `nats_credential_file` uses `true`: passing the contents is the only way to supply these
-    /// credentials from SQL, so the operator states the permission with the attribute.
-    if (named_collection)
-    {
-        /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
-        /// file path, but otherwise they are either a same-key override or a new key. The collection
-        /// has already been mutated by the engine-argument override, so use its pre-override state.
-        const auto is_defined_in_collection = [&](const std::string & key)
-        {
-            return named_collection->isQueryOverridden(key) ? named_collection->getValueBeforeQueryOverride(key).has_value()
-                                                            : named_collection->has(key);
-        };
-        const auto check_override_allowed = [&](const char * key, bool default_value)
-        {
-            if (!named_collection->isOverridable(key, default_value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-        };
-
-        if (credentials_assigned_by_query)
-        {
-            const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
-                ? "nats_credentials"
-                : "nats_credential_file";
-            check_override_allowed(key, std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default);
-        }
-
-        /// `nats_username`, `nats_password`, and `nats_token` do not have an alternative spelling,
-        /// so their query overrides follow the regular named-collection policy. In particular, this
-        /// prevents a `SETTINGS` clause from clearing operator-provided credentials and bypassing the
-        /// destination-binding check above.
-        if (username_assigned_by_query)
-            check_override_allowed("nats_username", allow_named_collection_override_by_default);
-        if (password_assigned_by_query)
-            check_override_allowed("nats_password", allow_named_collection_override_by_default);
-        if (token_assigned_by_query)
-            check_override_allowed("nats_token", allow_named_collection_override_by_default);
-    }
 
     /// A path to a credentials file is only accepted from the server configuration file: the server opens
     /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
@@ -1243,7 +1327,13 @@ void registerStorageNATS(StorageFactory & factory)
         bool client_key_file_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
-        auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
+        auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings);
         if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
@@ -1328,7 +1418,6 @@ void registerStorageNATS(StorageFactory & factory)
             password_assigned_by_query,
             token_assigned_by_query,
             destination_assigned_by_query,
-            args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
             (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
                 && (!named_collection || collection_defined_in_config));
 
