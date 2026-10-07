@@ -241,6 +241,27 @@ FROM (
     ORDER BY ka, rka SETTINGS optimize_skip_unused_shards = 1)
 SETTINGS distributed_product_mode = 'global';
 
+SELECT '---';
+
+-- A constant-backed ALIAS column is not looked through: that DAG holds it as a constant named after the column,
+-- so it collides with the other side's same-named column of a different type, exactly like the first case.
+CREATE TABLE shard_0.cl (k UInt32, a UInt16, x String ALIAS 'abc') ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shard_1.cl (k UInt32, a UInt16, x String ALIAS 'abc') ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shard_0.cr (a UInt32, x Int64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE shard_1.cr (a UInt32, x Int64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE dcl (k UInt32, a UInt16, x String ALIAS 'abc')
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', cl, k);
+CREATE TABLE dcr (a UInt32, x Int64)
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', cr, a);
+INSERT INTO dcl (k, a) SELECT number, number FROM numbers(4) SETTINGS distributed_foreground_insert = 1;
+INSERT INTO dcr SELECT number % 4, toInt64(number) FROM numbers(8) SETTINGS distributed_foreground_insert = 1;
+
+SELECT DISTINCT l.k, l.x, r.x + 2 FROM dcl AS l INNER JOIN dcr AS r ON l.a = r.a
+ORDER BY ALL
+SETTINGS distributed_product_mode = 'global', optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1;
+
+DROP TABLE dcl;
+DROP TABLE dcr;
 DROP TABLE dwl;
 DROP TABLE dwr;
 DROP TABLE nb_dl;

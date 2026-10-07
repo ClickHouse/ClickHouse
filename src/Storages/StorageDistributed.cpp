@@ -830,22 +830,27 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
 namespace
 {
 
+bool isConstantBackedColumn(const ColumnNode & column_node)
+{
+    return column_node.hasExpression() && column_node.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+}
+
 /// Maps each unqualified column name the plain-name `ActionsDAG` will reference to the sources exposing it. Like
-/// that builder, it looks through expression-backed columns (ALIAS, ARRAY JOIN) and skips constant-backed ones.
+/// that builder, it looks through expression-backed columns (ALIAS, ARRAY JOIN), except constant-backed ones, which
+/// it names after the column.
 class KeyColumnSourcesVisitor : public InDepthQueryTreeVisitor<KeyColumnSourcesVisitor>
 {
 public:
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & /*child*/)
     {
         const auto * column_node = parent->as<ColumnNode>();
-        return !(column_node && column_node->hasExpression()
-            && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT);
+        return !(column_node && isConstantBackedColumn(*column_node));
     }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
-        if (column_node && !column_node->hasExpression())
+        if (column_node && (!column_node->hasExpression() || isConstantBackedColumn(*column_node)))
             name_to_sources[column_node->getColumnName()].insert(column_node->getColumnSourceOrNull().get());
     }
 
