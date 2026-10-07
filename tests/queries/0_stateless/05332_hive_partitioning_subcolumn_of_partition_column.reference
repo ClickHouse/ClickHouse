@@ -65,3 +65,10 @@ SELECT key.null, count() FROM s3(s3_conn, filename = currentDatabase() || '/0533
 0	500
 SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
 1000
+-- Neither does a read that the top-K filter cut short.
+SELECT v FROM file(currentDatabase() || '/05332/topk/data.parquet', Parquet, 'v Int64') ORDER BY v LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1, use_cache_for_count_from_files = 1;
+0
+1
+2
+SELECT count() FROM file(currentDatabase() || '/05332/topk/data.parquet', Parquet, 'v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1, optimize_trivial_count_query = 1;
+1000

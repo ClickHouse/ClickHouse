@@ -14,6 +14,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '/05332/t=(1,2)/data.jsonl', JSON
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05332/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000) SETTINGS output_format_parquet_row_group_size = 100;
 INSERT INTO FUNCTION file(currentDatabase() || '/05332/cache/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000);
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000);
+INSERT INTO FUNCTION file(currentDatabase() || '/05332/topk/data.parquet', Parquet, 'v Int64') SELECT number FROM numbers(1000) SETTINGS output_format_parquet_row_group_size = 100;
 
 CREATE TABLE t_05332_hive (v Int64, key String) ENGINE = S3(s3_conn, filename = currentDatabase() || '/05332/strategy', format = Parquet, partition_strategy = 'hive') PARTITION BY key;
 INSERT INTO t_05332_hive VALUES (1, 'abc');
@@ -65,6 +66,9 @@ DROP ROW POLICY p_05332_cache ON t_05332_cache;
 SELECT count() FROM t_05332_cache SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
 SELECT key.null, count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') PREWHERE v >= 500 GROUP BY ALL SETTINGS use_cache_for_count_from_files = 1;
 SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
+-- Neither does a read that the top-K filter cut short.
+SELECT v FROM file(currentDatabase() || '/05332/topk/data.parquet', Parquet, 'v Int64') ORDER BY v LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1, use_cache_for_count_from_files = 1;
+SELECT count() FROM file(currentDatabase() || '/05332/topk/data.parquet', Parquet, 'v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1, optimize_trivial_count_query = 1;
 
 -- { echoOff }
 
