@@ -532,6 +532,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
             const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get());
+            /// The nested table resolved by UUID exists on a coordinated replica before this replica holds the
+            /// complete initial snapshot, so apply the same visibility gate as the name-based lookup does instead
+            /// of wrapping it unconditionally (the wrapper built below is immediately readable).
+            if (mat_pg_database->isCoordinated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.getTableName()))
+            {
+                if (exception)
+                    exception->emplace(mat_pg_database->makeCoordinatedTableNotAvailableException(table_id.getTableName()));
+                return {};
+            }
             /// Function-argument evaluation order is unspecified, so the table name must be read
             /// before `db_and_table.second` is moved into the wrapper's constructor.
             auto nested_table_name = db_and_table.second->getStorageID().table_name;

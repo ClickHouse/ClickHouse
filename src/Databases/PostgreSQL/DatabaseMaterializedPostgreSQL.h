@@ -115,6 +115,15 @@ public:
     /// refusing the supported `DETACH TABLE ... PERMANENTLY` with the transient startup-window error.
     bool isReplicationReady() const { return synchronization_started.load(); }
 
+    /// Whether a user-facing lookup may expose the table, by the same rules as `tryGetTable`: in coordinated mode a
+    /// replicated table is available only once this replica has caught up with the initial snapshot (see
+    /// `PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable`), and no table is available in the startup
+    /// window. Used by the lookups that resolve the nested table by UUID (`DatabaseCatalog::getTableImpl`) and
+    /// wrap it themselves.
+    bool isCoordinatedTableAvailable(const String & table_name) const;
+
+    Exception makeCoordinatedTableNotAvailableException(const String & table_name) const;
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
@@ -145,8 +154,6 @@ private:
     void applyPartialDropRecoveryMode();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
-
-    [[noreturn]] void throwCoordinatedTableNotAvailable(const String & table_name) const;
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 

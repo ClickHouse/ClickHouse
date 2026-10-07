@@ -1384,9 +1384,23 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
 }
 
 
-void DatabaseMaterializedPostgreSQL::throwCoordinatedTableNotAvailable(const String & table_name) const
+bool DatabaseMaterializedPostgreSQL::isCoordinatedTableAvailable(const String & table_name) const
 {
-    throw Exception(ErrorCodes::UNKNOWN_TABLE,
+    std::lock_guard lock(tables_mutex);
+
+    /// After `stopReplication` user-facing access falls back to the nested tables; before `startSynchronization`
+    /// has published the wrappers a coordinated table stays invisible (see tryGetTable).
+    if (materialized_tables.empty())
+        return replication_stopped;
+
+    auto it = materialized_tables.find(table_name);
+    return it != materialized_tables.end() && it->second->as<StorageMaterializedPostgreSQL>()->hasNested();
+}
+
+
+Exception DatabaseMaterializedPostgreSQL::makeCoordinatedTableNotAvailableException(const String & table_name) const
+{
+    return Exception(ErrorCodes::UNKNOWN_TABLE,
         "Table {}.{} is not available yet: this replica of the coordinated MaterializedPostgreSQL setup has not "
         "caught up with its initial snapshot. Failing closed instead of reading a partial result. Retry the query "
         "once the table is available",
@@ -1438,7 +1452,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
     /// Either the coordinated table found above is not available yet, or this is the startup window, in which
     /// a coordinated table stays invisible (see tryGetTable). Fail closed in both cases, for the reason above.
     if (isCoordinated())
-        throwCoordinatedTableNotAvailable(table_name);
+        throw makeCoordinatedTableNotAvailableException(table_name);
 
     /// Startup window: the map is empty because `startSynchronization` has not published the wrappers
     /// yet (see tryGetTable), so wrap the nested table on the fly. If `startSynchronization` publishes
