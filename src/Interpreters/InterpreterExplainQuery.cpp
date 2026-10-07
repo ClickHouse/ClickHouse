@@ -1011,7 +1011,6 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
     result->query_plan_options = analyze_settings.query_plan_options;
-    result->query_plan_options.show_secrets = canDisplaySecrets(getContext());
     result->time = analyze_settings.query_plan_options.time;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
@@ -1176,7 +1175,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
-            settings.query_plan_options.show_secrets = canDisplaySecrets(query_context);
 
             QueryPlan plan;
 
@@ -1413,7 +1411,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan, analyzed.query_plan_options.show_secrets);
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 

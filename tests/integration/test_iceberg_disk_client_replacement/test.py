@@ -27,7 +27,7 @@ def dequeued_read_requests():
     return int(
         node.query(
             "SELECT dequeued_requests FROM system.scheduler "
-            "WHERE resource = 'network_read' AND path ILIKE '%/admin/%' AND type = 'fifo'"
+            "WHERE resource = 'network_read' AND path ILIKE '%/admin/%' AND type = 'request_queue'"
         ).strip()
     )
 
