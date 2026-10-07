@@ -3461,6 +3461,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// while constructing the table's cache client. The user is kept, so the pair still runs under
             /// the authorization the preflight above checked; only the settings are reset.
             internal_context->setSettings(context->getGlobalContext()->getSettingsRef());
+            /// The short `ATTACH` re-parses the stored definition, and `InterpreterCreateQuery` rejects a text
+            /// index in it unless `enable_full_text_index` is set — even though the table already exists with
+            /// that index, e.g. because it was created under `SET enable_full_text_index = 1` while the server
+            /// default is off. Both `ATTACH` attempts would then fail and leave the table detached. Reattaching
+            /// restores an existing table rather than introducing a new use of the feature, so allow it here.
+            internal_context->setSetting("enable_full_text_index", Field(true));
             internal_context->setProcessListElement(context->getProcessListElementSafe());
             return internal_context;
         };
