@@ -397,6 +397,8 @@ public:
             total += stream.chains[partition].size;
         }
 
+        /// Counted before the early return of an empty partition, the statistics need every partition to be built.
+        num_built_partitions.fetch_add(1, std::memory_order_relaxed);
         if (total == 0)
             return 0;
 
@@ -423,7 +425,6 @@ public:
             }
         }
 
-        num_built_partitions.fetch_add(1, std::memory_order_relaxed);
         return set.size();
     }
 
