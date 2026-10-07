@@ -23,8 +23,8 @@ struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPartPtr future_part;
     ReservationSharedPtr reserved_space;
-    /// Memory reserved in advance for the merge's input/output IO buffers. Released when the tagger
-    /// (and thus the whole selected entry) is destroyed, i.e. when the merge finishes.
+    /// Memory reserved in advance for the merge's input/output IO buffers. Released by `finalize`, which
+    /// runs once the merge task holding those buffers is reset, or at the latest when the tagger is destroyed.
     MergeMemoryReservation memory_reservation;
     StorageMergeTree & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer

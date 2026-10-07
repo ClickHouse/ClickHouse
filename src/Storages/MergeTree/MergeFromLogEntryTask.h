@@ -60,8 +60,8 @@ private:
 
     Priority priority;
 
-    /// Memory reserved in advance for the merge's input/output IO buffers. Held until the task
-    /// is destroyed, i.e. when the merge finishes. See MergeMemoryReservation.
+    /// Memory reserved in advance for the merge's input/output IO buffers. Released in `finalize` as soon
+    /// as `merge_task` is reset, or at the latest when the task is destroyed. See MergeMemoryReservation.
     MergeMemoryReservation memory_reservation;
 
     MergeTaskPtr merge_task;

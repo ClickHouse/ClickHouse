@@ -495,10 +495,11 @@ public:
 
     Int64 getBytes() const { return bytes; }
 
-private:
-    explicit MergeMemoryReservation(Int64 bytes_) : bytes(bytes_), active(true) {}
-
-    void release()
+    /// Give the reserved bytes back now, before the owner is destroyed. The owners of a merge reservation
+    /// (the selected entry's tagger, MergeFromLogEntryTask) outlive the merge's IO buffers: the background
+    /// executor keeps the task object through `onCompleted`, so they call this as soon as the merge task
+    /// that held the buffers is reset. Idempotent.
+    void release() noexcept
     {
         if (active)
         {
@@ -506,6 +507,9 @@ private:
             active = false;
         }
     }
+
+private:
+    explicit MergeMemoryReservation(Int64 bytes_) : bytes(bytes_), active(true) {}
 
     Int64 bytes = 0;
     bool active = false;

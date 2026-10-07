@@ -1119,6 +1119,10 @@ void CurrentlyMergingPartsTagger::finalizeUnlocked()
 {
     finalized = true;
 
+    /// The merge task holding the IO buffers is already gone (`MergePlainMergeTreeTask::finish` and `cancel`
+    /// reset it before finalizing), so do not keep the reservation until the executor destroys the task.
+    memory_reservation.release();
+
     for (const auto & part : future_part->parts)
     {
         if (!storage.currently_merging_mutating_parts.contains(part))

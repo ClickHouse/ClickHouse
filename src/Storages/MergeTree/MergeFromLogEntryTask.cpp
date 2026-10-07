@@ -479,6 +479,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
     /// and it's really needed.
     merge_task.reset();
+    /// The IO buffers the reservation stands for were owned by the merge task, so give it back now rather
+    /// than when the background executor destroys this task after `onCompleted`.
+    memory_reservation.release();
 
     Stopwatch commit_watch;
 
