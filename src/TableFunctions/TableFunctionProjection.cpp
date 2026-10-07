@@ -3,6 +3,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
@@ -70,6 +71,9 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    /// An `Alias` source forwards its target's metadata (projection columns included), so expose it
+    /// only to a user who may see the target's columns, matching `DESCRIBE` of the alias itself.
+    StorageAlias::checkTargetGrantedIfAlias(source_table, context, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     if (!metadata_snapshot->getProjections().has(projection_name))
@@ -90,6 +94,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    StorageAlias::checkTargetGrantedIfAlias(source_table, context, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 

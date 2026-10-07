@@ -45,7 +45,6 @@ namespace Setting
 namespace ErrorCodes
 {
 
-extern const int ACCESS_DENIED;
 extern const int UNSUPPORTED_METHOD;
 extern const int UNKNOWN_FUNCTION;
 
@@ -242,9 +241,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-    if (const auto * alias = table->as<StorageAlias>();
-        alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+    StorageAlias::checkTargetGrantedIfAlias(table, query_context, AccessType::SHOW_COLUMNS);
 
     if (auto * storage_view = table->as<StorageView>())
     {

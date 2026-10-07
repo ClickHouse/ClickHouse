@@ -66,6 +66,19 @@ public:
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
 
+    /// If `storage` is an `Alias`, throw `ACCESS_DENIED` unless the current user holds `access_type` on
+    /// every table the alias resolves through (table-level when `column_name` is empty); a no-op for any
+    /// other storage. Metadata paths that forward the resolved target's schema (`DESCRIBE`,
+    /// `COM_FIELD_LIST`, `hasColumnInTable`, table functions, ...) must call this, because the `Alias`
+    /// publishes that metadata before any row is read; data paths are gated inside `getTargetTable`.
+    static void checkTargetGrantedIfAlias(
+        const StoragePtr & storage, ContextPtr query_context, AccessType access_type, const String & column_name = {});
+
+    /// Same, but checks only the target named in this alias's own definition (see `isDeclaredTargetGranted`).
+    /// For callers that expose that definition and resolve nothing through it, such as `SHOW CREATE`.
+    static void checkDeclaredTargetGrantedIfAlias(
+        const StoragePtr & storage, ContextPtr query_context, AccessType access_type, const String & column_name = {});
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,

@@ -1,0 +1,6 @@
+Test mergeTreeProjection metadata without target permission
+ACCESS_DENIED
+Test mergeTreeProjection read without target permission
+ACCESS_DENIED
+Test mergeTreeProjection metadata with target permission
+secret
