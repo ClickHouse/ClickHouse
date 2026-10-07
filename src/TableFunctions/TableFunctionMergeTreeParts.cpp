@@ -125,6 +125,15 @@ ColumnsDescription TableFunctionMergeTreeParts::getActualTableStructure(ContextP
     return parseColumnsListFromString(structure, context);
 }
 
+std::optional<ColumnsDescription> TableFunctionMergeTreeParts::getVirtualsWithoutExecution() const
+{
+    /// `DESCRIBE` must not create the disk, and the virtual columns do not depend on it.
+    ColumnsDescription result;
+    for (const auto & column : StorageMergeTreeParts::createVirtuals())
+        result.add(column);
+    return result;
+}
+
 void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     static constexpr auto arguments_num = 4;
