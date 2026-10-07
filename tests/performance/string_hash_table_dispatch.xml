@@ -11,7 +11,6 @@
     -->
     <settings>
         <max_threads>1</max_threads>
-        <max_insert_threads>8</max_insert_threads>
     </settings>
 
     <substitutions>

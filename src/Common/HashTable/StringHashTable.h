@@ -3,7 +3,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
-#include <array>
 #include <bit>
 #include <new>
 
@@ -47,17 +46,23 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 namespace StringHashTableDetail
 {
 
-/// `key8_masks[sz]` keeps the first `sz` bytes of an 8-byte word, for `sz` in 1..8 (entry 0 is unused).
-/// It is hidden because the code is compiled with `-fPIC`, which addresses a default-visibility variable
-/// through the GOT. The linker turns that into a direct address on x86_64, but on AArch64 `lld` does so
-/// only when the `adrp` and the `ldr` are adjacent, so `dispatchOnKeyClass` would keep an extra load.
-inline constexpr std::array<UInt64, 9> key8_masks __attribute__((visibility("hidden"))) = []
+inline constexpr size_t min_page_size = 4096; /// The smallest page size
+
+/// Keeps the first `sz` bytes of an 8-byte word, for `sz` in 1..8, computed in place instead of loaded from a table.
+/// With BMI2, LLVM turns the load and `-1ULL >> (64 - 8 * sz)` into a single `bzhi`. Without it (AArch64, x86_64 below
+/// `x86-64-v3`), LLVM turns that form into two dependent shifts of the loaded word, so `~(-2ULL << (8 * sz - 1))` is used
+/// instead: the mask is computed in parallel with the load, which is followed by a single `bic` or `and`.
+inline UInt64 ALWAYS_INLINE key8Mask(size_t sz)
 {
-    std::array<UInt64, 9> res{};
-    for (size_t i = 1; i <= 8; ++i)
-        res[i] = std::endian::native == std::endian::little ? -1ULL >> (64 - 8 * i) : -1ULL << (64 - 8 * i);
-    return res;
-}();
+#if defined(__BMI2__)
+    return -1ULL >> (64 - 8 * sz);
+#else
+    if constexpr (std::endian::native == std::endian::little)
+        return ~(-2ULL << (8 * sz - 1));
+    else
+        return -1ULL << (64 - 8 * sz);
+#endif
+}
 
 }
 
@@ -416,13 +421,14 @@ public:
         //     n[1]                    i j k 0 0 0 0 0
         //
         // The exception is a key of 1..8 bytes whose 8 bytes from its start fit in its page: it is read
-        // from its start, and the bytes after its end are masked off.
+        // from its start, and the bytes after its end are masked off. Otherwise the key starts at least
+        // 8 bytes into its page, so the load stays in it.
         if (sz <= 8)
         {
-            if ((reinterpret_cast<uintptr_t>(p) & 4095) <= 4096 - 8)
+            if ((reinterpret_cast<uintptr_t>(p) & (StringHashTableDetail::min_page_size - 1)) <= StringHashTableDetail::min_page_size - 8)
             {
                 memcpy(&n[0], p, 8);
-                n[0] &= StringHashTableDetail::key8_masks[sz];
+                n[0] &= StringHashTableDetail::key8Mask(sz);
             }
             else
             {
