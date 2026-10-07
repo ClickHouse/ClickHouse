@@ -1,9 +1,9 @@
 -- A correlated scalar subquery whose aggregate has a non-NULL empty-input value (count(), uniqExact(), ...)
--- must return that value (0), not NULL, when the correlated group is empty for an outer row. Aggregates
--- whose empty-input value is NULL (sum, min, max, avg over an empty set) keep returning NULL. See #111615.
+-- must return that value (0), not NULL, when the correlated group is empty for an outer row. Other aggregates
+-- (sum, min, max, avg) still return NULL for an empty correlated group. See #111615.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 -- count(): empty correlated group (k=1) must be 0, not NULL.
 SELECT o.k, (SELECT count() FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1) AS c
@@ -45,7 +45,7 @@ ORDER BY o.k;
 -- FunctionToSubcolumnsPass rewrites count(<Nullable column>) to sum(not(col.null)) before the planner
 -- runs, and `sum` does not carry returns_default_when_only_null, so the rewritten form is not restored.
 -- The restore therefore depends on optimize_functions_to_subcolumns for this spelling. Ground truth for
--- the empty group is 0; both values are asserted to track it.
+-- the empty group is 0; the rewritten form still returns NULL, asserted to track it.
 DROP TABLE IF EXISTS t04630_inner;
 DROP TABLE IF EXISTS t04630_outer;
 CREATE TABLE t04630_inner (k UInt8, v Nullable(Int32)) ENGINE = MergeTree ORDER BY k;
@@ -97,6 +97,15 @@ ORDER BY o.k;
 
 -- An inner HAVING can drop every group, so the result stays NULL (guard).
 SELECT o.k, (SELECT count() FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1 HAVING count() > 10) AS c
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k;
+
+-- An inner LIMIT 0 or OFFSET 1 removes the aggregate's only row, so the result stays NULL for every outer row (guards).
+SELECT o.k, (SELECT count() FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1 LIMIT 0) AS c
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k;
+
+SELECT o.k, (SELECT count() FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1 OFFSET 1) AS c
 FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k;
 
