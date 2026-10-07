@@ -7,12 +7,21 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 
+#include <chrono>
+
 namespace DB
 {
 
-namespace ErrorCodes
+static void shutdownDisk(const String & name, const DiskPtr & disk, const LoggerPtr & log)
 {
-    extern const int ABORTED;
+    try
+    {
+        disk->shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "while shutting down custom disk " + backQuote(name));
+    }
 }
 
 CustomDiskRegistry::CustomDiskRegistry()
@@ -104,23 +113,42 @@ void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)
 }
 
 /// TSA_NO_THREAD_SAFETY_ANALYSIS because TSA does not support `std::unique_lock` used with `std::condition_variable`.
-void CustomDiskRegistry::waitForShutdown(const String & name) TSA_NO_THREAD_SAFETY_ANALYSIS
+void CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_hash) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    /// A disk is usually referenced only briefly after the last table using it is gone.
+    static constexpr auto max_wait_for_referenced_disk = std::chrono::seconds(10);
+
     std::unique_lock lock(mutex);
     shutdown_finished_cv.wait(lock, [&]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !names_pending_shutdown.contains(name); });
 
-    /// Nothing notifies about the last reference to the old disk being dropped, so there is nothing to wait for.
-    if (hasLingeringDisk(name))
-        throw Exception(ErrorCodes::ABORTED,
-            "Cannot create custom disk {}: the previous disk with the same definition, which is no longer used by any "
-            "table or database, is still referenced and has not been destroyed yet. Try again later",
-            backQuote(name));
+    auto can_create = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        if (names_pending_shutdown.contains(name))
+            return false;
+        auto it = lingering_disks.find(name);
+        return it == lingering_disks.end() || it->second->getCustomDiskSettings() == settings_hash;
+    };
+
+    if (!shutdown_finished_cv.wait_for(lock, max_wait_for_referenced_disk, can_create) && !names_pending_shutdown.contains(name))
+        LOG_WARNING(log, "Custom disk {} released earlier, with another definition, is still referenced after {} seconds",
+            backQuote(name), max_wait_for_referenced_disk.count());
 }
 
-bool CustomDiskRegistry::isShutdownPending(const String & name)
+std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(const String & name)
 {
     std::lock_guard lock(mutex);
-    return names_pending_shutdown.contains(name) || hasLingeringDisk(name);
+
+    if (names_pending_shutdown.contains(name))
+        return std::nullopt;
+
+    auto it = lingering_disks.find(name);
+    if (it == lingering_disks.end())
+        return DiskPtr{};
+
+    DiskPtr disk = std::move(it->second);
+    lingering_disks.erase(it);
+    LOG_DEBUG(log, "Custom disk {} is used again before it was shut down", backQuote(name));
+    return disk;
 }
 
 void CustomDiskRegistry::shutdown()
@@ -135,6 +163,15 @@ void CustomDiskRegistry::shutdown()
 
     if (thread_to_join)
         thread_to_join->join();
+
+    /// Like the disks of the disk selector, the disks still referenced by something are shut down when the server shuts down.
+    std::map<String, DiskPtr> remaining_disks;
+    {
+        std::lock_guard lock(mutex);
+        remaining_disks.swap(lingering_disks);
+    }
+    for (const auto & [name, disk] : remaining_disks)
+        shutdownDisk(name, disk, log);
 }
 
 /// TSA_NO_THREAD_SAFETY_ANALYSIS because TSA does not support `std::unique_lock` used with `std::condition_variable`.
@@ -142,22 +179,35 @@ void CustomDiskRegistry::run() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     DB::setThreadName(ThreadName::CUSTOM_DISK_SHUTDOWN);
 
+    /// Nothing notifies about the last other reference to a lingering disk being dropped, so they are checked periodically.
+    static constexpr auto lingering_disks_check_period = std::chrono::milliseconds(100);
+
     std::unique_lock lock(mutex);
     while (true)
     {
-        disks_to_shutdown_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return shutdown_called || !disks_to_shutdown.empty(); });
+        auto has_work = [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return shutdown_called || !disks_to_shutdown.empty(); };
+        if (lingering_disks.empty())
+            disks_to_shutdown_cv.wait(lock, has_work);
+        else
+            disks_to_shutdown_cv.wait_for(lock, lingering_disks_check_period, has_work);
 
         /// The scheduled disks are shut down even when the server is shutting down: the disks
         /// released while the tables are being shut down are not in the disk selector anymore.
-        if (disks_to_shutdown.empty())
+        if (!disks_to_shutdown.empty())
+        {
+            DiskToShutdown disk_to_shutdown = std::move(disks_to_shutdown.front());
+            disks_to_shutdown.pop_front();
+
+            lock.unlock();
+            finishShutdown(std::move(disk_to_shutdown));
+            lock.lock();
+            continue;
+        }
+
+        shutdownUnreferencedLingeringDisks(lock);
+
+        if (shutdown_called)
             return;
-
-        DiskToShutdown disk_to_shutdown = std::move(disks_to_shutdown.front());
-        disks_to_shutdown.pop_front();
-
-        lock.unlock();
-        finishShutdown(std::move(disk_to_shutdown));
-        lock.lock();
     }
 }
 
@@ -165,28 +215,27 @@ void CustomDiskRegistry::finishShutdown(DiskToShutdown disk_to_shutdown)
 {
     if (auto disk = std::move(disk_to_shutdown.disk))
     {
-        /// `shutdown` makes the disk reject further requests, so it may only be called when nothing can
-        /// use the disk anymore. The disk is no longer reachable by name, so no new reference to it can
-        /// appear, and holding the only one left means there is no user of it either.
-        if (disk.use_count() != 1)
+        bool referenced = false;
         {
-            LOG_DEBUG(log, "Custom disk {} is still referenced after being unregistered, it will not be shut down explicitly",
-                backQuote(disk_to_shutdown.name));
-
             std::lock_guard lock(mutex);
-            lingering_disks.emplace(disk_to_shutdown.name, disk);
-        }
-        else
-        {
-            try
+            /// `shutdown` makes the disk reject further requests, so it may only be called when nothing can
+            /// use the disk anymore. The disk is no longer reachable by name, so no new reference to it can
+            /// appear, and holding the only one left means there is no user of it either. Otherwise the
+            /// disk waits until the other references are gone. A new disk with the same definition is not
+            /// created meanwhile: this one is used again instead, see `tryTakeReleasedDisk`.
+            if (disk.use_count() != 1)
             {
-                disk->shutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "while shutting down custom disk " + backQuote(disk_to_shutdown.name));
+                referenced = true;
+                LOG_DEBUG(log, "Custom disk {} is still referenced after being unregistered, it will be shut down when the references are gone",
+                    backQuote(disk_to_shutdown.name));
+                chassert(!lingering_disks.contains(disk_to_shutdown.name));
+                lingering_disks[disk_to_shutdown.name] = std::move(disk);
+                disks_to_shutdown_cv.notify_one();
             }
         }
+
+        if (!referenced)
+            shutdownDisk(disk_to_shutdown.name, disk, log);
 
         /// The reference is dropped before the next disk is taken: that may be the disk this one
         /// wraps, which is shut down only if nothing else references it.
@@ -197,31 +246,47 @@ void CustomDiskRegistry::finishShutdown(DiskToShutdown disk_to_shutdown)
     shutdown_finished_cv.notify_all();
 }
 
+/// TSA_NO_THREAD_SAFETY_ANALYSIS because TSA does not support `std::unique_lock`.
+void CustomDiskRegistry::shutdownUnreferencedLingeringDisks(std::unique_lock<std::mutex> & lock) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    std::vector<DiskToShutdown> unreferenced_disks;
+    for (auto it = lingering_disks.begin(); it != lingering_disks.end();)
+    {
+        /// A disk is referenced by the disks wrapping it, so it is not taken together with them, but on a later check.
+        if (it->second.use_count() == 1)
+        {
+            names_pending_shutdown.insert(it->first);
+            unreferenced_disks.push_back({it->first, std::move(it->second)});
+            it = lingering_disks.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (unreferenced_disks.empty())
+        return;
+
+    lock.unlock();
+    for (auto & disk_to_shutdown : unreferenced_disks)
+    {
+        shutdownDisk(disk_to_shutdown.name, disk_to_shutdown.disk, log);
+        disk_to_shutdown.disk.reset();
+    }
+    lock.lock();
+
+    for (const auto & disk_to_shutdown : unreferenced_disks)
+        removePendingName(disk_to_shutdown.name);
+    shutdown_finished_cv.notify_all();
+}
+
 void CustomDiskRegistry::removePendingName(const String & name)
 {
     auto it = names_pending_shutdown.find(name);
     chassert(it != names_pending_shutdown.end());
     if (it != names_pending_shutdown.end())
         names_pending_shutdown.erase(it);
-}
-
-bool CustomDiskRegistry::hasLingeringDisk(const String & name)
-{
-    bool alive = false;
-    auto [begin, end] = lingering_disks.equal_range(name);
-    for (auto it = begin; it != end;)
-    {
-        if (it->second.expired())
-        {
-            it = lingering_disks.erase(it);
-        }
-        else
-        {
-            alive = true;
-            ++it;
-        }
-    }
-    return alive;
 }
 
 }

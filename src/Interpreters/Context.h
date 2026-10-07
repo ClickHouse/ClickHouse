@@ -1920,7 +1920,9 @@ public:
     /// is unregistered and shut down once every table and database using it is gone.
     /// `nested` are the registrations of the disks nested in the definition of this one; the
     /// returned registration takes them over, so that they outlive it.
-    std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(const String & name, DiskCreator creator, CustomDiskRegistrations nested) const;
+    /// `settings_hash` identifies the definition, see `IDisk::markDiskAsCustom`.
+    std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
+        const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations nested) const;
     /// A registration for a custom disk that already exists, or nullptr if `name` is not one.
     CustomDiskRegistrationPtr tryGetCustomDiskRegistration(const String & name) const;
     /// Unregisters a custom disk. Called by ~CustomDiskRegistration, do not call directly.

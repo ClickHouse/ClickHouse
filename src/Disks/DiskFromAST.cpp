@@ -104,7 +104,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
-    auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+    auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, disk_settings_hash, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.

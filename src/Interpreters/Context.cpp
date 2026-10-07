@@ -7893,14 +7893,15 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
-std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(const String & name, DiskCreator creator, CustomDiskRegistrations nested) const
+std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
+    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations nested) const
 {
     while (true)
     {
         /// A disk with this name may have just been released by the last table or database using it,
         /// and still be shutting down. A new disk with the same definition would work with the same
-        /// metadata and data, so it is created only after the old one is gone.
-        shared->custom_disk_registry.waitForShutdown(name);
+        /// metadata and data, so it is created only after the old one is shut down.
+        shared->custom_disk_registry.waitForShutdown(name, settings_hash);
 
         std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -7909,11 +7910,15 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(con
         auto disk = disk_selector->tryGet(name);
         if (!disk)
         {
-            /// Released after the wait above.
-            if (shared->custom_disk_registry.isShutdownPending(name))
+            auto released_disk = shared->custom_disk_registry.tryTakeReleasedDisk(name);
+            /// Released after the wait above, and being shut down.
+            if (!released_disk.has_value())
                 continue;
 
-            disk = creator(getDisksMap(lock));
+            /// The old disk is not shut down yet because something still references it: use it again.
+            disk = std::move(*released_disk);
+            if (!disk)
+                disk = creator(getDisksMap(lock));
             const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
         }
 

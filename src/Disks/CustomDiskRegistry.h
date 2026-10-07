@@ -4,11 +4,13 @@
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <base/defines.h>
+#include <base/extended_types.h>
 
 #include <condition_variable>
 #include <deque>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -40,19 +42,23 @@ public:
     /// done with the disk, `waitForShutdown` waits for it.
     void release(const String & name);
 
-    /// Shuts down a released disk in the background, after the disks scheduled before it, if nothing
-    /// else uses it by then. A disk wraps the disks nested in its definition, which are released after
-    /// it, so they are scheduled after it as well. `disk` is nullptr if there was no disk to release.
+    /// Shuts down a released disk in the background, after the disks scheduled before it, once nothing
+    /// else uses it. A disk wraps the disks nested in its definition, which are released after it, so
+    /// they are scheduled after it as well. `disk` is nullptr if there was no disk to release.
     void scheduleShutdown(const String & name, DiskPtr disk);
-    /// Waits until the disk `name` released earlier has been shut down. A new disk created with the
-    /// same definition uses the same metadata and data, so it must not overlap with the old one.
-    /// Throws if the old disk was not shut down because something still references it, and it is still alive.
-    void waitForShutdown(const String & name);
-    /// Whether the disk `name` has been released and is not gone yet: either not shut down yet, or still
-    /// referenced after its shutdown was skipped.
-    bool isShutdownPending(const String & name);
+    /// Waits until the disk `name` released earlier is no longer being shut down. A new disk created
+    /// with the same name uses the same metadata and data, so it must not overlap with the old one.
+    /// A released disk that is not shut down yet because something still references it is used again
+    /// if it has the same definition (`settings_hash`); otherwise, waits for it to be shut down, but
+    /// gives up after a while, and then `tryTakeReleasedDisk` returns it anyway.
+    void waitForShutdown(const String & name, UInt128 settings_hash);
+    /// The released disk `name` that is not shut down yet because something still references it, to be
+    /// used again instead of creating a new disk with the same name. nullptr if there is none.
+    /// std::nullopt if the disk `name` is being shut down, and `waitForShutdown` has to be called first.
+    std::optional<DiskPtr> tryTakeReleasedDisk(const String & name);
 
-    /// Waits for the scheduled shutdowns. The disks released after that are shut down in place.
+    /// Waits for the scheduled shutdowns and shuts down the disks still waiting for their references to
+    /// go away. The disks released after that are shut down in place.
     void shutdown();
 
 private:
@@ -64,10 +70,9 @@ private:
 
     void run();
     void finishShutdown(DiskToShutdown disk_to_shutdown);
+    /// Shuts down the lingering disks that are not referenced by anything else anymore.
+    void shutdownUnreferencedLingeringDisks(std::unique_lock<std::mutex> & lock);
     void removePendingName(const String & name) TSA_REQUIRES(mutex);
-    /// Whether a released disk `name`, not shut down because it was still referenced, is still alive.
-    /// Forgets the ones that are gone.
-    bool hasLingeringDisk(const String & name) TSA_REQUIRES(mutex);
 
     LoggerPtr log;
 
@@ -75,12 +80,13 @@ private:
     std::map<String, std::weak_ptr<CustomDiskRegistration>> registrations TSA_GUARDED_BY(mutex);
     std::deque<DiskToShutdown> disks_to_shutdown TSA_GUARDED_BY(mutex);
     std::condition_variable disks_to_shutdown_cv;
-    /// The names of the released disks that are not shut down yet.
+    /// The names of the released disks that are scheduled for shutdown or being shut down.
     std::multiset<String> names_pending_shutdown TSA_GUARDED_BY(mutex);
     std::condition_variable shutdown_finished_cv;
-    /// The released disks that were not shut down because something still referenced them. A new disk
-    /// with the same name must not be created while the old one is alive.
-    std::multimap<String, std::weak_ptr<IDisk>> lingering_disks TSA_GUARDED_BY(mutex);
+    /// The released disks that were still referenced by something else when their turn to be shut down
+    /// came. They are shut down when the reference goes away, or used again if a table or database with
+    /// the same definition appears before that.
+    std::map<String, DiskPtr> lingering_disks TSA_GUARDED_BY(mutex);
     bool shutdown_called TSA_GUARDED_BY(mutex) = false;
     /// Started on the first scheduled shutdown.
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> thread TSA_GUARDED_BY(mutex);
