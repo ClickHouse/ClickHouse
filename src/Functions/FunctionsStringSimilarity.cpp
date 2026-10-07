@@ -767,11 +767,11 @@ For input strings longer than 32,768 bytes, it has the same shortcut and excepti
     FunctionDocumentation::Examples examples_ngram_search_case_insensitive_utf8 = {
     {
         "Case-insensitive UTF-8 search using 3-grams",
-        "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')",
+        "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕжзи', 'АбвгдЕЖЗИ')",
         R"(
-┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                               0.57142854 │
-└──────────────────────────────────────────────────────────┘
+┌─ngramSearchCaseInsensitiveUTF8('абвГДЕжзи', 'АбвгдЕЖЗИ')─┐
+│                                                      1 │
+└────────────────────────────────────────────────────────┘
         )"
     }
     };
