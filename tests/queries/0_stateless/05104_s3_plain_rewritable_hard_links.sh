@@ -13,11 +13,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1"
+# A readonly disk keeps the listing it loaded, so a rerun in the same database must not reuse the disk of an earlier run.
+reader_disk="${CLICKHOUSE_TEST_UNIQUE_NAME}_reader_$(date +%s%N)"
 
 # The server-side AST fuzzer clones a CREATE TABLE as `<name>__fuzz_N`, and such a table outlives the objects that the
-# DROP of the writer removes. With `ignore_drop_queries_probability` the last block would not drop the tables.
+# DROP of the writer removes. `ignore_drop_queries_probability` could skip the drops here and in the last block.
 ${CLICKHOUSE_CLIENT} -m --query "
-SET ast_fuzzer_any_query = 0;
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -50,7 +52,7 @@ echo '-- a readonly reader on the same endpoint sees the mutated data'
 ${CLICKHOUSE_CLIENT} -m --query "
 SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, renamed UInt32) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${reader_disk}', ${disk_args});
 SELECT count(), sum(key), sum(renamed) FROM reader;
 SELECT count() FROM (SELECT * FROM writer EXCEPT SELECT * FROM reader);
 SELECT count() FROM (SELECT * FROM reader EXCEPT SELECT * FROM writer);

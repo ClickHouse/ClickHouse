@@ -16,6 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1"
+# A readonly disk keeps the listing it loaded, so a rerun in the same database must not reuse the disk of an earlier run.
+reader_disk="${CLICKHOUSE_TEST_UNIQUE_NAME}_reader_$(date +%s%N)"
 failpoint="merge_tree_drop_all_data_pause_before_removing_parts"
 
 function cleanup()
@@ -25,7 +27,7 @@ function cleanup()
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -m --query "
-SET ast_fuzzer_any_query = 0;
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -50,7 +52,7 @@ echo '-- a readonly table over the same directory still sees the parts, the muta
 ${CLICKHOUSE_CLIENT} -m --query "
 SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${reader_disk}', ${disk_args});
 SELECT count(), countIf(endsWith(value, '!')) FROM reader;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'reader';
 SELECT count() > 0 FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One') WHERE _path LIKE '%deduplication_log%';
