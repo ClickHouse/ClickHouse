@@ -300,6 +300,7 @@ public:
     }
 
     virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     virtual bool appliesOperationsEagerly() const
@@ -326,6 +327,14 @@ public:
     virtual bool isWriteOnce() const
     {
         return false;
+    }
+
+    /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
+    /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,
+    /// and `plain_rewritable` does it only when the disk is configured for it.
+    virtual bool supportsHardLinks() const
+    {
+        return !isWriteOnce() && !isPlain();
     }
 
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;

@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <unordered_set>
@@ -20,18 +21,8 @@ class ReadBuffer;
 namespace DataLake
 {
 
-struct AccessToken
-{
-    std::string token;
-    std::optional<std::chrono::system_clock::time_point> expires_at;
-
-    bool isExpired() const
-    {
-        if (!expires_at.has_value())
-            return false;
-        return std::chrono::system_clock::now() >= expires_at.value();
-    }
-};
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -77,6 +68,12 @@ public:
     /// Inherited by every catalog based on the Iceberg REST protocol.
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
+    bool assignsLocationToNewNamespaces() const override { return true; }
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -88,7 +85,17 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
+
     bool isTransactional() const override { return true; }
+
+    /// The Iceberg REST spec makes the server write the metadata file on create.
+    bool writesInitialMetadata() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
@@ -148,7 +155,9 @@ protected:
         bool flat_namespaces_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
+    std::optional<std::string> getNamespaceLocation(const std::string & namespace_name) const;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -219,7 +228,8 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    virtual void sendRequest(
+    /// Returns the body of the response, empty with `ignore_result`.
+    virtual String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
@@ -285,6 +295,10 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 

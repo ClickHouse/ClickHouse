@@ -14,6 +14,9 @@ from helpers.proxy1 import Proxy1
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
+ALLOWED_TLS13_SUITE = "TLS_AES_256_GCM_SHA384"
+EXCLUDED_TLS13_SUITE = "TLS_CHACHA20_POLY1305_SHA256"
+
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance(
     "server",
@@ -80,6 +83,23 @@ def netcat(hostname, port, content):
         data.append(d)
     s.close()
     return b"".join(data)
+
+
+def offer_single_tls13_suite(port, suite):
+    """Hand one endpoint exactly one TLS 1.3 cipher suite and report whether it was accepted.
+
+    Reads the negotiated suite rather than the exit status, because s_client also reports a
+    verification failure for the self-signed server certificate.
+    """
+    result = server.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -connect 127.0.0.1:{port} -tls1_3 "
+            f"-ciphersuites {suite} -brief </dev/null 2>&1 || true",
+        ]
+    )
+    return f"Ciphersuite: {suite}" in result
 
 
 def test_connections():
@@ -166,6 +186,14 @@ def test_connections():
     assert execute_query_https_unsupported(
         server.ip_address, 8443, "SELECT 1", version=ssl.TLSVersion.TLSv1_3
     )
+
+
+def test_tls13_cipher_suites_per_endpoint():
+    # 8445 keeps no cipherSuites, so it shows the excluded suite is available in this image;
+    # without that the refusal on 8446 would not be attributable to the setting.
+    assert offer_single_tls13_suite(8445, EXCLUDED_TLS13_SUITE)
+    assert offer_single_tls13_suite(8446, ALLOWED_TLS13_SUITE)
+    assert not offer_single_tls13_suite(8446, EXCLUDED_TLS13_SUITE)
 
 
 # tests when using PROXYv1 with enabled auth_use_forwarded_address that forwarded address is used for authentication and query's source address

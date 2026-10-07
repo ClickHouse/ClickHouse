@@ -85,7 +85,7 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
 
-`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the `ARRAY JOIN` clause for those queries.
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)`). Use the `ARRAY JOIN` clause for those queries. `JOIN LATERAL` over a correlated subquery is a separate experimental feature and does not make `unnest` usable as a table source.
 
 `arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
 preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
@@ -268,8 +268,9 @@ ORDER BY
     factory.registerFunction<FunctionArrayJoin>(documentation);
     /// PostgreSQL/SQL-standard alias. `unnest(arr)` in a SELECT clause behaves
     /// the same as `arrayJoin(arr)` - one row per array element. Note that
-    /// PostgreSQL's `LATERAL`/`CROSS JOIN UNNEST(...)` table-source syntax is
-    /// not supported by this alias and still requires `ARRAY JOIN`.
+    /// PostgreSQL's `LATERAL unnest(...)` / `CROSS JOIN UNNEST(...)` table-source
+    /// syntax is not supported by this alias and still requires `ARRAY JOIN`;
+    /// the experimental `JOIN LATERAL` only accepts a subquery on its right side.
     factory.registerAlias("unnest", "arrayJoin", FunctionFactory::Case::Insensitive);
 }
 
