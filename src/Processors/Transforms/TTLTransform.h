@@ -62,6 +62,9 @@ private:
         String default_column_name;
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    /// Names of `expired_columns_data` entries ordered so that a column whose `DEFAULT` reads
+    /// another expired column comes after it.
+    Names expired_columns_in_dependency_order;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
