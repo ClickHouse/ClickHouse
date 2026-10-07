@@ -1,0 +1,14 @@
+merge into an empty state gives the same state
+small	10	1
+medium	1000	1
+large	100314	1
+merge with a state in a bigger container, both orders, compared with direct aggregation
+empty	large	100314	1	1
+empty	medium	1000	1	1
+medium	large	100314	1	1
+medium_disjoint	large	101347	1	1
+small	large	100314	1	1
+small	medium	1000	1	1
+small_disjoint	large	100324	1	1
+small_disjoint	medium	1010	1	1
+small_full	medium_almost_full	8193	1	1
