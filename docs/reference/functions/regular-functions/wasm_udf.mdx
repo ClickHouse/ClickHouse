@@ -567,6 +567,7 @@ The sizes above use the number of rows stored in the column: `1` for a constant 
 
 - `LowCardinality(Nullable(T))` arguments; declare `Nullable(T)` or `LowCardinality(T)` instead;
 - a nullable value passed to a `LowCardinality(T)` argument;
+- a `LowCardinality(Nullable(T))` value passed to a function that declares no `Nullable` parameter, because it would bypass the default `NULL` handling;
 - a `LowCardinality` result type;
 - `Nullable(Variant(...))`;
 - `Variant` inside `Array` or `Tuple`.

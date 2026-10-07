@@ -92,6 +92,9 @@ CREATE OR REPLACE FUNCTION nullable_offset
 SELECT nullable_offset(toLowCardinality(toNullable(if(number = 0, NULL, 'abc'))), 1::UInt64) FROM numbers(2);
 DROP FUNCTION nullable_offset;
 
+-- With NULL handling on, a LowCardinality(Nullable(T)) argument would bypass it, so it is rejected
+SELECT str_byte_sum(toLowCardinality(toNullable(if(number = 0, NULL, '')))) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP FUNCTION bytes_reverse_nondet;
 DROP FUNCTION lowcard_offset;
 

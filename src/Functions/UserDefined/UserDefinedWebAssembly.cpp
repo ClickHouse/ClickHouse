@@ -822,6 +822,17 @@ public:
                 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()) != nullptr;
             if (allow_nullable_relaxation)
             {
+                /// The framework's NULL handling only sees Nullable(T), and LowCardinality is kept
+                /// as is, so a LowCardinality(Nullable(T)) argument would skip it and hand the guest
+                /// a null map it did not ask for. Only a function that already handles NULL itself
+                /// may take one.
+                if (useDefaultImplementationForNulls() && arguments[i]->isLowCardinalityNullable())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "WebAssembly COLUMNAR_V1 function does not handle NULL itself, so it cannot take a "
+                        "LowCardinality(Nullable(T)) argument: {}; declare a Nullable parameter or cast the argument",
+                        arguments[i]->getName());
+
                 const DataTypePtr & stripped = removeNullable(arguments[i]);
                 if (stripped->equals(*expected_arguments[i]))
                     continue;
