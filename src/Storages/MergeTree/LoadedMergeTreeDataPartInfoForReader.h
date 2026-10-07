@@ -98,7 +98,9 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override;
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+
+    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 

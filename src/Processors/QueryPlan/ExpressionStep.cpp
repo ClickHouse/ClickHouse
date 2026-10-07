@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -10,6 +11,9 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
 #include <Interpreters/ActionsDAG.h>
+
+#include <span>
+#include <unordered_set>
 
 
 namespace DB
@@ -142,112 +146,161 @@ bool ExpressionStep::canRemoveUnusedColumns() const
     return true;
 }
 
-ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+ActionsDAG::NodeRawConstPtrs ExpressionStep::UnneededColumnsPlan::neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const
+{
+    ActionsDAG::NodeRawConstPtrs needed;
+    needed.reserve(outputs.size() - unneeded_dag_position_count);
+
+    size_t next_unneeded = 0;
+    for (size_t position = 0; position < outputs.size(); ++position)
+    {
+        if (next_unneeded < unneeded_dag_position_count && unneeded_output_positions[next_unneeded] == position)
+            ++next_unneeded;
+        else
+            needed.push_back(outputs[position]);
+    }
+
+    return needed;
+}
+
+std::vector<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions() const
+{
+    std::vector<size_t> positions;
+    for (size_t position = 0; position < input_columns.size(); ++position)
+    {
+        const auto column = input_columns[position];
+        if (column == InputColumnUsage::ReadDropped || column == InputColumnUsage::PassesThroughDropped)
+            positions.push_back(position);
+    }
+
+    return positions;
+}
+
+ExpressionStep::UnneededColumnsPlan
+ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
 
-    /// When extra columns were absorbed from a child step that cannot reduce its output,
-    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
-    if (prevent_input_removal)
-        remove_inputs = false;
+    UnneededColumnsPlan plan;
+    plan.unneeded_output_positions = unneeded_output_positions;
 
-    const auto required_output_count = required_output_positions.size();
     const auto & input_header = input_headers.front();
-    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
     /// The output header is structured as:
     /// [DAG output 0, ..., DAG output N-1, pass-through input 0, pass-through input 1, ...]
-    /// Split required positions into DAG output indices and pass-through input indices.
-    auto [required_dag_indices, required_passthrough_indices]
-        = actions_dag.splitOutputPositions(required_output_positions);
+    /// so the positions below the number of DAG outputs are the DAG outputs nobody needs, and the rest
+    /// name pass-through columns, counting from that number. The positions are sorted, so the first
+    /// group is a prefix of them and the second is the remaining suffix.
+    chassert(std::ranges::is_sorted(unneeded_output_positions));
+    const auto dag_output_count = actions_dag.getOutputs().size();
+    const auto first_passthrough
+        = std::ranges::lower_bound(unneeded_output_positions, dag_output_count) - unneeded_output_positions.begin();
 
-    /// Build the list of pass-through input columns (input header columns not consumed by DAG inputs).
-    auto passthrough_input_header_positions = actions_dag.matchInputPositionsToHeader(*input_header).passthrough;
+    plan.unneeded_dag_position_count = first_passthrough;
 
-    /// Determine which pass-through inputs are required by the caller.
-    std::set<size_t> required_passthrough_header_positions;
-    for (size_t pt_idx : required_passthrough_indices)
+    const auto unneeded_passthrough_positions
+        = std::span{unneeded_output_positions}.subspan(first_passthrough);
+
+    /// What removeUnusedActions would keep once the outputs are pruned.
+    ///
+    /// It also folds constants before it collects the nodes to keep, and folding clears the children of
+    /// a folded node, so those children are dropped. Stop at such a node to see the same.
+    auto roots = plan.neededDAGOutputs(actions_dag.getOutputs());
+    for (const auto & node : actions_dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+
+    const auto is_folded_constant = [](const ActionsDAG::Node * node)
     {
-        if (pt_idx >= passthrough_input_header_positions.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", pt_idx);
-        required_passthrough_header_positions.insert(passthrough_input_header_positions[pt_idx]);
-    }
+        return node->column && !node->children.empty();
+    };
 
-    const auto num_passthrough = passthrough_input_header_positions.size();
-    const auto has_to_remove_any_pass_through = num_passthrough > required_passthrough_indices.size();
+    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
-    /// Keep only the required DAG output nodes.
-    auto & dag_outputs = actions_dag.getOutputs();
-    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
-    new_dag_outputs.reserve(required_dag_indices.size());
-    for (size_t idx : required_dag_indices)
-        new_dag_outputs.push_back(dag_outputs[idx]);
-    dag_outputs = std::move(new_dag_outputs);
+    /// One entry per column of the input header: the input reading it, or nothing when it passes by.
+    const auto header_columns = mapHeaderColumnsToInputs(actions_dag.getInputs(), *input_header);
+    plan.input_columns.resize(header_columns.size());
 
-    auto updated_actions = actions_dag.removeUnusedActions(remove_inputs);
+    /// The caller's pass-through indices ascend, and so do the pass-through columns, so one walk over
+    /// the header pairs them up.
+    size_t passthrough_index = 0;
+    size_t next_unneeded_passthrough = 0;
 
-    /// If we cannot remove inputs but need to remove pass-through outputs,
-    /// convert unrequired pass-through inputs into DAG inputs so they stop being pass-throughs.
-    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through;
-    if (has_to_add_input_to_actions)
+    /// A dropped column the child keeps is consumed by a new input, and inputs are paired with header columns by name,
+    /// in order. So a pass-through column after a needed one of the same name cannot be consumed, and is kept.
+    std::unordered_set<std::string_view> needed_passthrough_names;
+    std::vector<size_t> kept_unneeded_positions;
+
+    for (size_t position = 0; position < header_columns.size(); ++position)
     {
-        for (size_t pt_pos : passthrough_input_header_positions)
+        if (!header_columns.passesThrough(position))
         {
-            if (!required_passthrough_header_positions.contains(pt_pos))
-            {
-                const auto & col = input_header->getByPosition(pt_pos);
-                actions_dag.addInput(col.name, col.type);
-            }
+            const auto * input = actions_dag.getInputs()[header_columns.read_by[position]];
+            const bool is_needed = surviving_nodes.contains(input);
+            plan.input_columns[position] = is_needed ? InputColumnUsage::ReadNeeded : InputColumnUsage::ReadDropped;
+            continue;
         }
-        updated_actions = true;
+
+        const auto output_position = dag_output_count + passthrough_index;
+        bool is_unneeded = next_unneeded_passthrough < unneeded_passthrough_positions.size()
+            && unneeded_passthrough_positions[next_unneeded_passthrough] == output_position;
+
+        if (is_unneeded)
+            ++next_unneeded_passthrough;
+
+        const auto & name = input_header->getByPosition(position).name;
+        if (is_unneeded && needed_passthrough_names.contains(name))
+        {
+            is_unneeded = false;
+            kept_unneeded_positions.push_back(output_position);
+        }
+
+        if (!is_unneeded)
+            needed_passthrough_names.insert(name);
+
+        plan.input_columns[position] = is_unneeded ? InputColumnUsage::PassesThroughDropped : InputColumnUsage::PassesThroughNeeded;
+        ++passthrough_index;
     }
 
-    if (!updated_actions && output_header->columns() == required_output_count)
-        return {};
+    if (next_unneeded_passthrough != unneeded_passthrough_positions.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unneeded output position {} is out of range for the output header",
+            unneeded_passthrough_positions[next_unneeded_passthrough]);
 
-    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
+    /// Both lists are sorted, and the kept positions are pass-through ones, so they are not in the prefix of DAG outputs.
+    std::erase_if(plan.unneeded_output_positions, [&](size_t position) { return std::ranges::binary_search(kept_unneeded_positions, position); });
 
-    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
-    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through);
-
-    if (update_inputs)
-    {
-        /// Build the set of required input header positions: DAG inputs that survived pruning + required pass-throughs.
-        auto matched_positions = actions_dag.matchInputPositionsToHeader(*input_header).matched;
-        std::set<size_t> required_input_positions(matched_positions.begin(), matched_positions.end());
-
-        /// Add required pass-through input positions.
-        for (size_t pt_pos : required_passthrough_header_positions)
-            required_input_positions.insert(pt_pos);
-
-        /// Build the result vector and update the input header.
-        std::vector<size_t> result_positions(required_input_positions.begin(), required_input_positions.end());
-
-        Block new_input_header{};
-        for (size_t pos : result_positions)
-            new_input_header.insert(input_header->getByPosition(pos));
-
-        SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
-        updateInputHeader(std::move(new_shared_input_header), 0);
-
-        return {true, {std::move(result_positions)}, required_output_positions};
-    }
-
-    updateOutputHeader();
-
-    /// Outputs changed but inputs didn't.
-    return {true, {}, required_output_positions};
+    return plan;
 }
 
-bool ExpressionStep::canRemoveColumnsFromOutput() const
+ExpressionStep::UnneededInputPositions ExpressionStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
 {
-    if (output_header == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
-
-    return canRemoveUnusedColumns();
+    return {analyzeUnneededColumns(unneeded_output_positions).unneededInputPositions()};
 }
+
+ExpressionStep::RemoveUnusedColumnsResult
+ExpressionStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
+{
+    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
+    const auto & pruned = inputs.at(0);
+    const auto input_header = input_headers.front();
+
+    actions_dag.getOutputs() = plan.neededDAGOutputs(actions_dag.getOutputs());
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = plan.unneeded_output_positions;
+
+    const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
+    result.step_changed = !result.dropped_output_positions.empty() || dag_changed
+        || !blocksHaveEqualStructure(*input_header, *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
+}
+
 
 QueryPlanStepPtr ExpressionStep::clone() const
 {
