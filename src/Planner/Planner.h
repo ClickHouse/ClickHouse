@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 
 #include <Interpreters/IInterpreter.h>
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class ActionsDAG;
 class QueryNode;
@@ -51,6 +57,27 @@ public:
     const std::set<std::string> & getUsedRowPolicies() const
     {
         return used_row_policies;
+    }
+
+    void setUsedRowPolicies(std::set<std::string> policies)
+    {
+        used_row_policies = std::move(policies);
+    }
+
+    /// Inject a pre-built query plan (e.g. from the query plan cache).
+    /// buildQueryPlanIfNeeded() will skip planning when the plan is already initialized.
+    ///
+    /// Preconditions (enforced by caller, typically executeQuery.cpp):
+    ///   - Must be called before any method that triggers buildQueryPlanIfNeeded().
+    ///   - The query must not use parallel replicas (use_parallel_replicas=true); those
+    ///     queries are excluded from cache eligibility in Phase 4 because the
+    ///     query_plan_with_parallel_replicas_builder lambda operates on ReadFromMergeTree
+    ///     nodes which are not present in universalized (cached) plans.
+    void setQueryPlan(QueryPlan && plan)
+    {
+        if (query_plan.isInitialized())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "setQueryPlan called on an already-initialized plan");
+        query_plan = std::move(plan);
     }
 
     void buildQueryPlanIfNeeded();
