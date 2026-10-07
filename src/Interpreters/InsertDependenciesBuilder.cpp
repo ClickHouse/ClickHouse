@@ -13,6 +13,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageProxy.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
