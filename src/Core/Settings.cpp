@@ -2272,6 +2272,15 @@ The effective window is at least twice the heap's reserved size, so a heap alway
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \
         {"26.8", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."}) \
+    DECLARE(Bool, group_by_top_k_optimization_shared_boundary, true, R"(
+For `enable_group_by_top_k_optimization`: share the tightest skip boundary between the aggregation threads. Each thread publishes the boundary of its own top-K set once per processed block when it has tightened, and every thread skips rows against the best published boundary instead of only its own. A set of `K` keys strictly better than a row proves the row cannot reach the final result regardless of which thread holds them, so the sharing does not change the result; it only lets threads whose local keys rank poorly (e.g. when the key values are clustered across the table) skip rows they would otherwise aggregate for nothing.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, true, "New setting: share the tightest top-K skip boundary between aggregation threads, so threads whose local keys rank poorly can skip rows against a boundary published by another thread. previous_value=false so `compatibility` with versions before 26.10 restores per-thread boundaries."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 
@@ -4854,7 +4863,7 @@ Possible values:
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
-Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables, and from [Merge](../../engines/table-engines/special/merge.md) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
 
 Possible values:
 
@@ -6774,6 +6783,37 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(String, query_cache_on_disk_cache_name, "", R"(
+The name of a filesystem cache (an entry of the `filesystem_caches` section of the server configuration) which stores entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk. If a name is given (and [use_query_cache](#use_query_cache) is enabled), query results are additionally cached in (and served from) the specified filesystem cache. The on-disk query cache provides more space than the in-memory query cache, survives server restarts, and works independently of the in-memory query cache: settings [enable_reads_from_query_cache_on_disk](#enable_reads_from_query_cache_on_disk) and [enable_writes_to_query_cache_on_disk](#enable_writes_to_query_cache_on_disk) control it separately from the in-memory query cache. The entries in the filesystem cache are ordinary entries of the filesystem cache: they are not held from deletion and they are evicted by the same rules as any other data in it. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem cache, and `SYSTEM CLEAR QUERY CACHE` removes the entries of the query cache on disk from the filesystem cache named by this setting, leaving all other data in place. A dedicated filesystem cache for query results is recommended.
+
+Possible values:
+
+- Empty string - The query cache on disk is disabled
+- The name of a preconfigured filesystem cache
+)", 0, \
+        {"26.10", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."}) \
+    DECLARE(String, query_cache_on_disk_codec, "ZSTD(3)", R"(
+The compression codec for entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk (see [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name)). Only affects writing; reading is independent of this setting because the compressed data is self-describing.
+)", 0, \
+        {"26.10", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."}) \
+    DECLARE(Bool, enable_writes_to_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are stored in the [query cache](/concepts/features/performance/caches/query-cache) on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting to control whether query results are written to the query cache on disk."}) \
+    DECLARE(Bool, enable_reads_from_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are retrieved from the [query cache](/concepts/features/performance/caches/query-cache) on disk. If reads are enabled for both the in-memory and the on-disk query cache, the lookup is attempted first from memory and only on a miss from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting to control whether query results are read from the query cache on disk."}) \
     DECLARE(Bool, query_cache_for_subqueries, false, R"(
 If turned on, subquery results may be written to and read from the [query cache](/concepts/features/performance/caches/query-cache). This enables propagation of `use_query_cache` into all subqueries.
 
@@ -6803,14 +6843,18 @@ Possible values:
 )", 0, \
         {"24.4", "save", "throw", "The query cache no longer caches results of queries against system tables"}) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 0, R"(
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
 - Positive integer >= 0.
 )", 0) \
     DECLARE(UInt64, query_cache_max_entries, 0, R"(
-The maximum number of query results the current user may store in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum number of query results the current user may store in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
