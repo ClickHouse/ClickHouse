@@ -177,7 +177,7 @@ public:
             /// requires it to be a `ColumnConst`, so it is a constant option.
             return "(" + haystack + ", [const String]) -> " + ret;
         else if constexpr (Impl::supports_start_pos)
-            return "(" + haystack + ", [NativeUInt]) -> " + ret;
+            return "(" + haystack + ", [UInt]) -> " + ret;
         else
             return "(" + haystack + ") -> " + ret;
     }

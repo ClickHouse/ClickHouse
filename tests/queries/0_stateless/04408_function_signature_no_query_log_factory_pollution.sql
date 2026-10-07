@@ -1,4 +1,4 @@
--- `bitmapBuild` has the declarative signature `(Array(T : Integer)) -> AggregateFunction('groupBitmap', T)`,
+-- `bitmapBuild` has the declarative signature `(Array(T : NativeInteger)) -> AggregateFunction('groupBitmap', T)`,
 -- so computing its return type resolves the `groupBitmap` aggregate through `AggregateFunctionFactory`.
 -- That name is a signature internal, not an aggregate the user invoked, so it must not leak into
 -- `query_log.used_aggregate_functions`.

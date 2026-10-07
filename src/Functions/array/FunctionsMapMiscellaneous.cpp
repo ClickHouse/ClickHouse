@@ -761,9 +761,9 @@ using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAd
 struct NameMapContainsKeyLike
 {
     static constexpr auto name = "mapContainsKeyLike";
-    /// The result is always UInt8, so the signature is authoritative; the internal LIKE-lambda
-    /// plumbing (`MapLikeAdapter` over `FunctionArrayExists`) is only used at execution.
-    static constexpr auto signature = "(Map(Any, Any), String) -> UInt8";
+    /// Docs-only, like the sibling `map*Like` functions: `MapLikeAdapter::checkTypes` stays
+    /// authoritative, as it requires a `String` / `FixedString` key and accepts a `FixedString` pattern.
+    static constexpr auto signature_documentation = "(Map(Any, Any), String) -> UInt8";
 };
 using FunctionMapContainsKeyLike = FunctionWithLowCardinalityFastPath<
     FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>>;

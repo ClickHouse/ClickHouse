@@ -106,7 +106,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Array(T : Integer)) -> AggregateFunction('groupBitmap', T)";
+        return "(Array(T : NativeInteger)) -> AggregateFunction('groupBitmap', T)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
