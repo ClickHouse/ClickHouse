@@ -91,7 +91,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 snapshot_distance;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
-    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsBool nuraft_test_mode;
     extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
@@ -1139,11 +1138,15 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
     if (type == nuraft::cb_func::BecomeLeader)
     {
+        session_expiry_queue_refreshed_for_leadership = false;
         startLeaderUptimeMetrics();
         finishLeaderElectionMetrics();
     }
     else if (type == nuraft::cb_func::BecomeFollower)
+    {
+        session_expiry_queue_refreshed_for_leadership = false;
         stopLeaderUptimeMetrics();
+    }
 
     if (is_recovering)
     {
@@ -1539,11 +1542,12 @@ void KeeperServer::waitInit()
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
-    const auto leader_uptime_ms = getLeaderUptimeMetrics();
-    const auto max_session_timeout_ms
-        = keeper_context->getCoordinationSettings()[CoordinationSetting::session_timeout_ms].totalMilliseconds();
-    if (!leader_uptime_ms || *leader_uptime_ms < static_cast<UInt64>(max_session_timeout_ms))
+    if (!session_expiry_queue_refreshed_for_leadership)
+    {
+        state_machine->touchAllSessions();
+        session_expiry_queue_refreshed_for_leadership = true;
         return {};
+    }
 
     return state_machine->getDeadSessions();
 }

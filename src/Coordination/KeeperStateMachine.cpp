@@ -1904,6 +1904,14 @@ void KeeperStateMachine::touchSessions(const std::vector<int64_t> & session_ids)
     storage->touchSessions(session_ids);
 }
 
+void KeeperStateMachine::touchAllSessions()
+{
+    KEEPER_STORAGE_LOCK_SHARED(storage_lock);
+    ProfiledExclusiveLock response_lock(
+        process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+    storage->touchAllSessions();
+}
+
 void KeeperStateMachine::shutdownStorage()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);

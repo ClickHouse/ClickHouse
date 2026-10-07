@@ -870,6 +870,12 @@ void KeeperStorage::touchSessions(const std::vector<int64_t> & session_ids)
     }
 }
 
+void KeeperStorage::touchAllSessions()
+{
+    for (const auto & [session_id, timeout_ms] : session_and_timeout)
+        session_expiry_queue.addNewSessionOrUpdate(session_id, timeout_ms);
+}
+
 std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
 {
     std::vector<std::pair<std::string, Int32>> result;

@@ -180,6 +180,7 @@ public:
 
     /// Extend expiry time for sessions that are still active.
     void touchSessions(const std::vector<int64_t> & session_ids);
+    void touchAllSessions();
 
     KeeperDigest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 

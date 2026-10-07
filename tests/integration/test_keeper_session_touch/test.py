@@ -22,6 +22,7 @@ for server_id in range(1, 4):
             env_variables={"KEEPER_SERVER_ID": str(server_id)},
             instance_env_variables=True,
             stay_alive=True,
+            with_remote_database_disk=False,
         )
     )
 
