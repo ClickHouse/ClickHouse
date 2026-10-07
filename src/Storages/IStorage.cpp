@@ -522,6 +522,7 @@ std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr
     /// The same call the interpreter makes before analysis, so that the hash taken here agrees with the
     /// one taken after a read has already triggered the lazy update. It may perform credentialed I/O (an
     /// object listing), so every caller must have checked the user's access to the table first.
+    auto metadata_before_refresh = storage->getInMemoryMetadataPtr(context, false);
     try
     {
         storage->updateExternalDynamicMetadataIfExists(context);
@@ -534,6 +535,18 @@ std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr
     }
 
     auto metadata = storage->getInMemoryMetadataPtr(context, false);
+
+    /// The callers check access with `canComputeModificationHash` against the metadata before the refresh,
+    /// but a schema-lazy storage (`Iceberg`, `Paimon`, `DeltaLake`, ...) can discover new columns during
+    /// it. Inside a `ModificationHashIntrospectionScope` the user must be able to read every column the
+    /// hash covers, so check the refreshed columns again. Outside of it, `SELECT` on any one column is
+    /// enough, and new columns cannot take that away.
+    if (isModificationHashIntrospection() && metadata->getColumns() != metadata_before_refresh->getColumns())
+    {
+        const auto storage_id = storage->getStorageID();
+        if (!canComputeModificationHash(context, storage_id.database_name, storage_id.table_name, metadata->getColumns()))
+            return {};
+    }
     auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
     return storage->getModificationHash(snapshot, context);
 }
