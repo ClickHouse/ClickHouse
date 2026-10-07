@@ -1957,19 +1957,29 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
     return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
 }
 
-/// Builds the one-row column of a constant. `tryGetConstant` hands out only the nested value of a `Variant`/`Dynamic`
-/// constant, which does not tell its active member type, so such a constant is built from `active_type`: the column
-/// then holds the value in that member, as the original constant did. Returns nullptr when `active_type` is unknown.
-static ColumnPtr createConstantColumn(const DataTypePtr & type, const Field & value, const DataTypePtr & active_type)
+/// Builds the one-row column of a constant. A `Field` does not tell which member of a `Variant`/`Dynamic` holds the
+/// value, so a constant with such a type, at any depth, is taken from `original`, the column of the constant in the
+/// query. Returns nullptr when `original` does not hold the constant of `type`.
+static ColumnPtr createConstantColumn(const DataTypePtr & type, const Field & value, const ColumnWithTypeAndName & original)
 {
-    const auto unwrapped_type = removeLowCardinalityAndNullable(type);
-    if (!isVariant(unwrapped_type) && !isDynamic(unwrapped_type))
+    if (!anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) || isDynamic(node); }))
         return type->createColumnConst(1, value);
 
-    if (!active_type)
+    /// `tryGetConstant` removes the `LowCardinality` and `Nullable` of a non-NULL constant, see `getTypeOfConstantValue`.
+    if (!original.column || !removeLowCardinalityAndNullable(original.type)->equals(*type))
         return nullptr;
 
-    return castColumn({active_type->createColumnConst(1, value), active_type, ""}, type);
+    /// The column of a constant in the query plan may have no rows, while its nested column always has one.
+    ColumnPtr column = original.column;
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+        column = const_column->getDataColumnPtr();
+    if (column->empty())
+        return nullptr;
+
+    column = column->convertToFullColumnIfLowCardinality();
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
+        column = nullable_column->getNestedColumnPtr();
+    return column->cut(0, 1);
 }
 
 /// Sequentially applies functions to the column, returns `true`
@@ -2246,7 +2256,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    const DataTypePtr & const_active_type,
+    const ColumnWithTypeAndName & original_const_column,
     bool & out_chain_is_positive)
 {
     out_chain_is_positive = true;
@@ -2354,7 +2364,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, const_value, const_value_type))
         return false;
 
-    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, const_active_type);
+    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, original_const_column);
     if (!const_column)
         return false;
 
@@ -2985,7 +2995,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    const DataTypePtr & const_active_type,
+    const ColumnWithTypeAndName & original_const_column,
     bool & out_atom_is_exact)
 {
     out_atom_is_exact = false;
@@ -3026,7 +3036,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!tryNormalizeTextConstantForZonelessDateTimeInput(dag.input_type, const_value, const_value_type))
         return false;
 
-    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, const_active_type);
+    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, original_const_column);
     if (!const_column)
         return false;
 
@@ -5070,11 +5080,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
 
-            /// The active member type of a `Variant`/`Dynamic` constant, see `createConstantColumn`.
-            DataTypePtr active_const_type;
-            if (const auto unwrapped_const_type = removeLowCardinalityAndNullable(const_type);
-                isVariant(unwrapped_const_type) || isDynamic(unwrapped_const_type))
-                active_const_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
+            /// See `createConstantColumn`. A rewritten `LIKE` pattern is not the constant of the query.
+            const ColumnWithTypeAndName original_const_column
+                = rewritten_like ? ColumnWithTypeAndName{} : func.getArgumentAt(const_arg_pos).getConstantColumn();
 
             /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
             /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
@@ -5104,7 +5112,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, active_const_type,
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, original_const_column,
                     constant_chain_is_positive))
             {
                 condition_is_relaxed = true;
@@ -5113,7 +5121,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 bool atom_is_exact = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
-                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, active_const_type, atom_is_exact))
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, original_const_column, atom_is_exact))
                     return false;
 
                 condition_is_relaxed = !atom_is_exact;
@@ -5204,7 +5212,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// cannot be determined counts as possibly padded, so the range is declined.
                         DataTypePtr const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
                         if (WhichDataType(const_type_unwrapped).isVariant() || WhichDataType(const_type_unwrapped).isDynamic())
-                            const_type_unwrapped = active_const_type ? removeLowCardinalityAndNullable(active_const_type) : nullptr;
+                        {
+                            const auto active_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
+                            const_type_unwrapped = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
+                        }
 
                         if ((!const_type_unwrapped || WhichDataType(const_type_unwrapped).isFixedString())
                             && isStringOrFixedString(key_expr_type_not_null))
