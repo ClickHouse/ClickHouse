@@ -1088,9 +1088,9 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 
 /// The rows from the current position to the end of the stripe of the columns cache that is the
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
-/// A block that is a whole stripe is served from the cache without a copy.
+/// A block that is a whole stripe is served from the cache and written to it without a copy.
 /// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
-/// much less: the block takes no memory beyond what the cache holds anyway.
+/// much less: the block shares the columns of the cache, so its size costs no memory.
 size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks) const
 {
     const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);

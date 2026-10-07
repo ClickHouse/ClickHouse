@@ -234,10 +234,11 @@ private:
     /// and `ColumnsCacheStripes`), covering a contiguous run of the granules of the stripe, and a
     /// read goes granule by granule and column by column: a column whose entry covers the granule
     /// is served from it, the others are read from the part, whatever the ranges of the read task
-    /// are. The rows read from the part are copied into an entry of their own, which is written
-    /// once the run of granules has been read to its end - so the cache never shares column data
-    /// with a read still in progress, and a granule that is not read in full (skipped by `PREWHERE`,
-    /// or cut short by `LIMIT` or a cancelled query) is not cached.
+    /// are. A block that is a whole stripe is served from its entry, and written to it, without a
+    /// copy: the result column and the entry are the same column, immutable from then on. The rows
+    /// of other blocks are copied, out of an entry or into one, which is written once the run of
+    /// granules has been read to its end, so a granule that is not read in full (skipped by
+    /// `PREWHERE`, or cut short by `LIMIT` or a cancelled query) is not cached.
     ///
     /// Serving a granule from the cache does not move the file streams, so before the next
     /// granule is read from the part its streams are positioned at that granule again. Streams
@@ -349,8 +350,21 @@ private:
     /// Turn the granules of the accumulated run that were read to their end into entries.
     void finishAccumulatedGranules();
 
+    /// The granules [first_mark, end_mark), all `rows` of them, were just read from the part into
+    /// empty result columns. If they are a whole stripe, or the beginning of one where the range
+    /// ends, queue the result columns themselves as entries, move them to `shared_columns`, and
+    /// return true; also true when the cache does not admit them, so they are not copied either.
+    bool writeStripeToColumnsCache(
+        size_t first_mark,
+        size_t end_mark,
+        size_t rows,
+        const std::vector<bool> & from_disk,
+        const std::vector<size_t> & sizes_before_reading,
+        MutableColumns & res_columns,
+        Columns & shared_columns);
+
     /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
-    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, MutableColumnPtr column);
+    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column);
 
     /// Write the pending entries to the cache.
     void flushPendingColumnsCacheWrites();

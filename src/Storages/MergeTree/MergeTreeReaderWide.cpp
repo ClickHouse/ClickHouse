@@ -718,12 +718,17 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
             if (served_columns == 0)
                 rows = rows_from_disk;
 
-            /// The granules of the run read from the part are copied for the cache.
+            /// The granules of the run read from the part are written to the cache: as they are
+            /// when the run is a whole stripe, otherwise copied granule by granule.
+            const bool written_as_is = disk_columns && columns_cache_writes_possible && rows == run_rows
+                && segments[run_begin].offset == 0 && segments[run_end - 1].offset + segments[run_end - 1].rows == segments[run_end - 1].granule_rows
+                && writeStripeToColumnsCache(segments[run_begin].mark, segments[run_end - 1].mark + 1, rows, from_disk, sizes_before_reading, res_columns, shared_columns);
+
             size_t row_in_run = 0;
             for (size_t i = run_begin; disk_columns && i < run_end && row_in_run + segments[i].rows <= rows; ++i)
             {
                 const auto & segment = segments[i];
-                if (columns_cache_writes_possible)
+                if (columns_cache_writes_possible && !written_as_is)
                     accumulateRowsForColumnsCache(segment.mark, segment.offset, segment.rows, segment.granule_rows, row_in_run, from_disk, sizes_before_reading, res_columns);
                 if (columns_cache_reads_possible && segment.offset + segment.rows == segment.granule_rows)
                     ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, disk_columns);
@@ -888,15 +893,48 @@ void MergeTreeReaderWide::resetAccumulation()
     accumulated_columns.clear();
 }
 
-void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, MutableColumnPtr column)
+bool MergeTreeReaderWide::writeStripeToColumnsCache(
+    size_t first_mark,
+    size_t end_mark,
+    size_t rows,
+    const std::vector<bool> & from_disk,
+    const std::vector<size_t> & sizes_before_reading,
+    MutableColumns & res_columns,
+    Columns & shared_columns)
 {
-    /// Give back the capacity the column holds beyond its rows. `PODArray` rounds an allocation
-    /// up to a power of two elements, and the accumulated copy grew as its rows came, so without
-    /// this an entry would occupy - and, since the cache is bounded by the memory an entry
-    /// retains, be charged for - up to twice the memory of its rows for the whole time it stays
-    /// cached.
-    column->shrinkToFit();
+    const size_t stripe = stripes.stripeOf(first_mark);
+    const size_t stripe_end = stripes.endMark(stripe, data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal());
+    if (first_mark != stripes.firstMark(stripe) || (end_mark != stripe_end && end_mark != range_end_mark) || end_mark > stripe_end)
+        return false;
 
+    for (size_t pos = 0; pos < res_columns.size(); ++pos)
+    {
+        if (!from_disk[pos])
+            continue;
+        const auto & column = res_columns[pos];
+        if (!column || sizes_before_reading[pos] != 0 || column->size() != rows)
+            return false;
+    }
+
+    finishAccumulatedGranules();
+    if (!canWriteToColumnsCache() || !columns_cache->shouldAdmit())
+        return true;
+
+    for (size_t pos = 0; pos < res_columns.size(); ++pos)
+    {
+        if (!from_disk[pos])
+            continue;
+        /// See `finishAccumulatedGranules`. The column is still uniquely owned here.
+        res_columns[pos]->shrinkToFit();
+        ColumnPtr column = std::move(res_columns[pos]);
+        shared_columns[pos] = column;
+        addPendingColumnsCacheEntry(pos, first_mark, end_mark, std::move(column));
+    }
+    return true;
+}
+
+void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
+{
     auto entry = std::make_shared<ColumnsCacheEntry>();
     entry->table_uuid = data_part_info_for_read->getTableUUID();
     entry->part_name = data_part_info_for_read->getPartName();
@@ -1008,7 +1046,14 @@ void MergeTreeReaderWide::finishAccumulatedGranules()
             if (column->size() > complete_rows)
                 column = IColumn::mutate(column->cut(0, complete_rows));
             if (column->size() == complete_rows)
+            {
+                /// Give back the capacity the copy holds beyond its rows. `PODArray` rounds an
+                /// allocation up to a power of two elements, and the copy grew as its rows came,
+                /// so without this an entry would occupy - and, since the cache is bounded by the
+                /// memory an entry retains, be charged for - up to twice the memory of its rows.
+                column->shrinkToFit();
                 addPendingColumnsCacheEntry(pos, accumulated_first_mark, accumulated_next_mark, std::move(column));
+            }
         }
     }
 
