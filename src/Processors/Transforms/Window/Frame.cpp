@@ -31,21 +31,19 @@ int compareWithOffset(const WindowTransformParams & params, const SlidingBlocks 
     return params.range_offset_comparator(row_key_column, row.row, current_key_column, current.row, offset, offset_is_preceding) * direction;
 }
 
-bool advanceToPartitionEnd(const SlidingBlocks & blocks, const Partition & partition, RowPoint & bound)
+bool advanceToPartitionEnd(const Partition & partition, RowPoint & bound)
 {
     if (!partition.bounds().fully_visible)
         return false;
 
-    if (bound.location != partition.bounds().end)
-        bound = partition.pointAt(blocks, partition.bounds().end);
-
+    bound = partition.endPoint();
     return true;
 }
 
 bool advanceToRow(const SlidingBlocks & blocks, const Partition & partition, int64_t target_row_index, RowPoint & bound)
 {
     if (target_row_index >= partition.size())
-        return advanceToPartitionEnd(blocks, partition, bound);
+        return advanceToPartitionEnd(partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
     chassert(bound.row_index_in_partition <= row_index);
@@ -88,7 +86,7 @@ NO_INLINE bool advanceUntil(const SlidingBlocks & blocks, const Partition & part
     }
 
     if (first_hit == rows_ahead)
-        return advanceToPartitionEnd(blocks, partition, bound);
+        return advanceToPartitionEnd(partition, bound);
 
     bound = partition.pointAt(blocks, blocks.move(bound.location, first_hit));
     return true;
@@ -98,6 +96,9 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
 {
     if (bound.peer_group_index_in_partition >= group)
         return true;
+
+    if (partition.bounds().fully_visible && group >= partition.endPoint().peer_group_index_in_partition)
+        return advanceToPartitionEnd(partition, bound);
 
     return advanceUntil(blocks, partition, [&](RowNumber row) { return partition.peerGroupIndex(blocks, row) >= group; }, bound);
 }
@@ -139,7 +140,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
     switch (frame.end_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
-            return advanceToPartitionEnd(blocks, partition, end);
+            return advanceToPartitionEnd(partition, end);
         case WindowFrame::BoundaryType::Current:
             switch (frame.type)
             {
@@ -170,9 +171,9 @@ Frame::Frame(const WindowTransformParams & params_)
 {
 }
 
-void Frame::enterPartition(const RowPoint & current)
+void Frame::enterPartition(RowNumber partition_start)
 {
-    frame_bounds = FrameBounds{.start = current, .end = current, .fully_visible = false};
+    frame_bounds = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = false};
 }
 
 void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition)

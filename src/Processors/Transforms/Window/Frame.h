@@ -19,7 +19,7 @@ class Frame
 public:
     explicit Frame(const WindowTransformParams & params_);
 
-    void enterPartition(const RowPoint & current);
+    void enterPartition(RowNumber partition_start);
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition);
 
     const FrameBounds & bounds() const;

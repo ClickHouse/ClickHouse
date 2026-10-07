@@ -412,10 +412,10 @@ void WindowTransform::startNextPartition()
     // We have to reset the frame and other pointers when the new partition
     // starts.
     chassert(current.location == partition_start);
-    current = RowPoint{.location = partition_start};
-    peer_group_start = current;
-    frame.enterPartition(current);
-    prev_frame = FrameBounds{.start = current, .end = current, .fully_visible = true};
+    current = {partition_start};
+    peer_group_start = {partition_start};
+    frame.enterPartition(partition_start);
+    prev_frame = FrameBounds{.start = {partition_start}, .end = {partition_start}, .fully_visible = true};
 
     // Reinitialize the aggregate function states because the new partition
     // has started.
@@ -554,7 +554,7 @@ void WindowTransform::work()
 
         addInputBlock(std::move(chunk));
     }
-    else
+    else if (!partition.bounds().fully_visible)
     {
         partition.finish(blocks, blocks.end());
     }

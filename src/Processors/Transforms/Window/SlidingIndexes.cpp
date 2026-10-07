@@ -53,6 +53,12 @@ std::vector<int64_t> assignPeerGroupIndexes(
     }
 
     const std::vector<size_t> & order_by_indices = params.order_by_indices;
+    if (order_by_indices.empty())
+    {
+        std::inclusive_scan(partition_starts.begin(), partition_starts.end(), peer_group_indexes.begin(), std::plus<int64_t>{}, last_peer_group_index);
+        return peer_group_indexes;
+    }
+
     const bool first_row_continues_last_group = !partition_starts[0] && previous_order_key && haveSameKeys(*previous_order_key, 0, columns, 0, order_by_indices);
     int64_t group = first_row_continues_last_group ? last_peer_group_index : last_peer_group_index + 1;
 

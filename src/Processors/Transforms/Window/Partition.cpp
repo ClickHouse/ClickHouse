@@ -25,22 +25,29 @@ void Partition::advance(const SlidingBlocks & blocks)
     {
         const std::vector<bool> & starts = blocks.blockAt(partition_bounds.end.block).index.partition_starts;
         const auto next_start = std::find(starts.begin() + partition_bounds.end.row, starts.end(), true);
-        partition_bounds.fully_visible = next_start != starts.end();
         partition_bounds.end = blocks.move(partition_bounds.end, next_start - starts.begin() - partition_bounds.end.row);
+        if (next_start != starts.end())
+            finish(blocks, partition_bounds.end);
     }
     rows_count = rowIndex(blocks, partition_bounds.end);
 }
 
-void Partition::finish(const SlidingBlocks & blocks, RowNumber data_end)
+void Partition::finish(const SlidingBlocks & blocks, RowNumber end)
 {
-    partition_bounds.end = data_end;
+    partition_bounds.end = end;
     partition_bounds.fully_visible = true;
-    rows_count = rowIndex(blocks, data_end);
+    rows_count = rowIndex(blocks, end);
+    end_point = RowPoint{.location = end, .row_index_in_partition = rows_count, .peer_group_index_in_partition = peerGroupIndex(blocks, blocks.prev(end)) + 1};
 }
 
 const PartitionBounds & Partition::bounds() const
 {
     return partition_bounds;
+}
+
+const RowPoint & Partition::endPoint() const
+{
+    return end_point;
 }
 
 int64_t Partition::size() const
@@ -60,12 +67,6 @@ int64_t Partition::peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) c
 
 RowPoint Partition::pointAt(const SlidingBlocks & blocks, RowNumber row) const
 {
-    if (row == blocks.end())
-    {
-        chassert(partition_bounds.fully_visible && row == partition_bounds.end);
-        return RowPoint{.location = row, .row_index_in_partition = rows_count, .peer_group_index_in_partition = peerGroupIndex(blocks, blocks.prev(row)) + 1};
-    }
-
     const SlidingBlock & block = blocks.blockAt(row.block);
     return RowPoint{
         .location = row,
