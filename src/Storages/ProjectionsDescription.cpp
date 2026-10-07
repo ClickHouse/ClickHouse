@@ -911,6 +911,31 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
+    const auto processing_stage = type == ProjectionDescription::Type::Normal && !where_clause_ast
+        ? QueryProcessingStage::FetchColumns
+        : QueryProcessingStage::WithMergeableState;
+
+    /** A normal projection without `WHERE` stores the columns it requires as they are: the query is
+      * only executed up to `FetchColumns`, which applies no expressions and no filters. The result is
+      * taken from the source block directly instead of from a query plan, because the Analyzer folds
+      * the expressions which are constant by the types of their arguments (`isNull` of a column which
+      * is not `Nullable`), so it would not read the columns they use, while the projection metadata,
+      * built by the required columns of the query, still describes them.
+      */
+    if (processing_stage == QueryProcessingStage::FetchColumns)
+    {
+        Block projection_block;
+        for (const auto & column : sample_block)
+        {
+            String source_column_name
+                = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
+            auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
+            source_column.name = column.name;
+            projection_block.insert(std::move(source_column));
+        }
+        return projection_block;
+    }
+
     /// A projection query has no `FROM` clause, the source block is provided by a fake storage.
     /// Note that the columns of the source block are not necessarily the physical columns of the
     /// table: `_row_exists` and `_part_offset` are added above, so they are exposed as ordinary
@@ -918,12 +943,7 @@ Block ProjectionDescription::calculateByQuery(
     ColumnsDescription source_columns(source_block.getNamesAndTypesList());
     auto source = createProjectionQuerySource(source_columns, /*virtuals=*/{}, std::move(source_block));
 
-    auto select_query_options
-        = SelectQueryOptions{
-              type == ProjectionDescription::Type::Normal && !where_clause_ast ? QueryProcessingStage::FetchColumns
-                                                                              : QueryProcessingStage::WithMergeableState}
-              .ignoreASTOptimizations()
-              .ignoreSettingConstraints();
+    auto select_query_options = SelectQueryOptions{processing_stage}.ignoreASTOptimizations().ignoreSettingConstraints();
 
     auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context);
     removeDuplicateProjectionColumns(query_tree);
