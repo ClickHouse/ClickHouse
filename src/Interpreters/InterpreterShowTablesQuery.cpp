@@ -43,11 +43,12 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
     std::vector<String> parts = DatabaseCatalog::splitHierarchicalName(database);
 
     /// The databases `a.b.*`, when there are such.
-    bool has_nested_databases = false;
     String nested_database_prefix = database + '.';
+    Strings nested_databases;
     auto databases = catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
-    if (auto it = databases.lower_bound(nested_database_prefix); it != databases.end() && it->first.starts_with(nested_database_prefix))
-        has_nested_databases = true;
+    for (auto it = databases.lower_bound(nested_database_prefix); it != databases.end() && it->first.starts_with(nested_database_prefix); ++it)
+        nested_databases.push_back(it->first);
+    bool has_nested_databases = !nested_databases.empty();
 
     if (parts.size() < 2 && !has_nested_databases)
         return {};
@@ -56,12 +57,13 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
     auto quoted = [](const String & value) { WriteBufferFromOwnString buf; buf << DB::quote << value; return buf.str(); };
 
     /// The database itself.
-    sources.push_back({.condition = "database = " + quoted(database), .name_expression = "name"});
+    sources.push_back({.condition = "database = " + quoted(database), .name_expression = "name", .databases = {database}});
 
     if (has_nested_databases)
         sources.push_back({
             .condition = "startsWith(database, " + quoted(nested_database_prefix) + ")",
-            .name_expression = fmt::format("concat(substring(database, {}), '.', name)", nested_database_prefix.size() + 1)});
+            .name_expression = fmt::format("concat(substring(database, {}), '.', name)", nested_database_prefix.size() + 1),
+            .databases = std::move(nested_databases)});
 
     /// The tables `b.*` of the database `a`, for every prefix `a` that is a database.
     for (size_t database_parts = parts.size() - 1; database_parts >= 1; --database_parts)
@@ -73,7 +75,8 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
         String table_prefix = fmt::format("{}.", fmt::join(parts.begin() + database_parts, parts.end(), "."));
         sources.push_back({
             .condition = "(database = " + quoted(database_name) + " AND startsWith(name, " + quoted(table_prefix) + "))",
-            .name_expression = fmt::format("substring(name, {})", table_prefix.size() + 1)});
+            .name_expression = fmt::format("substring(name, {})", table_prefix.size() + 1),
+            .databases = {database_name}});
     }
 
     return sources;
@@ -295,23 +298,31 @@ BlockIO InterpreterShowTablesQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    /// A hierarchical database name (`a.b`) may denote the tables `b.*` of the database `a`: the flags below are
-    /// about that database then.
-    auto resolved_database = DatabaseCatalog::instance().resolveHierarchicalDatabase(database);
-    if (!resolved_database.database_name.empty())
-        database = resolved_database.database_name;
+    /// A hierarchical database name (`a.b`) may denote the tables `b.*` of the database `a` and the databases `a.b.*`
+    /// (see `getHierarchicalDatabaseSources`): the flags below are about every database the rewritten query reads.
+    Strings source_databases;
+    if (query.temporary)
+        source_databases.push_back(database);
+    else if (auto sources = getHierarchicalDatabaseSources(database); sources.empty())
+        source_databases.push_back(database);
+    else
+        for (const auto & source : sources)
+            source_databases.insert(source_databases.end(), source.databases.begin(), source.databases.end());
 
-    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    for (const auto & source_database : source_databases)
     {
-        /// Explicit `SHOW TABLES` should include tables from the requested data lake catalog.
-        /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
-        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
-    }
-    if (DatabaseCatalog::instance().isRemoteDatabase(database))
-    {
-        /// Explicit `SHOW TABLES` should include tables from the requested remote database.
-        /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
-        query_context->setSetting("show_remote_databases_in_system_tables", true);
+        if (DatabaseCatalog::instance().isDatalakeCatalog(source_database))
+        {
+            /// Explicit `SHOW TABLES` should include tables from the requested data lake catalog.
+            /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
+            query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        }
+        if (DatabaseCatalog::instance().isRemoteDatabase(source_database))
+        {
+            /// Explicit `SHOW TABLES` should include tables from the requested remote database.
+            /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
+            query_context->setSetting("show_remote_databases_in_system_tables", true);
+        }
     }
     return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
