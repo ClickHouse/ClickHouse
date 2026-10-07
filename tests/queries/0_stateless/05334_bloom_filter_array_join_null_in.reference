@@ -11,3 +11,7 @@ Granules: 1/10
 Name: idx_doc_tags
 Granules: 1/10
 1
+-- the same, arrayJoin stays a function
+Name: idx_doc_tags
+Granules: 1/10
+1
