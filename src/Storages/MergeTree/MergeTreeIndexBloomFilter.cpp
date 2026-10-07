@@ -3,34 +3,48 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+
+#include <array>
+#include <typeinfo>
+#include <unordered_set>
 
 
 namespace DB
@@ -177,21 +191,415 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
-const ActionsDAG::Node * getNodeWithoutAliases(const RPNBuilderTreeNode & tree_node)
+struct ExpressionNodePair
+{
+    const ActionsDAG::Node * query_node;
+    const ActionsDAG::Node * index_node;
+
+    bool operator==(const ExpressionNodePair &) const = default;
+};
+
+struct ExpressionNodePairHash
+{
+    size_t operator()(const ExpressionNodePair & pair) const
+    {
+        const auto query_hash = std::hash<const ActionsDAG::Node *>{}(pair.query_node);
+        const auto index_hash = std::hash<const ActionsDAG::Node *>{}(pair.index_node);
+        return query_hash ^ (index_hash + 0x9e3779b9 + (query_hash << 6) + (query_hash >> 2));
+    }
+};
+
+struct ExpressionMatchBudget
+{
+    static constexpr size_t max_work = 4096;
+    static constexpr size_t max_constant_bytes = 4096;
+    static constexpr size_t max_array_elements = 256;
+
+    size_t remaining = max_work;
+
+    bool consume(size_t amount = 1)
+    {
+        if (amount > remaining)
+            return false;
+        remaining -= amount;
+        return true;
+    }
+};
+
+const ActionsDAG::Node * getNodeWithoutAliases(const RPNBuilderTreeNode & tree_node, ExpressionMatchBudget & budget)
 {
     const ActionsDAG::Node * node = tree_node.getDAGNode();
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
     {
-        if (node->children.size() != 1)
+        if (!budget.consume() || node->children.size() != 1)
             return nullptr;
         node = node->children[0];
     }
     return node;
 }
 
-bool getDirectArrayJoinIndexColumn(const RPNBuilderTreeNode & tree_node, const Block & header, String & column_name)
+struct DataTypePair
 {
-    const ActionsDAG::Node * node = getNodeWithoutAliases(tree_node);
+    const IDataType * left;
+    const IDataType * right;
+
+    bool operator==(const DataTypePair &) const = default;
+};
+
+struct DataTypePairHash
+{
+    size_t operator()(const DataTypePair & pair) const
+    {
+        const auto left_hash = std::hash<const IDataType *>{}(pair.left);
+        const auto right_hash = std::hash<const IDataType *>{}(pair.right);
+        return left_hash ^ (right_hash + 0x9e3779b9 + (left_hash << 6) + (left_hash >> 2));
+    }
+};
+
+bool isSupportedLeafType(const IDataType & type)
+{
+    if (type.getCustomName())
+        return false;
+
+    return typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16)
+        || typeid(type) == typeid(DataTypeUInt32) || typeid(type) == typeid(DataTypeUInt64)
+        || typeid(type) == typeid(DataTypeUInt128) || typeid(type) == typeid(DataTypeUInt256)
+        || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16)
+        || typeid(type) == typeid(DataTypeInt32) || typeid(type) == typeid(DataTypeInt64)
+        || typeid(type) == typeid(DataTypeInt128) || typeid(type) == typeid(DataTypeInt256)
+        || typeid(type) == typeid(DataTypeBFloat16) || typeid(type) == typeid(DataTypeFloat32)
+        || typeid(type) == typeid(DataTypeFloat64) || typeid(type) == typeid(DataTypeString)
+        || typeid(type) == typeid(DataTypeDate) || typeid(type) == typeid(DataTypeDate32)
+        || typeid(type) == typeid(DataTypeUUID) || typeid(type) == typeid(DataTypeIPv4) || typeid(type) == typeid(DataTypeIPv6);
+}
+
+bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget)
+{
+    if (!left || !right)
+        return false;
+
+    std::vector<std::pair<DataTypePtr, DataTypePtr>> pending;
+    std::unordered_set<DataTypePair, DataTypePairHash> visited;
+    pending.emplace_back(left, right);
+
+    while (!pending.empty())
+    {
+        if (!budget.consume())
+            return false;
+
+        auto [left_type, right_type] = std::move(pending.back());
+        pending.pop_back();
+        if (!left_type || !right_type || left_type->getCustomName() || right_type->getCustomName())
+            return false;
+
+        if (left_type.get() == right_type.get())
+        {
+            /// Pointer identity includes parameters such as a timezone or enum map. Walk exact shared
+            /// containers too, so unsupported/custom descendants still decline before a match.
+            const size_t children = left_type->getNumberOfChildren();
+            if (children > budget.remaining || !budget.consume(children))
+                return false;
+            for (size_t i = 0; i < children; ++i)
+                pending.emplace_back(left_type->getChild(i), right_type->getChild(i));
+            continue;
+        }
+
+        const IDataType * left_type_raw = left_type.get();
+        const IDataType * right_type_raw = right_type.get();
+        if (typeid(*left_type_raw) != typeid(*right_type_raw))
+            return false;
+
+        const DataTypePair pair{left_type.get(), right_type.get()};
+        if (!visited.emplace(pair).second)
+            continue;
+
+        if (typeid_cast<const DataTypeArray *>(left_type.get())
+            || typeid_cast<const DataTypeNullable *>(left_type.get())
+            || typeid_cast<const DataTypeLowCardinality *>(left_type.get()))
+        {
+            if (left_type->getNumberOfChildren() != 1 || right_type->getNumberOfChildren() != 1 || !budget.consume())
+                return false;
+            pending.emplace_back(left_type->getChild(0), right_type->getChild(0));
+            continue;
+        }
+
+        if (const auto * left_fixed_string = typeid_cast<const DataTypeFixedString *>(left_type.get()))
+        {
+            const auto * right_fixed_string = typeid_cast<const DataTypeFixedString *>(right_type.get());
+            if (!right_fixed_string || left_fixed_string->getN() != right_fixed_string->getN())
+                return false;
+            continue;
+        }
+
+        if (!isSupportedLeafType(*left_type) || !isSupportedLeafType(*right_type))
+            return false;
+    }
+
+    return true;
+}
+
+bool isStringType(const DataTypePtr & type)
+{
+    return type && typeid_cast<const DataTypeString *>(type.get());
+}
+
+bool isArrayOfStringType(const DataTypePtr & type)
+{
+    const auto * array_type = type ? typeid_cast<const DataTypeArray *>(type.get()) : nullptr;
+    return array_type && isStringType(array_type->getNestedType());
+}
+
+bool compareColumnStringStorage(
+    const ColumnString & left,
+    const ColumnString & right,
+    size_t expected_rows,
+    ExpressionMatchBudget & budget)
+{
+    const auto & left_offsets = left.getOffsets();
+    const auto & right_offsets = right.getOffsets();
+    const auto & left_chars = left.getChars();
+    const auto & right_chars = right.getChars();
+
+    if (left_offsets.size() != expected_rows || right_offsets.size() != expected_rows
+        || left_chars.size() > ExpressionMatchBudget::max_constant_bytes
+        || right_chars.size() > ExpressionMatchBudget::max_constant_bytes
+        || (!left_offsets.empty() && left_offsets.back() != left_chars.size())
+        || (!right_offsets.empty() && right_offsets.back() != right_chars.size()))
+        return false;
+
+    if (!budget.consume(left_chars.size() + right_chars.size() + left_offsets.size() + right_offsets.size()))
+        return false;
+
+    return std::equal(left_offsets.begin(), left_offsets.end(), right_offsets.begin(), right_offsets.end())
+        && std::equal(left_chars.begin(), left_chars.end(), right_chars.begin(), right_chars.end());
+}
+
+bool compareSupportedConstant(
+    const ActionsDAG::Node & left,
+    const ActionsDAG::Node & right,
+    ExpressionMatchBudget & budget)
+{
+    if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
+        || left.is_masked_secret || right.is_masked_secret
+        || !left.is_deterministic_constant || !right.is_deterministic_constant)
+        return false;
+
+    const auto * left_constant = typeid_cast<const ColumnConst *>(left.column.get());
+    const auto * right_constant = typeid_cast<const ColumnConst *>(right.column.get());
+    if (!left_constant || !right_constant)
+        return false;
+
+    /// ActionsDAG stores ColumnConst values at size 0; compare the single underlying value instead.
+    const IColumn & left_data = left_constant->getDataColumn();
+    const IColumn & right_data = right_constant->getDataColumn();
+    if (left_data.isDummy() || right_data.isDummy() || left_data.size() != 1 || right_data.size() != 1)
+        return false;
+
+    if (isStringType(left.result_type) && isStringType(right.result_type))
+    {
+        const auto * left_string = typeid_cast<const ColumnString *>(&left_data);
+        const auto * right_string = typeid_cast<const ColumnString *>(&right_data);
+        return left_string && right_string
+            && compareColumnStringStorage(*left_string, *right_string, 1, budget);
+    }
+
+    if (isArrayOfStringType(left.result_type) && isArrayOfStringType(right.result_type))
+    {
+        const auto * left_array = typeid_cast<const ColumnArray *>(&left_data);
+        const auto * right_array = typeid_cast<const ColumnArray *>(&right_data);
+        if (!left_array || !right_array || left_array->getOffsets().size() != 1 || right_array->getOffsets().size() != 1)
+            return false;
+
+        const size_t left_size = left_array->getOffsets()[0];
+        const size_t right_size = right_array->getOffsets()[0];
+        if (left_size > ExpressionMatchBudget::max_array_elements || right_size > ExpressionMatchBudget::max_array_elements
+            || left_size != right_size || !budget.consume(2))
+            return false;
+
+        const auto * left_strings = typeid_cast<const ColumnString *>(left_array->getDataPtr().get());
+        const auto * right_strings = typeid_cast<const ColumnString *>(right_array->getDataPtr().get());
+        return left_strings && right_strings
+            && compareColumnStringStorage(*left_strings, *right_strings, left_size, budget);
+    }
+
+    return false;
+}
+
+const FunctionCreator * getCanonicalArrayFunctionHandle(const String & function_name)
+{
+    static const auto handles = []
+    {
+        const auto distinct = FunctionFactory::instance().tryGet("arrayDistinct", {});
+        const auto concat = FunctionFactory::instance().tryGet("arrayConcat", {});
+        return std::array<const FunctionCreator *, 2>{
+            distinct ? distinct->getFactoryHandle() : nullptr,
+            concat ? concat->getFactoryHandle() : nullptr};
+    }();
+
+    if (function_name == "arrayDistinct")
+        return handles[0];
+    if (function_name == "arrayConcat")
+        return handles[1];
+    return nullptr;
+}
+
+bool isSupportedArrayFunctionPair(
+    const ActionsDAG::Node & left, const ActionsDAG::Node & right, ExpressionMatchBudget & budget)
+{
+    if (!left.function_base || !right.function_base || left.is_function_compiled || right.is_function_compiled)
+        return false;
+
+    const auto left_adaptor = std::dynamic_pointer_cast<const FunctionToFunctionBaseAdaptor>(left.function_base);
+    const auto right_adaptor = std::dynamic_pointer_cast<const FunctionToFunctionBaseAdaptor>(right.function_base);
+    if (!left_adaptor || !right_adaptor)
+        return false;
+
+    const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
+    if (!left_handle || right.function_base->getFactoryHandle() != left_handle)
+        return false;
+
+    /// Authenticate against the small registered allowlist before asking a function for its name.
+    /// Arbitrary/custom function names must not induce unbounded string work in this matcher.
+    String function_name;
+    if (left_handle == getCanonicalArrayFunctionHandle("arrayDistinct"))
+        function_name = "arrayDistinct";
+    else if (left_handle == getCanonicalArrayFunctionHandle("arrayConcat"))
+        function_name = "arrayConcat";
+    else
+        return false;
+
+    const auto & left_function = left_adaptor->getFunction();
+    const auto & right_function = right_adaptor->getFunction();
+    /// These authenticated native IFunction creators have no separate function parameters.
+    if (!left_function || !right_function
+        || left_function->getName() != function_name || right_function->getName() != function_name
+        || left_function->isStateful() || right_function->isStateful()
+        || !left_function->isDeterministic() || !right_function->isDeterministic()
+        || !left_function->isDeterministicInScopeOfQuery() || !right_function->isDeterministicInScopeOfQuery()
+        || !isArrayOfStringType(left.function_base->getResultType())
+        || !isArrayOfStringType(right.function_base->getResultType()))
+        return false;
+
+    const auto & left_argument_types = left.function_base->getArgumentTypes();
+    const auto & right_argument_types = right.function_base->getArgumentTypes();
+    if (left_argument_types.empty() || left_argument_types.size() != right_argument_types.size()
+        || left_argument_types.size() != left.children.size() || right_argument_types.size() != right.children.size())
+        return false;
+
+    /// Debit all argument-type scans and child pairs before walking the type vectors. A crafted function
+    /// signature with many arguments must decline before this loop, even when its node is later rejected.
+    if (!budget.consume(left_argument_types.size()) || !budget.consume(right_argument_types.size())
+        || !budget.consume(left.children.size()) || !budget.consume(right.children.size()))
+        return false;
+
+    for (const auto & argument_type : left_argument_types)
+        if (!isArrayOfStringType(argument_type) || !sameType(argument_type, left.function_base->getResultType(), budget))
+            return false;
+    for (const auto & argument_type : right_argument_types)
+        if (!isArrayOfStringType(argument_type) || !sameType(argument_type, right.function_base->getResultType(), budget))
+            return false;
+
+    return true;
+}
+
+const ActionsDAG::Node * normalizeExpressionNode(const ActionsDAG::Node * node, ExpressionMatchBudget & budget)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        if (!budget.consume() || node->children.size() != 1)
+            return nullptr;
+        node = node->children[0];
+    }
+    return node;
+}
+
+bool structurallyMatchesIndexedExpression(
+    const ActionsDAG::Node * query_node, const ActionsDAG::Node * index_node, ExpressionMatchBudget & budget)
+{
+    std::vector<ExpressionNodePair> pending;
+    std::unordered_set<ExpressionNodePair, ExpressionNodePairHash> visited;
+    if (!budget.consume())
+        return false;
+    pending.emplace_back(query_node, index_node);
+
+    while (!pending.empty())
+    {
+        const auto pair = pending.back();
+        pending.pop_back();
+        if (!budget.consume())
+            return false;
+
+        const auto * left = normalizeExpressionNode(pair.query_node, budget);
+        const auto * right = normalizeExpressionNode(pair.index_node, budget);
+        if (!left || !right)
+            return false;
+        if (!visited.emplace(ExpressionNodePair{left, right}).second)
+            continue;
+
+        if (!sameType(left->result_type, right->result_type, budget) || left->type != right->type)
+            return false;
+
+        switch (left->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+                if (left->result_name.size() != right->result_name.size()
+                    || !budget.consume(left->result_name.size()) || left->result_name != right->result_name
+                    || left->children.size() || right->children.size())
+                    return false;
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+                if (left->children.size() || right->children.size() || !compareSupportedConstant(*left, *right, budget))
+                    return false;
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (!isSupportedArrayFunctionPair(*left, *right, budget) || left->children.size() != right->children.size())
+                    return false;
+                for (size_t i = 0; i < left->children.size(); ++i)
+                {
+                    if (!budget.consume())
+                        return false;
+                    pending.emplace_back(left->children[i], right->children[i]);
+                }
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                /// Aliases are removed before this switch.
+                return false;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                return false;
+        }
+    }
+
+    return true;
+}
+
+bool matchesIndexedOutput(
+    const ActionsDAG::Node * query_node,
+    const ActionsDAG & indexed_expression_dag,
+    const Block & header,
+    const String & column_name,
+    ExpressionMatchBudget & budget)
+{
+    if (!query_node || !budget.consume(column_name.size()) || !header.has(column_name))
+        return false;
+
+    const size_t position = header.getPositionByName(column_name);
+    const auto & outputs = indexed_expression_dag.getOutputs();
+    if (position >= outputs.size() || !outputs[position] || !header.getByPosition(position).type
+        || !sameType(outputs[position]->result_type, header.getByPosition(position).type, budget))
+        return false;
+
+    return structurallyMatchesIndexedExpression(query_node, outputs[position], budget);
+}
+
+bool getDirectArrayJoinIndexColumn(
+    const RPNBuilderTreeNode & tree_node,
+    const Block & header,
+    const ActionsDAG & indexed_expression_dag,
+    String & column_name,
+    ExpressionMatchBudget & budget)
+{
+    const ActionsDAG::Node * node = getNodeWithoutAliases(tree_node, budget);
     if (!node
         || (node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::FUNCTION)
         || !node->result_type)
@@ -202,16 +610,22 @@ bool getDirectArrayJoinIndexColumn(const RPNBuilderTreeNode & tree_node, const B
         return false;
 
     const DataTypePtr & index_type = header.getByPosition(header.getPositionByName(column_name)).type;
-    return typeid_cast<const DataTypeArray *>(index_type.get()) && node->result_type->equals(*index_type);
+    return typeid_cast<const DataTypeArray *>(index_type.get())
+        && matchesIndexedOutput(node, indexed_expression_dag, header, column_name, budget);
 }
 
-bool isIdentityDynamicArrayCast(const RPNBuilderFunctionTreeNode & function, const Block & header, String & column_name)
+bool isIdentityDynamicArrayCast(
+    const RPNBuilderFunctionTreeNode & function,
+    const Block & header,
+    const ActionsDAG & indexed_expression_dag,
+    String & column_name,
+    ExpressionMatchBudget & budget)
 {
     const String function_name = function.getFunctionName();
     if ((function_name != "CAST" && function_name != "_CAST") || function.getArgumentsSize() != 2)
         return false;
 
-    const ActionsDAG::Node * outer_node = getNodeWithoutAliases(function);
+    const ActionsDAG::Node * outer_node = getNodeWithoutAliases(function, budget);
     if (!outer_node || outer_node->type != ActionsDAG::ActionType::FUNCTION || !outer_node->result_type
         || !typeid_cast<const DataTypeArray *>(outer_node->result_type.get()))
         return false;
@@ -225,19 +639,19 @@ bool isIdentityDynamicArrayCast(const RPNBuilderFunctionTreeNode & function, con
     if ((dynamic_function_name != "CAST" && dynamic_function_name != "_CAST") || dynamic_function.getArgumentsSize() != 2)
         return false;
 
-    const ActionsDAG::Node * dynamic_cast_node = getNodeWithoutAliases(dynamic_function);
+    const ActionsDAG::Node * dynamic_cast_node = getNodeWithoutAliases(dynamic_function, budget);
     if (!dynamic_cast_node || dynamic_cast_node->type != ActionsDAG::ActionType::FUNCTION || !dynamic_cast_node->result_type
         || !typeid_cast<const DataTypeDynamic *>(dynamic_cast_node->result_type.get()))
         return false;
 
     const RPNBuilderTreeNode source_node = dynamic_function.getArgumentAt(0);
-    if (!getDirectArrayJoinIndexColumn(source_node, header, column_name))
+    if (!getDirectArrayJoinIndexColumn(source_node, header, indexed_expression_dag, column_name, budget))
         return false;
 
-    const ActionsDAG::Node * source_dag_node = getNodeWithoutAliases(source_node);
+    const ActionsDAG::Node * source_dag_node = getNodeWithoutAliases(source_node, budget);
     const DataTypePtr & index_type = header.getByPosition(header.getPositionByName(column_name)).type;
-    return source_dag_node && source_dag_node->result_type && source_dag_node->result_type->equals(*index_type)
-        && outer_node->result_type->equals(*index_type);
+    return source_dag_node && sameType(source_dag_node->result_type, index_type, budget)
+        && sameType(outer_node->result_type, index_type, budget);
 }
 
 struct ArrayJoinIndexInput
@@ -249,9 +663,14 @@ struct ArrayJoinIndexInput
     std::vector<DataTypePtr> array_cast_targets;
 };
 
-bool resolveArrayJoinIndexInput(const RPNBuilderTreeNode & input, const Block & header, ArrayJoinIndexInput & result)
+bool resolveArrayJoinIndexInput(
+    const RPNBuilderTreeNode & input,
+    const Block & header,
+    const ActionsDAG & indexed_expression_dag,
+    ArrayJoinIndexInput & result,
+    ExpressionMatchBudget & budget)
 {
-    const ActionsDAG::Node * input_node = getNodeWithoutAliases(input);
+    const ActionsDAG::Node * input_node = getNodeWithoutAliases(input, budget);
     if (!input_node || !input_node->result_type || !typeid_cast<const DataTypeArray *>(input_node->result_type.get()))
         return false;
 
@@ -260,14 +679,16 @@ bool resolveArrayJoinIndexInput(const RPNBuilderTreeNode & input, const Block & 
 
     while (true)
     {
-        if (getDirectArrayJoinIndexColumn(current, header, result.column_name))
+        if (!budget.consume())
+            return false;
+        if (getDirectArrayJoinIndexColumn(current, header, indexed_expression_dag, result.column_name, budget))
             return true;
 
         if (!current.isFunction())
             return false;
 
         const auto function = current.toFunctionNode();
-        const ActionsDAG::Node * function_node = getNodeWithoutAliases(function);
+        const ActionsDAG::Node * function_node = getNodeWithoutAliases(function, budget);
         if (!function_node || function_node->type != ActionsDAG::ActionType::FUNCTION || !function_node->result_type)
             return false;
 
@@ -278,11 +699,12 @@ bool resolveArrayJoinIndexInput(const RPNBuilderTreeNode & input, const Block & 
                 return false;
 
             const RPNBuilderTreeNode argument = function.getArgumentAt(0);
-            const ActionsDAG::Node * argument_node = getNodeWithoutAliases(argument);
+            const ActionsDAG::Node * argument_node = getNodeWithoutAliases(argument, budget);
             const auto * input_array_type = argument_node && argument_node->result_type
                 ? typeid_cast<const DataTypeArray *>(argument_node->result_type.get()) : nullptr;
             const auto * result_array_type = typeid_cast<const DataTypeArray *>(function_node->result_type.get());
-            if (!input_array_type || !result_array_type || !input_array_type->equals(*result_array_type))
+            if (!input_array_type || !result_array_type
+                || !sameType(argument_node->result_type, function_node->result_type, budget))
                 return false;
 
             result.has_empty_array_to_single = true;
@@ -292,14 +714,14 @@ bool resolveArrayJoinIndexInput(const RPNBuilderTreeNode & input, const Block & 
             continue;
         }
 
-        if (isIdentityDynamicArrayCast(function, header, result.column_name))
+        if (isIdentityDynamicArrayCast(function, header, indexed_expression_dag, result.column_name, budget))
             return true;
 
         if (!isLosslessConversionFunction(*function_node))
             return false;
 
         const RPNBuilderTreeNode argument = function.getArgumentAt(0);
-        const ActionsDAG::Node * argument_node = getNodeWithoutAliases(argument);
+        const ActionsDAG::Node * argument_node = getNodeWithoutAliases(argument, budget);
         const auto * result_array_type = typeid_cast<const DataTypeArray *>(function_node->result_type.get());
         const auto * argument_array_type = argument_node && argument_node->result_type
             ? typeid_cast<const DataTypeArray *>(argument_node->result_type.get()) : nullptr;
@@ -507,6 +929,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & header_,
+    const ActionsDAG & indexed_expression_dag_,
     size_t hash_functions_,
     NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_)
@@ -526,7 +949,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     RPNBuilder<RPNElement> builder(
         predicate,
         context_,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out, indexed_expression_dag_); });
     rpn = std::move(builder).extractRPN();
 }
 
@@ -619,7 +1042,10 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(
+    const RPNBuilderTreeNode & node,
+    RPNElement & out,
+    const ActionsDAG & indexed_expression_dag)
 {
     {
         Field const_value;
@@ -647,7 +1073,7 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
         }
     }
 
-    return traverseFunction(node, out, nullptr /*parent*/);
+    return traverseFunction(node, out, nullptr /*parent*/, indexed_expression_dag);
 }
 
 namespace
@@ -669,7 +1095,11 @@ void fillJSONPathBloomPredicate(
 
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
+bool MergeTreeIndexConditionBloomFilter::traverseFunction(
+    const RPNBuilderTreeNode & node,
+    RPNElement & out,
+    const RPNBuilderTreeNode * parent,
+    const ActionsDAG & indexed_expression_dag)
 {
     if (!node.isFunction())
         return false;
@@ -684,7 +1114,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
-            if (traverseFunction(argument, out, &node))
+            if (traverseFunction(argument, out, &node, indexed_expression_dag))
                 return true;
         }
     }
@@ -733,7 +1163,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
                 if (prepared_set->hasExplicitSetElements())
                 {
                     const auto prepared_info = getPreparedSetInfo(prepared_set);
-                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out, indexed_expression_dag))
                         return true;
                 }
             }
@@ -793,12 +1223,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const ConstSetPtr & prepared_set,
     const DataTypePtr & type,
     const ColumnPtr & column,
-    RPNElement & out)
+    RPNElement & out,
+    const ActionsDAG & indexed_expression_dag)
 {
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
     auto key_node_column_name = key_node.getColumnName();
+    ExpressionMatchBudget expression_match_budget;
 
-    if (header.has(key_node_column_name))
+    if (header.has(key_node_column_name)
+        && matchesIndexedOutput(key_node.getDAGNode(), indexed_expression_dag, header, key_node_column_name, expression_match_budget))
     {
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
@@ -888,7 +1321,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
+                match_with_subtype |= traverseTreeIn(
+                    function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out, indexed_expression_dag);
 
             return match_with_subtype;
         }
@@ -967,9 +1401,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     DataTypePtr array_join_value_type;
     while (true)
     {
+        if (!expression_match_budget.consume())
+            return false;
+
         if (array_join_node.getArrayJoinArgument())
         {
-            const ActionsDAG::Node * dag_node = getNodeWithoutAliases(array_join_node);
+            const ActionsDAG::Node * dag_node = getNodeWithoutAliases(array_join_node, expression_match_budget);
             if (!dag_node || dag_node->type != ActionsDAG::ActionType::ARRAY_JOIN || !dag_node->result_type)
                 return false;
             array_join_value_type = dag_node->result_type;
@@ -980,7 +1417,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
 
         const auto function = array_join_node.toFunctionNode();
-        const ActionsDAG::Node * dag_node = getNodeWithoutAliases(function);
+        const ActionsDAG::Node * dag_node = getNodeWithoutAliases(function, expression_match_budget);
         if (!dag_node || !isLosslessConversionFunction(*dag_node) || !dag_node->result_type)
             return false;
 
@@ -993,13 +1430,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     ArrayJoinIndexInput array_input;
-    if (!resolveArrayJoinIndexInput(*array_join_input, header, array_input) || !header.has(array_input.column_name))
+    if (!resolveArrayJoinIndexInput(
+            *array_join_input, header, indexed_expression_dag, array_input, expression_match_budget)
+        || !header.has(array_input.column_name))
         return false;
 
-    const ActionsDAG::Node * input_dag_node = getNodeWithoutAliases(*array_join_input);
+    const ActionsDAG::Node * input_dag_node = getNodeWithoutAliases(*array_join_input, expression_match_budget);
     const auto * input_array_type = input_dag_node && input_dag_node->result_type
         ? typeid_cast<const DataTypeArray *>(input_dag_node->result_type.get()) : nullptr;
-    if (!input_array_type || !input_array_type->getNestedType()->equals(*array_join_value_type))
+    if (!input_array_type || !sameType(input_array_type->getNestedType(), array_join_value_type, expression_match_budget))
         return false;
 
     const DataTypePtr & effective_left_type = scalar_cast_targets.empty() ? array_join_value_type : scalar_cast_targets.front();
@@ -1684,7 +2123,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, index.expression->getActionsDAG(), hash_functions,
+        getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 static void assertIndexColumnsType(const Block & header)

@@ -8,6 +8,10 @@ DROP TABLE IF EXISTS t_bf_aj_nullable;
 DROP TABLE IF EXISTS t_bf_aj_uint8;
 DROP TABLE IF EXISTS t_bf_aj_numeric;
 DROP TABLE IF EXISTS t_bf_aj_expression;
+DROP TABLE IF EXISTS t_bf_aj_collision;
+DROP TABLE IF EXISTS t_bf_aj_deeper_collision;
+DROP TABLE IF EXISTS t_bf_aj_concat_expression;
+DROP TABLE IF EXISTS t_bf_aj_physical_types;
 DROP TABLE IF EXISTS t_bf_aj_invalid;
 
 CREATE TABLE t_bf_aj_wrappers
@@ -69,6 +73,65 @@ INSERT INTO t_bf_aj_expression VALUES
     (4, ['other4']),
     (5, ['other5']),
     (6, ['other6']);
+
+CREATE TABLE t_bf_aj_collision
+(
+    id UInt64,
+    other Array(String),
+    `arrayDistinct(other)` Array(String),
+    INDEX idx_collision `arrayDistinct(other)` TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_aj_collision VALUES (1, ['target'], []), (2, ['target'], ['target']);
+
+CREATE TABLE t_bf_aj_deeper_collision
+(
+    id UInt64,
+    other Array(String),
+    `arrayDistinct(other)` Array(String),
+    INDEX idx_deeper_collision arrayConcat(`arrayDistinct(other)`, ['suffix']) TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_aj_deeper_collision VALUES (1, ['target'], []), (2, ['target'], ['target']);
+
+CREATE TABLE t_bf_aj_concat_expression
+(
+    id UInt64,
+    tags Array(String),
+    INDEX idx_concat_expression arrayConcat(arrayDistinct(tags), ['suffix']) TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_aj_concat_expression VALUES
+    (0, []),
+    (1, ['target']),
+    (2, ['target', 'target']),
+    (3, ['']),
+    (4, ['01']),
+    (5, ['1']),
+    (6, ['other']);
+
+CREATE TABLE t_bf_aj_physical_types
+(
+    id UInt64,
+    dt DateTime('UTC'),
+    dt64 DateTime64(3, 'UTC'),
+    e Enum8('zero' = 0, 'one' = 1, 'two' = 2),
+    INDEX idx_dt dt TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_dt64 dt64 TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_enum e TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_aj_physical_types VALUES
+    (1, toDateTime('2020-01-01 00:00:01', 'UTC'), toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'), 'one'),
+    (2, toDateTime('2020-01-02 00:00:02', 'UTC'), toDateTime64('2020-01-02 00:00:02.002', 3, 'UTC'), 'two');
 
 WITH
     groupArray(explain) AS plan,
@@ -424,10 +487,98 @@ INSERT INTO t_bf_aj_invalid VALUES (0, ['bad']);
 SELECT 'invalid Dynamic conversion EXPLAIN declines Bloom pruning', max(explain LIKE '%Name: idx_tags%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_invalid WHERE arrayJoin(CAST(CAST(tags AS Dynamic) AS Array(UInt8))) GLOBAL IN (SELECT value FROM t_bf_aj_uint8) SETTINGS query_plan_lower_array_join_function = 1);
 
+WITH
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_collision ARRAY JOIN arrayDistinct(other) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_collision ARRAY JOIN arrayDistinct(other) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS full_scan
+SELECT 'direct physical/FUNCTION collision preserves tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), 'target'), (toUInt64(2), 'target')];
+
+SELECT 'direct physical/FUNCTION collision declines Bloom index', max(explain LIKE '%Name: idx_collision%') = 0
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_aj_collision ARRAY JOIN arrayDistinct(other) AS value WHERE value IN ('target') SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, toNullable(arrayJoin(arrayDistinct(other))) AS value FROM t_bf_aj_collision WHERE value IN ('target')) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, toNullable(arrayJoin(arrayDistinct(other))) AS value FROM t_bf_aj_collision WHERE value IN ('target')) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS full_scan
+SELECT 'wrapped physical/FUNCTION collision preserves tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), toNullable('target')), (toUInt64(2), toNullable('target'))];
+
+SELECT 'wrapped physical/FUNCTION collision declines Bloom index', max(explain LIKE '%Name: idx_collision%') = 0
+FROM (EXPLAIN indexes = 1 SELECT id, toNullable(arrayJoin(arrayDistinct(other))) AS value FROM t_bf_aj_collision WHERE value IN ('target') SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_deeper_collision ARRAY JOIN arrayConcat(arrayDistinct(other), ['suffix']) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_deeper_collision ARRAY JOIN arrayConcat(arrayDistinct(other), ['suffix']) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS full_scan
+SELECT 'deeper INPUT/FUNCTION child collision preserves tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), 'target'), (toUInt64(2), 'target')];
+
+SELECT 'deeper INPUT/FUNCTION child collision declines Bloom index', max(explain LIKE '%Name: idx_deeper_collision%') = 0
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_aj_deeper_collision ARRAY JOIN arrayConcat(arrayDistinct(other), ['suffix']) AS value WHERE value IN ('target') SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_concat_expression ARRAY JOIN arrayConcat(arrayDistinct(tags), ['suffix']) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, value))) FROM (SELECT id, value FROM t_bf_aj_concat_expression ARRAY JOIN arrayConcat(arrayDistinct(tags), ['suffix']) AS value WHERE value IN ('target')) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1) AS full_scan
+SELECT 'arrayConcat expression index preserves tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), 'target'), (toUInt64(2), 'target')];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_concat_expression') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'arrayConcat expression index still prunes', has_index AND selected > 0 AND selected < total
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_aj_concat_expression ARRAY JOIN arrayConcat(arrayDistinct(tags), ['suffix']) AS value WHERE value IN ('target') SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_dt') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'physical DateTime IN still prunes', has_index AND selected > 0 AND selected < total
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_aj_physical_types WHERE dt IN (toDateTime('2020-01-01 00:00:01', 'UTC')));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_dt64') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'physical DateTime64 IN still prunes', has_index AND selected > 0 AND selected < total
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_aj_physical_types WHERE dt64 IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_enum') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'physical Enum IN still prunes', has_index AND selected > 0 AND selected < total
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_aj_physical_types WHERE e IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))));
+
+WITH
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE dt IN (toDateTime('2020-01-01 00:00:01', 'UTC')) SETTINGS use_skip_indexes = 1) AS indexed,
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE dt IN (toDateTime('2020-01-01 00:00:01', 'UTC')) SETTINGS use_skip_indexes = 0) AS full_scan
+SELECT 'physical DateTime IN preserves results', indexed = full_scan AND indexed = [toUInt64(1)];
+
+WITH
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE dt64 IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')) SETTINGS use_skip_indexes = 1) AS indexed,
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE dt64 IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')) SETTINGS use_skip_indexes = 0) AS full_scan
+SELECT 'physical DateTime64 IN preserves results', indexed = full_scan AND indexed = [toUInt64(1)];
+
+WITH
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE e IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))) SETTINGS use_skip_indexes = 1) AS indexed,
+    (SELECT arraySort(groupArray(id)) FROM t_bf_aj_physical_types WHERE e IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))) SETTINGS use_skip_indexes = 0) AS full_scan
+SELECT 'physical Enum IN preserves results', indexed = full_scan AND indexed = [toUInt64(1)];
+
 SELECT count() FROM t_bf_aj_invalid WHERE arrayJoin(CAST(CAST(tags AS Dynamic) AS Array(UInt8))) GLOBAL IN (SELECT value FROM t_bf_aj_uint8) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1; -- { serverError CANNOT_PARSE_TEXT }
 SELECT count() FROM t_bf_aj_invalid WHERE arrayJoin(CAST(CAST(tags AS Dynamic) AS Array(UInt8))) GLOBAL IN (SELECT value FROM t_bf_aj_uint8) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1; -- { serverError CANNOT_PARSE_TEXT }
 
 DROP TABLE t_bf_aj_invalid;
+DROP TABLE t_bf_aj_concat_expression;
+DROP TABLE t_bf_aj_deeper_collision;
+DROP TABLE t_bf_aj_collision;
+DROP TABLE t_bf_aj_physical_types;
 DROP TABLE t_bf_aj_expression;
 DROP TABLE t_bf_aj_numeric;
 DROP TABLE t_bf_aj_uint8;

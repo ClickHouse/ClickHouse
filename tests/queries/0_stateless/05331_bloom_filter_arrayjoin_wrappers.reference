@@ -54,3 +54,17 @@ nullable default is not a match with transform_null_in=0	1
 type-changing Dynamic preserves converted values	1
 tuple default hit preserves tuple multiset	1
 invalid Dynamic conversion EXPLAIN declines Bloom pruning	1
+direct physical/FUNCTION collision preserves tuple multiset	1
+direct physical/FUNCTION collision declines Bloom index	1
+wrapped physical/FUNCTION collision preserves tuple multiset	1
+wrapped physical/FUNCTION collision declines Bloom index	1
+deeper INPUT/FUNCTION child collision preserves tuple multiset	1
+deeper INPUT/FUNCTION child collision declines Bloom index	1
+arrayConcat expression index preserves tuple multiset	1
+arrayConcat expression index still prunes	1
+physical DateTime IN still prunes	1
+physical DateTime64 IN still prunes	1
+physical Enum IN still prunes	1
+physical DateTime IN preserves results	1
+physical DateTime64 IN preserves results	1
+physical Enum IN preserves results	1
