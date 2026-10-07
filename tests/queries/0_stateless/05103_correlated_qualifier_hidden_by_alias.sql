@@ -193,5 +193,15 @@ SELECT count() FROM t_qualifier_other AS u JOIN t_qualifier_other AS v ON u.id =
     SELECT 1 FROM t_qualifier_alias AS c WHERE t_qualifier_alias.id = c.id AND c.val = 30), t_qualifier_alias
 SETTINGS analyzer_alias_hides_table_name = 1;
 
+SELECT 'a SEMI JOIN side hidden in the enclosing query does not hide the name';
+-- With `semi_join_include_columns_from_both_sides = 0` the right side of the enclosing `SEMI JOIN` has no
+-- columns to read, so the qualifier keeps addressing the inner `t AS c`.
+SELECT count() FROM t_qualifier_other AS u LEFT SEMI JOIN t_qualifier_alias ON u.id = t_qualifier_alias.id WHERE EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE t_qualifier_alias.id = c.id AND c.val = 30)
+SETTINGS analyzer_alias_hides_table_name = 1, semi_join_include_columns_from_both_sides = 0;
+SELECT count() FROM t_qualifier_other AS u LEFT ANTI JOIN t_qualifier_alias ON u.id = t_qualifier_alias.id WHERE EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE t_qualifier_alias.id = c.id AND c.val = 30)
+SETTINGS analyzer_alias_hides_table_name = 1, anti_join_include_columns_from_both_sides = 0;
+
 DROP TABLE t_qualifier_alias;
 DROP TABLE t_qualifier_other;

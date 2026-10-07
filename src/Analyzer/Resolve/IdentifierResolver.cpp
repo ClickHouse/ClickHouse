@@ -765,6 +765,11 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             if (visible_join_subtree && !joinSubtreeContains(visible_join_subtree, outer_table_expression_node.get()))
                 continue;
 
+            /// A side that a SEMI/ANTI JOIN hides in the enclosing query has no columns to read there, so it
+            /// gives the qualifier no second reading.
+            if (isTableExpressionHiddenBySemiAntiJoin(outer_table_expression_node.get(), *outer_scope))
+                continue;
+
             if (identifier_column_qualifier_parts == 2)
             {
                 /// `database.table` addresses a table expression only while it has no alias of its own.

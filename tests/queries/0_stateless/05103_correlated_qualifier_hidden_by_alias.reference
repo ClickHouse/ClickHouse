@@ -48,3 +48,6 @@ an enclosing materialized CTE is addressed by the name of the CTE
 2
 a JOIN ON subquery sees only the tables under its JOIN
 3
+a SEMI JOIN side hidden in the enclosing query does not hide the name
+1
+0
